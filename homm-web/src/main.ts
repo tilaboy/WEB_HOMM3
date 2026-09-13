@@ -6,7 +6,16 @@ import { revealAround, isRevealed } from './core/map/fog.js';
 import { idx, inBounds } from './core/map/grid.js';
 import { TERRAIN } from './core/data/terrains.js';
 import { getUnit } from './core/data/units.js';
-import { applyInteraction, describeArmy, describeGuard, pendingObjectAt, previewInteraction } from './core/game/interaction.js';
+import {
+  applyInteraction,
+  battleSetup,
+  describeArmy,
+  describeGuard,
+  pendingObjectAt,
+  previewInteraction,
+} from './core/game/interaction.js';
+import { openBattleScreen, isBattleOpen } from './ui/BattleScreen.js';
+import type { BattleOutcome } from './core/combat/battle.js';
 import { endDay } from './core/game/turn.js';
 import { Camera } from './render/camera.js';
 import { MapRenderer } from './render/MapRenderer.js';
@@ -285,10 +294,10 @@ function onArrive(heroId: string, obj: MapObject): void {
     }
     showModal(stage, {
       title: pending.title,
-      body: [pending.message, pending.lossText ?? '', lossTable(rows)],
+      body: [pending.message, `${pending.lossText ?? ''}（预估，实战结果取决于走位）`, lossTable(rows)],
       actions: [
         { label: '撤退', danger: true, onClick: (c) => { c(); resolve(heroId, obj, false); } },
-        { label: '攻城', primary: true, onClick: (c) => { c(); resolve(heroId, obj, true); } },
+        { label: '进入战场', primary: true, onClick: (c) => { c(); startBattle(heroId, obj, pending.title); } },
       ],
     });
     return;
@@ -320,8 +329,26 @@ function onArrive(heroId: string, obj: MapObject): void {
   resolve(heroId, obj, true);
 }
 
-function resolve(heroId: string, obj: MapObject, accept: boolean): void {
-  const res = applyInteraction(state, heroId, obj.id, accept, { retreatTo: lastStepFrom });
+/** 打开 M3 战术战斗；战斗结束后用真实战果推进世界状态。 */
+function startBattle(heroId: string, obj: MapObject, title: string): void {
+  const setup = battleSetup(state, heroId, obj);
+  if (!setup) {
+    resolve(heroId, obj, true);
+    return;
+  }
+  openBattleScreen(stage, {
+    state,
+    heroId,
+    title,
+    attacker: setup.attacker,
+    defender: setup.defender,
+    seed: setup.seed,
+    onDone: (outcome: BattleOutcome) => resolve(heroId, obj, true, outcome),
+  });
+}
+
+function resolve(heroId: string, obj: MapObject, accept: boolean, outcome?: BattleOutcome): void {
+  const res = applyInteraction(state, heroId, obj.id, accept, { retreatTo: lastStepFrom, outcome });
   recomputeField();
   refresh();
   renderLog();
@@ -405,7 +432,7 @@ function doRestart(): void {
 }
 
 function doEndDay(): void {
-  if (isModalOpen() || anim) return;
+  if (isModalOpen() || anim || isBattleOpen()) return;
   endDay(state);
   lastStepFrom = null;
   recomputeField();
@@ -647,6 +674,7 @@ function describeObject(obj: MapObject): string {
 }
 
 window.addEventListener('keydown', (e) => {
+  if (isBattleOpen()) return;
   if (e.key === 'Escape') {
     closeModal();
     hideInfoPopup();
@@ -713,5 +741,36 @@ requestAnimationFrame(frame);
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+  });
+}
+
+// 调试入口：?devbattle=1 直接开一场固定阵容的战斗，用于截图与验证，不影响正常流程
+if (new URLSearchParams(location.search).has('devbattle') && selected && state.heroes[selected]) {
+  openBattleScreen(stage, {
+    state,
+    heroId: selected,
+    title: '调试战斗',
+    attacker: {
+      army: [
+        { unitTypeId: 'archer', count: 20 },
+        { unitTypeId: 'pikeman', count: 12 },
+        { unitTypeId: 'knight', count: 6 },
+      ],
+      attack: 3,
+      defense: 4,
+    },
+    defender: {
+      army: [
+        { unitTypeId: 'wolf', count: 26 },
+        { unitTypeId: 'boar', count: 13 },
+        { unitTypeId: 'ogre', count: 11 },
+      ],
+      attack: 0,
+      defense: 0,
+    },
+    seed: 20260913,
+    autoStart: new URLSearchParams(location.search).has('devauto'),
+    instant: new URLSearchParams(location.search).has('devinstant'),
+    onDone: () => hint('调试战斗结束'),
   });
 }

@@ -9,8 +9,8 @@ import type {
 import { ARTIFACTS } from '../data/artifacts.js';
 import { getUnit } from '../data/units.js';
 import { idx, isPassable, objectAt } from '../map/grid.js';
-import { simulateBattle, lossGrade, lossRatio } from '../combat/solver.js';
-import type { BattleOutcome } from '../combat/solver.js';
+import { lossGrade, lossRatio, quickBattle } from '../combat/battle.js';
+import type { BattleOutcome, BattleSide } from '../combat/battle.js';
 import { deriveSeed } from '../rng.js';
 import { addResources, effectivePrimary, gainExp, maxMovePoints } from './hero.js';
 import { townDefenseBonus, captureTown } from './town.js';
@@ -93,7 +93,7 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
     case 'wanderingMonster': {
       const payload = obj.payload as { army: Army; tier: string; guard?: GuardReward };
       const { attacker, defender } = sides(state, heroId, obj);
-      const outcome = simulateBattle(attacker, defender, battleSeed(state, obj));
+      const outcome = quickBattle(attacker, defender, battleSeed(state, obj));
       const ratio = lossRatio(outcome);
       const grade = lossGrade(ratio);
       const tierName = { weak: '零星散兵', mid: '成群野兽', strong: '强悍守卫' }[payload.tier] ?? '未知';
@@ -168,7 +168,7 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
           confirmLabel: '接管', cancelLabel: '离开',
         };
       }
-      const outcome = simulateBattle(
+      const outcome = quickBattle(
         { army: hero.army, attack: p.attack, defense: p.defense },
         { army: garrison, attack: 0, defense: townDefenseBonus(town) },
         battleSeed(state, obj),
@@ -189,9 +189,11 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
   }
 }
 
-/** 执行交互的可选项。retreatTo 用于野怪战撤退时把英雄推回上一格（打不赢就不能通过）。 */
+/** 执行交互的可选项。retreatTo 用于野怪战撤退时把英雄推回上一格（打不赢就不能通过）。
+ *  outcome 由 M3 战术战斗传入：用它替代 headless 解算，保证"打出来的结果"就是真实结果。 */
 export interface InteractionOptions {
   retreatTo?: GridPos | null;
+  outcome?: BattleOutcome;
 }
 
 /** 执行交互。战斗的 accept=false 表示撤退。 */
@@ -209,7 +211,8 @@ export function applyInteraction(
 
   if (obj.kind === 'wanderingMonster') {
     const payload = obj.payload as { army: Army; guard?: GuardReward };
-    if (!accept) {
+    // 撤退有两种来源：战前直接点"撤退"，或进了战场又主动逃跑
+    if (!accept || opts.outcome?.fled) {
       hero.army = hero.army
         .map((s) => ({ ...s, count: Math.floor(s.count * 0.6) }))
         .filter((s) => s.count > 0);
@@ -233,7 +236,7 @@ export function applyInteraction(
     }
 
     const { attacker, defender } = sides(state, heroId, obj);
-    const outcome = simulateBattle(attacker, defender, battleSeed(state, obj));
+    const outcome = opts.outcome ?? quickBattle(attacker, defender, battleSeed(state, obj));
     hero.army = outcome.survivors;
 
     if (outcome.win) {
@@ -269,7 +272,7 @@ export function applyInteraction(
     // 我方城镇由 UI 打开管理面板，这里不做事
     if (town.owner === hero.owner) return empty;
 
-    if (!accept) {
+    if (!accept || opts.outcome?.fled) {
       hero.movePoints = 0;
       pushLog(state, `${hero.name} 在 ${town.name} 城下撤军`);
       return { title: '撤军', message: '你收拢了部队，今日不再行动。', levelUps: [], heroDefeated: false };
@@ -285,11 +288,13 @@ export function applyInteraction(
       };
     }
 
-    const outcome = simulateBattle(
-      { army: hero.army, attack: effectivePrimary(hero).attack, defense: effectivePrimary(hero).defense },
-      { army: garrison, attack: 0, defense: townDefenseBonus(town) },
-      battleSeed(state, obj),
-    );
+    const outcome =
+      opts.outcome ??
+      quickBattle(
+        { army: hero.army, attack: effectivePrimary(hero).attack, defense: effectivePrimary(hero).defense },
+        { army: garrison, attack: 0, defense: townDefenseBonus(town) },
+        battleSeed(state, obj),
+      );
     hero.army = outcome.survivors;
 
     if (outcome.win) {
@@ -399,6 +404,37 @@ function equipArtifact(state: GameState, heroId: string, artifactId: string): st
   }
   hero.artifacts.push(artifactId);
   return `装备「${def.name}」：${def.desc}。`;
+}
+
+/**
+ * 供 UI 启动战术战斗：一次性给出双方参数 + 随机种子。
+ * 种子和 headless 解算用的是同一个，所以"预估"和"实战"至少在同一个随机流上。
+ */
+export function battleSetup(
+  state: GameState,
+  heroId: string,
+  obj: MapObject,
+): { attacker: BattleSide; defender: BattleSide; seed: number } | null {
+  const hero = state.heroes[heroId];
+  if (!hero || !obj) return null;
+  const p = effectivePrimary(hero);
+  const attacker: BattleSide = { army: hero.army, attack: p.attack, defense: p.defense };
+
+  if (obj.kind === 'wanderingMonster') {
+    const payload = obj.payload as { army: Army };
+    return { attacker, defender: { army: payload.army, attack: 0, defense: 0 }, seed: battleSeed(state, obj) };
+  }
+  if (obj.kind === 'town') {
+    const town = state.towns[(obj.payload as { townId: string }).townId];
+    if (!town) return null;
+    const garrison = town.garrison.filter((s) => s.count > 0);
+    return {
+      attacker,
+      defender: { army: garrison, attack: 0, defense: townDefenseBonus(town) },
+      seed: battleSeed(state, obj),
+    };
+  }
+  return null;
 }
 
 /** 英雄脚下是否有待处理的可交互物件。 */

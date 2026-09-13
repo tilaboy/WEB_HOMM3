@@ -1,11 +1,27 @@
-import { createGame } from '../dist/core/map/generator.js';
+import { BASE_MOVE_POINTS, createGame, monsterArmy } from '../dist/core/map/generator.js';
+import { mulberry32 } from '../dist/core/rng.js';
 import { computePaths, buildPath } from '../dist/core/map/pathfinding.js';
 import { isRevealed } from '../dist/core/map/fog.js';
-import { simulateBattle, lossRatio } from '../dist/core/combat/solver.js';
-import { previewInteraction, applyInteraction } from '../dist/core/game/interaction.js';
+import { lossRatio, quickBattle } from '../dist/core/combat/battle.js';
+import { previewInteraction, applyInteraction, battleSetup } from '../dist/core/game/interaction.js';
 import { isPassable } from '../dist/core/map/grid.js';
 import { endDay } from '../dist/core/game/turn.js';
 import { BASE_TOWN_INCOME } from '../dist/core/data/buildings.js';
+import { getUnit } from '../dist/core/data/units.js';
+import { bfs, distance, hexCenter, hexLine, hexList, inField, neighbors, pickHex, FIELD_H, FIELD_W } from '../dist/core/combat/hex.js';
+import {
+  actFlee,
+  actShoot,
+  aiAct,
+  autoResolve,
+  canShoot,
+  createBattle,
+  currentUnit,
+  endActivation,
+  poolOf,
+  shootTargets,
+  toOutcome,
+} from '../dist/core/combat/battle.js';
 import {
   build,
   buildStatus,
@@ -34,17 +50,18 @@ for (const seed of [1, 42, 777, 20260912, 99999]) {
   const m = s.map;
   const hero = s.heroes.hero1;
 
-  ok(m.width === 24 && m.height === 24, `seed ${seed}: 地图 24×24`);
+  ok(m.width === 32 && m.height === 32, `seed ${seed}: 地图 32×32`);
   ok(!!hero && isPassable(m, hero.pos.x, hero.pos.y), `seed ${seed}: 英雄出生在可通行地块`);
   ok(hero.army.length > 0 && hero.army[0].count === 20, `seed ${seed}: 起始 20 弓手`);
+  ok(hero.movePoints === BASE_MOVE_POINTS, `seed ${seed}: 初始移动力 ${BASE_MOVE_POINTS}`);
 
   const kinds = {};
   for (const o of Object.values(m.objects)) kinds[o.kind] = (kinds[o.kind] ?? 0) + 1;
-  ok((kinds.wanderingMonster ?? 0) >= 8, `seed ${seed}: 野怪 ${kinds.wanderingMonster} 组`);
-  ok((kinds.treasureChest ?? 0) >= 6, `seed ${seed}: 宝箱 ${kinds.treasureChest}`);
-  ok((kinds.resourcePile ?? 0) >= 10, `seed ${seed}: 资源堆 ${kinds.resourcePile}`);
-  ok((kinds.town ?? 0) === 3, `seed ${seed}: 3 座城镇（1 主城 + 2 中立）`);
-  ok((kinds.fountain ?? 0) === 3, `seed ${seed}: 3 处泉水`);
+  ok((kinds.wanderingMonster ?? 0) >= 12, `seed ${seed}: 野怪 ${kinds.wanderingMonster} 组`);
+  ok((kinds.treasureChest ?? 0) >= 9, `seed ${seed}: 宝箱 ${kinds.treasureChest}`);
+  ok((kinds.resourcePile ?? 0) >= 14, `seed ${seed}: 资源堆 ${kinds.resourcePile}`);
+  ok((kinds.town ?? 0) === 4, `seed ${seed}: 4 座城镇（1 主城 + 3 中立）`);
+  ok((kinds.fountain ?? 0) === 4, `seed ${seed}: 4 处泉水`);
 
   // 每支野怪都得守着东西
   const monsters = Object.values(m.objects).filter((o) => o.kind === 'wanderingMonster');
@@ -56,13 +73,19 @@ for (const seed of [1, 42, 777, 20260912, 99999]) {
 
   // 中立城不能躲在地图角落，也不能挨在一起
   const neutrals = Object.values(s.towns).filter((t) => t.owner === 'neutral');
-  ok(neutrals.length === 2, `seed ${seed}: 2 座中立城`);
+  ok(neutrals.length === 3, `seed ${seed}: 3 座中立城`);
   const hp = s.towns.town_home.pos;
   for (const t of neutrals) {
     const d = Math.abs(t.pos.x - hp.x) + Math.abs(t.pos.y - hp.y);
     const edge = Math.min(t.pos.x, t.pos.y, m.width - 1 - t.pos.x, m.height - 1 - t.pos.y);
-    ok(d >= 6 && d <= 30, `seed ${seed}: ${t.name} 距主城 ${d} 格（可达范围内）`);
+    ok(d >= 8 && d <= 40, `seed ${seed}: ${t.name} 距主城 ${d} 格（可达范围内）`);
     ok(edge >= 2, `seed ${seed}: ${t.name} 不在地图边缘`);
+  }
+  for (let i = 0; i < neutrals.length; i++) {
+    for (let j = i + 1; j < neutrals.length; j++) {
+      const d = Math.abs(neutrals[i].pos.x - neutrals[j].pos.x) + Math.abs(neutrals[i].pos.y - neutrals[j].pos.y);
+      ok(d >= 6, `seed ${seed}: 中立城之间不挤在一起（相距 ${d}）`);
+    }
   }
 
   // 所有可交互物都应在可达范围内
@@ -97,11 +120,11 @@ for (const seed of [1, 42, 777, 20260912, 99999]) {
   ok(!s.map.objects[pile.id], `seed ${seed}: 资源堆已移除`);
 }
 
-function duel(enemy, n = 60) {
+function duelArmy(enemy, n = 80) {
   let wins = 0;
   let lossSum = 0;
   for (let i = 0; i < n; i++) {
-    const o = simulateBattle(
+    const o = quickBattle(
       { army: [{ unitTypeId: 'archer', count: 20 }], attack: 1, defense: 2 },
       { army: enemy, attack: 0, defense: 0 },
       1000 + i * 37,
@@ -109,31 +132,54 @@ function duel(enemy, n = 60) {
     if (o.win) wins++;
     lossSum += lossRatio(o);
   }
-  return { winRate: wins / n, avgLoss: lossSum / n };
+  return { winRate: wins / n, avgLoss: lossSum / n, rounds: 0 };
 }
 
-const weakDuel = duel([{ unitTypeId: 'wolf', count: 14 }]);
-const midDuel = duel([{ unitTypeId: 'boar', count: 8 }]);
-const strongDuel = duel([{ unitTypeId: 'ogre', count: 6 }]);
-const hopeless = duel([{ unitTypeId: 'ogre', count: 20 }]);
+// 直接抽样生成器真实的野怪规模，避免"测试用的怪"和"地图上的怪"是两回事
+function duelTier(tier, n = 120) {
+  let wins = 0;
+  let lossSum = 0;
+  let rounds = 0;
+  for (let i = 0; i < n; i++) {
+    const army = monsterArmy(mulberry32(4000 + i * 131), tier);
+    const o = quickBattle(
+      { army: [{ unitTypeId: 'archer', count: 20 }], attack: 1, defense: 2 },
+      { army, attack: 0, defense: 0 },
+      1000 + i * 37,
+    );
+    if (o.win) wins++;
+    lossSum += lossRatio(o);
+    rounds += o.rounds;
+  }
+  return { winRate: wins / n, avgLoss: lossSum / n, rounds: rounds / n };
+}
+
+const hopeless = duelArmy([{ unitTypeId: 'ogre', count: 22 }], 60);
 const report = (name, d) =>
-  console.log(`  ${name}：胜率 ${(d.winRate * 100).toFixed(0)}% · 平均损失 ${(d.avgLoss * 100).toFixed(0)}%`);
-report('弱 · 14 野狼', weakDuel);
-report('中 · 8 野猪', midDuel);
-report('强 · 6 食人魔', strongDuel);
-report('绝望 · 20 食人魔', hopeless);
+  console.log(
+    `  ${name}：胜率 ${(d.winRate * 100).toFixed(0)}% · 平均损失 ${(d.avgLoss * 100).toFixed(0)}%` +
+      (d.rounds ? ` · 平均 ${d.rounds.toFixed(1)} 回合` : ''),
+  );
+
+const weakDuel = duelTier('weak');
+const midDuel = duelTier('mid');
+const strongDuel = duelTier('strong');
+report('弱档（20~28 野狼）', weakDuel);
+report('中档（11~15 野猪 / 狼+猪）', midDuel);
+report('强档（10~13 食人魔 / 猪+魔）', strongDuel);
+report('绝望 · 22 食人魔', hopeless);
 
 ok(weakDuel.winRate >= 0.9, '弱档：20 弓手应稳胜');
 ok(weakDuel.avgLoss < 0.3, '弱档：损失应较轻');
-ok(midDuel.winRate >= 0.6, '中档：应多数能赢');
+ok(midDuel.winRate >= 0.7, '中档：应多数能赢');
 ok(strongDuel.winRate > 0.3 && strongDuel.winRate < 0.9, '强档：应是胜负有悬念的硬仗');
-ok(strongDuel.avgLoss > 0.5, '强档：即使赢也要付出惨重代价');
+ok(strongDuel.avgLoss > 0.4, '强档：即使赢也要付出惨重代价');
 ok(hopeless.winRate <= 0.05, '悬殊：必败');
 
-const siegeDuel = duel([{ unitTypeId: 'wolf', count: 12 }, { unitTypeId: 'boar', count: 6 }], 200);
-report('中立城 · 12 野狼 + 6 野猪', siegeDuel);
+const siegeDuel = duelArmy([{ unitTypeId: 'wolf', count: 20 }, { unitTypeId: 'boar', count: 10 }], 120);
+report('中立城 · 20 野狼 + 10 野猪', siegeDuel);
 ok(siegeDuel.winRate > 0.4 && siegeDuel.winRate < 0.95, '中立城：起始 20 弓手应是有风险但值得一试的目标');
-ok(siegeDuel.avgLoss > 0.5, '中立城：即使攻下也会元气大伤');
+ok(siegeDuel.avgLoss > 0.4, '中立城：即使攻下也会元气大伤');
 
 /* ================= M2：城镇建设与兵种生产 ================= */
 console.log('\n--- M2 城镇 ---');
@@ -145,6 +191,7 @@ const neutral = g.towns.town_n1;
 ok(home.owner === 'p1', '主城归属玩家');
 ok(neutral.owner === 'neutral', '第二座城为中立');
 ok(!!g.towns.town_n2 && g.towns.town_n2.owner === 'neutral', '第三座城也为中立');
+ok(!!g.towns.town_n3 && g.towns.town_n3.owner === 'neutral', '第四座城也为中立');
 ok(home.buildings.includes('tavern') && home.buildings.includes('dwell2'), '主城预置酒馆与射箭场');
 ok(townDailyIncome(home) === BASE_TOWN_INCOME, `主城基础税收 ${townDailyIncome(home)}`);
 
@@ -339,6 +386,179 @@ ok(
   (g8.players.p1.resources[res8] ?? 0) > (before8[res8] ?? 0),
   `矿场每日产出 ${res8} +${mines[0].payload.perDay} 已发放`,
 );
+
+/* ================= M3：六边形战术战斗 ================= */
+console.log('\n--- M3 六边形战场 ---');
+
+// 1. 坐标：六邻居互为距离 1，直线端点正确
+{
+  const all = hexList();
+  ok(all.length === FIELD_W * FIELD_H, `战场 ${FIELD_W}×${FIELD_H} = ${all.length} 格`);
+  const center = { col: 7, row: 5 };
+  const nb = neighbors(center);
+  ok(nb.length === 6, '每格 6 个邻居方向');
+  ok(nb.every((h) => distance(center, h) === 1), '邻居距离恒为 1');
+  ok(new Set(nb.map((h) => `${h.col},${h.row}`)).size === 6, '6 个邻居互不重复');
+
+  const a = { col: 1, row: 1 };
+  const b = { col: 12, row: 8 };
+  const line = hexLine(a, b);
+  ok(line.length === distance(a, b) + 1, `直线长度 = 距离 + 1（${line.length}）`);
+  ok(line[0].col === a.col && line[0].row === a.row, '直线起点正确');
+  ok(line[line.length - 1].col === b.col && line[line.length - 1].row === b.row, '直线终点正确');
+  ok(line.every((h) => inField(h)), '直线不越界');
+
+  // 像素 ↔ 格子 往返一致（鼠标点格子全靠它）
+  let mismatch = 0;
+  for (const h of all) {
+    const c = hexCenter(h);
+    const back = pickHex(c.x, c.y);
+    if (back.col !== h.col || back.row !== h.row) mismatch++;
+  }
+  ok(mismatch === 0, `全部 ${all.length} 格的中心点都能被 pickHex 正确反解（错 ${mismatch}）`);
+
+  // BFS：可达格都在步数内，且不重复占位
+  const reach = bfs(center, 3, () => false);
+  let outOfRange = 0;
+  for (const k of reach.keys()) {
+    const [c, r] = k.split(',').map(Number);
+    if (distance(center, { col: c, row: r }) > 3) outOfRange++;
+  }
+  ok(outOfRange === 0, `BFS 结果都在 3 步内（越界 ${outOfRange}）`);
+  ok(reach.size > 10, `3 步内可达 ${reach.size} 格`);
+}
+
+// 2. 布阵：两侧贴边、不重叠、都在场内
+{
+  const b = createBattle(
+    { army: [{ unitTypeId: 'archer', count: 20 }, { unitTypeId: 'pikeman', count: 8 }], attack: 1, defense: 2 },
+    { army: [{ unitTypeId: 'wolf', count: 14 }, { unitTypeId: 'boar', count: 5 }], attack: 0, defense: 0 },
+    1234,
+  );
+  ok(b.units.length === 4, `4 支部队入场（${b.units.length}）`);
+  ok(b.units.filter((u) => u.side === 0).every((u) => u.hex.col === 0), '我方贴左边缘');
+  ok(b.units.filter((u) => u.side === 1).every((u) => u.hex.col === FIELD_W - 1), '敌方贴右边缘');
+  ok(b.units.every((u) => inField(u.hex)), '全部部队在场地内');
+  const keys = new Set(b.units.map((u) => `${u.hex.col},${u.hex.row}`));
+  ok(keys.size === b.units.length, '没有两支队伍挤在同一格');
+  ok(b.round === 1 && !!currentUnit(b), '开局进入第 1 回合且有部队可行动');
+
+  // 远程：开局敌人很远，能射；弹药会消耗
+  const archer = b.units.find((u) => u.unitTypeId === 'archer');
+  ok(canShoot(b, archer), '弓手开局可射击');
+  const shotsBefore = archer.shots;
+  const wolf = b.units.find((u) => u.unitTypeId === 'wolf');
+  actShoot(b, archer, wolf);
+  ok(archer.shots === shotsBefore - 1, `射击消耗 1 发弹药（${shotsBefore} → ${archer.shots}）`);
+  ok(poolOf(wolf) < 14 * getUnit('wolf').hp, '野狼总血量下降');
+  ok(wolf.count < 14 || wolf.hpTop < getUnit('wolf').hp, '伤害先啃队首那只');
+  ok(shootTargets(b, archer).length === 2, '远程可选目标 = 全部存活敌人');
+}
+
+// 3. 自动战斗：能收敛、结果自洽
+function runTactical(attacker, defender, seed) {
+  const b = createBattle(attacker, defender, seed);
+  let guard = 0;
+  while (!b.over && guard++ < 6000) {
+    const u = currentUnit(b);
+    if (!u) {
+      endActivation(b);
+      continue;
+    }
+    aiAct(b, u);
+    endActivation(b);
+  }
+  return { state: b, outcome: toOutcome(b) };
+}
+
+{
+  let bad = 0;
+  let wins = 0;
+  const N = 40;
+  for (let i = 0; i < N; i++) {
+    const { state, outcome } = runTactical(
+      { army: [{ unitTypeId: 'archer', count: 20 }], attack: 1, defense: 2 },
+      { army: [{ unitTypeId: 'wolf', count: 14 }], attack: 0, defense: 0 },
+      5000 + i * 91,
+    );
+    if (!state.over) bad++;
+    if (state.round > 40) bad++;
+    if (state.units.some((u) => u.count < 0 || u.hpTop > getUnit(u.unitTypeId).hp || u.hpTop < 0)) bad++;
+    if (outcome.survivors.length && outcome.enemySurvivors.length) bad++; // 不应双方都有残兵
+    if (outcome.win) wins++;
+  }
+  ok(bad === 0, `${N} 场自动战斗全部正常收敛（异常 ${bad}）`);
+  ok(wins / N >= 0.8, `20 弓手 vs 14 野狼：胜率 ${((wins / N) * 100).toFixed(0)}%`);
+
+  // 双方都用同一套 AI 跑，autoResolve 与手动循环应当等价（同种子）
+  const a1 = autoResolve(
+    createBattle(
+      { army: [{ unitTypeId: 'archer', count: 20 }], attack: 1, defense: 2 },
+      { army: [{ unitTypeId: 'boar', count: 8 }], attack: 0, defense: 0 },
+      777,
+    ),
+  );
+  const a2 = runTactical(
+    { army: [{ unitTypeId: 'archer', count: 20 }], attack: 1, defense: 2 },
+    { army: [{ unitTypeId: 'boar', count: 8 }], attack: 0, defense: 0 },
+    777,
+  ).outcome;
+  ok(a1.win === a2.win && a1.rounds === a2.rounds, 'autoResolve 与逐步推演结果一致');
+
+  // 撤退
+  const fb = createBattle(
+    { army: [{ unitTypeId: 'archer', count: 20 }], attack: 1, defense: 2 },
+    { army: [{ unitTypeId: 'ogre', count: 6 }], attack: 0, defense: 0 },
+    99,
+  );
+  actFlee(fb);
+  const fo = toOutcome(fb);
+  ok(fo.fled === true && fo.win === false, '撤退：fled 标记为真、不记为胜利');
+  ok(fo.survivors.reduce((n, s) => n + s.count, 0) === 20, '撤退不额外扣兵（扣兵规则交给冒险层）');
+
+  // 死战：食人魔压倒性优势时应打不过
+  let lost = 0;
+  for (let i = 0; i < 20; i++) {
+    const { outcome } = runTactical(
+      { army: [{ unitTypeId: 'archer', count: 6 }], attack: 0, defense: 0 },
+      { army: [{ unitTypeId: 'ogre', count: 12 }], attack: 0, defense: 0 },
+      300 + i,
+    );
+    if (!outcome.win) lost++;
+  }
+  ok(lost === 20, `6 弓手 vs 12 食人魔：必败（${lost}/20）`);
+}
+
+// 4. 与世界层打通：battleSetup 给出双方参数，战术战果可直接回写
+{
+  const g9 = createGame(424242);
+  const mon9 = Object.values(g9.map.objects).find((o) => o.kind === 'wanderingMonster');
+  const setup = battleSetup(g9, 'hero1', mon9);
+  ok(!!setup && setup.attacker.army.length > 0, 'battleSetup 给出攻方部队');
+  ok(setup.defender.army.length > 0, 'battleSetup 给出守方部队');
+  ok(Number.isFinite(setup.seed), 'battleSetup 给出战斗种子');
+
+  // 用战术引擎跑出真实战果后交给 applyInteraction
+  g9.heroes.hero1.pos = { ...mon9.pos };
+  g9.heroes.hero1.army = [{ unitTypeId: 'angel', count: 30 }];
+  const won = autoResolve(createBattle(setup.attacker, setup.defender, setup.seed));
+  const res9 = applyInteraction(g9, 'hero1', mon9.id, true, { outcome: won });
+  ok(won.win === true, '30 天使对野怪应取胜');
+  ok(res9.title === '战斗胜利', `战术战果回写世界（${res9.title}）`);
+  ok(!g9.map.objects[mon9.id], '野怪已清除');
+
+  // 从战场上逃跑 → 走撤退分支（退回上一格 + 本日不能动）
+  const g10 = createGame(424243);
+  const mon10 = Object.values(g10.map.objects).find((o) => o.kind === 'wanderingMonster');
+  const back = { x: mon10.pos.x, y: mon10.pos.y - 1 };
+  g10.heroes.hero1.pos = { ...mon10.pos };
+  const fledOutcome = { ...autoResolve(createBattle({ army: g10.heroes.hero1.army, attack: 0, defense: 0 }, { army: mon10.payload.army, attack: 0, defense: 0 }, 1)), fled: true, win: false };
+  const res10 = applyInteraction(g10, 'hero1', mon10.id, true, { outcome: fledOutcome, retreatTo: back });
+  ok(res10.title === '撤退', '战场内撤退 → 世界层按撤退处理');
+  ok(g10.heroes.hero1.pos.x === back.x && g10.heroes.hero1.pos.y === back.y, '撤退退回上一格');
+  ok(g10.heroes.hero1.movePoints === 0, '撤退后本日移动力归零');
+  ok(!!g10.map.objects[mon10.id], '逃跑不算打赢，野怪仍在');
+}
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);
 process.exit(fails === 0 ? 0 : 1);

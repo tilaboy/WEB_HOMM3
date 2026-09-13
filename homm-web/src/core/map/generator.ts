@@ -15,9 +15,9 @@ import { mulberry32, randInt, shuffle, pick } from '../rng.js';
 import { idx, isPassable } from './grid.js';
 import { revealAround } from './fog.js';
 
-export const MAP_W = 24;
-export const MAP_H = 24;
-export const BASE_MOVE_POINTS = 1500;
+export const MAP_W = 32;
+export const MAP_H = 32;
+export const BASE_MOVE_POINTS = 1800;
 export const HERO_SIGHT = 5;
 
 /* ---------------- noise ---------------- */
@@ -211,16 +211,21 @@ function reachableFrom(map: GameMap, start: GridPos): Uint8Array {
   return seen;
 }
 
-function monsterArmy(rng: () => number, tier: 'weak' | 'mid' | 'strong'): Army {
-  if (tier === 'weak') return [{ unitTypeId: 'wolf', count: randInt(rng, 10, 18) }];
+/**
+ * 野怪规模是按"战术战场"实测出来的，不是拍脑袋：
+ * 起手 20 弓手在 15×11 战场上能白嫖 3~4 轮射击，所以怪必须扛得住那几轮才有威胁。
+ * 目标手感：弱 ≈ 稳赢小亏、中 ≈ 赢得下来但肉疼、强 ≈ 一半一半、绝望档必败。
+ */
+export function monsterArmy(rng: () => number, tier: 'weak' | 'mid' | 'strong'): Army {
+  if (tier === 'weak') return [{ unitTypeId: 'wolf', count: randInt(rng, 20, 28) }];
   if (tier === 'mid') {
     return rng() < 0.5
-      ? [{ unitTypeId: 'boar', count: randInt(rng, 6, 11) }]
-      : [{ unitTypeId: 'wolf', count: randInt(rng, 14, 20) }, { unitTypeId: 'boar', count: randInt(rng, 3, 6) }];
+      ? [{ unitTypeId: 'boar', count: randInt(rng, 11, 15) }]
+      : [{ unitTypeId: 'wolf', count: randInt(rng, 18, 26) }, { unitTypeId: 'boar', count: randInt(rng, 4, 7) }];
   }
   return rng() < 0.5
-    ? [{ unitTypeId: 'ogre', count: randInt(rng, 4, 7) }]
-    : [{ unitTypeId: 'boar', count: randInt(rng, 4, 7) }, { unitTypeId: 'ogre', count: randInt(rng, 2, 3) }];
+    ? [{ unitTypeId: 'ogre', count: randInt(rng, 10, 13) }]
+    : [{ unitTypeId: 'boar', count: randInt(rng, 7, 10) }, { unitTypeId: 'ogre', count: randInt(rng, 5, 7) }];
 }
 
 /** 野怪看守的东西：越强的怪守得越值钱，其中一部分守着能长期产出的矿。 */
@@ -263,9 +268,9 @@ function pickTownSpots(
       return d >= min && d <= max;
     });
 
-  let candidates = shuffle(rng, pool(10, 18));
-  if (candidates.length < count) candidates = shuffle(rng, pool(8, 22));
-  if (candidates.length < count) candidates = shuffle(rng, pool(6, 30));
+  let candidates = shuffle(rng, pool(14, 24));
+  if (candidates.length < count) candidates = shuffle(rng, pool(11, 30));
+  if (candidates.length < count) candidates = shuffle(rng, pool(8, 40));
 
   const chosen: GridPos[] = [];
   for (const i of candidates) {
@@ -298,7 +303,7 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)): GameState {
   for (let i = 0; i < map.width * map.height; i++) {
     if (isPassable(map, i % map.width, (i / map.width) | 0)) land.push(i);
   }
-  if (land.length < 80) return createGame(seed + 1);
+  if (land.length < 150) return createGame(seed + 1);
 
   const home = land.reduce((best, i) => {
     const p = toPos(i);
@@ -308,9 +313,10 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)): GameState {
   }, land[0]);
   const homePos = toPos(home);
 
-  // 2. 中立城 2 座：放在中等距离的内陆，别再塞进地图角落
-  const neutralSpots = pickTownSpots(rng, land, homePos, 2);
-  const NEUTRAL_NAMES = ['荒废哨塔', '风蚀要塞'];
+  // 2. 中立城 3 座：放在中等距离的内陆，别再塞进地图角落
+  const NEUTRAL_COUNT = 3;
+  const neutralSpots = pickTownSpots(rng, land, homePos, NEUTRAL_COUNT);
+  const NEUTRAL_NAMES = ['荒废哨塔', '风蚀要塞', '灰岩堡'];
 
   const townIds = ['town_home'];
   placer.add({
@@ -343,7 +349,7 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)): GameState {
   // 4. 障碍物（先放，之后只在仍连通的格子上放可交互物）
   const reserved = [home, idx(map, heroPos.x, heroPos.y), ...neutralSpots.map((p) => idx(map, p.x, p.y))];
   const obstaclePool = shuffle(rng, freeTiles(map, taken));
-  const obstacleCount = Math.min(70, Math.floor(obstaclePool.length * 0.25));
+  const obstacleCount = Math.min(130, Math.floor(obstaclePool.length * 0.25));
   let placed = 0;
   for (let i = 0; i < obstaclePool.length && placed < obstacleCount; i++) {
     const p = toPos(obstaclePool[i]);
@@ -379,15 +385,15 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)): GameState {
 
   const dHome = (p: GridPos) => Math.abs(p.x - homePos.x) + Math.abs(p.y - homePos.y);
 
-  // 野怪 12：按距主城距离分档，每支都守着一份战利品
+  // 野怪 18：按距主城距离分档，每支都守着一份战利品
   const monsterSpots: { p: GridPos; tier: 'weak' | 'mid' | 'strong' }[] = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 18; i++) {
     const p = takeSpot();
     if (!p) break;
     const d = dHome(p);
-    monsterSpots.push({ p, tier: d < 7 ? 'weak' : d < 14 ? 'mid' : 'strong' });
+    monsterSpots.push({ p, tier: d < 9 ? 'weak' : d < 18 ? 'mid' : 'strong' });
   }
-  // 至少两处野怪守着真正的矿（一处中档、一处强档）
+  // 至少三处野怪守着真正的矿（中档/强档各来一处，有富余再补一处）
   const mineAt = new Set<number>();
   const byTier = (t: 'weak' | 'mid' | 'strong') =>
     monsterSpots.map((m, i) => ({ m, i })).filter((o) => o.m.tier === t);
@@ -396,6 +402,8 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)): GameState {
   if (mids.length) mineAt.add(pick(rng, mids).i);
   if (strongs.length) mineAt.add(pick(rng, strongs).i);
   else if (mids.length > 1) mineAt.add(mids[1].i);
+  if (mids.length > 1 && !mineAt.has(mids[1].i)) mineAt.add(pick(rng, mids).i);
+  if (strongs.length > 1 && !mineAt.has(strongs[1].i)) mineAt.add(pick(rng, strongs).i);
 
   monsterSpots.forEach((spot, i) => {
     const guard = mineAt.has(i) ? mineGuard(rng, spot.tier) : guardFor(rng, spot.tier);
@@ -407,9 +415,9 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)): GameState {
     });
   });
 
-  // 资源堆 14（大头战利品在野怪身上）
+  // 资源堆 20（大头战利品在野怪身上）
   const pileKinds: ('gold' | 'wood' | 'ore')[] = [];
-  for (let i = 0; i < 14; i++) pileKinds.push(i % 3 === 0 ? 'gold' : i % 3 === 1 ? 'wood' : 'ore');
+  for (let i = 0; i < 20; i++) pileKinds.push(i % 3 === 0 ? 'gold' : i % 3 === 1 ? 'wood' : 'ore');
   for (const kind of pileKinds) {
     const p = takeSpot();
     if (!p) break;
@@ -420,8 +428,8 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)): GameState {
     });
   }
 
-  // 宝箱 8
-  for (let i = 0; i < 8; i++) {
+  // 宝箱 12
+  for (let i = 0; i < 12; i++) {
     const p = takeSpot();
     if (!p) break;
     const gold = randInt(rng, 1000, 3000);
@@ -432,8 +440,8 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)): GameState {
     });
   }
 
-  // 泉水 3
-  for (let i = 0; i < 3; i++) {
+  // 泉水 4
+  for (let i = 0; i < 4; i++) {
     const p = takeSpot();
     if (!p) break;
     placer.add({
@@ -442,9 +450,9 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)): GameState {
     });
   }
 
-  // 地面宝物 4
+  // 地面宝物 6
   const artifactPool = shuffle(rng, Object.keys(ARTIFACTS));
-  for (let i = 0; i < Math.min(4, artifactPool.length); i++) {
+  for (let i = 0; i < Math.min(6, artifactPool.length); i++) {
     const p = takeSpot();
     if (!p) break;
     placer.add({
@@ -489,15 +497,15 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)): GameState {
       owner: 'neutral',
       buildings: [],
       garrison: [
-        { unitTypeId: 'wolf', count: 12 },
-        { unitTypeId: 'boar', count: 6 },
+        { unitTypeId: 'wolf', count: 20 },
+        { unitTypeId: 'boar', count: 10 },
       ],
       growthPool: {},
     };
   });
 
   const state: GameState = {
-    version: 3,
+    version: 4,
     seed,
     map,
     heroes: { hero1: hero },
