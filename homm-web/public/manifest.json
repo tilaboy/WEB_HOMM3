@@ -1,0 +1,17 @@
+{
+  "name": "英雄之歌",
+  "short_name": "英雄之歌",
+  "description": "等距视角的网页策略冒险游戏",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1b1f24",
+  "theme_color": "#1b1f24",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

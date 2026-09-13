@@ -1,0 +1,16 @@
+{
+  "name": "homm-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && node tools/postbuild.mjs",
+    "watch": "tsc --watch",
+    "start": "node tools/serve.mjs",
+    "dev": "npm run build && npm run start",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
