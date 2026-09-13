@@ -320,7 +320,7 @@ function onArrive(heroId: string, obj: MapObject): void {
       body: [pending.message, pending.lossText ?? '', lossTable(rows)],
       actions: [
         { label: '撤退（退回原地）', danger: true, onClick: (c) => { c(); resolve(heroId, obj, false); } },
-        { label: '开战', primary: true, onClick: (c) => { c(); resolve(heroId, obj, true); } },
+        { label: '进入战场', primary: true, onClick: (c) => { c(); startBattle(heroId, obj, pending.title); } },
       ],
     });
     return;
