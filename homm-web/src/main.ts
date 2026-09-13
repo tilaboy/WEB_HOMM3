@@ -683,10 +683,6 @@ function frame(now: number): void {
     heroRender,
   });
   requestAnimationFrame(frame);
-
-
-
-
 }
 
 /* ---------------- boot ---------------- */

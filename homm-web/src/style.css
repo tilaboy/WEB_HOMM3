@@ -1,15 +1,18 @@
 :root {
-  --stone: #23282e;
-  --stone-2: #2e353d;
-  --stone-3: #1a1e23;
-  --gold: #e3b869;
-  --gold-dim: #9c7c3f;
-  --parchment: #e8ddc4;
-  --text: #d8d2c4;
-  --text-dim: #948d7e;
+  /* HOMM2 配色：深木框 + 羊皮纸 + 鎏金 */
+  --stone: #5a4326;
+  --stone-2: #42301a;
+  --stone-3: #241a0e;
+  --panel: #3d2c17;
+  --gold: #f0d488;
+  --gold-dim: #b89850;
+  --parchment: #f2e6c8;
+  --text: #e8dcc0;
+  --text-dim: #bfae8c;
   --danger: #d0553f;
-  --ok: #6fae55;
-  --line: rgba(227, 184, 105, 0.25);
+  --ok: #7ab55a;
+  --line: rgba(240, 212, 136, 0.32);
+  --frame: #8a6a34;
 }
 
 * {
@@ -25,7 +28,7 @@ body {
   overflow: hidden;
   background: var(--stone-3);
   color: var(--text);
-  font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-family: "Palatino", "Palatino Linotype", "Songti SC", "STSong", Georgia, serif;
   font-size: 13px;
 }
 
@@ -44,8 +47,9 @@ body {
   align-items: center;
   gap: 14px;
   padding: 0 12px;
-  background: linear-gradient(180deg, #333b44, #23282e);
-  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #5a4326, #3a2a14);
+  border-bottom: 2px solid var(--frame);
+  box-shadow: inset 0 1px 0 rgba(255, 232, 170, 0.18);
   z-index: 20;
 }
 
@@ -56,11 +60,11 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.res .dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.4);
+.res img {
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+  display: block;
 }
 
 .res .val {
@@ -79,10 +83,11 @@ body {
 }
 
 .btn {
-  background: linear-gradient(180deg, #4a5560, #333b44);
+  background: linear-gradient(180deg, #6b5230, #46331c);
   color: var(--parchment);
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  border: 1px solid var(--frame);
+  border-radius: 3px;
+  box-shadow: inset 0 1px 0 rgba(255, 232, 170, 0.22), inset 0 -2px 0 rgba(0, 0, 0, 0.28);
   padding: 6px 14px;
   cursor: pointer;
   font-size: 13px;
@@ -96,7 +101,7 @@ body {
 }
 
 .btn.primary {
-  background: linear-gradient(180deg, #b08a3c, #8a6a28);
+  background: linear-gradient(180deg, #b08a3c, #7d5f20);
   color: #fff8e6;
   border-color: var(--gold);
 }
@@ -137,8 +142,9 @@ body {
   right: 0;
   bottom: 0;
   width: 264px;
-  background: linear-gradient(180deg, #2b323a, #21262c);
-  border-left: 1px solid var(--line);
+  background: linear-gradient(180deg, #4a3620, #33240f);
+  border-left: 2px solid var(--frame);
+  box-shadow: inset 1px 0 0 rgba(255, 232, 170, 0.12);
   overflow-y: auto;
   z-index: 10;
   padding: 10px;
@@ -149,7 +155,8 @@ body {
   font-size: 13px;
   font-weight: 500;
   color: var(--gold);
-  letter-spacing: 1px;
+  letter-spacing: 2px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
 }
 
 .sec {
@@ -178,8 +185,8 @@ body {
 
 .bar {
   height: 8px;
-  background: #171b1f;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #241a0e;
+  border: 1px solid rgba(240, 212, 136, 0.25);
   border-radius: 3px;
   overflow: hidden;
   margin-top: 4px;
@@ -199,9 +206,9 @@ body {
 
 .slot {
   height: 44px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  background: #1d2228;
+  border: 1px solid rgba(240, 212, 136, 0.18);
+  border-radius: 3px;
+  background: #33240f;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -216,7 +223,7 @@ body {
 .slot.filled {
   border-color: var(--gold-dim);
   color: var(--gold);
-  background: #2a2a22;
+  background: #4a3a1a;
 }
 
 .army-row {
@@ -250,9 +257,9 @@ body {
   left: 10px;
   bottom: 10px;
   padding: 6px 12px;
-  background: rgba(20, 24, 28, 0.85);
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  background: rgba(30, 21, 9, 0.88);
+  border: 1px solid var(--frame);
+  border-radius: 3px;
   color: var(--text-dim);
   z-index: 10;
   pointer-events: none;
@@ -274,7 +281,7 @@ body {
 }
 
 #logbox div {
-  background: rgba(20, 24, 28, 0.8);
+  background: rgba(30, 21, 9, 0.84);
   border-left: 2px solid var(--gold-dim);
   padding: 3px 8px;
   color: var(--text);
@@ -293,7 +300,7 @@ body {
 #modal-root {
   position: absolute;
   inset: 0;
-  background: rgba(10, 12, 14, 0.6);
+  background: rgba(12, 8, 3, 0.68);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -306,10 +313,11 @@ body {
   max-width: 100%;
   max-height: 86%;
   overflow-y: auto;
-  background: linear-gradient(180deg, #2f3740, #22272d);
-  border: 1px solid var(--gold-dim);
-  border-radius: 6px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  background: linear-gradient(180deg, #55401f, #35250f);
+  border: 2px solid var(--gold);
+  outline: 2px solid #2a1c0c;
+  border-radius: 4px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(0, 0, 0, 0.4);
   padding: 16px 18px;
 }
 
@@ -374,8 +382,8 @@ table.est td:last-child {
 }
 
 .chip-info {
-  background: #39424c;
-  border: 1px solid var(--line);
+  background: #33240f;
+  border: 1px solid var(--frame);
   border-radius: 3px;
   padding: 3px 8px;
   font-size: 12px;
@@ -384,11 +392,11 @@ table.est td:last-child {
 }
 
 .town-note {
-  background: rgba(111, 174, 85, 0.12);
+  background: rgba(122, 181, 90, 0.14);
   border-left: 2px solid var(--ok);
   padding: 6px 8px;
   margin-bottom: 10px;
-  color: #cfe6c4;
+  color: #d8e8c4;
 }
 
 .town .th {
@@ -407,9 +415,9 @@ table.est td:last-child {
 }
 
 .bcard {
-  background: #39424c;
+  background: #33240f;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 3px;
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
@@ -500,8 +508,9 @@ table.est td:last-child {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #39424c;
-  border-radius: 4px;
+  background: #33240f;
+  border: 1px solid rgba(240, 212, 136, 0.16);
+  border-radius: 3px;
   padding: 5px 8px;
   flex-wrap: wrap;
 }
@@ -535,8 +544,9 @@ table.est td:last-child {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  background: #39424c;
-  border-radius: 4px;
+  background: #33240f;
+  border: 1px solid rgba(240, 212, 136, 0.16);
+  border-radius: 3px;
   padding: 6px 8px;
   font-size: 12px;
   color: var(--text);
@@ -567,9 +577,9 @@ table.est td:last-child {
   position: absolute;
   z-index: 90;
   width: 200px;
-  background: #262c33;
-  border: 1px solid var(--gold-dim);
-  border-radius: 4px;
+  background: #3d2c17;
+  border: 1px solid var(--frame);
+  border-radius: 3px;
   padding: 8px 10px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }

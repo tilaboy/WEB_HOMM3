@@ -1,6 +1,7 @@
 import type { GameState } from '../core/types.js';
 import { RESOURCE_META } from '../core/data/terrains.js';
 import { dayOfWeek, weekOf } from '../core/game/turn.js';
+import { getAtlas } from '../render/atlas.js';
 
 const SHOWN: (keyof typeof RESOURCE_META)[] = ['gold', 'wood', 'ore'];
 
@@ -16,16 +17,19 @@ export class HUD {
     private onRestart: () => void,
   ) {
     this.el.innerHTML = '';
+    const atlas = getAtlas();
     for (const k of SHOWN) {
       const wrap = document.createElement('div');
       wrap.className = 'res';
-      const dot = document.createElement('span');
-      dot.className = 'dot';
-      dot.style.background = RESOURCE_META[k].color;
+      wrap.title = RESOURCE_META[k].name;
+      const icon = document.createElement('img');
+      icon.src = atlas.url(`ic_${k}`);
+      icon.alt = RESOURCE_META[k].name;
+      icon.draggable = false;
       const val = document.createElement('span');
       val.className = 'val';
       val.textContent = '0';
-      wrap.appendChild(dot);
+      wrap.appendChild(icon);
       wrap.appendChild(val);
       this.el.appendChild(wrap);
       this.resEls.set(k, val);
