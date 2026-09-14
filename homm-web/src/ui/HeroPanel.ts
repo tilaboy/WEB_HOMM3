@@ -2,7 +2,7 @@ import type { GameState, GridPos } from '../core/types.js';
 import { ARTIFACTS, ARTIFACT_SLOTS } from '../core/data/artifacts.js';
 import { getUnit } from '../core/data/units.js';
 import { isRevealed } from '../core/map/fog.js';
-import { effectivePrimary, expToNext, maxMovePoints } from '../core/game/hero.js';
+import { effectivePrimary, expToNext, manaMaxOf, maxMovePoints } from '../core/game/hero.js';
 
 export interface TownHooks {
   /** 把镜头移到该据点 */
@@ -16,6 +16,7 @@ export class HeroPanel {
     private el: HTMLElement,
     private onSelect?: (heroId: string) => void,
     private onTown?: TownHooks,
+    private onSpellBook?: (heroId: string) => void,
   ) {}
 
   update(state: GameState, heroId: string | null): void {
@@ -57,6 +58,26 @@ export class HeroPanel {
 
     const p = effectivePrimary(hero);
     const maxMp = maxMovePoints(hero);
+    const maxMana = manaMaxOf(hero);
+
+    const manaWrap = document.createElement('div');
+    manaWrap.className = 'sec';
+    manaWrap.appendChild(kv('法力', `${hero.mana} / ${maxMana}`));
+    const mbar = document.createElement('div');
+    mbar.className = 'bar mana';
+    const mfill = document.createElement('i');
+    mfill.style.width = `${Math.max(0, Math.min(100, (hero.mana / Math.max(1, maxMana)) * 100))}%`;
+    mbar.appendChild(mfill);
+    manaWrap.appendChild(mbar);
+    const spellBtn = document.createElement('button');
+    spellBtn.className = 'btn tiny';
+    spellBtn.textContent = '魔法书';
+    spellBtn.style.marginTop = '6px';
+    spellBtn.disabled = !hero.spells.length;
+    spellBtn.title = hero.spells.length ? '查看并施放已学会的法术' : '还没学会任何法术（建魔法行会）';
+    spellBtn.addEventListener('click', () => this.onSpellBook?.(hero.id));
+    manaWrap.appendChild(spellBtn);
+    this.el.appendChild(manaWrap);
 
     this.el.appendChild(
       section('英雄', [

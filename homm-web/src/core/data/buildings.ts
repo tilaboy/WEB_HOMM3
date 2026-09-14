@@ -102,6 +102,32 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     requires: ['dwell4'],
     growth: { unitTypeId: 'angel', count: 2 },
   },
+
+  /* ---------------- 魔法线（M4）：guild1 → guild2 → guild3 ---------------- */
+  guild1: {
+    id: 'guild1',
+    name: '魔法行会',
+    desc: '解锁 1 级法术，建成时己方全部英雄立即学会。',
+    cost: { gold: 2000, wood: 5, ore: 5 },
+    requires: ['tavern'],
+    feature: 'guild',
+  },
+  guild2: {
+    id: 'guild2',
+    name: '高级魔法行会',
+    desc: '再解锁 2 级法术（闪电、减速、石肤、嗜血、冰箭、观空术、回城术）。',
+    cost: { gold: 3000, gem: 4 },
+    requires: ['guild1'],
+    feature: 'guild',
+  },
+  guild3: {
+    id: 'guild3',
+    name: '大法师塔',
+    desc: '再解锁 3 级法术（火球、复活、次元门）。',
+    cost: { gold: 4500, crystal: 4 },
+    requires: ['guild2'],
+    feature: 'guild',
+  },
 };
 
 export const BUILDING_ORDER = [
@@ -116,6 +142,9 @@ export const BUILDING_ORDER = [
   'dwell3',
   'dwell4',
   'dwell5',
+  'guild1',
+  'guild2',
+  'guild3',
 ] as const;
 
 /** 兵营 id → 对应兵种，用于渲染城镇外观等级。 */

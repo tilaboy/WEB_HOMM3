@@ -15,13 +15,19 @@ import {
   aiAct,
   autoResolve,
   canShoot,
+  castSpell,
   createBattle,
   currentUnit,
+  effAtkBonus,
   endActivation,
+  hasEffect,
   poolOf,
   shootTargets,
   toOutcome,
+  unitSpeed,
 } from '../dist/core/combat/battle.js';
+import { SPELLS, SPELL_ORDER, spellsOfGuild } from '../dist/core/data/spells.js';
+import { canAdventureCast, castAdventure } from '../dist/core/game/spells.js';
 import {
   build,
   buildStatus,
@@ -30,6 +36,7 @@ import {
   canHireHero,
   countIn,
   garrisonToHero,
+  guildLevel,
   hireHero,
   heroToGarrison,
   marketBuy,
@@ -558,6 +565,144 @@ function runTactical(attacker, defender, seed) {
   ok(g10.heroes.hero1.pos.x === back.x && g10.heroes.hero1.pos.y === back.y, '撤退退回上一格');
   ok(g10.heroes.hero1.movePoints === 0, '撤退后本日移动力归零');
   ok(!!g10.map.objects[mon10.id], '逃跑不算打赢，野怪仍在');
+}
+
+/* ---------------- M4：魔法 ---------------- */
+
+// 1. 法术表：12 个战斗魔法 + 5 个冒险魔法
+{
+  const combat = SPELL_ORDER.filter((id) => SPELLS[id].combat);
+  const adv = SPELL_ORDER.filter((id) => !SPELLS[id].combat);
+  ok(combat.length === 12, `12 个战斗魔法（${combat.length}）`);
+  ok(adv.length === 5, `5 个冒险魔法（${adv.length}）`);
+  ok(SPELL_ORDER.every((id) => SPELLS[id].manaCost > 0 && SPELLS[id].level >= 1), '每个法术都有等级与消耗');
+  ok(spellsOfGuild(1).length >= 5 && spellsOfGuild(3).length === SPELL_ORDER.length, '行会按等级解锁法术');
+}
+
+// 2. 魔法行会建成 → 己方英雄学会法术
+{
+  const g = createGame(555001);
+  const town = g.towns.town_home;
+  g.players.p1.resources = { gold: 99999, wood: 999, ore: 999, gem: 99, crystal: 99 };
+  const before = g.heroes.hero1.spells.length;
+  ok(before === 0, '开局不会任何法术');
+  ok(build(g, town, 'guild1'), '建成魔法行会');
+  ok(g.heroes.hero1.spells.length > 0, `行会建成后学会法术（${g.heroes.hero1.spells.length} 个）`);
+  ok(!build(g, town, 'guild2'), '同一天不能再建第二座（每日限建一座）');
+  g.day += 1;
+  ok(build(g, town, 'guild2'), '次日可升级高级魔法行会');
+  ok(g.heroes.hero1.spells.includes('lightningBolt'), '2 级法术已解锁');
+  ok(guildLevel(town) === 2, 'guildLevel 反映建筑等级');
+}
+
+// 3. 法力：上限 = 知识×10，过一天回满
+{
+  const g = createGame(555002);
+  const h = g.heroes.hero1;
+  h.mana = 0;
+  endDay(g);
+  ok(h.mana === h.manaMax && h.manaMax === h.primary.knowledge * 10, `过一天法力回满（${h.mana}/${h.manaMax}）`);
+}
+
+// 4. 战斗魔法：伤害、每回合一次、增益生效、法力消耗
+{
+  const mk = (caster) => ({
+    army: [{ unitTypeId: 'archer', count: 20 }],
+    attack: 0,
+    defense: 0,
+    ...(caster ? { caster } : {}),
+  });
+  const foe = { army: [{ unitTypeId: 'ogre', count: 10 }], attack: 0, defense: 0 };
+  const caster = { spells: ['magicArrow', 'bless', 'resurrect'], spellPower: 3, mana: 30 };
+
+  const s = createBattle(mk(caster), foe, 77);
+  const shooter = s.units.find((u) => u.side === 0);
+  const target = s.units.find((u) => u.side === 1);
+  const before = poolOf(target);
+  const ev = castSpell(s, 0, 'magicArrow', target);
+  ok(ev.length > 0, '施放魔法箭产生事件');
+  ok(poolOf(target) < before, `魔法箭造成伤害（${before} → ${poolOf(target)}）`);
+  ok(s.casters[0].mana === 30 - SPELLS.magicArrow.manaCost, '施法扣除法力');
+  ok(castSpell(s, 0, 'magicArrow', target).length === 0, '同一回合不能施放第二次');
+  ok(hasEffect(target, 'bless') === false, '未被施法的部队没有增益');
+
+  // 增益类在另一场里测（每回合只能施一次法）
+  const sB = createBattle(mk(caster), foe, 177);
+  const buffed = sB.units.find((u) => u.side === 0);
+  castSpell(sB, 0, 'bless', buffed);
+  ok(hasEffect(buffed, 'bless'), '祝福已挂上');
+  ok(effAtkBonus(buffed, false) === 3, '祝福 +3 攻击');
+
+  const s2 = createBattle(mk({ ...caster, spells: ['haste'] }), foe, 78);
+  const u2 = s2.units.find((u) => u.side === 0);
+  const spd = unitSpeed(s2, u2);
+  castSpell(s2, 0, 'haste', u2);
+  ok(unitSpeed(s2, u2) === spd + 2, '加速 +2 速度');
+
+  // 没有施法者的一侧不能施法
+  const s3 = createBattle(mk(null), foe, 79);
+  ok(castSpell(s3, 0, 'magicArrow', s3.units[1]).length === 0, '没学会/没英雄就施不了法');
+
+  // 战后法力写回世界层
+  const g = createGame(555004);
+  const mon = Object.values(g.map.objects).find((o) => o.kind === 'wanderingMonster');
+  g.heroes.hero1.spells = ['magicArrow'];
+  g.heroes.hero1.mana = 20;
+  g.heroes.hero1.pos = { ...mon.pos };
+  g.heroes.hero1.army = [{ unitTypeId: 'angel', count: 30 }];
+  const setup = battleSetup(g, 'hero1', mon);
+  ok(!!setup.attacker.caster && setup.attacker.caster.spells.includes('magicArrow'), 'battleSetup 带上施法者');
+  const outcome = autoResolve(createBattle(setup.attacker, setup.defender, setup.seed));
+  applyInteraction(g, 'hero1', mon.id, true, { outcome });
+  ok(g.heroes.hero1.mana === outcome.casterMana, `战后法力回写（${g.heroes.hero1.mana}）`);
+}
+
+// 5. 冒险魔法
+{
+  const g = createGame(555003);
+  const h = g.heroes.hero1;
+  h.spells = ['visions', 'viewAir', 'viewEarth', 'townPortal', 'dimensionDoor'];
+  h.mana = 999;
+
+  const r1 = castAdventure(g, 'hero1', 'viewAir');
+  ok(r1.ok, '观空术可施放');
+  ok(g.players.p1.revealed.every((v) => v === 1), '观空术揭开全图');
+
+  const r2 = castAdventure(g, 'hero1', 'viewEarth');
+  ok(r2.ok && (r2.report?.length ?? 0) > 0, '观地术给出野怪情报');
+
+  const mon = Object.values(g.map.objects).find((o) => o.kind === 'wanderingMonster');
+  h.pos = { x: mon.pos.x, y: mon.pos.y - 1 };
+  const r3 = castAdventure(g, 'hero1', 'visions', { pos: { ...mon.pos } });
+  ok(r3.ok && (r3.report?.length ?? 0) > 0, '异视术侦察野怪兵力');
+  const far = castAdventure(g, 'hero1', 'visions', { pos: { x: mon.pos.x, y: mon.pos.y - 20 } });
+  ok(!far.ok, '超过 5 格不能侦察');
+
+  const r4 = castAdventure(g, 'hero1', 'townPortal');
+  ok(!r4.ok && r4.needsTarget === 'town', '回城术需要先选城镇');
+  const r5 = castAdventure(g, 'hero1', 'townPortal', { townId: 'town_home' });
+  ok(r5.ok, '回城术生效');
+  ok(h.pos.x === g.towns.town_home.pos.x || Math.abs(h.pos.x - g.towns.town_home.pos.x) <= 3, '回到目标城镇附近');
+
+  // 挑一个确实能站人的落点
+  let dest = null;
+  for (let d = 1; d <= 8 && !dest; d++) {
+    for (const [dx, dy] of [[d, 0], [-d, 0], [0, d], [0, -d], [d, d], [-d, -d]]) {
+      const x = h.pos.x + dx;
+      const y = h.pos.y + dy;
+      if (x < 0 || y < 0 || x >= g.map.width || y >= g.map.height) continue;
+      if (!isPassable(g.map, x, y)) continue;
+      dest = { x, y };
+      break;
+    }
+  }
+  ok(!!dest, '找到可瞬移的落点');
+  const r6 = castAdventure(g, 'hero1', 'dimensionDoor', { pos: dest });
+  ok(r6.ok, `次元门生效（${r6.message ?? ''}）`);
+  ok(h.pos.x === dest.x && h.pos.y === dest.y, '瞬移到目标格');
+
+  h.mana = 0;
+  ok(!canAdventureCast(g, h, 'viewAir').ok, '法力不足时不能施法');
 }
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);

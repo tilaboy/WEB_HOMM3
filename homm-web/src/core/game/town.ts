@@ -10,6 +10,7 @@ import type {
   Town,
 } from '../types.js';
 import { BASE_TOWN_INCOME, BUILDINGS, HERO_HIRE_COST } from '../data/buildings.js';
+import { getSpell, spellsOfGuild } from '../data/spells.js';
 import { MAX_STACKS, getUnit } from '../data/units.js';
 import { HERO_TEMPLATES } from '../data/heroes.js';
 import { addResources } from './hero.js';
@@ -154,7 +155,41 @@ export function build(state: GameState, town: Town, id: string): boolean {
   const g = BUILDINGS[id]!.growth;
   if (g && !town.growthPool[g.unitTypeId]) town.growthPool[g.unitTypeId] = 0;
   pushLog(state, `${town.name} 建成了「${BUILDINGS[id]!.name}」`);
+  if (BUILDINGS[id]!.feature === 'guild') spreadGuildSpells(state, town);
   return true;
+}
+
+/* ---------------- 魔法行会（M4） ---------------- */
+
+/** 城镇的行会等级（0~3）。 */
+export function guildLevel(town: Town): number {
+  if (hasBuilding(town, 'guild3')) return 3;
+  if (hasBuilding(town, 'guild2')) return 2;
+  if (hasBuilding(town, 'guild1')) return 1;
+  return 0;
+}
+
+/** 把城镇行会当前等级的法术教给一位英雄，返回新学的法术名列表。 */
+export function teachGuildSpells(state: GameState, hero: Hero, town: Town): string[] {
+  const learned: string[] = [];
+  for (const spellId of spellsOfGuild(guildLevel(town))) {
+    if (!hero.spells.includes(spellId)) {
+      hero.spells.push(spellId);
+      learned.push(getSpell(spellId).name);
+    }
+  }
+  if (learned.length) {
+    pushLog(state, `${hero.name} 在 ${town.name} 学会了 ${learned.join('、')}`);
+  }
+  return learned;
+}
+
+/** 行会建成 / 城镇易主后：该城行会的法术向己方全部英雄开放。 */
+function spreadGuildSpells(state: GameState, town: Town): void {
+  for (const id of state.heroOrder) {
+    const h = state.heroes[id];
+    if (h && h.owner === town.owner) teachGuildSpells(state, h, town);
+  }
 }
 
 /* ---------------- weekly growth ---------------- */
@@ -374,11 +409,13 @@ export function hireHero(state: GameState, town: Town): Hero | null {
     movePoints: BASE_MOVE_POINTS,
     army: tpl.startArmy.map((s) => ({ ...s })),
     artifacts: [],
+    spells: [],
     pos: spot,
     owner: town.owner,
   };
   state.heroes[id] = hero;
   state.heroOrder.push(id);
+  teachGuildSpells(state, hero, town);
   town.hiredWeek = weekOf(state.day);
   pushLog(state, `${hero.name} 在 ${town.name} 应征入伍`);
   return hero;
@@ -425,6 +462,7 @@ export function captureTown(state: GameState, town: Town, player: PlayerId): voi
   if (!town.buildings.includes('tavern')) town.buildings.push('tavern');
   if (!town.growthPool) town.growthPool = {};
   pushLog(state, `${town.name} 已被我方占领`);
+  if (player === 'p1' && guildLevel(town) > 0) spreadGuildSpells(state, town);
 }
 
 /** 城镇驻军是否还有战斗力。 */

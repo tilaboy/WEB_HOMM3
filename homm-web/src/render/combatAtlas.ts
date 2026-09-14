@@ -100,6 +100,8 @@ export class CombatAtlas {
     put('chi_atk', hexOverlay('#c0392b', 0.36, '#ff8f7a', '#ffd9cf'), -20, -23);
     put('chi_sel', hexOverlay('#e8be5a', 0.18, '#ffdf8a', '#fff3c8'), -20, -23);
     put('chi_hover', hexOverlay('#ffffff', 0.1, '#ffffff', '#ffffff'), -20, -23);
+    // 施法目标：紫色，和移动蓝/攻击红区分开
+    put('chi_spell', hexOverlay('#8e44ad', 0.34, '#d7a6ef', '#f0d9ff'), -20, -23);
 
     put('cbase_0', teamRing('#2f6fbf', '#9fd0ff'), -20, -8);
     put('cbase_1', teamRing('#a8322a', '#ff9b8c'), -20, -8);

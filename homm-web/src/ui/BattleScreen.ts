@@ -17,6 +17,8 @@ import {
   actWait,
   aiAct,
   aliveOf,
+  canCast,
+  castSpell,
   canShoot,
   createBattle,
   currentUnit,
@@ -36,7 +38,8 @@ import {
   type BattleState,
   type BattleUnit,
 } from '../core/combat/battle.js';
-import { hexCenter, hexKey, inField, isAdjacent, pickHex, type Hex } from '../core/combat/hex.js';
+import { hexCenter, hexKey, inField, isAdjacent, pickHex, FIELD_H, FIELD_W, type Hex } from '../core/combat/hex.js';
+import { getSpell } from '../core/data/spells.js';
 import { BattleRenderer, BASE_H, BASE_W, PAD } from '../render/BattleRenderer.js';
 import type { FloatText } from '../render/BattleRenderer.js';
 
@@ -93,9 +96,11 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     const p = effectivePrimary(hero);
     statsEl.textContent = `${hero.name} · 攻 ${p.attack} 防 ${p.defense}`;
   }
+  const manaEl = document.createElement('div');
+  manaEl.className = 'bt-mana';
   const headActions = document.createElement('div');
   headActions.className = 'bt-head-actions';
-  head.append(title, roundEl, statsEl, headActions);
+  head.append(title, roundEl, statsEl, manaEl, headActions);
   root.appendChild(head);
 
   const body = document.createElement('div');
@@ -108,6 +113,10 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   const canvas = document.createElement('canvas');
   canvas.className = 'bt-canvas';
   fieldWrap.appendChild(canvas);
+  const spellPanel = document.createElement('div');
+  spellPanel.className = 'bt-spells';
+  spellPanel.style.display = 'none';
+  fieldWrap.appendChild(spellPanel);
   const rightCards = document.createElement('div');
   rightCards.className = 'bt-army right';
   body.append(leftCards, fieldWrap, rightCards);
@@ -145,6 +154,10 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   let attackableSet: Set<string> | null = null;
   let lastActive = '';
   let dirty = false;
+  /** 已选中待指定目标的法术（点面板 → 点目标）。 */
+  let pendingSpell: string | null = null;
+  let spellTargets: Set<string> | null = null;
+  const spellFx: { hex: Hex; life: number; color: string; splash?: boolean }[] = [];
 
   const alive = (u: BattleUnit) => u.count > 0;
 
@@ -278,6 +291,90 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     hint('自动战斗中…');
   }
 
+  /* ---------------- 施法（M4） ---------------- */
+
+  const SPELL_FX_COLOR: Record<string, string> = {
+    magicArrow: '#f4e27a',
+    iceBolt: '#7fd8f5',
+    lightningBolt: '#f0f0ff',
+    fireball: '#ff8b3d',
+    bless: '#ffe9a8',
+    curse: '#a86ad8',
+    haste: '#8ef0c8',
+    slow: '#8fb0c8',
+    shield: '#9fb8f0',
+    stoneSkin: '#c8b48c',
+    bloodlust: '#e05a4a',
+    resurrect: '#fff3d8',
+  };
+
+  /** 这一侧能用的战斗法术。 */
+  function combatSpells(): string[] {
+    return battle.casters[0]?.spells.filter((id) => getSpell(id).combat) ?? [];
+  }
+
+  function manaText(): string {
+    const c = battle.casters[0];
+    if (!c) return '';
+    return `法力 ${c.mana}`;
+  }
+
+  /** 选中/取消一个待施放的法术，进入或退出"点目标"模式。 */
+  function selectSpell(id: string | null): void {
+    pendingSpell = id;
+    spellTargets = null;
+    if (!id) {
+      hint('');
+      renderSpellBook();
+      return;
+    }
+    const sp = getSpell(id);
+    const set = new Set<string>();
+    if (sp.target === 'enemy') for (const e of aliveOf(battle, 1)) set.add(hexKey(e.hex));
+    else if (sp.target === 'ally') for (const e of battle.units.filter((u) => u.side === 0)) set.add(hexKey(e.hex));
+    else if (sp.target === 'point') for (let r = 0; r < FIELD_H; r++) for (let c2 = 0; c2 < FIELD_W; c2++) set.add(hexKey({ col: c2, row: r }));
+    spellTargets = set;
+    hint(`施放「${sp.name}」：点击${sp.target === 'enemy' ? '敌方部队' : sp.target === 'ally' ? '我方部队' : '格子'}，Esc 取消`);
+    renderSpellBook();
+  }
+
+  /** 底部法术条：点一下选中，再点战场上的目标即可施放。 */
+  function renderSpellBook(): void {
+    const spells = combatSpells();
+    if (!spells.length) {
+      spellPanel.style.display = 'none';
+      return;
+    }
+    spellPanel.innerHTML = '';
+    for (const id of spells) {
+      const sp = getSpell(id);
+      const b = document.createElement('button');
+      b.className = 'btn spell' + (pendingSpell === id ? ' on' : '');
+      const usable = canCast(battle, 0, id);
+      b.disabled = !usable;
+      b.textContent = `${sp.name} ${sp.manaCost}`;
+      b.title = sp.desc;
+      b.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (pendingSpell === id) selectSpell(null);
+        else if (usable) selectSpell(id);
+      });
+      spellPanel.appendChild(b);
+    }
+    spellPanel.style.display = 'flex';
+  }
+
+  function doCast(spellId: string, target: BattleUnit | Hex | undefined): void {
+    const ev = castSpell(battle, 0, spellId, target);
+    if (!ev.length) {
+      hint('这个法术现在放不出来');
+      selectSpell(null);
+      return;
+    }
+    selectSpell(null);
+    emit(ev);
+  }
+
   /* ---------------- event → animation ---------------- */
 
   function emit(events: BattleEvent[]): void {
@@ -353,6 +450,17 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
             arrow = null;
           },
         };
+        break;
+      }
+      case 'cast': {
+        const hex = e.hex ?? hexOf(e.targetId ?? '');
+        const color = SPELL_FX_COLOR[e.spellId] ?? '#f0e0b0';
+        spellFx.push({ hex, life: 1, color, splash: e.splash });
+        if (e.damage) addFloat(`-${e.damage}`, hex, color);
+        if (e.killed) addFloat(`-${e.killed}`, hex, '#ffdcd2');
+        if (e.revived) addFloat(`+${e.revived}`, hex, '#9ef0a8');
+        if (!e.damage && !e.revived) addFloat(getSpell(e.spellId).name, hex, color);
+        anim = { t: 0, dur: e.splash ? 520 : 420, step: () => undefined };
         break;
       }
       case 'die': {
@@ -533,6 +641,23 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     const h = hexFromEvent(e);
     if (!h) return;
     const target = unitAt(battle, h);
+
+    // 施法模式：先取目标，再交给引擎判定合法性
+    if (pendingSpell) {
+      const sp = getSpell(pendingSpell);
+      const t = sp.target === 'point' ? h : target ?? undefined;
+      if (sp.target === 'enemy' && (!target || target.side === 0)) {
+        hint('要选敌方部队');
+        return;
+      }
+      if (sp.target === 'ally' && (!target || target.side !== 0)) {
+        hint('要选我方部队');
+        return;
+      }
+      doCast(pendingSpell, t);
+      return;
+    }
+
     if (target && target.side !== u.side) {
       if (attackableSet?.has(hexKey(h))) playerAttack(target);
       else hint('够不着，先移动过去');
@@ -549,8 +674,13 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   function onKey(e: KeyboardEvent): void {
     if (openRef === null) return;
     if (e.key === 'Escape') {
-      // 战斗中禁止用 Esc 逃走，避免误触丢掉一场仗
+      // 战斗中禁止用 Esc 逃走，避免误触丢掉一场仗；只用来取消选中的法术
+      if (pendingSpell) selectSpell(null);
       e.stopPropagation();
+    } else if ((e.key === 'c' || e.key === 'C') && !busy()) {
+      e.preventDefault();
+      renderSpellBook();
+      spellPanel.style.display = spellPanel.style.display === 'none' ? 'flex' : 'none';
     } else if (e.key === ' ' && !busy()) {
       e.preventDefault();
       doWait();
@@ -585,7 +715,21 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   btnWait.textContent = '等待 (空格)';
   btnWait.addEventListener('click', doWait);
 
-  actionBar.append(btnDefend, btnWait);
+  const btnCast = document.createElement('button');
+  btnCast.className = 'btn';
+  btnCast.textContent = '施法 (C)';
+  btnCast.addEventListener('click', () => {
+    if (!combatSpells().length) {
+      hint('这位英雄还没学会战斗魔法（去城建魔法行会）');
+      return;
+    }
+    const panelOpen = spellPanel.style.display !== 'none';
+    spellPanel.style.display = panelOpen ? 'none' : 'flex';
+    if (!panelOpen) renderSpellBook();
+    else selectSpell(null);
+  });
+
+  actionBar.append(btnDefend, btnWait, btnCast);
 
   /* ---------------- loop ---------------- */
 
@@ -626,6 +770,10 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       f.y -= dt / 42;
       if (f.life <= 0) floats.splice(i, 1);
     }
+    for (let i = spellFx.length - 1; i >= 0; i--) {
+      spellFx[i].life -= dt / 520;
+      if (spellFx[i].life <= 0) spellFx.splice(i, 1);
+    }
 
     const u = currentUnit(battle);
     if (u && u.side === 0 && `${battle.round}:${u.id}` !== lastActive) recomputeOptions();
@@ -637,10 +785,12 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     }
 
     roundEl.textContent = `第 ${battle.round} 回合`;
+    manaEl.textContent = manaText();
     btnAuto.disabled = auto || battle.over;
     btnFlee.disabled = battle.over;
     btnDefend.disabled = busy() || !u || u.side !== 0;
     btnWait.disabled = busy() || !u || u.side !== 0 || !!u?.waited;
+    btnCast.disabled = busy() || !combatSpells().length;
 
     renderer.draw({
       battle,
@@ -652,6 +802,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       lunge,
       arrow,
       floats,
+      spellTargets,
+      spellFx,
       time: now,
     });
     raf = requestAnimationFrame(frame);
@@ -673,6 +825,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   recomputeOptions();
   refreshCards();
   pushLog('战斗开始');
+  // 调试：?devspell=1 进场就展开法术面板（截图验证用）
+  if (new URLSearchParams(location.search).has('devspell')) renderSpellBook();
   raf = requestAnimationFrame(frame);
   if (opts.autoStart) window.setTimeout(doAuto, 500);
 }

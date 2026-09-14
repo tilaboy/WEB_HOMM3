@@ -3,6 +3,7 @@ import type {
   GameState,
   GridPos,
   GuardReward,
+  Hero,
   MapObject,
   MinePayload,
 } from '../types.js';
@@ -77,9 +78,19 @@ function sides(state: GameState, heroId: string, obj: MapObject) {
   const p = effectivePrimary(hero);
   const monster = obj.payload as { army: Army };
   return {
-    attacker: { army: hero.army, attack: p.attack, defense: p.defense },
+    attacker: {
+      army: hero.army,
+      attack: p.attack,
+      defense: p.defense,
+      caster: { spells: hero.spells, spellPower: p.spellPower, mana: hero.mana },
+    },
     defender: { army: monster.army, attack: 0, defense: 0 },
   };
+}
+
+/** 把战斗中消耗的魔力写回世界层（施法过的那场才有 casterMana）。 */
+function syncMana(hero: Hero, outcome: BattleOutcome): void {
+  if (outcome.casterMana !== undefined) hero.mana = Math.max(0, outcome.casterMana);
 }
 
 /** 英雄站上物件所在格时调用，返回需要展示给玩家的内容（战斗需要二次确认）。 */
@@ -237,6 +248,7 @@ export function applyInteraction(
 
     const { attacker, defender } = sides(state, heroId, obj);
     const outcome = opts.outcome ?? quickBattle(attacker, defender, battleSeed(state, obj));
+    syncMana(hero, outcome);
     hero.army = outcome.survivors;
 
     if (outcome.win) {
@@ -291,10 +303,16 @@ export function applyInteraction(
     const outcome =
       opts.outcome ??
       quickBattle(
-        { army: hero.army, attack: effectivePrimary(hero).attack, defense: effectivePrimary(hero).defense },
+        {
+          army: hero.army,
+          attack: effectivePrimary(hero).attack,
+          defense: effectivePrimary(hero).defense,
+          caster: { spells: hero.spells, spellPower: effectivePrimary(hero).spellPower, mana: hero.mana },
+        },
         { army: garrison, attack: 0, defense: townDefenseBonus(town) },
         battleSeed(state, obj),
       );
+    syncMana(hero, outcome);
     hero.army = outcome.survivors;
 
     if (outcome.win) {
@@ -418,7 +436,13 @@ export function battleSetup(
   const hero = state.heroes[heroId];
   if (!hero || !obj) return null;
   const p = effectivePrimary(hero);
-  const attacker: BattleSide = { army: hero.army, attack: p.attack, defense: p.defense };
+  const attacker: BattleSide = {
+    army: hero.army,
+    attack: p.attack,
+    defense: p.defense,
+    // 英雄带进战场：法术表 + 魔力 + 剩余法力
+    caster: { spells: hero.spells, spellPower: p.spellPower, mana: hero.mana },
+  };
 
   if (obj.kind === 'wanderingMonster') {
     const payload = obj.payload as { army: Army };

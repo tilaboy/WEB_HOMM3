@@ -1,5 +1,5 @@
 import type { GameState, ResourceKind } from '../types.js';
-import { addResources, dailyGoldBonus, maxMovePoints } from './hero.js';
+import { addResources, dailyGoldBonus, manaMaxOf, maxMovePoints } from './hero.js';
 import { applyWeeklyGrowth, mineIncome, ownedTowns, townDailyIncome } from './town.js';
 import { isNewWeek } from './calendar.js';
 import { pushLog } from './log.js';
@@ -18,12 +18,14 @@ export function endDay(state: GameState): void {
   let townGold = 0;
   for (const town of ownedTowns(state, 'p1')) townGold += townDailyIncome(town);
 
-  // 英雄移动力恢复 + 宝物每日收益
+  // 英雄移动力恢复 + 法力回满 + 宝物每日收益
   let gold = townGold;
   for (const id of state.heroOrder) {
     const h = state.heroes[id];
     if (!h) continue;
     h.movePoints = maxMovePoints(h);
+    h.manaMax = manaMaxOf(h);
+    h.mana = h.manaMax;
     gold += dailyGoldBonus(h);
   }
   if (gold > 0) addResources(state, 'p1', { gold });

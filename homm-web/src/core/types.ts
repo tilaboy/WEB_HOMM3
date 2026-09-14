@@ -69,6 +69,8 @@ export interface Hero {
   movePoints: number;
   army: Army;
   artifacts: string[];
+  /** 已学会的法术 id（M4）。 */
+  spells: string[];
   pos: GridPos;
   owner: PlayerId;
 }
@@ -186,7 +188,7 @@ export interface BuildingDef {
   /** 全局周增长比例加成 */
   growthBonus?: number;
   /** 解锁的城镇功能 */
-  feature?: 'tavern' | 'market';
+  feature?: 'tavern' | 'market' | 'guild';
 }
 
 export interface Town {

@@ -10,9 +10,10 @@
  */
 import type { Army } from '../types.js';
 import { getUnit } from '../data/units.js';
+import { getSpell } from '../data/spells.js';
 import { mulberry32 } from '../rng.js';
 import { rollDamage } from './damage.js';
-import { FIELD_H, FIELD_W, bfs, distance, hexEq, hexKey, hexLine, isAdjacent, type Hex } from './hex.js';
+import { FIELD_H, FIELD_W, bfs, distance, hexEq, hexKey, hexLine, inField, isAdjacent, neighbors, type Hex } from './hex.js';
 
 export type { Hex };
 
@@ -20,6 +21,22 @@ export interface BattleSide {
   army: Army;
   attack: number;
   defense: number;
+  /** 施法者（英雄）。野怪没有，中立城守军也没有。 */
+  caster?: BattleCaster;
+}
+
+/** 战场上的英雄施法者：带法术表、魔力和魔力的实时余量（引擎直接扣）。 */
+export interface BattleCaster {
+  spells: string[];
+  spellPower: number;
+  mana: number;
+}
+
+/** 一条时效增益/减益（haste/slow/bless/...）。 */
+export interface UnitEffect {
+  spellId: string;
+  /** 剩余回合数（含当回合；新回合开始时 -1，归零移除）。 */
+  rounds: number;
 }
 
 export interface BattleLoss {
@@ -38,6 +55,8 @@ export interface BattleOutcome {
   enemySurvivors: Army;
   /** 主动从战场撤退（区别于被全歼）。 */
   fled?: boolean;
+  /** 战后剩余法力（side 0 的施法者）。世界层据此写回英雄。 */
+  casterMana?: number;
 }
 
 /* ---------------- units ---------------- */
@@ -59,6 +78,10 @@ export interface BattleUnit {
   moved: boolean;
   /** 建队序号，用于同速时的稳定排序。 */
   seq: number;
+  /** 建队时的初始数量：复活/损失统计的基准。 */
+  startCount: number;
+  /** 身上的时效法术（M4）。 */
+  effects: UnitEffect[];
 }
 
 export interface BattleState {
@@ -72,6 +95,10 @@ export interface BattleState {
   winner: 0 | 1 | null;
   fled: boolean;
   startArmies: [Army, Army];
+  /** 两侧的施法者（英雄）。null = 这一侧不会施法。 */
+  casters: [BattleCaster | null, BattleCaster | null];
+  /** 本回合双方各可施法 1 次。 */
+  castUsed: [boolean, boolean];
   rng: () => number;
   log: string[];
 }
@@ -102,6 +129,19 @@ export type BattleEvent =
   | { t: 'die'; unitId: string }
   | { t: 'wait'; unitId: string }
   | { t: 'defend'; unitId: string }
+  | {
+      t: 'cast';
+      side: 0 | 1;
+      spellId: string;
+      targetId?: string;
+      hex?: Hex;
+      damage?: number;
+      killed?: number;
+      revived?: number;
+      wasDead?: boolean;
+      /** 火球溅射：同一次施法的多段伤害，UI 用来画爆炸范围。 */
+      splash?: boolean;
+    }
   | { t: 'end'; winner: 0 | 1 | null; fled: boolean };
 
 /* ---------------- setup ---------------- */
@@ -125,6 +165,8 @@ function deploy(army: Army, side: 0 | 1, seqBase: number): BattleUnit[] {
       defending: false,
       moved: false,
       seq: seqBase + i,
+      startCount: s.count,
+      effects: [],
     };
   });
 }
@@ -143,6 +185,11 @@ export function createBattle(attacker: BattleSide, defender: BattleSide, seed: n
     winner: null,
     fled: false,
     startArmies: [attacker.army.map((x) => ({ ...x })), defender.army.map((x) => ({ ...x }))],
+    casters: [
+      attacker.caster ? { spells: [...attacker.caster.spells], spellPower: attacker.caster.spellPower, mana: attacker.caster.mana } : null,
+      defender.caster ? { spells: [...defender.caster.spells], spellPower: defender.caster.spellPower, mana: defender.caster.mana } : null,
+    ],
+    castUsed: [false, false],
     rng: mulberry32(seed),
     log: [],
   };
@@ -180,7 +227,7 @@ export function currentUnit(s: BattleState): BattleUnit | null {
 
 /** 可移动到的格子 → 路径（不含起点）。 */
 export function reachable(s: BattleState, u: BattleUnit): Map<string, Hex[]> {
-  const speed = Math.max(1, getUnit(u.unitTypeId).speed);
+  const speed = unitSpeed(s, u);
   return bfs(u.hex, speed, (h) => occupied(s, h, u.id));
 }
 
@@ -209,6 +256,40 @@ export function shootTargets(s: BattleState, u: BattleUnit): BattleUnit[] {
   return aliveOf(s, u.side === 0 ? 1 : 0);
 }
 
+/* ---------------- 法术效果（M4） ---------------- */
+
+export function hasEffect(u: BattleUnit, spellId: string): boolean {
+  return u.effects.some((e) => e.spellId === spellId);
+}
+
+function addEffect(u: BattleUnit, spellId: string, rounds: number): void {
+  const cur = u.effects.find((e) => e.spellId === spellId);
+  if (cur) cur.rounds = Math.max(cur.rounds, rounds);
+  else u.effects.push({ spellId, rounds });
+}
+
+/** 攻击的临时加成：祝福 +3，嗜血 +4（仅近战），诅咒 -3（合并后不低于 -原攻击）。 */
+export function effAtkBonus(u: BattleUnit, melee: boolean): number {
+  let b = 0;
+  if (hasEffect(u, 'bless')) b += 3;
+  if (melee && hasEffect(u, 'bloodlust')) b += 4;
+  if (hasEffect(u, 'curse')) b -= 3;
+  return b;
+}
+
+/** 防御的临时加成：石肤 +3（防御姿态的 +3 另算）。 */
+export function effDefBonus(u: BattleUnit): number {
+  return hasEffect(u, 'stoneSkin') ? 3 : 0;
+}
+
+/** 实际速度（加速 +2 / 减速 -2，下限 1）。 */
+export function unitSpeed(_s: BattleState, u: BattleUnit): number {
+  let v = getUnit(u.unitTypeId).speed;
+  if (hasEffect(u, 'haste')) v += 2;
+  if (hasEffect(u, 'slow')) v -= 2;
+  return Math.max(1, v);
+}
+
 /* ---------------- damage ---------------- */
 
 /** 期望伤害，AI 与 UI 提示都用它。 */
@@ -216,10 +297,14 @@ export function estimateDamage(s: BattleState, atk: BattleUnit, def: BattleUnit,
   const au = getUnit(atk.unitTypeId);
   const du = getUnit(def.unitTypeId);
   const avg = ((au.damageMin + au.damageMax) / 2) * atk.count;
-  let mod = damageMod(au.attack + s.atkBonus[atk.side], du.defense + s.defBonus[def.side] + (def.defending ? 3 : 0));
+  let mod = damageMod(
+    Math.max(0, au.attack + s.atkBonus[atk.side] + effAtkBonus(atk, !ranged)),
+    du.defense + s.defBonus[def.side] + effDefBonus(def) + (def.defending ? 3 : 0),
+  );
   if (ranged) {
     if (distance(atk.hex, def.hex) > LONG_RANGE) mod *= 0.5; // 远距离抛射衰减
     if (shotBlocked(s, atk, def)) mod *= 0.5; // 被自己人/敌人挡住
+    if (hasEffect(def, 'shield')) mod *= 0.5; // 护盾
   }
   return Math.max(1, Math.round(avg * mod));
 }
@@ -263,12 +348,18 @@ function startRound(s: BattleState): void {
     u.waited = false;
     u.defending = false;
     u.moved = false;
+    // 法术时效：进入新回合扣 1 轮，归零则消失
+    u.effects = u.effects.filter((e) => {
+      e.rounds -= 1;
+      return e.rounds > 0;
+    });
   }
+  s.castUsed = [false, false];
   s.order = s.units
     .filter((u) => u.count > 0)
     .sort((a, b) => {
-      const sa = getUnit(a.unitTypeId).speed;
-      const sb = getUnit(b.unitTypeId).speed;
+      const sa = unitSpeed(s, a);
+      const sb = unitSpeed(s, b);
       return sb - sa || a.side - b.side || a.seq - b.seq;
     })
     .map((u) => u.id);
@@ -331,9 +422,9 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
     s.rng,
     getUnit(u.unitTypeId),
     u.count,
-    s.atkBonus[u.side],
+    s.atkBonus[u.side] + effAtkBonus(u, true),
     getUnit(target.unitTypeId),
-    s.defBonus[target.side] + (target.defending ? 3 : 0),
+    s.defBonus[target.side] + effDefBonus(target) + (target.defending ? 3 : 0),
   );
   const killed = applyDamage(target, dmg);
   ev.push({ t: 'melee', unitId: u.id, targetId: target.id, damage: dmg, killed, from, to });
@@ -347,9 +438,9 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
         s.rng,
         getUnit(target.unitTypeId),
         target.count,
-        s.atkBonus[target.side],
+        s.atkBonus[target.side] + effAtkBonus(target, true),
         getUnit(u.unitTypeId),
-        s.defBonus[u.side] + (u.defending ? 3 : 0),
+        s.defBonus[u.side] + effDefBonus(u) + (u.defending ? 3 : 0),
       ) * 0.5,
     );
     const k2 = applyDamage(u, back);
@@ -370,12 +461,13 @@ export function actShoot(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
     s.rng,
     getUnit(u.unitTypeId),
     u.count,
-    s.atkBonus[u.side],
+    s.atkBonus[u.side] + effAtkBonus(u, false),
     getUnit(target.unitTypeId),
-    s.defBonus[target.side] + (target.defending ? 3 : 0),
+    s.defBonus[target.side] + effDefBonus(target) + (target.defending ? 3 : 0),
   );
   if (blocked) dmg = Math.max(1, Math.round(dmg * 0.5));
   if (longRange) dmg = Math.max(1, Math.round(dmg * 0.5));
+  if (hasEffect(target, 'shield')) dmg = Math.max(1, Math.round(dmg * 0.5)); // 护盾
   u.shots -= 1;
   const killed = applyDamage(target, dmg);
   ev.push({ t: 'shoot', unitId: u.id, targetId: target.id, damage: dmg, killed, from, to, blocked, longRange });
@@ -402,6 +494,120 @@ export function actWait(s: BattleState, u: BattleUnit): BattleEvent[] {
 export function actDefend(u: BattleUnit): BattleEvent[] {
   u.defending = true;
   return [{ t: 'defend', unitId: u.id }];
+}
+
+/* ---------------- 施法（M4） ---------------- */
+
+/** 法术伤害（无视防御，这是 HOMM 的老规矩）。 */
+function spellDamage(spellId: string, spellPower: number): number {
+  const p = Math.max(1, spellPower);
+  if (spellId === 'magicArrow') return 8 + 6 * p;
+  if (spellId === 'iceBolt') return 15 + 9 * p;
+  if (spellId === 'lightningBolt') return 20 + 8 * p;
+  if (spellId === 'fireball') return 10 + 6 * p;
+  return 0;
+}
+
+/** 这一侧本回合还能不能施这个法术；UI 与 AI 共用。 */
+export function canCast(s: BattleState, side: 0 | 1, spellId: string): boolean {
+  const c = s.casters[side];
+  if (!c || s.over || s.castUsed[side]) return false;
+  if (!c.spells.includes(spellId)) return false;
+  return c.mana >= getSpell(spellId).manaCost;
+}
+
+/**
+ * 施放一个战斗法术。目标由法术类型决定：
+ *   enemy → 敌方部队 / ally → 我方（含已阵亡待复活的）/ point → 格子（火球溅射一圈）
+ * 施法不占用部队行动，每回合每方 1 次，扣的是英雄的法力。
+ */
+export function castSpell(
+  s: BattleState,
+  side: 0 | 1,
+  spellId: string,
+  target?: BattleUnit | Hex,
+): BattleEvent[] {
+  if (!canCast(s, side, spellId)) return [];
+  const spell = getSpell(spellId);
+  if (!spell.combat) return [];
+  const c = s.casters[side]!;
+  const sp = Math.max(1, c.spellPower);
+  const ev: BattleEvent[] = [];
+
+  const unit = (u: unknown): BattleUnit | null => (u && typeof u === 'object' && (u as BattleUnit).unitTypeId ? (u as BattleUnit) : null);
+  const tgt = unit(target);
+
+  if (spell.target === 'enemy') {
+    if (!tgt || tgt.side === side || tgt.count <= 0) return [];
+  } else if (spell.target === 'ally') {
+    if (!tgt || tgt.side !== side) return [];
+  } else if (spell.target === 'point') {
+    const h = target && !tgt ? (target as Hex) : null;
+    if (!h || !inField(h)) return [];
+  }
+
+  c.mana -= spell.manaCost;
+  s.castUsed[side] = true;
+
+  switch (spellId) {
+    case 'magicArrow':
+    case 'iceBolt':
+    case 'lightningBolt': {
+      const t = tgt!;
+      const dmg = spellDamage(spellId, sp);
+      const killed = applyDamage(t, dmg);
+      ev.push({ t: 'cast', side, spellId, targetId: t.id, hex: { ...t.hex }, damage: dmg, killed });
+      ev.push(...afterHit(t));
+      break;
+    }
+    case 'fireball': {
+      const h = (target as Hex) ?? tgt!.hex;
+      const dmg = spellDamage('fireball', sp);
+      const area = [h, ...neighbors(h)];
+      for (const cell of area) {
+        const v = unitAt(s, cell);
+        if (!v || v.count <= 0) continue;
+        const killed = applyDamage(v, dmg);
+        ev.push({ t: 'cast', side, spellId, targetId: v.id, hex: { ...cell }, damage: dmg, killed, splash: true });
+        ev.push(...afterHit(v));
+      }
+      if (!ev.length) ev.push({ t: 'cast', side, spellId, hex: { ...h }, damage: 0, killed: 0, splash: true });
+      break;
+    }
+    case 'bless':
+    case 'curse':
+    case 'haste':
+    case 'slow':
+    case 'shield':
+    case 'stoneSkin':
+    case 'bloodlust': {
+      const t = tgt!;
+      addEffect(t, spellId, sp);
+      ev.push({ t: 'cast', side, spellId, targetId: t.id, hex: { ...t.hex } });
+      break;
+    }
+    case 'resurrect': {
+      const t = tgt!;
+      const maxRevive = Math.floor(t.startCount * 0.2 * sp);
+      const lost = Math.max(0, t.startCount - t.count);
+      const revived = Math.min(maxRevive, lost);
+      if (revived <= 0) {
+        // 没人可复活就退回法力，不让玩家白白损失一回合的施法机会
+        c.mana += spell.manaCost;
+        s.castUsed[side] = false;
+        return [];
+      }
+      const wasDead = t.count <= 0;
+      t.count += revived;
+      if (t.hpTop <= 0) t.hpTop = getUnit(t.unitTypeId).hp;
+      ev.push({ t: 'cast', side, spellId, targetId: t.id, hex: { ...t.hex }, revived, wasDead });
+      break;
+    }
+    default:
+      break;
+  }
+  checkOver(s);
+  return ev;
 }
 
 /** 撤退：战斗立即结束，攻方（side 0）认输但保住英雄。 */
@@ -438,14 +644,67 @@ function pickTarget(s: BattleState, u: BattleUnit, pool: BattleUnit[], ranged: b
   return best;
 }
 
+/** AI 的施法判断：伤害法术优先，其次给最强部队上增益，最后给敌人挂减速。 */
+function aiCast(s: BattleState, side: 0 | 1): BattleEvent[] {
+  if (!canCastAny(s, side)) return [];
+  const c = s.casters[side]!;
+  const foes = aliveOf(s, side === 0 ? 1 : 0);
+  const mine = aliveOf(s, side);
+
+  const damageSpells = ['lightningBolt', 'iceBolt', 'magicArrow'].filter((id) => canCast(s, side, id));
+  if (damageSpells.length && foes.length) {
+    // 优先能一击带走的目标，否则打威胁最高的
+    let best: BattleUnit | null = null;
+    let bestDmg = 0;
+    for (const id of damageSpells) {
+      const dmg = spellDamage(id, c.spellPower);
+      if (dmg > bestDmg) bestDmg = dmg;
+    }
+    let top = foeThreat(foes);
+    for (const f of foes) if (poolOf(f) <= bestDmg) { top = f; break; }
+    const pick = damageSpells.find((id) => canCast(s, side, id))!;
+    best = top;
+    if (best) return castSpell(s, side, pick, best);
+  }
+
+  if (mine.length && canCast(s, side, 'bless')) {
+    const t = mine.slice().sort((a, b) => threatOf(b) - threatOf(a))[0];
+    return castSpell(s, side, 'bless', t);
+  }
+  if (mine.length && canCast(s, side, 'bloodlust')) {
+    const t = mine.slice().sort((a, b) => threatOf(b) - threatOf(a))[0];
+    return castSpell(s, side, 'bloodlust', t);
+  }
+  if (foes.length && canCast(s, side, 'slow')) {
+    const t = foes.slice().sort((a, b) => unitSpeed(s, b) - unitSpeed(s, a))[0];
+    return castSpell(s, side, 'slow', t);
+  }
+  if (mine.length && canCast(s, side, 'shield')) {
+    const t = mine.slice().sort((a, b) => b.count - a.count)[0];
+    return castSpell(s, side, 'shield', t);
+  }
+  return [];
+}
+
+function canCastAny(s: BattleState, side: 0 | 1): boolean {
+  const c = s.casters[side];
+  return !!c && !s.over && !s.castUsed[side];
+}
+
+function foeThreat(foes: BattleUnit[]): BattleUnit {
+  return foes.slice().sort((a, b) => threatOf(b) - threatOf(a))[0] ?? foes[0];
+}
+
 /**
  * 敌方 AI 的一次完整行动。
- * 优先级：能射就射 → 身边有敌人就砍 → 能走过去砍就走过去砍 → 否则尽量靠近。
+ * 优先级：先施法 → 能射就射 → 身边有敌人就砍 → 能走过去砍就走过去砍 → 否则尽量靠近。
  */
 export function aiAct(s: BattleState, u: BattleUnit): BattleEvent[] {
   const ev: BattleEvent[] = [];
   const foes = aliveOf(s, u.side === 0 ? 1 : 0);
   if (!foes.length) return ev;
+
+  if (!s.castUsed[u.side] && s.casters[u.side]) ev.push(...aiCast(s, u.side));
 
   if (canShoot(s, u)) {
     const t = pickTarget(s, u, foes, true);
@@ -573,6 +832,7 @@ export function toOutcome(s: BattleState): BattleOutcome {
     survivors: survivorsOf(0),
     enemySurvivors: survivorsOf(1),
     fled: s.fled || undefined,
+    casterMana: s.casters[0]?.mana,
   };
 }
 
@@ -604,6 +864,15 @@ export function describeEvent(s: BattleState, e: BattleEvent): string {
       return `${name(e.unitId)} 等待`;
     case 'defend':
       return `${name(e.unitId)} 转入防御`;
+    case 'cast': {
+      const sp = getSpell(e.spellId);
+      const who = e.side === 0 ? '我方' : '敌方';
+      const tgt = e.targetId ? name(e.targetId) : '';
+      const head = `${who}施放「${sp.name}」${tgt ? ` → ${tgt}` : ''}`;
+      if (e.revived) return `${head}，复活 ${e.revived}${e.wasDead ? '，部队重返战场' : ''}`;
+      if (e.damage !== undefined) return `${head}，造成 ${e.damage} 伤害${e.killed ? `，击杀 ${e.killed}` : ''}`;
+      return head;
+    }
     case 'end':
       return e.fled ? '主动撤退，战斗结束' : e.winner === null ? '战斗陷入僵持' : e.winner === 0 ? '我方获胜' : '我方战败';
     default:

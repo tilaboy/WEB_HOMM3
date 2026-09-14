@@ -34,6 +34,10 @@ export interface BattleDraw {
   lunge: { unitId: string; dx: number; dy: number } | null;
   arrow: { x: number; y: number; tx: number; ty: number } | null;
   floats: FloatText[];
+  /** 施法目标格高亮（选了法术后点目标时用）。 */
+  spellTargets?: Set<string> | null;
+  /** 施法特效：格子 + 剩余生命（1 → 0），画一圈扩散的光环。 */
+  spellFx?: { hex: Hex; life: number; color: string; splash?: boolean }[];
   time: number;
 }
 
@@ -101,6 +105,7 @@ export class BattleRenderer {
     }
 
     for (const f of d.floats) this.drawFloat(g, f);
+    for (const fx of d.spellFx ?? []) this.drawSpellFx(g, fx);
 
     const c = this.ctx;
     c.imageSmoothingEnabled = false;
@@ -131,6 +136,12 @@ export class BattleRenderer {
       }
     }
     if (d.hover) this.blit(g, 'chi_hover', d.hover.col, d.hover.row);
+    if (d.spellTargets) {
+      for (const k of d.spellTargets) {
+        const [c, r] = k.split(',').map(Number);
+        this.blit(g, 'chi_spell', c, r);
+      }
+    }
 
     const active = d.activeId ? d.battle.units.find((u) => u.id === d.activeId) : null;
     if (active && active.count > 0) {
@@ -223,6 +234,28 @@ export class BattleRenderer {
     g.fillText(f.text, f.x + PAD + 1, f.y + PAD + 1);
     g.fillStyle = f.color;
     g.fillText(f.text, f.x + PAD, f.y + PAD);
+    g.globalAlpha = 1;
+  }
+
+  /** 施法特效：一圈向外扩散的彩色光环，life 从 1 衰减到 0。 */
+  private drawSpellFx(g: CanvasRenderingContext2D, fx: { hex: Hex; life: number; color: string; splash?: boolean }): void {
+    const c = hexCenter(fx.hex);
+    const p = 1 - Math.max(0, Math.min(1, fx.life)); // 0 → 1 进度
+    const r = (fx.splash ? 8 : 5) + p * (fx.splash ? 26 : 14);
+    const a = Math.max(0, 1 - p) * 0.9;
+    g.globalAlpha = a;
+    g.strokeStyle = fx.color;
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(c.x + PAD, c.y + PAD, r, 0, Math.PI * 2);
+    g.stroke();
+    if (p < 0.35) {
+      g.globalAlpha = a * 0.35;
+      g.fillStyle = fx.color;
+      g.beginPath();
+      g.arc(c.x + PAD, c.y + PAD, (fx.splash ? 16 : 9) * (1 - p), 0, Math.PI * 2);
+      g.fill();
+    }
     g.globalAlpha = 1;
   }
 

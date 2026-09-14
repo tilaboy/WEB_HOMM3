@@ -22,6 +22,11 @@ export function maxMovePoints(hero: Hero): number {
   return m;
 }
 
+/** 法力上限 = 有效知识 × 10（含宝物加成）。 */
+export function manaMaxOf(hero: Hero): number {
+  return effectivePrimary(hero).knowledge * 10;
+}
+
 export function dailyGoldBonus(hero: Hero): number {
   let g = 0;
   for (const id of hero.artifacts) g += ARTIFACTS[id]?.dailyGold ?? 0;

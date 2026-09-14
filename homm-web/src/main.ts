@@ -15,6 +15,9 @@ import {
   previewInteraction,
 } from './core/game/interaction.js';
 import { openBattleScreen, isBattleOpen } from './ui/BattleScreen.js';
+import { castAdventure, canAdventureCast, type AdventureTarget } from './core/game/spells.js';
+import { getSpell } from './core/data/spells.js';
+import { manaMaxOf } from './core/game/hero.js';
 import type { BattleOutcome } from './core/combat/battle.js';
 import { endDay } from './core/game/turn.js';
 import { Camera } from './render/camera.js';
@@ -132,6 +135,7 @@ const panel = new HeroPanel(
     refresh();
   },
   { onLocate: locateTown, onOpen: openTownById },
+  (id) => openSpellBook(id),
 );
 
 const hud = new HUD(
@@ -394,6 +398,138 @@ function resolve(heroId: string, obj: MapObject, accept: boolean, outcome?: Batt
   });
 }
 
+/* ---------------- 魔法书（M4） ---------------- */
+
+/** 需要玩家在地图上点目标时，记录"正在施放哪个法术"。 */
+let pickSpell: { heroId: string; spellId: string } | null = null;
+
+function openSpellBook(heroId: string): void {
+  if (isModalOpen() || anim) return;
+  const hero = state.heroes[heroId];
+  if (!hero) return;
+  if (!hero.spells.length) {
+    hint('还没学会任何法术：在城镇里建「魔法行会」');
+    return;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'spellbook';
+  const sub = document.createElement('div');
+  sub.className = 'sub';
+  sub.textContent = `法力 ${hero.mana}／${manaMaxOf(hero)}　·　战斗法术在战场上施放`;
+  wrap.appendChild(sub);
+
+  const table = document.createElement('table');
+  const head = document.createElement('tr');
+  for (const t of ['法术', '等级', '消耗', '']) {
+    const th = document.createElement('th');
+    th.textContent = t;
+    head.appendChild(th);
+  }
+  table.appendChild(head);
+
+  for (const id of hero.spells) {
+    const sp = getSpell(id);
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td');
+    td1.textContent = sp.name;
+    td1.title = sp.desc;
+    const td2 = document.createElement('td');
+    td2.className = 'lv';
+    td2.textContent = sp.combat ? `战斗 ${sp.level}` : `冒险 ${sp.level}`;
+    const td3 = document.createElement('td');
+    td3.className = 'cost';
+    td3.textContent = String(sp.manaCost);
+    const td4 = document.createElement('td');
+    const btn = document.createElement('button');
+    btn.className = 'btn tiny';
+    if (!sp.combat) {
+      const chk = canAdventureCast(state, hero, id);
+      btn.textContent = chk.ok ? '施放' : (chk.reason ?? '不可施放');
+      btn.disabled = !chk.ok;
+      btn.addEventListener('click', () => {
+        closeModal();
+        castAdventureUI(heroId, id);
+      });
+    } else {
+      btn.textContent = '战斗中';
+      btn.disabled = true;
+    }
+    td4.appendChild(btn);
+    tr.append(td1, td2, td3, td4);
+    table.appendChild(tr);
+  }
+  wrap.appendChild(table);
+
+  showModal(stage, {
+    title: `${hero.name} 的魔法书`,
+    body: [wrap],
+    actions: [{ label: '关闭', onClick: (c) => c() }],
+  });
+}
+
+/** 施放冒险魔法：需要目标的进入点选模式，否则立即生效。 */
+function castAdventureUI(heroId: string, spellId: string, target?: AdventureTarget): void {
+  const res = castAdventure(state, heroId, spellId, target);
+  if (!res.ok && res.needsTarget) {
+    if (res.needsTarget === 'town') {
+      const wrap = document.createElement('div');
+      wrap.className = 'spellbook';
+      const p = document.createElement('p');
+      p.textContent = '选择要回到哪座城镇：';
+      wrap.appendChild(p);
+      for (const t of res.towns ?? []) {
+        const b = document.createElement('button');
+        b.className = 'btn';
+        b.style.display = 'block';
+        b.style.margin = '4px 0';
+        b.textContent = t.name;
+        b.addEventListener('click', () => {
+          closeModal();
+          castAdventureUI(heroId, spellId, { townId: t.id });
+        });
+        wrap.appendChild(b);
+      }
+      showModal(stage, {
+        title: getSpell(spellId).name,
+        body: [wrap],
+        actions: [{ label: '取消', onClick: (c) => c() }],
+      });
+      return;
+    }
+    pickSpell = { heroId, spellId };
+    hint(
+      res.needsTarget === 'monster'
+        ? '点击 5 格内的一支野怪（Esc 取消）'
+        : '点击 8 格内的一个格子（Esc 取消）',
+    );
+    return;
+  }
+  afterCast(heroId, res);
+}
+
+function afterCast(heroId: string, res: { ok: boolean; message?: string; report?: string[] }): void {
+  if (!res.ok) {
+    hint(res.message ?? '施法失败');
+    return;
+  }
+  const body: (Node | string)[] = [res.message ?? '施法完成'];
+  if (res.report?.length) {
+    for (const line of res.report) body.push(line);
+  }
+  const hero = state.heroes[heroId];
+  if (hero) camera.centerOn(hero.pos.x, hero.pos.y);
+  recomputeField();
+  refresh();
+  renderLog();
+  saveGame(state);
+  showModal(stage, {
+    title: '施法成功',
+    body,
+    actions: [{ label: '继续', primary: true, onClick: (c) => c() }],
+  });
+}
+
 function showGameOver(): void {
   selected = null;
   recomputeField();
@@ -549,6 +685,14 @@ function handleClick(e: PointerEvent): void {
   const g = camera.pick(p.x, p.y);
   if (!inBounds(state.map, g.x, g.y)) return;
 
+  // 正在施放需要指定目标的法术
+  if (pickSpell) {
+    const { heroId, spellId } = pickSpell;
+    pickSpell = null;
+    castAdventureUI(heroId, spellId, { pos: { x: g.x, y: g.y } });
+    return;
+  }
+
   for (const id of state.heroOrder) {
     const h = state.heroes[id];
     if (h && h.pos.x === g.x && h.pos.y === g.y) {
@@ -676,6 +820,11 @@ function describeObject(obj: MapObject): string {
 window.addEventListener('keydown', (e) => {
   if (isBattleOpen()) return;
   if (e.key === 'Escape') {
+    if (pickSpell) {
+      pickSpell = null;
+      hint('已取消施法');
+      return;
+    }
     closeModal();
     hideInfoPopup();
   } else if (e.key === 'Enter' && !isModalOpen()) {
@@ -758,6 +907,12 @@ if (new URLSearchParams(location.search).has('devbattle') && selected && state.h
       ],
       attack: 3,
       defense: 4,
+      // 调试用：给一套完整法术，方便截图验证施法界面
+      caster: {
+        spells: ['magicArrow', 'bless', 'haste', 'shield', 'lightningBolt', 'slow', 'stoneSkin', 'bloodlust', 'iceBolt', 'fireball', 'resurrect', 'curse'],
+        spellPower: 3,
+        mana: 30,
+      },
     },
     defender: {
       army: [

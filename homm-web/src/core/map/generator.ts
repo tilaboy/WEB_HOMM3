@@ -415,13 +415,19 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)): GameState {
     });
   });
 
-  // 资源堆 20（大头战利品在野怪身上）
-  const pileKinds: ('gold' | 'wood' | 'ore')[] = [];
-  for (let i = 0; i < 20; i++) pileKinds.push(i % 3 === 0 ? 'gold' : i % 3 === 1 ? 'wood' : 'ore');
+  // 资源堆 20（大头战利品在野怪身上；宝石/水晶是魔法行会的硬通货）
+  const pileKinds: ('gold' | 'wood' | 'ore' | 'gem' | 'crystal')[] = [];
+  for (let i = 0; i < 20; i++) {
+    const r = i % 5;
+    pileKinds.push(r === 0 ? 'gold' : r === 1 ? 'wood' : r === 2 ? 'ore' : r === 3 ? 'gem' : 'crystal');
+  }
   for (const kind of pileKinds) {
     const p = takeSpot();
     if (!p) break;
-    const amount = kind === 'gold' ? randInt(rng, 500, 1500) : randInt(rng, 5, 12);
+    const amount =
+      kind === 'gold' ? randInt(rng, 500, 1500)
+      : kind === 'gem' || kind === 'crystal' ? randInt(rng, 2, 4)
+      : randInt(rng, 5, 12);
     placer.add({
       kind: 'resourcePile', pos: p, payload: { resource: kind, amount },
       once: true, blocking: false, visitedBy: [],
@@ -477,6 +483,7 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)): GameState {
     movePoints: BASE_MOVE_POINTS,
     army: tpl.startArmy.map((s) => ({ ...s })),
     artifacts: [],
+    spells: [],
     pos: heroPos,
     owner: 'p1' as const,
   };
@@ -505,7 +512,7 @@ export function createGame(seed = Math.floor(Math.random() * 1e9)): GameState {
   });
 
   const state: GameState = {
-    version: 4,
+    version: 5,
     seed,
     map,
     heroes: { hero1: hero },

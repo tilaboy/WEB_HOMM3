@@ -1,7 +1,7 @@
 import type { GameState } from '../core/types.js';
 
 const KEY = 'homm-save-v1';
-const VERSION = 4;
+const VERSION = 5;
 
 export function saveGame(state: GameState): void {
   try {
