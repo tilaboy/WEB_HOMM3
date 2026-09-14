@@ -2,7 +2,7 @@ import type { GameState, GridPos, MapObject, PlayerId } from '../core/types.js';
 import { DWELLING_IDS } from '../core/data/buildings.js';
 import { factionColor } from '../core/data/factions.js';
 import { computeVisible, isRevealed } from '../core/map/fog.js';
-import { idx } from '../core/map/grid.js';
+import { drawAnchor, footprintOf, idx } from '../core/map/grid.js';
 import { Camera } from './camera.js';
 import { TILE } from './ortho.js';
 import { getAtlas } from './atlas.js';
@@ -35,6 +35,8 @@ function objSprite(state: GameState, obj: MapObject, hash: number): string | nul
       const t = state.towns[(obj.payload as { townId: string }).townId];
       const tier = t ? Math.min(3, Math.floor(t.buildings.filter((b) => DWELLING_IDS.includes(b)).length / 1.5)) : 0;
       const own = t && t.owner !== 'neutral' ? t.owner : 'neutral';
+      // 2×2 城堡用另一套精灵（城门固定在左下角）
+      if (obj.footprint) return `castle_${own}_${tier}`;
       return `town_${own}_${tier}`;
     }
     case 'wanderingMonster': {
@@ -222,14 +224,19 @@ export class MapRenderer {
 
     /* --- 第二遍：物件与英雄，按 y 排序保证遮挡正确 --- */
     const draws: DrawKind[] = [];
+    // 2×2 城堡的四格挂的是同一个物件 id，这里按 id 去重、只在锚点画一次
+    const seenObj = new Set<string>();
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const i = idx(map, x, y);
         if (!isRevealed(state, player, x, y)) continue;
         const id = map.tiles[i].objectId;
-        if (!id) continue;
+        if (!id || seenObj.has(id)) continue;
+        seenObj.add(id);
         const obj = map.objects[id];
-        if (obj) draws.push({ t: 'obj', y, x, obj });
+        if (!obj) continue;
+        const a = drawAnchor(obj);
+        draws.push({ t: 'obj', y: a.y, x: a.x, obj });
       }
     }
     for (const hid of state.heroOrder) {
@@ -249,9 +256,12 @@ export class MapRenderer {
         if (sprite) this.blit(sprite, d.x, d.y);
         const mk = guardMarker(d.obj);
         if (mk) this.blitAt(mk, d.x * TILE + 17, d.y * TILE + 17);
-        if (!vis[idx(map, d.x, d.y)]) {
-          ctx.fillStyle = 'rgba(6,10,18,0.4)';
-          ctx.fillRect(d.x * TILE, d.y * TILE, TILE, TILE);
+        // 记忆中的（已探索但当前不可见）物件压暗；多格物件逐格判断
+        ctx.fillStyle = 'rgba(6,10,18,0.4)';
+        for (const c of footprintOf(d.obj)) {
+          if (!isRevealed(state, player, c.x, c.y)) continue;
+          if (vis[idx(map, c.x, c.y)]) continue;
+          ctx.fillRect(c.x * TILE, c.y * TILE, TILE, TILE);
         }
       } else {
         const sel = d.id === vm.selectedHeroId;

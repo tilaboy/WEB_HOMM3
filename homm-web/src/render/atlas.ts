@@ -10,6 +10,15 @@ import { FACTIONS, NEUTRAL_COLOR, NEUTRAL_DARK } from '../core/data/factions.js'
 
 export const TILE = 32;
 
+/**
+ * 2×2 城堡精灵相对**左上角那一格**的绘制偏移。
+ *
+ * 城堡占地 64×64，精灵 72×96：左右各外扩 4px，上边多出 32px 给塔楼和旗子，
+ * 底边则严格对齐占地格的下沿 —— 这样英雄站在城门格上时，脚正好落在城墙根。
+ */
+export const CASTLE_AX = -4;
+export const CASTLE_AY = -32;
+
 /** 需要单独出贴图的阵营（3 个电脑对手 + 无主），键名直接拼进 sprite 名。 */
 export const SPRITE_OWNERS = ['p1', 'p2', 'p3', 'p4', 'neutral'] as const;
 export type SpriteOwner = (typeof SPRITE_OWNERS)[number];
@@ -400,6 +409,68 @@ function town(pb: PixBuf, roof: string, wall: string, tier: number): void {
   shadow(pb, W / 2, H - 3, 17, 3);
 }
 
+/**
+ * 2×2 城堡。精灵画成 72×88，落到地上时正好铺满两格宽、两格高（见 render 里的锚点）。
+ * 城门永远在**左下角**那一格，也就是正面朝南 —— 城堡背面与右侧都是实墙，
+ * 所以"只能从正面进"这件事在美术上是看得见的，不是靠代码硬掰。
+ */
+function castle(pb: PixBuf, roof: string, wall: string, tier: number): void {
+  const W = 72;
+  const H = 96;
+  const wallDark = shade(wall, -0.35);
+  const wallLite = shade(wall, 0.2);
+  const roofDark = shade(roof, -0.28);
+  const hollow = '#1a1208';
+
+  const keepTop = tier >= 1 ? 30 : 36;
+  const towerTop = tier >= 2 ? 36 : 40;
+  /** 主体下沿：城墙从这里开始往下铺 */
+  const bodyBase = 74;
+
+  /* 屋顶上的旗：先画，屋脊会把旗杆下半段盖住，看着才像插在塔尖上 */
+  pb.vline(36, 5, keepTop - 4, '#5a4326');
+  pb.tri([36, 5], [50, 10], [36, 15], roof);
+
+  /* 中央主楼：比角塔更高更宽，撑住整个剪影 */
+  pb.rect(22, keepTop, 28, bodyBase - keepTop, wall);
+  pb.rect(22, keepTop, 7, bodyBase - keepTop, wallLite);
+  pb.rect(43, keepTop, 7, bodyBase - keepTop, wallDark);
+  for (let x = 22; x < 50; x += 5) pb.rect(x, keepTop - 4, 3, 4, wall);
+  pb.tri([36, keepTop - 4], [18, keepTop - 22], [54, keepTop - 22], roof);
+  pb.tri([36, keepTop - 4], [36, keepTop - 22], [54, keepTop - 22], roofDark);
+  pb.rect(32, keepTop + 14, 8, 14, hollow);
+
+  /* 两座角塔 */
+  for (const tx of [2, 52]) {
+    pb.rect(tx, towerTop, 18, bodyBase - towerTop, wall);
+    pb.rect(tx, towerTop, 5, bodyBase - towerTop, wallLite);
+    pb.rect(tx + 13, towerTop, 5, bodyBase - towerTop, wallDark);
+    for (let x = tx; x < tx + 18; x += 5) pb.rect(x, towerTop - 4, 3, 4, wall);
+    pb.tri([tx + 9, towerTop - 4], [tx - 2, towerTop - 18], [tx + 20, towerTop - 18], roof);
+    pb.tri([tx + 9, towerTop - 4], [tx + 9, towerTop - 18], [tx + 20, towerTop - 18], roofDark);
+    pb.rect(tx + 7, towerTop + 12, 5, 9, hollow);
+  }
+
+  /* 正面城墙：横跨整整两格，也是唯一敞开的一面 */
+  pb.rect(4, 68, W - 8, 20, wall);
+  pb.rect(4, 68, 16, 20, wallLite);
+  pb.rect(52, 68, 16, 20, wallDark);
+  for (let x = 4; x < W - 6; x += 5) pb.rect(x, 64, 3, 4, wall);
+  pb.rect(2, 88, W - 4, 8, wallDark);
+  pb.rect(4, 87, W - 8, 2, shade(wall, -0.5));
+
+  /* 城门：左下角那格的正中，正面唯一能站人的位置 */
+  pb.poly([[14, H], [14, 85], [17, 77], [23, 77], [26, 85], [26, H]], hollow);
+  pb.rect(15, 91, 10, 5, '#4a3524');
+  pb.rect(11, 76, 4, 20, wallDark);
+  pb.rect(25, 76, 4, 20, wallDark);
+  pb.rect(12, 72, 17, 3, roof); // 城门上的小檐
+  pb.rect(12, 75, 17, 1, roofDark);
+
+  pb.outline(OUTLINE);
+  shadow(pb, W / 2, H - 3, 30, 4);
+}
+
 function hero(pb: PixBuf, cloth: string): void {
   pb.rect(13, 32, 3, 8, '#4a3524');
   pb.rect(18, 32, 3, 8, '#4a3524');
@@ -653,7 +724,7 @@ export class Atlas {
   }
 
   static build(): Atlas {
-    const packer = new Packer(1024, 1024);
+    const packer = new Packer(2048, 2048);
     const frames = new Map<string, Frame>();
 
     for (const kind of TERRAIN_KINDS) {
@@ -730,6 +801,10 @@ export class Atlas {
         b = p(40, 52);
         town(b, roof, wall, t);
         put(`town_${key}_${t}`, b);
+        // 2×2 城堡：往上、往左右各借一点边界，落点对齐见 render/MapRenderer
+        b = p(72, 96);
+        castle(b, roof, wall, t);
+        put(`castle_${key}_${t}`, b, CASTLE_AX, CASTLE_AY);
       }
       b = p(32, 44);
       hero(b, roof);

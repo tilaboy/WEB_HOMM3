@@ -3,8 +3,8 @@ import { mulberry32 } from '../dist/core/rng.js';
 import { computePaths, buildPath } from '../dist/core/map/pathfinding.js';
 import { isRevealed } from '../dist/core/map/fog.js';
 import { lossRatio, quickBattle } from '../dist/core/combat/battle.js';
-import { previewInteraction, applyInteraction, battleSetup, enemyHeroAt, heroBattleSetup, applyHeroBattle } from '../dist/core/game/interaction.js';
-import { isPassable } from '../dist/core/map/grid.js';
+import { previewInteraction, applyInteraction, battleSetup, enemyHeroAt, heroBattleSetup, applyHeroBattle, pendingObjectAt } from '../dist/core/game/interaction.js';
+import { isPassable, castleCells, footprintOf } from '../dist/core/map/grid.js';
 import { endDay } from '../dist/core/game/turn.js';
 import { factionIds } from '../dist/core/data/factions.js';
 import { evaluateOutcome, isEliminated, outcomeSummary } from '../dist/core/game/victory.js';
@@ -835,6 +835,107 @@ function runTactical(attacker, defender, seed) {
   ok(!g.heroes[foe.id], '败者英雄离开地图');
   ok(!g.heroOrder.includes(foe.id), 'heroOrder 同步清理败者');
   ok(g.heroes.hero1.pos.x === spot.x && g.heroes.hero1.pos.y === spot.y, '胜者接管败者的位置');
+}
+
+/* ---------------- M5.2：2×2 城堡 + 正面城门 ---------------- */
+
+// 6. 城堡占地与"只能从正面进"
+{
+  const g = createGame({ size: 'medium', seed: 424242, opponents: 3 });
+  const townObjs = Object.values(g.map.objects).filter((o) => o.kind === 'town');
+  ok(townObjs.length >= 4, `地图上至少有 4 座城（${townObjs.length}）`);
+  ok(townObjs.every((o) => footprintOf(o).length === 4), '每座城都占 2×2 四格');
+  ok(
+    townObjs.every((o) => footprintOf(o).some((c) => c.x === o.pos.x && c.y === o.pos.y)),
+    '城门格包含在占地里',
+  );
+
+  // 城堡记录和地图物件必须描述同一块地，否则渲染和寻路会各说各话
+  let fpMatch = true;
+  for (const o of townObjs) {
+    const town = g.towns[o.payload.townId];
+    const a = footprintOf(o).map((c) => `${c.x},${c.y}`).sort().join('|');
+    const b = (town.footprint ?? []).map((c) => `${c.x},${c.y}`).sort().join('|');
+    if (a !== b || town.pos.x !== o.pos.x || town.pos.y !== o.pos.y) fpMatch = false;
+  }
+  ok(fpMatch, '城记录与地图物件的占地一致');
+
+  // 3 格实墙 + 1 格城门
+  let blockedOk = true;
+  let singleGate = true;
+  for (const o of townObjs) {
+    const cells = castleCells(o.pos);
+    for (const c of cells) {
+      const isGate = c.x === o.pos.x && c.y === o.pos.y;
+      if (isGate) continue;
+      if (isPassable(g.map, c.x, c.y)) blockedOk = false;
+    }
+    if (cells.filter((c) => isPassable(g.map, c.x, c.y)).length !== 1) singleGate = false;
+  }
+  ok(blockedOk, '城墙三格一律不可通行');
+  ok(singleGate, '2×2 里只有城门一格能站人');
+  ok(townObjs.every((o) => isPassable(g.map, o.pos.x, o.pos.y)), '城门本身可通行');
+
+  // 背面（北）与右（东）都是墙：进门只能走正面
+  ok(townObjs.every((o) => !isPassable(g.map, o.pos.x, o.pos.y - 1)), '城门正上方是墙，进不来');
+  ok(townObjs.every((o) => !isPassable(g.map, o.pos.x + 1, o.pos.y)), '城门右侧是墙，进不来');
+  ok(
+    townObjs.every(
+      (o) => isPassable(g.map, o.pos.x - 1, o.pos.y) || isPassable(g.map, o.pos.x, o.pos.y + 1),
+    ),
+    '城门正面至少留一个开口',
+  );
+}
+
+// 7. 所有城都走得到，而且进城的最后一步必定来自正面
+{
+  const g = createGame({ size: 'medium', seed: 424242, opponents: 3 });
+  const startId = g.heroOrder[0];
+  const start = g.heroes[startId].pos;
+  const field = computePaths(g, start, Infinity);
+  const towns = Object.values(g.towns);
+  let allReachable = true;
+  let frontOnly = true;
+  let checked = 0;
+  for (const t of towns) {
+    const path = buildPath(g, field, start, t.pos);
+    if (!path.length) {
+      allReachable = false;
+      continue;
+    }
+    checked += 1;
+    // 城门就在旁边时 path 只有一步，这时"上一步"就是出发点
+    const prev = path.length >= 2 ? path[path.length - 2] : start;
+    const fromWest = prev.x === t.pos.x - 1 && prev.y === t.pos.y;
+    const fromSouth = prev.x === t.pos.x && prev.y === t.pos.y + 1;
+    if (!fromWest && !fromSouth) frontOnly = false;
+  }
+  ok(allReachable && checked === towns.length, `每座城都走得到（${checked}/${towns.length}）`);
+  ok(frontOnly, '进城的最后一步必定落在城门正面');
+}
+
+// 8. 站上城门 = 进城；多张地图上都成立
+{
+  const g = createGame({ size: 'medium', seed: 424242, opponents: 1 });
+  const homeTown = Object.values(g.towns).find((t) => t.owner === 'p1');
+  g.heroes.hero1.pos = { x: homeTown.pos.x, y: homeTown.pos.y };
+  const pending = pendingObjectAt(g, 'hero1');
+  ok(!!pending && pending.kind === 'town', '英雄站在城门上能触发进城');
+  ok(previewInteraction(g, 'hero1', pending.id)?.kind === 'town', '自家城门给出"我方据点"');
+
+  let bad = 0;
+  for (const size of ['small', 'medium', 'large']) {
+    for (let seed = 1; seed <= 10; seed++) {
+      const s = createGame({ size, seed: seed * 9973, opponents: 3 });
+      for (const o of Object.values(s.map.objects)) {
+        if (o.kind !== 'town') continue;
+        const cells = castleCells(o.pos);
+        if (cells.filter((c) => isPassable(s.map, c.x, c.y)).length !== 1) bad += 1;
+        if (!footprintOf(o).some((c) => c.x === o.pos.x && c.y === o.pos.y)) bad += 1;
+      }
+    }
+  }
+  ok(bad === 0, `30 张地图 × 4 座城，占地规则全部成立（异常 ${bad}）`);
 }
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);

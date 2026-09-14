@@ -198,7 +198,19 @@ export type ObjectPayload =
 export interface MapObject {
   id: string;
   kind: MapObjectKind;
+  /**
+   * 物件"站上去"的那一格，也就是可交互格。
+   *
+   * 多格物件（目前只有 2×2 城堡）里，它是唯一的入口格 —— **城门**。
+   * 其余 footprint 格子一律不可通行，所以进城的路径天然只剩正面那一条。
+   */
   pos: GridPos;
+  /**
+   * 多格物件占据的全部格子（含 pos 这一格）；单格物件不设置。
+   *
+   * 不变量：`pos` 必在 `footprint` 内，且是其中唯一可通行的格子。
+   */
+  footprint?: GridPos[];
   payload: ObjectPayload;
   once: boolean;
   blocking: boolean;
@@ -240,7 +252,10 @@ export interface BuildingDef {
 export interface Town {
   id: string;
   name: string;
+  /** 城门格：英雄站上这里才能进城。 */
   pos: GridPos;
+  /** 2×2 城堡占的全部格子（含城门）；与地图上的 town 物件保持一致。 */
+  footprint?: GridPos[];
   owner: PlayerId;
   buildings: string[];
   garrison: Army;

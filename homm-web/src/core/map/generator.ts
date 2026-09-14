@@ -18,7 +18,7 @@ import { ARTIFACTS } from '../data/artifacts.js';
 import { HERO_TEMPLATES, START_ARMY } from '../data/heroes.js';
 import { DEFAULT_CONFIG, DIFFICULTIES, FACTIONS, FACTION_ORDER } from '../data/factions.js';
 import { mulberry32, randInt, shuffle, pick } from '../rng.js';
-import { idx, isPassable } from './grid.js';
+import { castleCells, idx, isPassable } from './grid.js';
 import { revealAround } from './fog.js';
 
 export const BASE_MOVE_POINTS = 1800;
@@ -218,6 +218,46 @@ function reachableFrom(map: GameMap, start: GridPos): Uint8Array {
   return seen;
 }
 
+/* ---------------- 城堡选址（2×2，正面开门） ---------------- */
+
+/** 城门外侧的两个正交邻居（西 / 南）里有几个能站人 —— 这就是"正面开口"。 */
+function gateOpenings(map: GameMap, gate: GridPos): number {
+  let n = 0;
+  if (isPassable(map, gate.x - 1, gate.y)) n += 1;
+  if (isPassable(map, gate.x, gate.y + 1)) n += 1;
+  return n;
+}
+
+/** 2×2 外圈能站人的格子数。用来挑"不憋屈"的地址，纯观感偏好。 */
+function castleRoom(map: GameMap, gate: GridPos): number {
+  let n = 0;
+  for (let dy = -1; dy <= 2; dy++) {
+    for (let dx = -1; dx <= 2; dx++) {
+      if (dx >= 0 && dx <= 1 && dy >= 0 && dy <= 1) continue; // 城堡自身占地
+      if (isPassable(map, gate.x + dx, gate.y + dy)) n += 1;
+    }
+  }
+  return n;
+}
+
+/**
+ * 2×2 城堡能不能落在以 gate 为城门的位置上。
+ *
+ * 硬性条件只有两条：四格都得是没被占用的可通行地形；正面至少留一个开口。
+ * 第二条最容易被忽略 —— 没有开口就等于英雄被自己家的城墙关在门外，
+ * 那座城等于不存在，比"城挤在角落里"严重得多。
+ */
+function castleFits(map: GameMap, gate: GridPos): boolean {
+  if (gate.x < 1 || gate.y < 1) return false;
+  for (const c of castleCells(gate)) {
+    if (c.x < 0 || c.y < 0 || c.x >= map.width || c.y >= map.height) return false;
+    const t = map.tiles[idx(map, c.x, c.y)];
+    if (t.objectId) return false;
+    if (!TERRAIN[t.terrain].passable) return false;
+  }
+  return gateOpenings(map, gate) >= 1;
+}
+
 /**
  * 野怪规模是按"战术战场"实测出来的，不是拍脑袋：
  * 起手 20 弓手在 15×11 战场上能白嫖 3~4 轮射击，所以怪必须扛得住那几轮才有威胁。
@@ -277,14 +317,11 @@ function pickHomeSpots(
   const radius = Math.min(w, h) * 0.35;
   const minGap = Math.max(8, Math.round(Math.min(w, h) * 0.3));
 
-  /** 城镇周围至少要有一块空地，别把城塞进一格宽的缝里。 */
-  const roomy = (p: GridPos): boolean => {
-    let n = 0;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      if (isPassable(map, p.x + dx, p.y + dy)) n += 1;
-    }
-    return n >= 3;
-  };
+  // 只从"放得下 2×2 城堡"的格子（城门位）里挑，否则后面还要回退，得不偿失
+  const fits = land.map(toPos).filter((p) => castleFits(map, p));
+  if (fits.length < count) return [];
+  /** 外圈宽敞一点，别把城堡塞进一格宽的缝里。 */
+  const roomy = (p: GridPos): boolean => castleRoom(map, p) >= 8;
 
   const rot = (rng() - 0.5) * Math.PI * 0.5;
   const jx = (rng() - 0.5) * 4;
@@ -298,33 +335,31 @@ function pickHomeSpots(
       x: cx + jx + Math.cos(angle) * radius,
       y: cy + jy + Math.sin(angle) * radius,
     };
-    const candidates = land.map(toPos);
-    const gapOk = candidates.filter((p) =>
+    const gapOk = fits.filter((p) =>
       out.every((o) => Math.abs(o.x - p.x) + Math.abs(o.y - p.y) >= minGap),
     );
-    // 优先挑四周有地的格子；一张图如果全都不宽敞（小地图），再退回只看距离
+    // 优先挑四周有地的格子；一张图如果全都不宽敞（小地图），再逐步放宽间距
     const roomyOk = gapOk.filter(roomy);
-    const pool = roomyOk.length ? roomyOk : gapOk;
-    if (pool.length) {
-      let best = pool[0];
-      let bestD = Infinity;
-      for (const p of pool) {
-        const d = Math.hypot(p.x - ideal.x, p.y - ideal.y);
-        if (d < bestD) {
-          bestD = d;
-          best = p;
-        }
-      }
-      out.push(best);
-      continue;
+    let pool = roomyOk.length ? roomyOk : gapOk;
+    if (!pool.length) {
+      const loose = Math.max(4, Math.round(minGap / 2));
+      pool = fits.filter((p) =>
+        out.every((o) => Math.abs(o.x - p.x) + Math.abs(o.y - p.y) >= loose),
+      );
     }
-    // 退化情形（小地图塞太多人）：挑离所有已有主城最远的一块地
-    let best = toPos(land[0]);
-    let bestD = -1;
-    for (const i of shuffle(rng, land)) {
-      const p = toPos(i);
-      const d = out.length ? Math.min(...out.map((o) => Math.abs(o.x - p.x) + Math.abs(o.y - p.y))) : 0;
-      if (d > bestD) {
+    // 城堡是后放的，前面几座会把地占掉：选之前再按当前地图复核一次，
+    // 顺带挡住"两座 2×2 叠在一起"（叠了会互相覆盖 tile 上的 objectId）
+    pool = pool.filter(
+      (p) =>
+        castleFits(map, p) &&
+        out.every((o) => Math.max(Math.abs(o.x - p.x), Math.abs(o.y - p.y)) >= 2),
+    );
+    if (!pool.length) return [];
+    let best = pool[0];
+    let bestD = Infinity;
+    for (const p of pool) {
+      const d = Math.hypot(p.x - ideal.x, p.y - ideal.y);
+      if (d < bestD) {
         bestD = d;
         best = p;
       }
@@ -343,6 +378,7 @@ function pickTownSpots(
   h: number,
   homePos: GridPos,
   count: number,
+  fits: (p: GridPos) => boolean,
 ): GridPos[] {
   const toPos = (i: number): GridPos => ({ x: i % w, y: (i / w) | 0 });
   const k = Math.min(w, h) / 32;
@@ -355,7 +391,8 @@ function pickTownSpots(
       const edge = Math.min(p.x, p.y, w - 1 - p.x, h - 1 - p.y);
       if (edge < 2) return false;
       const d = dHome(p);
-      return d >= min && d <= max;
+      if (d < min || d > max) return false;
+      return fits(p); // 中立城同样是 2×2，放不下就不能选
     });
 
   let candidates = shuffle(rng, pool(Math.round(14 * k), Math.round(24 * k)));
@@ -363,17 +400,23 @@ function pickTownSpots(
   if (candidates.length < count) candidates = shuffle(rng, pool(Math.round(8 * k), Math.round(40 * k)));
 
   const chosen: GridPos[] = [];
+
+  /** 两座 2×2 城堡只在城门格 Chebyshev 距离 ≥2 时才互不重叠。 */
+  const clear = (p: GridPos): boolean =>
+    chosen.every((c) => Math.max(Math.abs(c.x - p.x), Math.abs(c.y - p.y)) >= 2);
+
   for (const i of candidates) {
     const p = toPos(i);
     if (chosen.length >= count) break;
     // 城与城之间留出间隔，避免两座中立城挤在一起
     if (chosen.every((c) => Math.abs(c.x - p.x) + Math.abs(c.y - p.y) >= gap)) chosen.push(p);
   }
-  // 兜底：实在挑不出就退回最远的一批
+  // 兜底：实在挑不出就放宽间距，但**绝不能重叠** —— 重叠的两座城会互相覆盖
+  // tile 上的 objectId，结果就是"城堡有 2 格能站人"，找路和渲染都会跟着错。
   let i = 0;
   while (chosen.length < count && i < candidates.length) {
     const p = toPos(candidates[i++]);
-    if (!chosen.some((c) => c.x === p.x && c.y === p.y)) chosen.push(p);
+    if (clear(p) && fits(p)) chosen.push(p);
   }
   return chosen;
 }
@@ -426,52 +469,80 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   // 1. 各阵营主城：围绕地图中心均分，p1 固定从左侧出发
   const factions = FACTION_ORDER.slice(0, 1 + cfg.opponents);
   const homeSpots = pickHomeSpots(rng, map, land, w, h, factions.length);
+  // 地图太碎、放不下这么多 2×2 城堡 → 换个偏移种子重掷地形
+  if (homeSpots.length < factions.length) return buildGame(cfg, attempt + 1);
   const homePos = homeSpots[0];
+
+  /**
+   * 落一座 2×2 城堡：四格都挂同一个物件 id，但只有城门那格可通行。
+   * 分两笔写 tile 是刻意的 —— placer.add 只认 pos 那一格。
+   */
+  const addCastle = (gate: GridPos, townId: string): void => {
+    const cells = castleCells(gate);
+    const obj = placer.add({
+      kind: 'town', pos: gate, footprint: cells, payload: { townId },
+      once: false, blocking: false, visitedBy: [],
+    });
+    for (const c of cells) {
+      if (c.x === gate.x && c.y === gate.y) continue;
+      map.tiles[idx(map, c.x, c.y)].objectId = obj.id;
+    }
+  };
+
+  // 先落主城。顺序很关键：中立城要靠 castleFits 看见主城的占地，
+  // 否则两座 2×2 可能叠在一起，tile 上的 objectId 互相覆盖。
+  homeSpots.forEach((gate, i) => {
+    const fid = factions[i];
+    addCastle(gate, i === 0 ? 'town_home' : `town_${fid}`);
+  });
 
   // 2. 中立城：放在中等距离的内陆，别再塞进地图角落；对手越多中立城越少
   const neutralCount = Math.max(
     2,
     Math.round(3 * k) - Math.round(cfg.opponents * 0.5),
   );
-  const neutralSpots = pickTownSpots(rng, land, w, h, homePos, neutralCount);
+  const neutralSpots = pickTownSpots(rng, land, w, h, homePos, neutralCount, (p) =>
+    castleFits(map, p),
+  );
+  neutralSpots.forEach((gate, i) => addCastle(gate, `town_n${i + 1}`));
 
-  homeSpots.forEach((pos, i) => {
-    const fid = factions[i];
-    const id = i === 0 ? 'town_home' : `town_${fid}`;
-    placer.add({
-      kind: 'town', pos, payload: { townId: id },
-      once: false, blocking: false, visitedBy: [],
-    });
-  });
-  neutralSpots.forEach((pos, i) => {
-    const id = `town_n${i + 1}`;
-    placer.add({
-      kind: 'town', pos, payload: { townId: id },
-      once: false, blocking: false, visitedBy: [],
-    });
-  });
-
-  // 3. 英雄出生点：各自主城旁一格
+  // 3. 英雄出生点：贴着城门找一格空地（城门正面优先，找不到就退一圈）
   const taken = new Set<number>([
     ...homeSpots.map((p) => idx(map, p.x, p.y)),
     ...neutralSpots.map((p) => idx(map, p.x, p.y)),
   ]);
   const heroSpots: GridPos[] = [];
-  const DIRS8 = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
-  for (const home of homeSpots) {
+  for (const gate of homeSpots) {
     let spot: GridPos | null = null;
-    for (const [dx, dy] of shuffle(rng, DIRS8)) {
-      const nx = home.x + dx;
-      const ny = home.y + dy;
-      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-      const ni = idx(map, nx, ny);
-      if (isPassable(map, nx, ny) && !map.tiles[ni].objectId && !taken.has(ni)) {
-        spot = { x: nx, y: ny };
-        taken.add(ni);
-        break;
+    for (let ring = 1; ring <= 2 && !spot; ring++) {
+      const ringCells: GridPos[] = [];
+      for (let dy = -ring; dy <= ring; dy++) {
+        for (let dx = -ring; dx <= ring; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+          ringCells.push({ x: gate.x + dx, y: gate.y + dy });
+        }
+      }
+      for (const c of shuffle(rng, ringCells)) {
+        if (c.x < 0 || c.y < 0 || c.x >= w || c.y >= h) continue;
+        const ni = idx(map, c.x, c.y);
+        // 城堡另外三格这时已经挂上物件了，isPassable + objectId 两道闸都会把它们挡掉
+        if (isPassable(map, c.x, c.y) && !map.tiles[ni].objectId && !taken.has(ni)) {
+          spot = c;
+          break;
+        }
       }
     }
-    heroSpots.push(spot ?? home);
+    if (spot) taken.add(idx(map, spot.x, spot.y));
+    heroSpots.push(spot ?? gate);
+  }
+
+  // 3b. 城堡一次占掉 3 格，理论上能把地图切成孤岛；真切了就换个偏移种子重来
+  {
+    const fromStart = reachableFrom(map, heroSpots[0]);
+    const mustReach = [...homeSpots, ...neutralSpots, ...heroSpots];
+    if (!mustReach.every((p) => fromStart[idx(map, p.x, p.y)] === 1)) {
+      return buildGame(cfg, attempt + 1);
+    }
   }
 
   // 4. 障碍物（先放，之后只在仍连通的格子上放可交互物）
@@ -668,6 +739,7 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
       id: townId,
       name: def.home,
       pos: homeSpots[i],
+      footprint: castleCells(homeSpots[i]),
       owner: fid,
       buildings: ['tavern', 'dwell1', 'dwell2'],
       garrison: [{ unitTypeId: 'archer', count: 10 }],
@@ -681,6 +753,7 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
       id,
       name: NEUTRAL_NAMES[i] ?? `中立据点 ${i + 1}`,
       pos,
+      footprint: castleCells(pos),
       owner: 'neutral',
       buildings: [],
       garrison: [
@@ -692,7 +765,7 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   });
 
   const state: GameState = {
-    version: 6,
+    version: 7,
     seed,
     config: cfg,
     map,

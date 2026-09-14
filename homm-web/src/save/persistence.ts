@@ -3,7 +3,7 @@ import type { GameConfig, GameState } from '../core/types.js';
 const KEY = 'homm-save-v1';
 const CONFIG_KEY = 'homm-config-v1';
 /** 存档结构版本：字段有增删就 +1，旧存档会被安全丢弃而不是崩在半路。 */
-const VERSION = 6;
+const VERSION = 7;
 
 export function saveGame(state: GameState): void {
   try {
