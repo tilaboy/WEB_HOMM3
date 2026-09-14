@@ -6,8 +6,25 @@
  * ③ core/ 完全不知道美术的存在，跟之前程序化绘制一样保持零耦合。
  */
 import { PixBuf, fbm, hash2, mix, pnoise, shade } from './pixel.js';
+import { FACTIONS, NEUTRAL_COLOR, NEUTRAL_DARK } from '../core/data/factions.js';
 
 export const TILE = 32;
+
+/** 需要单独出贴图的阵营（3 个电脑对手 + 无主），键名直接拼进 sprite 名。 */
+export const SPRITE_OWNERS = ['p1', 'p2', 'p3', 'p4', 'neutral'] as const;
+export type SpriteOwner = (typeof SPRITE_OWNERS)[number];
+
+/** 阵营配色 → 城镇屋顶/墙体、英雄披风的像素色。 */
+export function ownerPalette(owner: SpriteOwner): { roof: string; wall: string } {
+  if (owner === 'neutral') {
+    return { roof: NEUTRAL_COLOR, wall: '#a89f8c' };
+  }
+  const def = FACTIONS[owner];
+  return { roof: def.color, wall: def.id === 'p1' ? '#d5ccb6' : shade('#d5ccb6', -0.12) };
+}
+
+/** 中立旗帜的暗色面，供 UI 复用。 */
+export const NEUTRAL_DARK_COLOR = NEUTRAL_DARK;
 
 export interface Frame {
   x: number;
@@ -338,11 +355,9 @@ function mine(pb: PixBuf, kind: 'gold' | 'wood' | 'ore'): void {
   shadow(pb, 16, 39, 13, 2.5);
 }
 
-function town(pb: PixBuf, owner: 'p1' | 'neutral', tier: number): void {
+function town(pb: PixBuf, roof: string, wall: string, tier: number): void {
   const W = 40;
   const H = 52;
-  const roof = owner === 'p1' ? '#3f6fd0' : '#8a6a55';
-  const wall = owner === 'p1' ? '#d5ccb6' : '#a89f8c';
   const wallDark = shade(wall, -0.35);
   const wallLite = shade(wall, 0.2);
 
@@ -385,8 +400,7 @@ function town(pb: PixBuf, owner: 'p1' | 'neutral', tier: number): void {
   shadow(pb, W / 2, H - 3, 17, 3);
 }
 
-function hero(pb: PixBuf, owner: 'p1'): void {
-  const cloth = owner === 'p1' ? '#3f6fd0' : '#b04a4a';
+function hero(pb: PixBuf, cloth: string): void {
   pb.rect(13, 32, 3, 8, '#4a3524');
   pb.rect(18, 32, 3, 8, '#4a3524');
   pb.poly([[11, 21], [21, 21], [23, 33], [9, 33]], cloth);
@@ -710,17 +724,17 @@ export class Atlas {
       put(`mine_${k}`, b);
     }
 
-    for (const owner of ['p1', 'neutral'] as const) {
+    for (const key of SPRITE_OWNERS) {
+      const { roof, wall } = ownerPalette(key);
       for (let t = 0; t < 4; t++) {
         b = p(40, 52);
-        town(b, owner, t);
-        put(`town_${owner}_${t}`, b);
+        town(b, roof, wall, t);
+        put(`town_${key}_${t}`, b);
       }
+      b = p(32, 44);
+      hero(b, roof);
+      put(`hero_${key}`, b);
     }
-
-    b = p(32, 44);
-    hero(b, 'p1');
-    put('hero_p1', b);
 
     b = p(32, 30);
     wolf(b);

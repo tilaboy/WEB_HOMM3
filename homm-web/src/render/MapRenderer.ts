@@ -1,5 +1,6 @@
 import type { GameState, GridPos, MapObject, PlayerId } from '../core/types.js';
 import { DWELLING_IDS } from '../core/data/buildings.js';
+import { factionColor } from '../core/data/factions.js';
 import { computeVisible, isRevealed } from '../core/map/fog.js';
 import { idx } from '../core/map/grid.js';
 import { Camera } from './camera.js';
@@ -20,7 +21,7 @@ export interface ViewModel {
 
 type DrawKind =
   | { t: 'obj'; y: number; x: number; obj: MapObject }
-  | { t: 'hero'; y: number; x: number; id: string; fx: number; fy: number };
+  | { t: 'hero'; y: number; x: number; id: string; fx: number; fy: number; owner: PlayerId };
 
 function objSprite(state: GameState, obj: MapObject, hash: number): string | null {
   switch (obj.kind) {
@@ -33,7 +34,7 @@ function objSprite(state: GameState, obj: MapObject, hash: number): string | nul
     case 'town': {
       const t = state.towns[(obj.payload as { townId: string }).townId];
       const tier = t ? Math.min(3, Math.floor(t.buildings.filter((b) => DWELLING_IDS.includes(b)).length / 1.5)) : 0;
-      const own = t && t.owner === 'p1' ? 'p1' : 'neutral';
+      const own = t && t.owner !== 'neutral' ? t.owner : 'neutral';
       return `town_${own}_${tier}`;
     }
     case 'wanderingMonster': {
@@ -236,7 +237,9 @@ export class MapRenderer {
       if (!hero) continue;
       const rp = vm.heroRender[hid] ?? { x: hero.pos.x, y: hero.pos.y };
       if (rp.x < x0 - 2 || rp.x > x1 + 2 || rp.y < y0 - 2 || rp.y > y1 + 2) continue;
-      draws.push({ t: 'hero', y: rp.y, x: rp.x, id: hid, fx: rp.x, fy: rp.y });
+      // 敌方英雄只在当前视野内出现：探索过的位置不会记住一个会走路的敌人
+      if (hero.owner !== player && !vis[idx(map, Math.round(rp.x), Math.round(rp.y))]) continue;
+      draws.push({ t: 'hero', y: rp.y, x: rp.x, id: hid, fx: rp.x, fy: rp.y, owner: hero.owner });
     }
     draws.sort((a, b) => a.y - b.y || a.x - b.x);
 
@@ -259,7 +262,16 @@ export class MapRenderer {
           ctx.ellipse(d.fx * TILE + TILE / 2, d.fy * TILE + TILE - 4, 11, 4.5, 0, 0, Math.PI * 2);
           ctx.fill();
         }
-        this.blit('hero_p1', Math.round(d.fx), Math.round(d.fy));
+        // 敌方英雄脚下加一圈阵营色底盘，多阵营混战时一眼看清谁是谁
+        if (d.owner !== player) {
+          ctx.fillStyle = factionColor(d.owner);
+          ctx.globalAlpha = 0.85;
+          ctx.beginPath();
+          ctx.ellipse(d.fx * TILE + TILE / 2, d.fy * TILE + TILE - 4, 10, 4, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+        this.blit(`hero_${d.owner === 'neutral' ? 'neutral' : d.owner}`, Math.round(d.fx), Math.round(d.fy));
       }
     }
 

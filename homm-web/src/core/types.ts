@@ -1,4 +1,50 @@
-export type PlayerId = 'p1' | 'neutral';
+/** 人类玩家固定是 p1；p2~p4 是电脑对手；neutral 表示无主（中立方）。 */
+export type FactionId = 'p1' | 'p2' | 'p3' | 'p4';
+export type PlayerId = FactionId | 'neutral';
+
+export type MapSize = 'small' | 'medium' | 'large';
+export type Difficulty = 'easy' | 'normal' | 'hard';
+
+/** 难度档：只影响电脑对手，不削弱玩家（HOMM 的"AI 优势"思路）。 */
+export interface DifficultyDef {
+  id: Difficulty;
+  name: string;
+  desc: string;
+  /** AI 起始资源倍率 */
+  startMul: number;
+  /** AI 每周增长的额外系数（0.1 = 多 10%） */
+  growthBonus: number;
+  /** AI 出击所需的兵力阈值倍率：越低越早出门 */
+  aggression: number;
+}
+
+export interface FactionDef {
+  id: FactionId;
+  name: string;
+  /** 默认领主名（电脑对手用） */
+  lord: string;
+  /** 主城名 */
+  home: string;
+  color: string;
+  /** 旗帜/城镇屋顶的暗色面 */
+  dark: string;
+}
+
+/** 一局游戏的开局设置，随存档一起保存，读档后局面可完全复现。 */
+export interface GameConfig {
+  size: MapSize;
+  seed: number;
+  /** 电脑对手数量 0~3 */
+  opponents: number;
+  difficulty: Difficulty;
+  playerName: string;
+}
+
+export const MAP_SIZES: Record<MapSize, { width: number; height: number; name: string }> = {
+  small: { width: 24, height: 24, name: '小型' },
+  medium: { width: 32, height: 32, name: '中型' },
+  large: { width: 40, height: 40, name: '大型' },
+};
 
 export type ResourceKind = 'gold' | 'wood' | 'ore' | 'gem' | 'crystal' | 'sulfur' | 'mercury';
 export type ResourceBag = Partial<Record<ResourceKind, number>>;
@@ -208,13 +254,22 @@ export interface Town {
 /* ---------------- state ---------------- */
 
 export interface PlayerState {
+  /** 显示名：玩家自己填的名字，或电脑领主的名字。 */
+  name: string;
+  faction: FactionId;
+  /** false = 电脑对手（由 ai.ts 驱动） */
+  isHuman: boolean;
   resources: ResourceBag;
   revealed: number[];
 }
 
+/** 一局的终局状态。playing 之外的状态会锁定操作并弹结算界面。 */
+export type GameStatus = 'playing' | 'won' | 'lost';
+
 export interface GameState {
   version: number;
   seed: number;
+  config: GameConfig;
   map: GameMap;
   heroes: Record<string, Hero>;
   towns: Record<string, Town>;
@@ -223,6 +278,7 @@ export interface GameState {
   heroOrder: string[];
   log: LogEntry[];
   nextObjectId: number;
+  status: GameStatus;
 }
 
 export interface LogEntry {

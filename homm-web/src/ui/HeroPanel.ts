@@ -1,9 +1,14 @@
-import type { GameState, GridPos, Hero } from '../core/types.js';
+import type { GameState, GridPos, Hero, PlayerId } from '../core/types.js';
 import { ARTIFACTS, ARTIFACT_SLOTS } from '../core/data/artifacts.js';
 import { getUnit } from '../core/data/units.js';
+import { factionColor, factionIds, factionName } from '../core/data/factions.js';
 import { isRevealed } from '../core/map/fog.js';
 import { effectivePrimary, expToNext, manaMaxOf, maxMovePoints } from '../core/game/hero.js';
+import { factionStanding } from '../core/game/victory.js';
 import { dayOfWeek, weekOf } from '../core/game/turn.js';
+
+/** 面板永远是人类玩家 p1 的视角（迷雾、城池列表都按这个来）。 */
+const VIEWER: PlayerId = 'p1';
 
 export interface TownHooks {
   /** 把镜头移到该据点 */
@@ -43,6 +48,7 @@ export class HeroPanel {
 
     const hero = heroId ? state.heroes[heroId] : null;
     if (!hero) {
+      this.el.appendChild(this.factionSection(state));
       this.el.appendChild(this.townSection(state, null));
       const px = div('sec dim', '暂无可用英雄');
       this.el.appendChild(px);
@@ -54,6 +60,7 @@ export class HeroPanel {
     this.el.appendChild(this.barSection(hero));
     this.el.appendChild(this.statSection(hero));
     this.el.appendChild(this.armySection(hero));
+    this.el.appendChild(this.factionSection(state));
     this.el.appendChild(this.townSection(state, hero.id));
   }
 
@@ -68,6 +75,7 @@ export class HeroPanel {
     const face = div('hp-face');
     face.textContent = hero.name.slice(0, 1);
     face.title = `${hero.name} · ${hero.heroClass}`;
+    face.style.borderColor = factionColor(hero.owner);
     wrap.appendChild(face);
 
     const meta = div('hp-meta');
@@ -197,6 +205,30 @@ export class HeroPanel {
     return wrap;
   }
 
+  /* ---------------- 势力（多阵营对局里最该一眼看到的东西） ---------------- */
+
+  private factionSection(state: GameState): HTMLElement {
+    const ids = factionIds(state);
+    if (ids.length < 2) return div('sec hp-factions hidden');
+
+    const wrap = div('sec hp-factions');
+    const h = document.createElement('h3');
+    h.textContent = '势力';
+    wrap.appendChild(h);
+
+    for (const id of ids) {
+      const st = factionStanding(state, id);
+      const row = div('hp-frow' + (st.alive ? '' : ' dead'));
+      const dot = div('hp-fdot');
+      dot.style.background = factionColor(id);
+      const nm = div('hp-fname', id === VIEWER ? `${state.players[id]?.name ?? factionName(id)}（你）` : (state.players[id]?.name ?? factionName(id)));
+      const meta = div('hp-fmeta', st.alive ? `${st.towns} 城 · ${st.heroes} 将` : '已出局');
+      row.append(dot, nm, meta);
+      wrap.appendChild(row);
+    }
+    return wrap;
+  }
+
   /* ---------------- 城池（占据 HOMM3 小地图的位置） ---------------- */
 
   private townSection(state: GameState, heroId: string | null): HTMLElement {
@@ -206,7 +238,7 @@ export class HeroPanel {
     const known: (typeof state.towns)[string][] = [];
     let hidden = 0;
     for (const t of Object.values(state.towns)) {
-      if (isRevealed(state, 'p1', t.pos.x, t.pos.y)) known.push(t);
+      if (isRevealed(state, VIEWER, t.pos.x, t.pos.y)) known.push(t);
       else hidden += 1;
     }
 
@@ -222,12 +254,13 @@ export class HeroPanel {
     }
 
     const list = div('hp-tlist');
-    known.sort((a, b) => (a.owner === 'p1' ? -1 : 1) - (b.owner === 'p1' ? -1 : 1));
+    known.sort((a, b) => (a.owner === VIEWER ? -1 : 1) - (b.owner === VIEWER ? -1 : 1));
     for (const t of known) {
-      const mine = t.owner === 'p1';
+      const mine = t.owner === VIEWER;
       const row = div('hp-trow');
 
       const dot = div('hp-tdot' + (mine ? ' mine' : ''));
+      if (!mine) dot.style.background = factionColor(t.owner);
       row.appendChild(dot);
 
       const nm = div('hp-tname', t.name);
@@ -236,7 +269,11 @@ export class HeroPanel {
       const troops = t.garrison.reduce((s, st) => s + st.count, 0);
       const dist = hero ? manhattan(hero.pos, t.pos) : null;
       const meta = div('hp-tmeta');
-      meta.textContent = [troops ? `驻军 ${troops}` : '空城', dist !== null ? `${dist} 格` : '']
+      meta.textContent = [
+        mine ? '' : t.owner === 'neutral' ? '无主' : factionName(t.owner),
+        troops ? `驻军 ${troops}` : '空城',
+        dist !== null ? `${dist} 格` : '',
+      ]
         .filter(Boolean)
         .join(' · ');
       row.appendChild(meta);

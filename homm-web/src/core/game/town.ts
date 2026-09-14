@@ -10,6 +10,7 @@ import type {
   Town,
 } from '../types.js';
 import { BASE_TOWN_INCOME, BUILDINGS, HERO_HIRE_COST } from '../data/buildings.js';
+import { DIFFICULTIES, factionIds, factionName } from '../data/factions.js';
 import { getSpell, spellsOfGuild } from '../data/spells.js';
 import { MAX_STACKS, getUnit } from '../data/units.js';
 import { HERO_TEMPLATES } from '../data/heroes.js';
@@ -104,10 +105,10 @@ function fail(reason: string): BuildStatus {
   return { built: false, unlocked: false, affordable: false, spentToday: false, reason };
 }
 
-export function buildStatus(state: GameState, town: Town, id: string): BuildStatus {
+export function buildStatus(state: GameState, town: Town, id: string, actor: PlayerId = 'p1'): BuildStatus {
   const def = BUILDINGS[id];
   if (!def) return fail('未知建筑');
-  if (town.owner !== 'p1') {
+  if (town.owner !== actor) {
     return {
       built: hasBuilding(town, id), unlocked: false, affordable: false, spentToday: false,
       reason: '非我方城镇',
@@ -142,14 +143,14 @@ export function canBuildToday(state: GameState, town: Town): boolean {
   return town.builtDay !== state.day;
 }
 
-export function canBuild(state: GameState, town: Town, id: string): boolean {
-  const s = buildStatus(state, town, id);
+export function canBuild(state: GameState, town: Town, id: string, actor: PlayerId = 'p1'): boolean {
+  const s = buildStatus(state, town, id, actor);
   return !s.built && s.unlocked && s.affordable && !s.spentToday;
 }
 
-export function build(state: GameState, town: Town, id: string): boolean {
-  if (!canBuild(state, town, id)) return false;
-  if (!pay(state, town.owner, BUILDINGS[id]!.cost)) return false;
+export function build(state: GameState, town: Town, id: string, actor: PlayerId = 'p1'): boolean {
+  if (!canBuild(state, town, id, actor)) return false;
+  if (!pay(state, actor, BUILDINGS[id]!.cost)) return false;
   town.buildings.push(id);
   town.builtDay = state.day;
   const g = BUILDINGS[id]!.growth;
@@ -194,14 +195,19 @@ function spreadGuildSpells(state: GameState, town: Town): void {
 
 /* ---------------- weekly growth ---------------- */
 
+/** 每周增长：所有阵营一起结算，电脑对手按难度再拿一点额外增长。 */
 export function applyWeeklyGrowth(state: GameState): void {
-  for (const town of ownedTowns(state, 'p1')) {
-    const mult = townGrowthMultiplier(town);
-    for (const id of town.buildings) {
-      const g = BUILDINGS[id]?.growth;
-      if (!g) continue;
-      const add = Math.floor(g.count * mult);
-      town.growthPool[g.unitTypeId] = (town.growthPool[g.unitTypeId] ?? 0) + add;
+  const aiBonus = DIFFICULTIES[state.config?.difficulty ?? 'normal'].growthBonus;
+  for (const player of factionIds(state)) {
+    const bonus = state.players[player]?.isHuman ? 0 : aiBonus;
+    for (const town of ownedTowns(state, player)) {
+      const mult = townGrowthMultiplier(town) + bonus;
+      for (const id of town.buildings) {
+        const g = BUILDINGS[id]?.growth;
+        if (!g) continue;
+        const add = Math.floor(g.count * mult);
+        town.growthPool[g.unitTypeId] = (town.growthPool[g.unitTypeId] ?? 0) + add;
+      }
     }
   }
 }
@@ -461,8 +467,8 @@ export function captureTown(state: GameState, town: Town, player: PlayerId): voi
   town.garrison = [];
   if (!town.buildings.includes('tavern')) town.buildings.push('tavern');
   if (!town.growthPool) town.growthPool = {};
-  pushLog(state, `${town.name} 已被我方占领`);
-  if (player === 'p1' && guildLevel(town) > 0) spreadGuildSpells(state, town);
+  pushLog(state, `${town.name} 被${factionName(player)}占领`);
+  if (guildLevel(town) > 0) spreadGuildSpells(state, town);
 }
 
 /** 城镇驻军是否还有战斗力。 */

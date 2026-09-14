@@ -6,6 +6,7 @@ import type {
   Hero,
   MapObject,
   MinePayload,
+  PlayerId,
 } from '../types.js';
 import { ARTIFACTS } from '../data/artifacts.js';
 import { getUnit } from '../data/units.js';
@@ -15,7 +16,7 @@ import type { BattleOutcome, BattleSide } from '../combat/battle.js';
 import { deriveSeed } from '../rng.js';
 import { addResources, effectivePrimary, gainExp, maxMovePoints } from './hero.js';
 import { townDefenseBonus, captureTown } from './town.js';
-import { pushLog } from './turn.js';
+import { pushLog } from './log.js';
 
 export interface PendingInteraction {
   objId: string;
@@ -472,4 +473,99 @@ export function pendingObjectAt(state: GameState, heroId: string): MapObject | n
   // 自家矿场只是地标，不必每次路过都弹窗
   if (obj.kind === 'mine' && (obj.payload as MinePayload).owner === hero.owner) return null;
   return obj;
+}
+
+/* ---------------- 英雄遭遇战（多阵营） ---------------- */
+
+function hashId(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** 站在 (x,y) 上的、不属于 except 阵营的英雄。 */
+export function enemyHeroAt(state: GameState, x: number, y: number, except: PlayerId): Hero | null {
+  for (const id of state.heroOrder) {
+    const h = state.heroes[id];
+    if (!h || h.owner === except) continue;
+    if (h.pos.x === x && h.pos.y === y) return h;
+  }
+  return null;
+}
+
+function sideOf(hero: Hero): BattleSide {
+  const p = effectivePrimary(hero);
+  return {
+    army: hero.army,
+    attack: p.attack,
+    defense: p.defense,
+    caster: { spells: hero.spells, spellPower: p.spellPower, mana: hero.mana },
+  };
+}
+
+/** 遭遇战的双方参数；种子由双方 id 与天数派生，同一天同一对英雄结果一致。 */
+export function heroBattleSetup(
+  state: GameState,
+  attackerId: string,
+  defenderId: string,
+): { attacker: BattleSide; defender: BattleSide; seed: number } | null {
+  const a = state.heroes[attackerId];
+  const d = state.heroes[defenderId];
+  if (!a || !d || a.owner === d.owner) return null;
+  return {
+    attacker: sideOf(a),
+    defender: sideOf(d),
+    seed: deriveSeed(state.seed, hashId(attackerId), hashId(defenderId), state.day),
+  };
+}
+
+/** 把遭遇战结果写回世界：败者的英雄从地图上消失，胜者接管他的位置。 */
+export function applyHeroBattle(
+  state: GameState,
+  attackerId: string,
+  defenderId: string,
+  outcome: BattleOutcome,
+): InteractionResult {
+  const a = state.heroes[attackerId];
+  const d = state.heroes[defenderId];
+  const empty: InteractionResult = { title: '', message: '', levelUps: [], heroDefeated: false };
+  if (!a || !d) return empty;
+
+  const spot = { x: d.pos.x, y: d.pos.y };
+  syncMana(a, outcome);
+
+  if (outcome.win) {
+    a.army = outcome.survivors;
+    a.pos = spot;
+    const notes = gainExp(state, a, outcome.expGained);
+    removeHero(state, defenderId);
+    pushLog(state, `${a.name} 击败了 ${d.name}`);
+    return {
+      title: '遭遇战胜利',
+      message:
+        `${d.name} 的部队被击溃，我方接管了他的位置。获得 ${outcome.expGained} 点经验。` +
+        `\n剩余兵力：${describeArmy(a.army)}。`,
+      levelUps: notes,
+      heroDefeated: false,
+    };
+  }
+
+  // 攻方战败：进攻方会死，防守方留下残兵
+  d.army = outcome.enemySurvivors;
+  removeHero(state, attackerId);
+  pushLog(state, `${a.name} 在遭遇战中败给 ${d.name}`);
+  return {
+    title: '遭遇战失利',
+    message: `${a.name} 被 ${d.name} 击溃。\n对方剩余兵力：${describeArmy(d.army)}。`,
+    levelUps: [],
+    heroDefeated: attackerId === 'hero1',
+  };
+}
+
+function removeHero(state: GameState, heroId: string): void {
+  delete state.heroes[heroId];
+  state.heroOrder = state.heroOrder.filter((id) => id !== heroId);
 }

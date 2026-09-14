@@ -1,5 +1,6 @@
-import type { GameState, Hero, HeroPrimary, PlayerId, ResourceBag } from '../types.js';
+import type { Army, GameState, Hero, HeroPrimary, PlayerId, ResourceBag } from '../types.js';
 import { ARTIFACTS } from '../data/artifacts.js';
+import { getUnit } from '../data/units.js';
 import { BASE_MOVE_POINTS } from '../map/generator.js';
 import { deriveSeed, mulberry32 } from '../rng.js';
 
@@ -80,4 +81,15 @@ export function addResources(state: GameState, player: PlayerId, bag: ResourceBa
 
 export function armySize(hero: Hero): number {
   return hero.army.reduce((s, st) => s + st.count, 0);
+}
+
+/** 部队总血量，用作"这支部队有多强"的粗略度量（AI 决策与驻军评估共用）。 */
+export function armyHp(army: Army): number {
+  return army.reduce((s, st) => s + (st.count > 0 ? st.count * getUnit(st.unitTypeId).hp : 0), 0);
+}
+
+/** 英雄的战斗力：血量 × 四维带来的粗略加成，只用于比较大小。 */
+export function heroPower(hero: Hero): number {
+  const p = effectivePrimary(hero);
+  return armyHp(hero.army) * (1 + (p.attack + p.defense) * 0.03);
 }

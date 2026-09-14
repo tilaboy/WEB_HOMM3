@@ -3,9 +3,11 @@ import { mulberry32 } from '../dist/core/rng.js';
 import { computePaths, buildPath } from '../dist/core/map/pathfinding.js';
 import { isRevealed } from '../dist/core/map/fog.js';
 import { lossRatio, quickBattle } from '../dist/core/combat/battle.js';
-import { previewInteraction, applyInteraction, battleSetup } from '../dist/core/game/interaction.js';
+import { previewInteraction, applyInteraction, battleSetup, enemyHeroAt, heroBattleSetup, applyHeroBattle } from '../dist/core/game/interaction.js';
 import { isPassable } from '../dist/core/map/grid.js';
 import { endDay } from '../dist/core/game/turn.js';
+import { factionIds } from '../dist/core/data/factions.js';
+import { evaluateOutcome, isEliminated, outcomeSummary } from '../dist/core/game/victory.js';
 import { BASE_TOWN_INCOME } from '../dist/core/data/buildings.js';
 import { getUnit } from '../dist/core/data/units.js';
 import { bfs, distance, hexCenter, hexLine, hexList, inField, neighbors, pickHex, FIELD_H, FIELD_W } from '../dist/core/combat/hex.js';
@@ -355,7 +357,11 @@ ok(!g5.map.objects[mon.id], '野怪已消失，可以通行');
 const g6 = createGame(13579);
 const mon6 = Object.values(g6.map.objects).find((o) => o.kind === 'wanderingMonster');
 const h6 = g6.heroes.hero1;
-const from = { x: mon6.pos.x, y: mon6.pos.y + 1 };
+// 落点必须真的能站人（地图是随机生成的，别写死方向）
+const from = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1]]
+  .map(([dx, dy]) => ({ x: mon6.pos.x + dx, y: mon6.pos.y + dy }))
+  .find((p) => p.x >= 0 && p.y >= 0 && p.x < g6.map.width && p.y < g6.map.height && isPassable(g6.map, p.x, p.y));
+ok(!!from, '野怪旁边找得到可站立的撤退落点');
 h6.pos = { ...mon6.pos };
 const armyBefore = h6.army.reduce((s, st) => s + st.count, 0);
 const flee = applyInteraction(g6, 'hero1', mon6.id, false, { retreatTo: from });
@@ -540,14 +546,15 @@ function runTactical(attacker, defender, seed) {
 {
   const g9 = createGame(424242);
   const mon9 = Object.values(g9.map.objects).find((o) => o.kind === 'wanderingMonster');
+
+  // 先摆好站位与兵力，再取 battleSetup —— 它引用的是当时的部队，顺序不能反
+  g9.heroes.hero1.pos = { ...mon9.pos };
+  g9.heroes.hero1.army = [{ unitTypeId: 'angel', count: 30 }];
   const setup = battleSetup(g9, 'hero1', mon9);
   ok(!!setup && setup.attacker.army.length > 0, 'battleSetup 给出攻方部队');
   ok(setup.defender.army.length > 0, 'battleSetup 给出守方部队');
   ok(Number.isFinite(setup.seed), 'battleSetup 给出战斗种子');
 
-  // 用战术引擎跑出真实战果后交给 applyInteraction
-  g9.heroes.hero1.pos = { ...mon9.pos };
-  g9.heroes.hero1.army = [{ unitTypeId: 'angel', count: 30 }];
   const won = autoResolve(createBattle(setup.attacker, setup.defender, setup.seed));
   const res9 = applyInteraction(g9, 'hero1', mon9.id, true, { outcome: won });
   ok(won.win === true, '30 天使对野怪应取胜');
@@ -557,7 +564,11 @@ function runTactical(attacker, defender, seed) {
   // 从战场上逃跑 → 走撤退分支（退回上一格 + 本日不能动）
   const g10 = createGame(424243);
   const mon10 = Object.values(g10.map.objects).find((o) => o.kind === 'wanderingMonster');
-  const back = { x: mon10.pos.x, y: mon10.pos.y - 1 };
+  // 撤退落点必须真的能站人（地图是随机生成的，别写死方向）
+  const back = [[0, -1], [0, 1], [-1, 0], [1, 0], [-1, -1], [1, 1]]
+    .map(([dx, dy]) => ({ x: mon10.pos.x + dx, y: mon10.pos.y + dy }))
+    .find((p) => p.x >= 0 && p.y >= 0 && p.x < g10.map.width && p.y < g10.map.height && isPassable(g10.map, p.x, p.y));
+  ok(!!back, '野怪旁边找得到可站立的撤退落点');
   g10.heroes.hero1.pos = { ...mon10.pos };
   const fledOutcome = { ...autoResolve(createBattle({ army: g10.heroes.hero1.army, attack: 0, defense: 0 }, { army: mon10.payload.army, attack: 0, defense: 0 }, 1)), fled: true, win: false };
   const res10 = applyInteraction(g10, 'hero1', mon10.id, true, { outcome: fledOutcome, retreatTo: back });
@@ -703,6 +714,127 @@ function runTactical(attacker, defender, seed) {
 
   h.mana = 0;
   ok(!canAdventureCast(g, h, 'viewAir').ok, '法力不足时不能施法');
+}
+
+/* ---------------- M5：开局设置 + 多阵营 + 电脑对手 ---------------- */
+
+// 1. 设置项真的生效
+{
+  for (const [size, w] of [['small', 24], ['medium', 32], ['large', 40]]) {
+    const g = createGame({ size, seed: 20260914, opponents: 0 });
+    ok(g.map.width === w && g.map.height === w, `${size}: 地图 ${w}×${w}`);
+  }
+
+  const g1 = createGame({ size: 'medium', seed: 777, opponents: 1 });
+  ok(Object.keys(g1.players).length === 2, '1 个对手 → 2 个阵营');
+  const g3 = createGame({ size: 'large', seed: 777, opponents: 3 });
+  ok(Object.keys(g3.players).length === 4, '3 个对手 → 4 个阵营');
+  ok(factionIds(g3).join(',') === 'p1,p2,p3,p4', '阵营编号连续');
+  ok(g3.players.p1.isHuman === true && g3.players.p2.isHuman === false, 'p1 是玩家、其余是电脑');
+  ok(g3.config.opponents === 3 && g3.config.size === 'large', '开局设置随存档保存');
+
+  // 每个阵营都有自己的城和英雄，主城互不重叠且留足间隔
+  const homes = Object.values(g3.towns).filter((t) => t.owner !== 'neutral').map((t) => t.pos);
+  ok(homes.length === 4, `4 座主城（${homes.length}）`);
+  ok(new Set(homes.map((p) => `${p.x},${p.y}`)).size === 4, '主城位置互不重叠');
+  let minGap = Infinity;
+  for (let i = 0; i < homes.length; i++) {
+    for (let j = i + 1; j < homes.length; j++) {
+      minGap = Math.min(minGap, Math.abs(homes[i].x - homes[j].x) + Math.abs(homes[i].y - homes[j].y));
+    }
+  }
+  ok(minGap >= 8, `主城之间至少隔 8 格（实际 ${minGap}）`);
+
+  for (const fid of ['p1', 'p2', 'p3', 'p4']) {
+    const town = Object.values(g3.towns).find((t) => t.owner === fid);
+    const hero = Object.values(g3.heroes).find((h) => h.owner === fid);
+    ok(!!town && !!hero && !!g3.players[fid].revealed, `${fid}: 有城、有将、有独立迷雾`);
+  }
+  ok(Object.values(g3.heroes).every((h) => h.army.reduce((n, s) => n + s.count, 0) === 20), '各阵营起手兵力一致');
+
+  // 同一种子 → 同一张图
+  const a = createGame({ size: 'small', seed: 4242, opponents: 2 });
+  const b = createGame({ size: 'small', seed: 4242, opponents: 2 });
+  ok(
+    a.map.tiles.map((t) => t.terrain).join('') === b.map.tiles.map((t) => t.terrain).join(''),
+    '同种子生成同一张地图',
+  );
+  ok(JSON.stringify(a.towns) === JSON.stringify(b.towns), '同种子的城镇布局一致');
+
+  // 难度只影响电脑
+  const easy = createGame({ size: 'medium', seed: 9, opponents: 1, difficulty: 'easy' });
+  const hard = createGame({ size: 'medium', seed: 9, opponents: 1, difficulty: 'hard' });
+  ok(easy.players.p1.resources.gold === hard.players.p1.resources.gold, '难度不改变玩家起始资源');
+  ok(hard.players.p2.resources.gold > easy.players.p2.resources.gold, '困难档电脑起始资源更多');
+}
+
+// 2. 电脑对手真的会动
+{
+  const g = createGame({ size: 'medium', seed: 20260915, opponents: 2 });
+  const townsBefore = JSON.stringify(g.towns);
+  let aiMoved = false;
+  for (let i = 0; i < 12; i++) {
+    endDay(g);
+    if (g.status !== 'playing') break;
+    for (const id of g.heroOrder) {
+      const h = g.heroes[id];
+      if (h && h.owner !== 'p1' && h.movePoints < BASE_MOVE_POINTS) aiMoved = true;
+    }
+  }
+  ok(g.day === 13, `连过 12 天（第 ${g.day} 天）`);
+  ok(JSON.stringify(g.towns) !== townsBefore, '电脑对手改变了城镇状态（建设或占领）');
+  ok(aiMoved, '电脑英雄消耗了移动力（确实在地图上行动）');
+  ok(Object.values(g.heroes).filter((h) => h.owner !== 'p1').length > 0, '电脑阵营仍有英雄在场');
+  ok(
+    g.players.p2.resources.gold > 0 || Object.values(g.towns).some((t) => t.owner === 'p2'),
+    '电脑阵营有经济产出',
+  );
+}
+
+// 3. 胜负判定
+{
+  const g = createGame({ size: 'medium', seed: 55, opponents: 1 });
+  ok(evaluateOutcome(g) === 'playing', '开局判定为进行中');
+  for (const t of Object.values(g.towns)) if (t.owner === 'p2') t.owner = 'neutral';
+  for (const id of [...g.heroOrder]) {
+    if (g.heroes[id]?.owner === 'p2') {
+      delete g.heroes[id];
+      g.heroOrder = g.heroOrder.filter((x) => x !== id);
+    }
+  }
+  ok(isEliminated(g, 'p2'), 'p2 已出局');
+  ok(evaluateOutcome(g) === 'won', '敌方全灭 → 判定胜利');
+  ok(outcomeSummary(g).lines.length >= 2, '结算面板列出各阵营战果');
+
+  const g2 = createGame({ size: 'medium', seed: 56, opponents: 1 });
+  for (const t of Object.values(g2.towns)) if (t.owner === 'p1') t.owner = 'neutral';
+  delete g2.heroes.hero1;
+  g2.heroOrder = g2.heroOrder.filter((x) => x !== 'hero1');
+  ok(evaluateOutcome(g2) === 'lost', '玩家出局 → 判定失败');
+}
+
+// 4. 英雄遭遇战：打了别人的英雄，败者下场、胜者接管位置
+{
+  const g = createGame({ size: 'medium', seed: 31337, opponents: 1 });
+  const foe = Object.values(g.heroes).find((h) => h.owner === 'p2');
+  ok(!!foe, '找得到电脑英雄');
+
+  g.heroes.hero1.army = [{ unitTypeId: 'angel', count: 30 }];
+  g.heroes.hero1.pos = { x: foe.pos.x + 1, y: foe.pos.y };
+  ok(enemyHeroAt(g, foe.pos.x, foe.pos.y, 'p1')?.id === foe.id, '能识别站在该格的敌方英雄');
+  ok(enemyHeroAt(g, foe.pos.x, foe.pos.y, 'p2') === null, '己方英雄不算敌方');
+
+  const spot = { ...foe.pos };
+  const setup = heroBattleSetup(g, 'hero1', foe.id);
+  ok(!!setup && setup.attacker.army.length > 0 && setup.defender.army.length > 0, '遭遇战给出双方参数');
+  ok(heroBattleSetup(g, 'hero1', 'hero1') === null, '不能和自己开战');
+
+  const out = quickBattle(setup.attacker, setup.defender, setup.seed);
+  const res = applyHeroBattle(g, 'hero1', foe.id, out);
+  ok(out.win === true && res.title === '遭遇战胜利', '30 天使打残兵：必胜');
+  ok(!g.heroes[foe.id], '败者英雄离开地图');
+  ok(!g.heroOrder.includes(foe.id), 'heroOrder 同步清理败者');
+  ok(g.heroes.hero1.pos.x === spot.x && g.heroes.hero1.pos.y === spot.y, '胜者接管败者的位置');
 }
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);
