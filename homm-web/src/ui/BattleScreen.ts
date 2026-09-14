@@ -219,7 +219,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     for (const e of meleeTargets(battle, u)) set.add(hexKey(e.hex));
     if (canShoot(battle, u)) for (const e of shootTargets(battle, u)) set.add(hexKey(e.hex));
     attackableSet = set;
-    lastActive = u.id;
+    // 用「回合 + 单位」做指纹：同一支部队下回合再行动时也要重算高亮
+    lastActive = `${battle.round}:${u.id}`;
   }
 
   /* ---------------- actions ---------------- */
@@ -627,7 +628,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     }
 
     const u = currentUnit(battle);
-    if (u && u.side === 0 && (u.id !== lastActive || lastActive === '')) recomputeOptions();
+    if (u && u.side === 0 && `${battle.round}:${u.id}` !== lastActive) recomputeOptions();
     if (!u || u.side !== 0) {
       if (reachableSet || attackableSet) {
         reachableSet = null;
