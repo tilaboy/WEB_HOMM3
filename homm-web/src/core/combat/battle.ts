@@ -11,11 +11,38 @@
 import type { Army } from '../types.js';
 import { getUnit } from '../data/units.js';
 import { getSpell } from '../data/spells.js';
-import { mulberry32 } from '../rng.js';
-import { rollDamage } from './damage.js';
-import { FIELD_H, FIELD_W, bfs, distance, hexEq, hexKey, hexLine, inField, isAdjacent, neighbors, type Hex } from './hex.js';
+import { mulberry32, randInt } from '../rng.js';
+import { damageMultiplier, rollDamage } from './damage.js';
+import {
+  FIELD_H,
+  FIELD_W,
+  bfs,
+  distance,
+  hexEq,
+  hexKey,
+  hexLine,
+  inField,
+  isAdjacent,
+  neighbors,
+  type Hex,
+} from './hex.js';
+import {
+  MOAT_DEFENSE_PENALTY,
+  STRUCTURE_NAME,
+  blocksLine,
+  collapseNeighbors,
+  blocksMove,
+  createSiege,
+  isMoat,
+  liveTowers,
+  structureById,
+  type SiegeState,
+  type SiegeStructure,
+} from './siege.js';
 
 export type { Hex };
+export type { SiegeState, SiegeStructure };
+export { MOAT_DEFENSE_PENALTY, STRUCTURE_NAME } from './siege.js';
 
 export interface BattleSide {
   army: Army;
@@ -101,6 +128,8 @@ export interface BattleState {
   castUsed: [boolean, boolean];
   rng: () => number;
   log: string[];
+  /** 攻城结构（城墙 / 城门 / 箭塔）。没有城墙的战斗是 null。 */
+  siege?: SiegeState | null;
 }
 
 /** 超过这个格数算"远距离抛射"，伤害减半（HOMM 的经典设定）。 */
@@ -127,6 +156,19 @@ export type BattleEvent =
     }
   | { t: 'retaliate'; unitId: string; targetId: string; damage: number; killed: number }
   | { t: 'die'; unitId: string }
+  /** 砸城墙 / 城门 / 箭塔。 */
+  | {
+      t: 'siege';
+      unitId: string;
+      structureId: string;
+      kind: 'wall' | 'gate' | 'tower';
+      damage: number;
+      destroyed: boolean;
+      from: Hex;
+      to: Hex;
+    }
+  /** 箭塔在回合开始时自动射击攻方。 */
+  | { t: 'tower'; structureId: string; targetId: string; damage: number; killed: number }
   | { t: 'wait'; unitId: string }
   | { t: 'defend'; unitId: string }
   | {
@@ -171,7 +213,13 @@ function deploy(army: Army, side: 0 | 1, seqBase: number): BattleUnit[] {
   });
 }
 
-export function createBattle(attacker: BattleSide, defender: BattleSide, seed: number): BattleState {
+export function createBattle(
+  attacker: BattleSide,
+  defender: BattleSide,
+  seed: number,
+  /** 守方城墙等级（1/2/3）；0 或省略 = 野战。 */
+  siegeLevel = 0,
+): BattleState {
   const a = deploy(attacker.army, 0, 0);
   const d = deploy(defender.army, 1, 100);
   const s: BattleState = {
@@ -192,6 +240,7 @@ export function createBattle(attacker: BattleSide, defender: BattleSide, seed: n
     castUsed: [false, false],
     rng: mulberry32(seed),
     log: [],
+    siege: createSiege(siegeLevel),
   };
   startRound(s);
   return s;
@@ -225,10 +274,41 @@ export function currentUnit(s: BattleState): BattleUnit | null {
   return null;
 }
 
+/** 护城河惩罚：只有攻城战里、只有攻方（side 0）踩在护城河上才吃亏。 */
+function moatPenalty(s: BattleState, u: BattleUnit): number {
+  if (!s.siege) return 0;
+  if (u.side !== 0) return 0;
+  return isMoat(u.hex) ? MOAT_DEFENSE_PENALTY : 0;
+}
+
+/** 一个部队当前的防御加/减值总和（护城河是减值，所以可能为负）。 */
+function defBonusOf(s: BattleState, u: BattleUnit): number {
+  return s.defBonus[u.side] + effDefBonus(u) + (u.defending ? 3 : 0) - moatPenalty(s, u);
+}
+
+/** 部队站不上去的格子：有人，或者还立着一截城墙。 */
+function blockedHex(s: BattleState, h: Hex, exceptId?: string): boolean {
+  if (occupied(s, h, exceptId)) return true;
+  return blocksMove(s.siege, h);
+}
+
 /** 可移动到的格子 → 路径（不含起点）。 */
 export function reachable(s: BattleState, u: BattleUnit): Map<string, Hex[]> {
   const speed = unitSpeed(s, u);
-  return bfs(u.hex, speed, (h) => occupied(s, h, u.id));
+  return bfs(u.hex, speed, (h) => blockedHex(s, h, u.id));
+}
+
+/**
+ * 这个部队能砸到哪些城防结构。
+ * 近战要贴脸；远程可以隔着打（城墙挡人不挡箭，见 siege.ts 的设计说明）。
+ */
+export function siegeTargets(s: BattleState, u: BattleUnit, ranged: boolean): SiegeStructure[] {
+  if (!s.siege) return [];
+  return s.siege.structures.filter((st) => {
+    if (st.hp <= 0) return false;
+    // 近战要贴脸；远程要视线 —— 所以墙后的箭塔在破墙之前是打不到的
+    return ranged ? !blocksLine(s.siege, u.hex, st.hex) : isAdjacent(u.hex, st.hex);
+  });
 }
 
 export function canShoot(s: BattleState, u: BattleUnit): boolean {
@@ -238,7 +318,7 @@ export function canShoot(s: BattleState, u: BattleUnit): boolean {
   return !aliveOf(s, u.side === 0 ? 1 : 0).some((e) => isAdjacent(e.hex, u.hex));
 }
 
-/** 射击是否被其他单位挡住（挡住则伤害减半，这是 HOMM 的障碍射击惩罚）。 */
+/** 射击是否被挡住（挡住则伤害减半）：部队会挡，立着的城墙也会挡。 */
 export function shotBlocked(s: BattleState, u: BattleUnit, target: BattleUnit): boolean {
   const line = hexLine(u.hex, target.hex);
   for (let i = 1; i < line.length - 1; i++) {
@@ -253,7 +333,8 @@ export function meleeTargets(s: BattleState, u: BattleUnit): BattleUnit[] {
 }
 
 export function shootTargets(s: BattleState, u: BattleUnit): BattleUnit[] {
-  return aliveOf(s, u.side === 0 ? 1 : 0);
+  // 完整的城墙挡视线：隔着墙既打不到城里的人，城里的人也打不出来
+  return aliveOf(s, u.side === 0 ? 1 : 0).filter((f) => !blocksLine(s.siege, u.hex, f.hex));
 }
 
 /* ---------------- 法术效果（M4） ---------------- */
@@ -299,12 +380,27 @@ export function estimateDamage(s: BattleState, atk: BattleUnit, def: BattleUnit,
   const avg = ((au.damageMin + au.damageMax) / 2) * atk.count;
   let mod = damageMod(
     Math.max(0, au.attack + s.atkBonus[atk.side] + effAtkBonus(atk, !ranged)),
-    du.defense + s.defBonus[def.side] + effDefBonus(def) + (def.defending ? 3 : 0),
+    du.defense + defBonusOf(s, def),
   );
   if (ranged) {
     if (distance(atk.hex, def.hex) > LONG_RANGE) mod *= 0.5; // 远距离抛射衰减
     if (shotBlocked(s, atk, def)) mod *= 0.5; // 被自己人/敌人挡住
     if (hasEffect(def, 'shield')) mod *= 0.5; // 护盾
+  }
+  return Math.max(1, Math.round(avg * mod));
+}
+
+/**
+ * 砸城防的期望伤害，UI 提示与 AI 决策共用。
+ * 城防没有血量池概念，只有 hp，所以这里直接按"攻击力 vs 结构防御"算倍率。
+ */
+export function estimateSiegeDamage(s: BattleState, u: BattleUnit, st: SiegeStructure, ranged: boolean): number {
+  const au = getUnit(u.unitTypeId);
+  const avg = ((au.damageMin + au.damageMax) / 2) * u.count;
+  let mod = damageMod(Math.max(0, au.attack + s.atkBonus[u.side] + effAtkBonus(u, !ranged)), st.defense);
+  if (ranged) {
+    if (distance(u.hex, st.hex) > LONG_RANGE) mod *= 0.5;
+    if (blocksLine(s.siege, u.hex, st.hex)) mod *= 0.5;
   }
   return Math.max(1, Math.round(avg * mod));
 }
@@ -370,18 +466,20 @@ function startRound(s: BattleState): void {
 /** 结束当前单位的行动，推进行动指针。 */
 export function endActivation(s: BattleState): BattleEvent[] {
   s.idx += 1;
-  if (s.idx >= s.order.length) {
-    if (checkOver(s)) return [{ t: 'end', winner: s.winner, fled: s.fled }];
-    startRound(s);
-    return [{ t: 'round', round: s.round }];
-  }
+  if (s.idx >= s.order.length) return nextRound(s);
   const u = currentUnit(s);
-  if (!u) {
-    if (checkOver(s)) return [{ t: 'end', winner: s.winner, fled: s.fled }];
-    startRound(s);
-    return [{ t: 'round', round: s.round }];
-  }
+  if (!u) return nextRound(s);
   return [];
+}
+
+/** 开新回合：先让箭塔射一轮，再判定胜负（塔可能直接打死最后一支攻方部队）。 */
+function nextRound(s: BattleState): BattleEvent[] {
+  if (checkOver(s)) return [{ t: 'end', winner: s.winner, fled: s.fled }];
+  startRound(s);
+  const ev: BattleEvent[] = [{ t: 'round', round: s.round }];
+  ev.push(...towerPhase(s));
+  if (checkOver(s)) ev.push({ t: 'end', winner: s.winner, fled: s.fled });
+  return ev;
 }
 
 export function checkOver(s: BattleState): boolean {
@@ -424,7 +522,7 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
     u.count,
     s.atkBonus[u.side] + effAtkBonus(u, true),
     getUnit(target.unitTypeId),
-    s.defBonus[target.side] + effDefBonus(target) + (target.defending ? 3 : 0),
+    defBonusOf(s, target),
   );
   const killed = applyDamage(target, dmg);
   ev.push({ t: 'melee', unitId: u.id, targetId: target.id, damage: dmg, killed, from, to });
@@ -440,7 +538,7 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
         target.count,
         s.atkBonus[target.side] + effAtkBonus(target, true),
         getUnit(u.unitTypeId),
-        s.defBonus[u.side] + effDefBonus(u) + (u.defending ? 3 : 0),
+        defBonusOf(s, u),
       ) * 0.5,
     );
     const k2 = applyDamage(u, back);
@@ -463,7 +561,7 @@ export function actShoot(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
     u.count,
     s.atkBonus[u.side] + effAtkBonus(u, false),
     getUnit(target.unitTypeId),
-    s.defBonus[target.side] + effDefBonus(target) + (target.defending ? 3 : 0),
+    defBonusOf(s, target),
   );
   if (blocked) dmg = Math.max(1, Math.round(dmg * 0.5));
   if (longRange) dmg = Math.max(1, Math.round(dmg * 0.5));
@@ -472,6 +570,73 @@ export function actShoot(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
   const killed = applyDamage(target, dmg);
   ev.push({ t: 'shoot', unitId: u.id, targetId: target.id, damage: dmg, killed, from, to, blocked, longRange });
   ev.push(...afterHit(target));
+  return ev;
+}
+
+/**
+ * 砸城防。近战要贴脸、远程要视线（城墙会挡住墙后的箭塔）。
+ *
+ * 城防不会反击 —— 这是刻意的：反击是"部队"的概念，
+ * 让城墙反击会让攻方在破门前就被磨掉一大半，攻城变成纯粹的消耗。
+ */
+export function actSiege(s: BattleState, u: BattleUnit, st: SiegeStructure): BattleEvent[] {
+  if (st.hp <= 0) return [];
+  const ranged = !isAdjacent(u.hex, st.hex);
+  const ev: BattleEvent[] = [];
+  const from = { ...u.hex };
+  const to = { ...st.hex };
+  const au = getUnit(u.unitTypeId);
+  let dmg = rollDamage(
+    s.rng,
+    au,
+    u.count,
+    s.atkBonus[u.side] + effAtkBonus(u, !ranged),
+    { ...au, defense: st.defense, name: STRUCTURE_NAME[st.kind] },
+    0,
+  );
+  if (ranged) {
+    if (distance(u.hex, st.hex) > LONG_RANGE) dmg = Math.max(1, Math.round(dmg * 0.5));
+    if (blocksLine(s.siege, u.hex, st.hex)) dmg = Math.max(1, Math.round(dmg * 0.5));
+    u.shots -= 1;
+  }
+  st.hp = Math.max(0, st.hp - dmg);
+  const destroyed = st.hp <= 0;
+  if (destroyed && s.siege) collapseNeighbors(s.siege, st);
+  ev.push({ t: 'siege', unitId: u.id, structureId: st.id, kind: st.kind, damage: dmg, destroyed, from, to });
+  return ev;
+}
+
+/**
+ * 回合开始时箭塔自动射击（HOMM3 的老规矩：塔不听人指挥，自己挑目标打）。
+ *
+ * 每座塔只打一次，目标是"当前威胁最高"的攻方部队。
+ * 塔是守方的一部分，所以只有攻方的部队会被打。
+ */
+export function towerPhase(s: BattleState): BattleEvent[] {
+  const ev: BattleEvent[] = [];
+  const towers = liveTowers(s.siege);
+  if (!towers.length) return ev;
+  for (const tower of towers) {
+    const foes = aliveOf(s, 0);
+    if (!foes.length) break;
+    let target = foes[0];
+    let best = -Infinity;
+    for (const f of foes) {
+      // 优先能一发带走残血的，否则打威胁最高的
+      const score = threatOf(f) + (poolOf(f) <= (tower.shotMax ?? 0) ? 400 : 0);
+      if (score > best) {
+        best = score;
+        target = f;
+      }
+    }
+    const du = getUnit(target.unitTypeId);
+    const raw = randInt(s.rng, tower.shotMin ?? 10, tower.shotMax ?? 20);
+    const mod = damageMultiplier(tower.attack ?? 5, du.defense + defBonusOf(s, target));
+    const dmg = Math.max(1, Math.round(raw * mod));
+    const killed = applyDamage(target, dmg);
+    ev.push({ t: 'tower', structureId: tower.id, targetId: target.id, damage: dmg, killed });
+    ev.push(...afterHit(target));
+  }
   return ev;
 }
 
@@ -706,10 +871,22 @@ export function aiAct(s: BattleState, u: BattleUnit): BattleEvent[] {
 
   if (!s.castUsed[u.side] && s.casters[u.side]) ev.push(...aiCast(s, u.side));
 
-  if (canShoot(s, u)) {
-    const t = pickTarget(s, u, foes, true);
+  const shootable = shootTargets(s, u);
+  if (canShoot(s, u) && shootable.length) {
+    const t = pickTarget(s, u, shootable, true);
     if (t) ev.push(...actShoot(s, u, t));
     return ev;
+  }
+
+  // 攻城：够不着人就先砸墙开门（远程砸墙、近战贴脸砸）
+  if (s.siege && u.side === 0) {
+    const structs = siegeTargets(s, u, canShoot(s, u));
+    if (structs.length) {
+      // 优先补掉已经快塌的那一段，尽快开出口子
+      const st = structs.reduce((a, b) => (b.hp < a.hp ? b : a));
+      ev.push(...actSiege(s, u, st));
+      return ev;
+    }
   }
 
   const adjacent = meleeTargets(s, u);
@@ -744,6 +921,35 @@ export function aiAct(s: BattleState, u: BattleUnit): BattleEvent[] {
     ev.push(...actMove(s, u, bestHex));
     if (isAdjacent(u.hex, bestTarget.hex) && bestTarget.count > 0) ev.push(...actMelee(s, u, bestTarget));
     return ev;
+  }
+
+  // 攻城：走过去能砸到城墙/城门也行
+  if (s.siege && u.side === 0) {
+    let wallHex: Hex | null = null;
+    let wallTarget: SiegeStructure | null = null;
+    let wallScore = -Infinity;
+    for (const [k, path] of paths) {
+      const [c, r] = k.split(',').map(Number);
+      const h: Hex = { col: c, row: r };
+      for (const st of s.siege.structures) {
+        if (st.hp <= 0 || !isAdjacent(h, st.hex)) continue;
+        const score = -st.hp - path.length * 3;
+        if (score > wallScore) {
+          wallScore = score;
+          wallHex = h;
+          wallTarget = st;
+        }
+      }
+    }
+    if (wallHex && wallTarget) {
+      ev.push(...actMove(s, u, wallHex));
+      const still = siegeTargets(s, u, false);
+      if (still.length) {
+        const st = still.reduce((a, b) => (b.hp < a.hp ? b : a));
+        ev.push(...actSiege(s, u, st));
+      }
+      return ev;
+    }
   }
 
   // 够不着：朝最近的敌人推进
@@ -858,6 +1064,20 @@ export function describeEvent(s: BattleState, e: BattleEvent): string {
       );
     case 'retaliate':
       return `${name(e.unitId)} 反击 ${name(e.targetId)}，造成 ${e.damage} 伤害${e.killed ? `，击杀 ${e.killed}` : ''}`;
+    case 'siege': {
+      const who = STRUCTURE_NAME[e.kind];
+      return (
+        `${name(e.unitId)} 攻击${who}，造成 ${e.damage} 伤害` +
+        (e.destroyed ? `，${who}崩塌！` : '')
+      );
+    }
+    case 'tower': {
+      const st = structureById(s.siege, e.structureId);
+      return (
+        `${st ? STRUCTURE_NAME[st.kind] : '箭塔'}射击 ${name(e.targetId)}，造成 ${e.damage} 伤害` +
+        (e.killed ? `，击杀 ${e.killed}` : '')
+      );
+    }
     case 'die':
       return `${name(e.unitId)} 全灭`;
     case 'wait':
@@ -910,6 +1130,11 @@ export function lossRatio(outcome: BattleOutcome, side: 'attacker' | 'defender' 
  * 战前预估、「自动战斗」、以及没有走战术界面的兜底路径都走它，
  * 所以玩家看到的预估和亲手打出来的结果是同一套规则算出来的。
  */
-export function quickBattle(attacker: BattleSide, defender: BattleSide, seed: number): BattleOutcome {
-  return autoResolve(createBattle(attacker, defender, seed));
+export function quickBattle(
+  attacker: BattleSide,
+  defender: BattleSide,
+  seed: number,
+  siegeLevel = 0,
+): BattleOutcome {
+  return autoResolve(createBattle(attacker, defender, seed, siegeLevel));
 }

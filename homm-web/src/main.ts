@@ -370,6 +370,7 @@ function startBattle(heroId: string, obj: MapObject, title: string): void {
     attacker: setup.attacker,
     defender: setup.defender,
     seed: setup.seed,
+    siegeLevel: setup.siegeLevel ?? 0,
     onDone: (outcome: BattleOutcome) => resolve(heroId, obj, true, outcome),
   });
 }

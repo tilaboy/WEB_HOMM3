@@ -14,6 +14,7 @@ import {
   actMelee,
   actMove,
   actShoot,
+  actSiege,
   actWait,
   aiAct,
   aliveOf,
@@ -25,10 +26,12 @@ import {
   describeEvent,
   endActivation,
   estimateDamage,
+  estimateSiegeDamage,
   meleeTargets,
   poolOf,
   reachable,
   shootTargets,
+  siegeTargets,
   toOutcome,
   unitAt,
   unitById,
@@ -38,7 +41,8 @@ import {
   type BattleState,
   type BattleUnit,
 } from '../core/combat/battle.js';
-import { hexCenter, hexKey, inField, isAdjacent, pickHex, FIELD_H, FIELD_W, type Hex } from '../core/combat/hex.js';
+import { hexCenter, hexEq, hexKey, inField, isAdjacent, pickHex, FIELD_H, FIELD_W, type Hex } from '../core/combat/hex.js';
+import { STRUCTURE_NAME, structureAt, structureById, type SiegeStructure } from '../core/combat/siege.js';
 import { getSpell } from '../core/data/spells.js';
 import { BattleRenderer, BASE_H, BASE_W, PAD } from '../render/BattleRenderer.js';
 import type { FloatText } from '../render/BattleRenderer.js';
@@ -50,6 +54,8 @@ export interface BattleOptions {
   attacker: BattleSide;
   defender: BattleSide;
   seed: number;
+  /** 攻城战：守方城墙等级 1/2/3（0 或省略 = 野战）。 */
+  siegeLevel?: number;
   /** 调试/演示用：进场后立刻交给 AI 自动打完。 */
   autoStart?: boolean;
   /** 调试用：跳过全部动画，直接结算（配合无头截图）。 */
@@ -75,7 +81,7 @@ export function closeBattleScreen(): void {
 }
 
 export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void {
-  const battle = createBattle(opts.attacker, opts.defender, opts.seed);
+  const battle = createBattle(opts.attacker, opts.defender, opts.seed, opts.siegeLevel ?? 0);
   const hero = opts.state.heroes[opts.heroId];
 
   /* ---------------- DOM ---------------- */
@@ -231,6 +237,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     const set = new Set<string>();
     for (const e of meleeTargets(battle, u)) set.add(hexKey(e.hex));
     if (canShoot(battle, u)) for (const e of shootTargets(battle, u)) set.add(hexKey(e.hex));
+    // 攻城：够得着的城墙/城门/箭塔也算可攻击目标
+    for (const st of siegeTargets(battle, u, canShoot(battle, u))) set.add(hexKey(st.hex));
     attackableSet = set;
     // 用「回合 + 单位」做指纹：同一支部队下回合再行动时也要重算高亮
     lastActive = `${battle.round}:${u.id}`;
@@ -262,6 +270,20 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       hint('够不着，先移动过去');
       return false;
     }
+    emit(endActivation(battle));
+    return true;
+  }
+
+  /** 砸城防：近战贴脸砸，远程隔着射。城防不会反击。 */
+  function playerSiege(st: SiegeStructure): boolean {
+    const u = currentUnit(battle);
+    if (!u || u.side !== 0 || st.hp <= 0) return false;
+    const ev = actSiege(battle, u, st);
+    if (!ev.length) {
+      hint('够不着这段城防');
+      return false;
+    }
+    emit(ev);
     emit(endActivation(battle));
     return true;
   }
@@ -420,6 +442,38 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       }
       case 'melee': {
         anim = lungeAnim(e.unitId, e.from, hexOf(e.targetId), `-${e.damage}`, e.killed, '#ff6b52');
+        break;
+      }
+      case 'siege': {
+        anim = lungeAnim(e.unitId, e.from, e.to, `-${e.damage}`, 0, '#ffd08a');
+        if (e.destroyed) addFloat(`${STRUCTURE_NAME[e.kind]}崩塌`, e.to, '#ff9a6b');
+        break;
+      }
+      case 'tower': {
+        const st = structureById(battle.siege, e.structureId);
+        const a = hexCenter(st ? st.hex : hexOf(e.targetId));
+        const b = hexCenter(hexOf(e.targetId));
+        let hit = false;
+        anim = {
+          t: 0,
+          dur: 560,
+          step: (p) => {
+            if (p < 0.45) {
+              const k = p / 0.45;
+              arrow = { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k - Math.sin(k * Math.PI) * 12, tx: b.x, ty: b.y };
+            } else {
+              if (!hit) {
+                hit = true;
+                addFloat(`-${e.damage}`, hexOf(e.targetId), '#ffb347');
+                if (e.killed) addFloat(`-${e.killed}`, hexOf(e.targetId), '#ffdcd2');
+              }
+              arrow = null;
+            }
+          },
+          end: () => {
+            arrow = null;
+          },
+        };
         break;
       }
       case 'retaliate': {
@@ -623,6 +677,15 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
           (ranged ? '（远程）' : '') +
           (kills > 0 ? `，约可击杀 ${Math.min(target.count, Math.floor(poolOf(target) / Math.max(1, dmg)))}` : ''),
       );
+    } else if (u && u.side === 0 && structureAt(battle.siege, h)) {
+      const st = structureAt(battle.siege, h)!;
+      const ranged = canShoot(battle, u) && !isAdjacent(u.hex, st.hex);
+      const dmg = estimateSiegeDamage(battle, u, st, ranged);
+      const can = siegeTargets(battle, u, ranged).some((x) => hexEq(x.hex, st.hex));
+      hint(
+        `${STRUCTURE_NAME[st.kind]} ${st.hp}/${st.maxHp}` +
+          (can ? `　预计伤害 ${dmg}${ranged ? '（远程）' : ''}` : '　（够不着）'),
+      );
     } else if (u && u.side === 0 && !u.moved && reachableSet?.has(hexKey(h))) {
       hint('移动到这里');
     } else {
@@ -661,6 +724,13 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     if (target && target.side !== u.side) {
       if (attackableSet?.has(hexKey(h))) playerAttack(target);
       else hint('够不着，先移动过去');
+      return;
+    }
+    // 攻城：点城墙/城门/箭塔就是砸它
+    const st = structureAt(battle.siege, h);
+    if (st) {
+      if (attackableSet?.has(hexKey(h))) playerSiege(st);
+      else hint('够不着这段城防，先靠近');
       return;
     }
     if (target) {

@@ -13,6 +13,7 @@ import { getUnit } from '../data/units.js';
 import { idx, isPassable, objectAt } from '../map/grid.js';
 import { lossGrade, lossRatio, quickBattle } from '../combat/battle.js';
 import type { BattleOutcome, BattleSide } from '../combat/battle.js';
+import { wallLevelOf } from '../combat/siege.js';
 import { deriveSeed } from '../rng.js';
 import { addResources, effectivePrimary, gainExp, maxMovePoints } from './hero.js';
 import { townDefenseBonus, captureTown } from './town.js';
@@ -28,6 +29,8 @@ export interface PendingInteraction {
   estimate?: BattleOutcome;
   lossText?: string;
   townId?: string;
+  /** 攻城战才有：守方城墙等级 1/2/3，决定战场上有几座箭塔、城墙多厚。 */
+  siegeLevel?: number;
 }
 
 export interface InteractionResult {
@@ -180,16 +183,22 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
           confirmLabel: '接管', cancelLabel: '离开',
         };
       }
+      const wall = wallLevelOf(town);
       const outcome = quickBattle(
         { army: hero.army, attack: p.attack, defense: p.defense },
         { army: garrison, attack: 0, defense: townDefenseBonus(town) },
         battleSeed(state, obj),
+        wall,
       );
       const ratio = lossRatio(outcome);
+      const fort =
+        wall > 0
+          ? `城防 ${'★'.repeat(wall)}：城墙挡住步兵，${wall} 座箭塔每轮自动射击，城墙前的护城河还会削弱站在里面的部队。必须先砸开缺口。`
+          : '此城没有城墙，将是一场野战。';
       return {
-        objId, kind: 'siege', townId,
+        objId, kind: 'siege', townId, siegeLevel: wall,
         title: `进攻 ${town.name}`,
-        message: `守军：${describeArmy(garrison)}。预估战果：${outcome.win ? '可以攻下' : '难以攻克'}。`,
+        message: `守军：${describeArmy(garrison)}。\n${fort}\n预估战果：${outcome.win ? '可以攻下' : '难以攻克'}。`,
         confirmLabel: '攻城',
         cancelLabel: '撤退',
         estimate: outcome,
@@ -312,6 +321,9 @@ export function applyInteraction(
         },
         { army: garrison, attack: 0, defense: townDefenseBonus(town) },
         battleSeed(state, obj),
+        // 这里是 AI 攻城真正结算的地方（AI 不开战术界面），必须带上城墙等级，
+        // 否则预估说"打不下来"、实际却按野战打 —— AI 会去送死。
+        wallLevelOf(town),
       );
     syncMana(hero, outcome);
     hero.army = outcome.survivors;
@@ -433,7 +445,7 @@ export function battleSetup(
   state: GameState,
   heroId: string,
   obj: MapObject,
-): { attacker: BattleSide; defender: BattleSide; seed: number } | null {
+): { attacker: BattleSide; defender: BattleSide; seed: number; siegeLevel?: number } | null {
   const hero = state.heroes[heroId];
   if (!hero || !obj) return null;
   const p = effectivePrimary(hero);
@@ -457,6 +469,7 @@ export function battleSetup(
       attacker,
       defender: { army: garrison, attack: 0, defense: townDefenseBonus(town) },
       seed: battleSeed(state, obj),
+      siegeLevel: wallLevelOf(town),
     };
   }
   return null;
