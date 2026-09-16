@@ -1,5 +1,6 @@
 import type { GameState, GridPos, Hero, PlayerId } from '../core/types.js';
 import { ARTIFACTS, ARTIFACT_SLOTS } from '../core/data/artifacts.js';
+import { WAR_MACHINES } from '../core/data/warmachines.js';
 import { getUnit } from '../core/data/units.js';
 import { factionColor, factionIds, factionName } from '../core/data/factions.js';
 import { isRevealed } from '../core/map/fog.js';
@@ -202,6 +203,18 @@ export class HeroPanel {
       grid.appendChild(cell);
     }
     wrap.appendChild(grid);
+    // 攻城器械：只在英雄确实带了的时候出现（工坊装配，见 TownDialog）
+    const machines = hero.warMachines ?? [];
+    if (machines.length) {
+      const row = div('slot-row hp-machines');
+      for (const id of machines) {
+        const cell = div('slot filled machine');
+        cell.textContent = WAR_MACHINES[id].name;
+        cell.title = WAR_MACHINES[id].desc;
+        row.appendChild(cell);
+      }
+      wrap.appendChild(row);
+    }
     return wrap;
   }
 

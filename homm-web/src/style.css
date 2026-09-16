@@ -694,6 +694,17 @@ table.est td:last-child {
   color: var(--text-dim);
 }
 
+/* 攻城器械：只有攻城战、且攻方带了器械时才出现 */
+.bt-machines {
+  color: #e8c35a;
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid rgba(232, 195, 90, 0.45);
+  border-radius: 10px;
+  background: rgba(232, 195, 90, 0.1);
+  white-space: nowrap;
+}
+
 .bt-head-actions {
   margin-left: auto;
   display: flex;

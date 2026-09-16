@@ -32,6 +32,14 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     requires: ['market'],
     dailyGold: 250,
   },
+  workshop: {
+    id: 'workshop',
+    name: '工坊',
+    desc: '可在城内为英雄装配攻城器械：投石车（1500 金 / 8 木 / 8 矿）、弩车（1000 金 / 6 木）。',
+    cost: { gold: 2000, wood: 10, ore: 10 },
+    requires: ['market'],
+    feature: 'workshop',
+  },
 
   wall1: {
     id: 'wall1',
@@ -134,6 +142,7 @@ export const BUILDING_ORDER = [
   'tavern',
   'market',
   'townhall',
+  'workshop',
   'wall1',
   'wall2',
   'wall3',

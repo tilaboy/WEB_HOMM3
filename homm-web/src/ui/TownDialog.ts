@@ -1,5 +1,6 @@
 import type { GameState, ResourceBag } from '../core/types.js';
 import { BUILDINGS, BUILDING_ORDER, HERO_HIRE_COST } from '../core/data/buildings.js';
+import { WAR_MACHINES, WAR_MACHINE_IDS } from '../core/data/warmachines.js';
 import { getUnit } from '../core/data/units.js';
 import {
   MARKET_BUY_AMOUNT,
@@ -15,6 +16,9 @@ import {
   hireHero,
   marketBuy,
   marketSell,
+  assembleWarMachine,
+  canAssemble,
+  heroWarMachines,
   recruitRows,
   recruitToGarrison,
   recruitToHero,
@@ -256,6 +260,33 @@ function paint(root: HTMLElement, opts: TownDialogOptions, note: string, say: Sa
       actionBtn('卖矿', (res.ore ?? 0) >= MARKET_SELL_AMOUNT, () =>
         act(() => (marketSell(state, 'ore') ? '卖出矿石' : '矿石不足'))),
     );
+    extra.appendChild(wrap);
+  }
+  // 工坊：攻城器械只有在英雄站在城里时才能装到他身上
+  if (town.buildings.includes('workshop')) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ex-row';
+    const t = document.createElement('span');
+    const carried = hero ? heroWarMachines(hero).map((m) => WAR_MACHINES[m].name).join('、') : '';
+    t.textContent = hero
+      ? `工坊 · 装配攻城器械（${hero.name} 已带：${carried || '无'}）`
+      : '工坊 · 装配攻城器械（需要一位英雄站在城中）';
+    wrap.appendChild(t);
+    for (const id of WAR_MACHINE_IDS) {
+      const def = WAR_MACHINES[id];
+      const chk = canAssemble(state, town, hero, id);
+      wrap.appendChild(
+        actionBtn(`${def.name}（${costText(def.cost)}）`, chk.ok, () =>
+          act(() => {
+            const h = opts.heroId ? state.heroes[opts.heroId] : null;
+            if (!h) return '需要一位英雄站在城中';
+            const r = assembleWarMachine(state, town, h, id);
+            return r.ok ? `工坊装配了「${def.name}」` : r.reason;
+          }),
+          chk.ok ? def.desc : chk.reason,
+        ),
+      );
+    }
     extra.appendChild(wrap);
   }
   if (extra.childElementCount) {

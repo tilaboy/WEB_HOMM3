@@ -8,9 +8,10 @@
  * M1 时代那个无位置的 solver 已经删掉了——它和战场上的实际结果差得太远，
  * 玩家会觉得"预估在吓唬人"。
  */
-import type { Army } from '../types.js';
+import type { Army, WarMachineId } from '../types.js';
 import { getUnit } from '../data/units.js';
 import { getSpell } from '../data/spells.js';
+import { WAR_MACHINES } from '../data/warmachines.js';
 import { mulberry32, randInt } from '../rng.js';
 import { damageMultiplier, rollDamage } from './damage.js';
 import {
@@ -29,15 +30,19 @@ import {
 import {
   MOAT_DEFENSE_PENALTY,
   STRUCTURE_NAME,
+  UNIT_SIEGE_RESIST,
   blocksLine,
   collapseNeighbors,
   blocksMove,
+  GATE_ROW,
   createSiege,
   isMoat,
-  liveTowers,
+  liveFortifications,
+  liveShooters,
   structureById,
   type SiegeState,
   type SiegeStructure,
+  type StructureKind,
 } from './siege.js';
 
 export type { Hex };
@@ -50,6 +55,8 @@ export interface BattleSide {
   defense: number;
   /** 施法者（英雄）。野怪没有，中立城守军也没有。 */
   caster?: BattleCaster;
+  /** 携带的攻城器械：每回合开始自动开火，不受指挥。 */
+  warMachines?: WarMachineId[];
 }
 
 /** 战场上的英雄施法者：带法术表、魔力和魔力的实时余量（引擎直接扣）。 */
@@ -130,6 +137,8 @@ export interface BattleState {
   log: string[];
   /** 攻城结构（城墙 / 城门 / 箭塔）。没有城墙的战斗是 null。 */
   siege?: SiegeState | null;
+  /** 双方携带的攻城器械。不是单位，不占格、不能被瞄准。 */
+  machines?: [WarMachineId[], WarMachineId[]];
 }
 
 /** 超过这个格数算"远距离抛射"，伤害减半（HOMM 的经典设定）。 */
@@ -156,12 +165,24 @@ export type BattleEvent =
     }
   | { t: 'retaliate'; unitId: string; targetId: string; damage: number; killed: number }
   | { t: 'die'; unitId: string }
-  /** 砸城墙 / 城门 / 箭塔。 */
+  /** 攻城器械开火：投石车砸城防，弩车射部队。 */
+  | {
+      t: 'machine';
+      side: 0 | 1;
+      machine: WarMachineId;
+      structureId?: string;
+      targetId?: string;
+      damage: number;
+      killed: number;
+      destroyed: boolean;
+      to: Hex;
+    }
+  /** 砸城墙 / 城门 / 角塔 / 主楼。 */
   | {
       t: 'siege';
       unitId: string;
       structureId: string;
-      kind: 'wall' | 'gate' | 'tower';
+      kind: StructureKind;
       damage: number;
       destroyed: boolean;
       from: Hex;
@@ -192,6 +213,12 @@ export type BattleEvent =
 function deploy(army: Army, side: 0 | 1, seqBase: number): BattleUnit[] {
   const live = army.filter((s) => s.count > 0);
   const col = side === 0 ? 0 : FIELD_W - 1;
+  // 部队只铺在第 1 ~ FIELD_H-2 行之间：上下两个角格留给攻城器械（drawWarMachines），
+  // 否则满编 5 队时最后一队正好压在角上，和器械的精灵互相叠图。
+  const TOP = 1;
+  const BOT = FIELD_H - 2;
+  const rowOf = (i: number): number =>
+    live.length === 1 ? (TOP + BOT) / 2 : TOP + Math.round((i * (BOT - TOP)) / (live.length - 1));
   return live.map((s, i) => {
     const u = getUnit(s.unitTypeId);
     return {
@@ -201,7 +228,7 @@ function deploy(army: Army, side: 0 | 1, seqBase: number): BattleUnit[] {
       count: s.count,
       hpTop: u.hp,
       shots: u.shots ?? 0,
-      hex: { col, row: Math.round(((i + 0.5) * FIELD_H) / Math.max(1, live.length)) },
+      hex: { col, row: rowOf(i) },
       retaliated: false,
       waited: false,
       defending: false,
@@ -241,6 +268,7 @@ export function createBattle(
     rng: mulberry32(seed),
     log: [],
     siege: createSiege(siegeLevel),
+    machines: [[...(attacker.warMachines ?? [])], [...(defender.warMachines ?? [])]],
   };
   startRound(s);
   return s;
@@ -402,7 +430,8 @@ export function estimateSiegeDamage(s: BattleState, u: BattleUnit, st: SiegeStru
     if (distance(u.hex, st.hex) > LONG_RANGE) mod *= 0.5;
     if (blocksLine(s.siege, u.hex, st.hex)) mod *= 0.5;
   }
-  return Math.max(1, Math.round(avg * mod));
+  // 箭矢砍不动石墙：只有投石车能按全额伤害轰
+  return Math.max(1, Math.round(avg * mod * UNIT_SIEGE_RESIST));
 }
 
 function damageMod(attack: number, defense: number): number {
@@ -477,6 +506,7 @@ function nextRound(s: BattleState): BattleEvent[] {
   if (checkOver(s)) return [{ t: 'end', winner: s.winner, fled: s.fled }];
   startRound(s);
   const ev: BattleEvent[] = [{ t: 'round', round: s.round }];
+  ev.push(...machinePhase(s));
   ev.push(...towerPhase(s));
   if (checkOver(s)) ev.push({ t: 'end', winner: s.winner, fled: s.fled });
   return ev;
@@ -599,6 +629,8 @@ export function actSiege(s: BattleState, u: BattleUnit, st: SiegeStructure): Bat
     if (blocksLine(s.siege, u.hex, st.hex)) dmg = Math.max(1, Math.round(dmg * 0.5));
     u.shots -= 1;
   }
+  // 箭矢砍不动石墙：只有投石车能按全额伤害轰
+  dmg = Math.max(1, Math.round(dmg * UNIT_SIEGE_RESIST));
   st.hp = Math.max(0, st.hp - dmg);
   const destroyed = st.hp <= 0;
   if (destroyed && s.siege) collapseNeighbors(s.siege, st);
@@ -614,7 +646,7 @@ export function actSiege(s: BattleState, u: BattleUnit, st: SiegeStructure): Bat
  */
 export function towerPhase(s: BattleState): BattleEvent[] {
   const ev: BattleEvent[] = [];
-  const towers = liveTowers(s.siege);
+  const towers = liveShooters(s.siege);
   if (!towers.length) return ev;
   for (const tower of towers) {
     const foes = aliveOf(s, 0);
@@ -638,6 +670,95 @@ export function towerPhase(s: BattleState): BattleEvent[] {
     ev.push(...afterHit(target));
   }
   return ev;
+}
+
+/**
+ * 攻城器械开火，和箭塔对称：每回合开始自动打，不听指挥。
+ *
+ * 投石车优先砸城门；城门塌了就砸**离城门最近的那一段** ——
+ * HOMM3 原版是随机挑一段，但随机意味着火力被摊平，十回合也开不出口子，
+ * 投石车就成了摆设。集中火力才对得起它 1500 金的造价。
+ */
+export function machinePhase(s: BattleState): BattleEvent[] {
+  const ev: BattleEvent[] = [];
+  if (!s.machines) return ev;
+  for (const side of [0, 1] as const) {
+    for (const id of s.machines[side]) {
+      const def = WAR_MACHINES[id];
+      if (!def) continue;
+      if (def.target === 'fortification') ev.push(...machineHitFortification(s, side, def));
+      else ev.push(...machineHitUnit(s, side, def));
+    }
+  }
+  return ev;
+}
+
+function machineHitFortification(
+  s: BattleState,
+  side: 0 | 1,
+  def: (typeof WAR_MACHINES)[WarMachineId],
+): BattleEvent[] {
+  const list = liveFortifications(s.siege);
+  if (!list.length) return [];
+  const gate = list.find((st) => st.kind === 'gate');
+  let target = gate;
+  if (!target) {
+    // 城门没了：挑离正中最近的一段，让火力集中在一个口子上
+    let best = Infinity;
+    for (const st of list) {
+      const d = Math.abs(st.hex.row - GATE_ROW);
+      if (d < best) {
+        best = d;
+        target = st;
+      }
+    }
+  }
+  if (!target) return [];
+  const raw = randInt(s.rng, def.damageMin, def.damageMax);
+  const dmg = Math.max(1, Math.round(raw * damageMultiplier(def.attack, target.defense)));
+  target.hp = Math.max(0, target.hp - dmg);
+  const destroyed = target.hp <= 0;
+  if (destroyed && s.siege) collapseNeighbors(s.siege, target);
+  return [
+    {
+      t: 'machine',
+      side,
+      machine: def.id,
+      structureId: target.id,
+      damage: dmg,
+      killed: 0,
+      destroyed,
+      to: target.hex,
+    },
+  ];
+}
+
+function machineHitUnit(
+  s: BattleState,
+  side: 0 | 1,
+  def: (typeof WAR_MACHINES)[WarMachineId],
+): BattleEvent[] {
+  const foes = aliveOf(s, side === 0 ? 1 : 0);
+  if (!foes.length) return [];
+  let target = foes[0];
+  let best = -Infinity;
+  for (const f of foes) {
+    // 和箭塔同一套选靶逻辑：能一发带走残血的优先，否则打威胁最高的
+    const score = threatOf(f) + (poolOf(f) <= def.damageMax ? 400 : 0);
+    if (score > best) {
+      best = score;
+      target = f;
+    }
+  }
+  const du = getUnit(target.unitTypeId);
+  const raw = randInt(s.rng, def.damageMin, def.damageMax);
+  const mod = damageMultiplier(def.attack, du.defense + defBonusOf(s, target));
+  const dmg = Math.max(1, Math.round(raw * mod));
+  const killed = applyDamage(target, dmg);
+  return [
+    { t: 'machine', side, machine: def.id, targetId: target.id, damage: dmg, killed, destroyed: false, to: target.hex },
+    ...afterHit(target),
+  ];
 }
 
 function afterHit(target: BattleUnit): BattleEvent[] {
@@ -1064,6 +1185,17 @@ export function describeEvent(s: BattleState, e: BattleEvent): string {
       );
     case 'retaliate':
       return `${name(e.unitId)} 反击 ${name(e.targetId)}，造成 ${e.damage} 伤害${e.killed ? `，击杀 ${e.killed}` : ''}`;
+    case 'machine': {
+      const m = WAR_MACHINES[e.machine];
+      const what = e.structureId
+        ? STRUCTURE_NAME[structureById(s.siege, e.structureId)?.kind ?? 'wall']
+        : name(e.targetId ?? '');
+      return (
+        `${m.name} 轰击${what}，造成 ${e.damage} 伤害` +
+        (e.destroyed ? `，${what}崩塌！` : '') +
+        (e.killed ? `，击杀 ${e.killed}` : '')
+      );
+    }
     case 'siege': {
       const who = STRUCTURE_NAME[e.kind];
       return (

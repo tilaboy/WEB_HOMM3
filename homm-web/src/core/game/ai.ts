@@ -1,6 +1,7 @@
 import type { Army, FactionId, GameState, GridPos, GuardReward, Hero } from '../types.js';
 import { DIFFICULTIES, factionName } from '../data/factions.js';
 import { BUILDINGS } from '../data/buildings.js';
+import { WAR_MACHINES, WAR_MACHINE_IDS } from '../data/warmachines.js';
 import { MARKET_BUY_AMOUNT, MARKET_BUY_GOLD } from './town.js';
 import { getUnit } from '../data/units.js';
 import { mulberry32, deriveSeed, shuffle } from '../rng.js';
@@ -28,6 +29,9 @@ import {
   ownedTowns,
   recruitToGarrison,
   recruitToHero,
+  assembleWarMachine,
+  hasBuilding,
+  hasWarMachine,
   teachGuildSpells,
   townDefenseBonus,
 } from './town.js';
@@ -47,7 +51,7 @@ import { pushLog } from './log.js';
  * 不先开市场换资源，AI 会一路卡在 dwell4 的 10 木上（实测过，这是最容易踩的坑）。
  */
 const BUILD_ORDER = [
-  'dwell3', 'market', 'wall1', 'dwell4', 'guild1', 'townhall', 'dwell5', 'guild2', 'wall2', 'wall3', 'guild3',
+  'dwell3', 'market', 'workshop', 'wall1', 'dwell4', 'guild1', 'townhall', 'dwell5', 'guild2', 'wall2', 'wall3', 'guild3',
 ];
 
 /** 出兵门槛：起始 20 弓手 = 200 血。aggression 越低越早出门。 */
@@ -117,6 +121,38 @@ function aiBuild(state: GameState, player: FactionId, rng: () => number): void {
       const rest = Object.keys(BUILDINGS).filter((id) => !town.buildings.includes(id));
       for (const id of shuffle(rng, rest)) {
         if (build(state, town, id, player)) break;
+      }
+    }
+  }
+}
+
+/* ---------------- 1.5 攻城器械 ---------------- */
+
+/**
+ * 给站在工坊城里的英雄配攻城器械。
+ *
+ * 为什么必须有这一步：AI 自己会造墙，玩家也会造墙，所以到中期它想打的每一座城
+ * 都有城防。实测数据（中期部队 30 弓 + 20 枪 + 8 骑打 1 星城）：
+ * 不带器械胜率 33%、损失 71%；带投石车胜率 100%、损失 54%。
+ * 没有器械的 AI 会在别人的城墙前面反复送兵 —— 而"不送兵"正是这个 AI 的底线。
+ *
+ * 代价上留一手：只有金币明显宽裕时才添置，免得把募兵的钱花光。
+ */
+function aiArmWarMachines(state: GameState, player: FactionId): void {
+  const bag = state.players[player]?.resources;
+  if (!bag) return;
+  const towns = ownedTowns(state, player).filter((t) => hasBuilding(t, 'workshop'));
+  if (!towns.length) return;
+
+  for (const hero of heroesOf(state, player)) {
+    for (const town of towns) {
+      if (hero.pos.x !== town.pos.x || hero.pos.y !== town.pos.y) continue;
+      for (const id of WAR_MACHINE_IDS) {
+        if (hasWarMachine(hero, id)) continue;
+        const cost = WAR_MACHINES[id].cost;
+        // 留 3 波兵的钱：器械是"增强"不是"全部家当"
+        if ((bag.gold ?? 0) < (cost.gold ?? 0) + BASE_COMMIT * 3) continue;
+        assembleWarMachine(state, town, hero, id);
       }
     }
   }
@@ -380,6 +416,7 @@ export function runAiTurn(state: GameState, player: FactionId): void {
   aiBuild(state, player, rng);
   aiTrade(state, player);
   aiBuild(state, player, rng);
+  aiArmWarMachines(state, player);
   aiRecruit(state, player);
 
   for (const hero of heroesOf(state, player)) {

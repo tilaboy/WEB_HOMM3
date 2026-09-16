@@ -97,6 +97,8 @@ export class BattleRenderer {
     this.drawSiege(g, d);
     this.drawHighlights(g, d);
     this.drawUnits(g, d);
+    // 器械画在最后：它不是单位，但必须永远可见，不能被部队盖住
+    this.drawWarMachines(g, d);
 
     if (d.arrow) {
       g.fillStyle = '#f4e7c0';
@@ -124,25 +126,101 @@ export class BattleRenderer {
     }
   }
 
-  /* ---------------- 攻城：城墙 / 城门 / 箭塔 ---------------- */
+  /* ---------------- 攻城：城墙 / 城门 / 角塔 / 主楼 ---------------- */
 
   private drawSiege(g: CanvasRenderingContext2D, d: BattleDraw): void {
     const siege = d.battle.siege;
     if (!siege) return;
     this.drawMoat(g);
-    // 先画墙，再画塔：塔在墙后，压住墙根一点更像是"长在墙上"
+    // 主楼在城内（先画），城墙列居中，角塔砌在城墙上（最后画，好压住墙顶）
+    const rank: Record<string, number> = { keep: 0, wall: 1, gate: 1, tower: 2 };
     const list = siege.structures
       .filter((st) => st.hp > 0)
-      .sort((a, b) => (a.kind === 'tower' ? 1 : 0) - (b.kind === 'tower' ? 1 : 0) || a.hex.row - b.hex.row);
+      .sort((a, b) => (rank[a.kind] ?? 1) - (rank[b.kind] ?? 1) || a.hex.row - b.hex.row);
     for (const st of list) {
       const c = hexCenter(st.hex);
       const x = Math.round(c.x + PAD);
       const y = Math.round(c.y + PAD);
       if (st.kind === 'wall') this.drawWallSeg(g, x, y, st.hp / st.maxHp);
       else if (st.kind === 'gate') this.drawGateSeg(g, x, y, st.hp / st.maxHp);
+      else if (st.kind === 'keep') this.drawKeepSeg(g, x, y, st.hp / st.maxHp);
       else this.drawTowerSeg(g, x, y, st.hp / st.maxHp);
       this.drawStructureHp(g, x, y, st.hp / st.maxHp);
     }
+  }
+
+  /**
+   * 攻城器械：不是战场单位，所以画在攻方部署区的最外一列，
+   * 用一个小底座 + 器械本体表示"它在，而且每回合都在开火"。
+   * 守方有器械就画在城内右下角。
+   */
+  private drawWarMachines(g: CanvasRenderingContext2D, d: BattleDraw): void {
+    const machines = d.battle.machines;
+    if (!machines) return;
+    // 摆在部署列的两个角上：deploy() 把部队铺在第 1 ~ FIELD_H-2 行之间，
+    // 上下两个角格专属于攻城器械，永远不会被己方部队盖住。
+    const spotsL: [number, number][] = [
+      [0, 0],
+      [0, FIELD_H - 1],
+    ];
+    const spotsR: [number, number][] = [
+      [FIELD_W - 1, 0],
+      [FIELD_W - 1, FIELD_H - 1],
+    ];
+    const draw = (id: string, c: number, r: number, flip: boolean) => {
+      const cc = hexCenter({ col: c, row: r });
+      const x = Math.round(cc.x + PAD);
+      const y = Math.round(cc.y + PAD);
+      const dir = flip ? -1 : 1;
+      if (id === 'catapult') {
+        // 投石车：木架 + 抛臂 + 石弹
+        g.fillStyle = '#3a2a18';
+        g.fillRect(x - 13, y + 10, 26, 5);
+        g.fillStyle = '#6b4a26';
+        g.fillRect(x - 11, y - 2, 22, 12);
+        g.fillStyle = '#8a6234';
+        g.fillRect(x - 11, y - 2, 22, 3);
+        g.strokeStyle = '#4a3524';
+        g.lineWidth = 3;
+        g.beginPath();
+        g.moveTo(x - dir * 9, y - 2);
+        g.lineTo(x + dir * 5, y - 17);
+        g.stroke();
+        g.fillStyle = '#5c5c5c';
+        g.beginPath();
+        g.arc(x + dir * 6, y - 19, 5, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = '#7d7d7d';
+        g.beginPath();
+        g.arc(x + dir * 4 - 1, y - 21, 2, 0, Math.PI * 2);
+        g.fill();
+      } else {
+        // 弩车：底座 + 大弩 + 弦
+        g.fillStyle = '#3a2a18';
+        g.fillRect(x - 12, y + 10, 24, 5);
+        g.fillStyle = '#6b4a26';
+        g.fillRect(x - 10, y + 2, 20, 9);
+        g.fillStyle = '#5a3d20';
+        g.fillRect(x - dir * 2, y - 12, dir * 16, 4);
+        g.strokeStyle = '#d8d2c4';
+        g.lineWidth = 2;
+        g.beginPath();
+        g.moveTo(x + dir * 12, y - 14);
+        g.lineTo(x - dir * 2, y - 8);
+        g.lineTo(x + dir * 12, y - 2);
+        g.stroke();
+      }
+      g.fillStyle = 'rgba(0,0,0,0.35)';
+      g.fillRect(x - 13, y + 16, 26, 2);
+    };
+    machines[0].forEach((id, i) => {
+      const s = spotsL[i];
+      if (s) draw(id, s[0], s[1], false);
+    });
+    machines[1].forEach((id, i) => {
+      const s = spotsR[i];
+      if (s) draw(id, s[0], s[1], true);
+    });
   }
 
   /** 护城河：贴着城墙外侧的那条窄水。站进去的攻方防御 -2，画面上得让人看得见。 */
@@ -256,6 +334,51 @@ export class BattleRenderer {
       g.fill();
     } else {
       g.fillRect(x + 9, t - 12, 10, 2);
+    }
+  }
+
+  /**
+   * 主楼：城内那座高塔。它不占城墙列，所以砸塌它不会开出通路，
+   * 但它是火力最猛的射手 —— 画得比角塔更高更宽，让人一眼看出该先打谁。
+   */
+  private drawKeepSeg(g: CanvasRenderingContext2D, x: number, y: number, ratio: number): void {
+    const w = 40;
+    const h = 54;
+    const l = x - w / 2;
+    const t = y - h / 2 - 8;
+    g.fillStyle = '#3a362e';
+    g.fillRect(l - 2, t - 2, w + 4, h + 10);
+    g.fillStyle = '#7f7a6c';
+    g.fillRect(l, t, w, h);
+    g.fillStyle = '#968f7f';
+    g.fillRect(l + 3, t + 3, w - 12, h - 6);
+    g.fillStyle = '#635e53';
+    g.fillRect(l + w - 9, t + 3, 9, h - 6);
+    // 石缝
+    g.fillStyle = '#6d6859';
+    for (let r = t + 9; r < t + h - 3; r += 9) g.fillRect(l + 3, r, w - 6, 1);
+    // 高窗：两排，朝攻方一侧开
+    g.fillStyle = '#1d1610';
+    g.fillRect(l + 5, t + 14, 6, 10);
+    g.fillRect(l + 5, t + 32, 6, 10);
+    g.fillRect(l + w - 22, t + 14, 6, 10);
+    g.fillRect(l + w - 22, t + 32, 6, 10);
+    // 垛口
+    g.fillStyle = '#5d594e';
+    for (let i = 0; i < 5; i++) g.fillRect(l + 3 + i * 8, t - 6, 6, 6);
+    // 塔尖的旗：血少了旗就垂下
+    g.fillStyle = '#5a4326';
+    g.fillRect(x, t - 30, 2, 24);
+    g.fillStyle = ratio > 0.5 ? '#c0392b' : '#6b4238';
+    if (ratio > 0.5) {
+      g.beginPath();
+      g.moveTo(x + 2, t - 30);
+      g.lineTo(x + 19, t - 25);
+      g.lineTo(x + 2, t - 20);
+      g.closePath();
+      g.fill();
+    } else {
+      g.fillRect(x + 2, t - 22, 12, 3);
     }
   }
 

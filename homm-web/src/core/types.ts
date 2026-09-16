@@ -5,6 +5,9 @@ export type PlayerId = FactionId | 'neutral';
 export type MapSize = 'small' | 'medium' | 'large';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
+/** 攻城器械（M6）。具体数值在 data/warmachines.ts。 */
+export type WarMachineId = 'catapult' | 'ballista';
+
 /** 难度档：只影响电脑对手，不削弱玩家（HOMM 的"AI 优势"思路）。 */
 export interface DifficultyDef {
   id: Difficulty;
@@ -117,6 +120,8 @@ export interface Hero {
   artifacts: string[];
   /** 已学会的法术 id（M4）。 */
   spells: string[];
+  /** 携带的攻城器械（M6）：在带「工坊」的己方城镇花钱装配。 */
+  warMachines?: WarMachineId[];
   pos: GridPos;
   owner: PlayerId;
 }
@@ -246,7 +251,7 @@ export interface BuildingDef {
   /** 全局周增长比例加成 */
   growthBonus?: number;
   /** 解锁的城镇功能 */
-  feature?: 'tavern' | 'market' | 'guild';
+  feature?: 'tavern' | 'market' | 'guild' | 'workshop';
 }
 
 export interface Town {

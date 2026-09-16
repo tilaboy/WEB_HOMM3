@@ -8,8 +8,10 @@ import type {
   ResourceBag,
   ResourceKind,
   Town,
+  WarMachineId,
 } from '../types.js';
 import { BASE_TOWN_INCOME, BUILDINGS, HERO_HIRE_COST } from '../data/buildings.js';
+import { WAR_MACHINES } from '../data/warmachines.js';
 import { DIFFICULTIES, factionIds, factionName } from '../data/factions.js';
 import { getSpell, spellsOfGuild } from '../data/spells.js';
 import { MAX_STACKS, getUnit } from '../data/units.js';
@@ -191,6 +193,59 @@ function spreadGuildSpells(state: GameState, town: Town): void {
     const h = state.heroes[id];
     if (h && h.owner === town.owner) teachGuildSpells(state, h, town);
   }
+}
+
+/* ---------------- 工坊：攻城器械（M6） ---------------- */
+
+/** 英雄带在身上的攻城器械（老存档没有这个字段，统一兜底成空数组）。 */
+export function heroWarMachines(hero: Hero): WarMachineId[] {
+  return hero.warMachines ?? [];
+}
+
+export function hasWarMachine(hero: Hero, id: WarMachineId): boolean {
+  return heroWarMachines(hero).includes(id);
+}
+
+export function canAssemble(
+  state: GameState,
+  town: Town,
+  hero: Hero | null,
+  id: WarMachineId,
+): { ok: boolean; reason: string } {
+  if (!hasBuilding(town, 'workshop')) return { ok: false, reason: '需要先建造「工坊」' };
+  if (!hero) return { ok: false, reason: '需要一位英雄在城里' };
+  if (hero.owner !== town.owner) return { ok: false, reason: '这位英雄不属于本城阵营' };
+  if (hasWarMachine(hero, id)) return { ok: false, reason: `已经带了${WAR_MACHINES[id].name}` };
+  const cost = WAR_MACHINES[id].cost;
+  if (!canAfford(state, town.owner, cost)) {
+    return { ok: false, reason: `资源不足（${costText(cost)}）` };
+  }
+  return { ok: true, reason: costText(cost) };
+}
+
+/**
+ * 在工坊为英雄装配一台攻城器械。
+ *
+ * 刻意做成"一次性买断、不占部队格、打输了才会丢"：HOMM3 里器械被摧毁要重买，
+ * 那套规则会逼出"用先手秒掉对方投石车"的固定套路，对这个体量不值得。
+ */
+export function assembleWarMachine(
+  state: GameState,
+  town: Town,
+  hero: Hero,
+  id: WarMachineId,
+): AssembleResult {
+  const check = canAssemble(state, town, hero, id);
+  if (!check.ok) return { ok: false, reason: check.reason };
+  if (!pay(state, town.owner, WAR_MACHINES[id].cost)) return { ok: false, reason: '资源不足' };
+  hero.warMachines = [...heroWarMachines(hero), id];
+  pushLog(state, `${town.name} 的工坊为 ${hero.name} 装配了「${WAR_MACHINES[id].name}」`);
+  return { ok: true, reason: '' };
+}
+
+export interface AssembleResult {
+  ok: boolean;
+  reason: string;
 }
 
 /* ---------------- weekly growth ---------------- */

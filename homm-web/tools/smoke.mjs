@@ -939,22 +939,52 @@ function runTactical(attacker, defender, seed) {
   ok(bad === 0, `30 张地图 × 4 座城，占地规则全部成立（异常 ${bad}）`);
 }
 
-/* ---------------- M6：攻城战（城墙 / 城门 / 箭塔） ---------------- */
+/* ---------------- M6：攻城战（城墙 / 城门 / 角塔 / 主楼 / 攻城器械） ---------------- */
 {
   console.log('--- M6 攻城战 ---');
-  const { createSiege, wallLevelOf, WALL_COL, GATE_ROW, TOWER_COL, MOAT_COL } =
-    await import('../dist/core/combat/siege.js');
-  const { actSiege, siegeTargets, towerPhase, estimateSiegeDamage } = await import('../dist/core/combat/battle.js');
+  const {
+    createSiege,
+    wallLevelOf,
+    blocksMove,
+    liveShooters,
+    liveFortifications,
+    UNIT_SIEGE_RESIST,
+    COLLAPSE_RATIO,
+    GATE_COLLAPSE_RATIO,
+    WALL_COL,
+    GATE_ROW,
+    KEEP_COL,
+    MOAT_COL,
+  } = await import('../dist/core/combat/siege.js');
+  const { actSiege, siegeTargets, towerPhase, estimateSiegeDamage, machinePhase } =
+    await import('../dist/core/combat/battle.js');
+  const { WAR_MACHINES } = await import('../dist/core/data/warmachines.js');
 
-  // 1. 结构生成：等级决定墙段数 / 城门 / 箭塔数
+  const wallsOf = (s) => s.structures.filter((x) => x.kind === 'wall').length;
+  const turretsOf = (s) => s.structures.filter((x) => x.kind === 'tower').length;
+  const keepOf = (s) => s.structures.find((x) => x.kind === 'keep');
+  const gateOf = (s) => s.structures.find((x) => x.kind === 'gate');
+  const wallAt = (s, row) => s.structures.find((x) => x.kind === 'wall' && x.hex.row === row);
+
+  // 1. 结构生成：等级决定角塔数量，主楼每一级都有
   ok(createSiege(0) === null, '没有城墙 = 野战（createSiege(0) 返回 null）');
   const s1 = createSiege(1);
+  const s2 = createSiege(2);
   const s3 = createSiege(3);
-  ok(s1.structures.filter((x) => x.kind === 'wall').length === FIELD_H - 1, '一段城墙占满一整列（城门除外）');
-  ok(s1.structures.filter((x) => x.kind === 'tower').length === 1, '城防 1 星 = 1 座箭塔');
-  ok(s3.structures.filter((x) => x.kind === 'tower').length === 3, '城防 3 星 = 3 座箭塔');
-  ok(s1.structures.some((x) => x.kind === 'gate' && x.hex.col === WALL_COL && x.hex.row === GATE_ROW), '城门在城墙列正中');
+  ok(wallsOf(s1) === FIELD_H - 1, '城墙段数 = 列高 − 1（正中让给城门）');
+  ok(turretsOf(s1) === 0 && turretsOf(s2) === 1 && turretsOf(s3) === 2, '角塔随城防 0 / 1 / 2 座');
+  ok(keepOf(s1) && keepOf(s2) && keepOf(s3), '每一级城防都有主楼');
+  ok(
+    s3.structures.filter((x) => x.kind === 'tower').every((x) => x.hex.col === WALL_COL),
+    '角塔砌在城墙列上（不是墙后）—— 拆掉它就是墙上一个口子',
+  );
+  ok(keepOf(s3).hex.col === KEEP_COL && KEEP_COL !== WALL_COL, '主楼在城墙之后，不占城墙列');
+  ok(gateOf(s3).hex.col === WALL_COL && gateOf(s3).hex.row === GATE_ROW, '城门在城墙列正中');
   ok(s3.structures.every((x) => x.maxHp > 0), '所有结构都有血量');
+  ok(
+    liveShooters(s3).length === 3 && liveFortifications(s3).length === FIELD_H,
+    '射手 = 角塔 2 + 主楼 1；城墙列结构占满整列（投石车只能砸这些）',
+  );
 
   // 2. wallLevelOf 从城镇建筑推导
   const g = createGame({ size: 'medium', seed: 4242, opponents: 1 });
@@ -975,36 +1005,116 @@ function runTactical(attacker, defender, seed) {
   ok(![...paths.keys()].some((k) => Number(k.split(',')[0]) >= WALL_COL), '城墙没破之前，攻方过不了城墙列');
 
   // 4. 砸墙：血量下降，砸塌之后那一格能走了，相邻墙段还会跟着掉血
-  const seg = b.siege.structures.find((x) => x.kind === 'wall' && x.hex.row === GATE_ROW - 1);
-  const nb = b.siege.structures.find((x) => x.kind === 'wall' && x.hex.row === GATE_ROW - 2);
+  const seg = wallAt(b.siege, GATE_ROW - 1);
+  const nb = wallAt(b.siege, GATE_ROW - 2);
   const hp0 = seg.hp;
   u.hex = { col: MOAT_COL, row: seg.hex.row };
   actSiege(b, u, seg);
   ok(seg.hp < hp0, 'actSiege 让城墙掉血');
   const before = nb.hp;
-  while (seg.hp > 0) actSiege(b, u, seg);
+  let guard = 0;
+  while (seg.hp > 0 && guard++ < 200) actSiege(b, u, seg);
   ok(seg.hp === 0, '城墙可以被砸塌');
   ok(nb.hp < before, '一段墙塌了，相邻墙段跟着掉血（缺口会自己变宽）');
 
-  // 5. 城墙挡视线：隔墙谁也射不到谁
+  // 5. 城门塌了会带塌两侧 —— 出现三格宽的口子（投石车的价值来源）
+  const { createBattle: cb2 } = await import('../dist/core/combat/battle.js');
+  const bg = cb2(atk, def, 7, 3);
+  const gate = gateOf(bg.siege);
+  const gUp = wallAt(bg.siege, GATE_ROW - 1);
+  const gDn = wallAt(bg.siege, GATE_ROW + 1);
+  gate.hp = 1;
+  const ug = bg.units[0];
+  ug.hex = { col: MOAT_COL, row: GATE_ROW };
+  actSiege(bg, ug, gate);
+  ok(gate.hp === 0, '城门可以被砸塌');
+  ok(GATE_COLLAPSE_RATIO > COLLAPSE_RATIO, '城门崩塌比普通墙段更彻底');
+  ok(gUp.hp === 0 && gDn.hp === 0, '城门塌了，两侧城墙跟着塌');
+  ok(
+    !blocksMove(bg.siege, { col: WALL_COL, row: GATE_ROW }) &&
+      !blocksMove(bg.siege, { col: WALL_COL, row: GATE_ROW - 1 }) &&
+      !blocksMove(bg.siege, { col: WALL_COL, row: GATE_ROW + 1 }),
+    '塌出来的三格都能走 —— 部队可以并排冲进去',
+  );
+
+  // 6. 城墙挡视线：隔墙谁也射不到谁
   const b2 = createBattle(atk, def, 7, 1);
   const shooter = b2.units[0];
   shooter.hex = { col: 2, row: GATE_ROW };
   shooter.unitTypeId = 'archer';
   shooter.shots = 12;
   ok(shootTargets(b2, shooter).length === 0, '完整的城墙挡视线：攻方射不到城里的人');
-  ok(towerPhase(b2).length > 0, '箭塔在回合开始时自动射击');
+  ok(towerPhase(b2).length > 0, '主楼在回合开始时自动射击');
 
-  // 6. 箭塔在墙后，破墙之前打不到
-  const tower = b2.siege.structures.find((x) => x.kind === 'tower');
-  ok(siegeTargets(b2, shooter, true).every((x) => x.id !== tower.id), '远程隔着完整城墙打不到箭塔');
+  // 7. 角塔在墙上（打得到），主楼在墙后（打不到）
+  const b2t = createBattle(atk, def, 7, 2);
+  const shooter2 = b2t.units[0];
+  shooter2.hex = { col: 2, row: GATE_ROW };
+  shooter2.unitTypeId = 'archer';
+  shooter2.shots = 12;
+  const turret = b2t.siege.structures.find((x) => x.kind === 'tower');
+  const keep2 = keepOf(b2t.siege);
+  ok(
+    siegeTargets(b2t, shooter2, true).some((x) => x.id === turret.id),
+    '角塔砌在城墙上，远程可以直接点名它',
+  );
+  ok(
+    siegeTargets(b2t, shooter2, true).every((x) => x.id !== keep2.id),
+    '主楼在墙后，破墙之前远程打不到',
+  );
 
-  // 7. AI 攻城能在 MAX_ROUNDS 内打完，且最终会破墙
+  // 8. 部队砸墙有折损，投石车按全额轰 —— 这是投石车值 1500 金的原因
+  ok(UNIT_SIEGE_RESIST > 0 && UNIT_SIEGE_RESIST < 1, '部队打城防有伤害折损（箭矢砍不动石墙）');
+
+  // 9. 攻城器械：投石车砸城防（优先城门），弩车射部队
+  const MID = [
+    { unitTypeId: 'archer', count: 30 },
+    { unitTypeId: 'pikeman', count: 20 },
+    { unitTypeId: 'knight', count: 8 },
+  ];
+  const GARR = [
+    { unitTypeId: 'archer', count: 20 },
+    { unitTypeId: 'pikeman', count: 12 },
+  ];
+  const DEFG = { army: GARR, attack: 0, defense: 0 };
+
+  const bm = createBattle({ army: MID, attack: 6, defense: 3, warMachines: ['catapult'] }, DEFG, 7, 3);
+  const mEv = machinePhase(bm);
+  ok(mEv.length === 1 && mEv[0].t === 'machine', '投石车每回合自动开火一次');
+  ok(mEv[0].structureId === 'gate', '投石车优先砸城门');
+  ok(!machinePhase(bm).length === false, '投石车不会因为目标已残而停火');
+  ok(bm.units.length === MID.length + GARR.length, '器械不是战场单位：不占格、不会被瞄准');
+  gateOf(bm.siege).hp = 0;
+  const mEv2 = machinePhase(bm);
+  ok(
+    mEv2.length === 1 && mEv2[0].structureId !== 'gate',
+    '城门塌了之后，投石车改砸离城门最近的墙段',
+  );
+
+  const bb2 = createBattle({ army: MID, attack: 6, defense: 3, warMachines: ['ballista'] }, DEFG, 7, 3);
+  const bEv = machinePhase(bb2);
+  ok(bEv.length === 1 && !!bEv[0].targetId && !bEv[0].structureId, '弩车每回合自动射击守军');
+
+  const noMach = createBattle({ army: MID, attack: 6, defense: 3 }, DEFG, 7, 1);
+  ok(machinePhase(noMach).length === 0, '没带器械就没有器械开火');
+
+  // 10. 投石车让攻城更划算：同一支兵打同一座 1 星城，带投石车损失更小
+  const midVsL1 = (mach) => {
+    let loss = 0;
+    for (let i = 0; i < 9; i++) {
+      const out = quickBattle({ army: MID, attack: 6, defense: 3, warMachines: mach }, DEFG, 1000 + i * 7, 1);
+      loss += lossRatio(out);
+    }
+    return loss / 9;
+  };
+  ok(midVsL1(['catapult']) < midVsL1([]), '投石车让攻城损失明显变小（同一支兵打同一座城）');
+
+  // 11. AI 攻城能在 MAX_ROUNDS 内打完，且最终会破墙
   let noBreach = 0;
   let tooLong = 0;
   for (let seed = 1; seed <= 20; seed++) {
     const bb = createBattle(
-      { army: [{ unitTypeId: 'archer', count: 30 }, { unitTypeId: 'pikeman', count: 20 }, { unitTypeId: 'knight', count: 8 }], attack: 6, defense: 3 },
+      { army: MID, attack: 6, defense: 3, warMachines: ['catapult', 'ballista'] },
       { army: [{ unitTypeId: 'archer', count: 20 }, { unitTypeId: 'pikeman', count: 10 }], attack: 0, defense: 0 },
       seed,
       2,
@@ -1016,28 +1126,35 @@ function runTactical(attacker, defender, seed) {
   ok(noBreach === 0, `20 场城防 2 星的攻城战全部破墙（没破 ${noBreach} 场）`);
   ok(tooLong === 0, `没有打到 40 回合上限的僵局（${tooLong} 场）`);
 
-  // 8. 城防会提高攻城门槛（同一支部队打同一座城，墙越高损失越大）
+  // 12. 城防会提高攻城门槛（同一支部队打同一座城，墙越高损失越大）
   const losses = (lv) => {
-    const out = quickBattle(
-      { army: [{ unitTypeId: 'archer', count: 30 }, { unitTypeId: 'pikeman', count: 20 }, { unitTypeId: 'knight', count: 8 }], attack: 6, defense: 3 },
-      { army: [{ unitTypeId: 'archer', count: 20 }, { unitTypeId: 'pikeman', count: 12 }], attack: 0, defense: 0 },
-      11,
-      lv,
-    );
+    const out = quickBattle({ army: MID, attack: 6, defense: 3 }, DEFG, 11, lv);
     return lossRatio(out);
   };
-  ok(losses(0) < losses(1) && losses(1) < losses(2) && losses(2) < losses(3),
-    '城防越高攻方损失越大：0 星 < 1 星 < 2 星 < 3 星');
+  const l0 = losses(0);
+  const l1 = losses(1);
+  const l2 = losses(2);
+  const l3 = losses(3);
+  ok(
+    l0 < l1 && l1 <= l2 && l2 <= l3,
+    `城防越高攻方损失越大：0 星 ${Math.round(l0 * 100)}% < 1 星 ${Math.round(l1 * 100)}% ≤ 2 星 ${Math.round(l2 * 100)}% ≤ 3 星 ${Math.round(l3 * 100)}%`,
+  );
 
-  // 9. 攻城战里城防不会反击，箭塔也不会把攻方瞬间蒸发
+  // 13. 攻城战里城防不会反击
   const b3 = createBattle(atk, def, 7, 3);
   const u3 = b3.units[0];
-  const t3 = b3.siege.structures.find((x) => x.kind === 'tower');
-  u3.hex = { col: TOWER_COL - 2, row: t3.hex.row };
-  const evs = actSiege(b3, u3, t3);
-  ok(evs.length === 1 && evs[0].t === 'siege' && evs[0].damage > 0, '箭塔可以被近战砸掉血');
+  const k3 = keepOf(b3.siege);
+  u3.hex = { col: KEEP_COL - 2, row: GATE_ROW };
+  const evs = actSiege(b3, u3, k3);
+  ok(evs.length === 1 && evs[0].t === 'siege' && evs[0].damage > 0, '主楼可以被近战砸掉血');
   ok(u3.count === atk.army[0].count, '城防不会反击（攻方部队数量不变）');
-}
 
+  // 14. 器械的定义是完整的
+  ok(
+    WAR_MACHINES.catapult.target === 'fortification' && WAR_MACHINES.ballista.target === 'unit',
+    '投石车打城防、弩车打部队',
+  );
+  ok(WAR_MACHINES.catapult.cost.gold > 0 && WAR_MACHINES.ballista.cost.gold > 0, '两种器械都要花钱');
+}
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);
 process.exit(fails === 0 ? 0 : 1);

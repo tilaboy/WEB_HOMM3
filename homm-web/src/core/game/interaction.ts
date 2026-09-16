@@ -14,6 +14,7 @@ import { idx, isPassable, objectAt } from '../map/grid.js';
 import { lossGrade, lossRatio, quickBattle } from '../combat/battle.js';
 import type { BattleOutcome, BattleSide } from '../combat/battle.js';
 import { wallLevelOf } from '../combat/siege.js';
+import { WAR_MACHINES } from '../data/warmachines.js';
 import { deriveSeed } from '../rng.js';
 import { addResources, effectivePrimary, gainExp, maxMovePoints } from './hero.js';
 import { townDefenseBonus, captureTown } from './town.js';
@@ -87,6 +88,7 @@ function sides(state: GameState, heroId: string, obj: MapObject) {
       attack: p.attack,
       defense: p.defense,
       caster: { spells: hero.spells, spellPower: p.spellPower, mana: hero.mana },
+      warMachines: hero.warMachines,
     },
     defender: { army: monster.army, attack: 0, defense: 0 },
   };
@@ -184,8 +186,10 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
         };
       }
       const wall = wallLevelOf(town);
+      const machines = hero.warMachines ?? [];
+      // 预估必须和真正打起来时用的是同一套输入，否则 AI 会"预估打不下来、实际按野战打赢"去送死
       const outcome = quickBattle(
-        { army: hero.army, attack: p.attack, defense: p.defense },
+        { army: hero.army, attack: p.attack, defense: p.defense, warMachines: machines },
         { army: garrison, attack: 0, defense: townDefenseBonus(town) },
         battleSeed(state, obj),
         wall,
@@ -193,7 +197,10 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
       const ratio = lossRatio(outcome);
       const fort =
         wall > 0
-          ? `城防 ${'★'.repeat(wall)}：城墙挡住步兵，${wall} 座箭塔每轮自动射击，城墙前的护城河还会削弱站在里面的部队。必须先砸开缺口。`
+          ? `城防 ${'★'.repeat(wall)}：城墙挡住步兵和视线，攻方必须先砸开口子；主楼与角塔每轮自动射击，墙前的护城河还会削弱站在里面的部队。` +
+            (machines.length
+              ? `\n随军器械：${machines.map((m) => WAR_MACHINES[m].name).join('、')}。`
+              : '\n（未带攻城器械：部队砸墙伤害减半，缺口会开得很慢）')
           : '此城没有城墙，将是一场野战。';
       return {
         objId, kind: 'siege', townId, siegeLevel: wall,
@@ -318,6 +325,8 @@ export function applyInteraction(
           attack: effectivePrimary(hero).attack,
           defense: effectivePrimary(hero).defense,
           caster: { spells: hero.spells, spellPower: effectivePrimary(hero).spellPower, mana: hero.mana },
+          // 攻城器械同样要带进来：AI 结算走过的就是这条兜底路径
+          warMachines: hero.warMachines,
         },
         { army: garrison, attack: 0, defense: townDefenseBonus(town) },
         battleSeed(state, obj),
@@ -455,6 +464,8 @@ export function battleSetup(
     defense: p.defense,
     // 英雄带进战场：法术表 + 魔力 + 剩余法力
     caster: { spells: hero.spells, spellPower: p.spellPower, mana: hero.mana },
+    // 工坊装配的攻城器械（M6）：只有攻方用得上，守方的城防是建筑自带的
+    warMachines: hero.warMachines,
   };
 
   if (obj.kind === 'wanderingMonster') {

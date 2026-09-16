@@ -1,11 +1,15 @@
 /**
  * 攻城战：城墙 / 城门 / 箭塔。
  *
- * 设计取向是"够用且讲得通"，不是复刻 HOMM3 的完整攻城规则：
- *   - 城墙占满一整列，所以**挡路**是几何结果，不需要额外的"不可穿越"标记；
- *   - 城墙**同时挡视线**：隔着完整的城墙，谁也打不到谁。于是守军躲在墙后是安全的，
- *     攻方在破墙之前也不会被城里点名 —— 第一目标清晰：先把墙砸开；
- *   - 箭塔每轮自动射击，逼攻方在"挨打"和"破门"之间做取舍。
+ * 结构模仿 HOMM3 的城防线，简化了数量但保留了各自的战术意义：
+ *   - **城墙**占满一整列（10 段），所以**挡路**是几何结果，不需要"不可穿越"标记；
+ *   - **角塔**砌在城墙列的上下两端，是墙的一部分：拆掉它就真的在墙上开个口子；
+ *   - **主楼**在城墙后两列正中，火力最猛，但不占城墙列 —— 拆它不会开出通路；
+ *   - **城门**在城墙列正中，最硬，是攻方最想砸开的那一段；
+ *   - **护城河**在城墙前一列，站上去的攻方防御 -2。
+ *
+ * 城墙**同时挡视线**：隔着完整的城墙，谁也打不到谁。守军躲在墙后是安全的，
+ * 攻方在破墙之前也不会被城里点名 —— 第一目标清晰：先把墙砸开。
  *
  * 为什么最后选了"挡视线"而不是 HOMM3 的"只挡人不挡箭"：那个版本实测下来是灾难 ——
  * 弓箭手隔着墙对射，攻方步兵永远在挨打、永远打不到人，2 星城防以上就是 100% 团灭，
@@ -18,7 +22,7 @@ import type { Hex } from './hex.js';
 import { FIELD_H, hexEq, hexLine } from './hex.js';
 import type { Town } from '../types.js';
 
-export type StructureKind = 'wall' | 'gate' | 'tower';
+export type StructureKind = 'wall' | 'gate' | 'tower' | 'keep';
 
 export interface SiegeStructure {
   id: string;
@@ -46,24 +50,43 @@ export interface SiegeState {
  * 城墙列。攻方（side 0）在左边，守方（side 1）在右边。
  *
  * 选 11 是因为它同时满足：攻方有 0~10 共 11 列可以展开兵力，
- * 守方城内还留得下 13、14 两列站人，箭塔（12 列）不至于贴着守军。
+ * 守方城内还留得下 12、13 两列（14 列是守军部署列），主楼摆进去不挤。
  */
 export const WALL_COL = 11;
 /** 城门在第 5 行（战场正中）。 */
 export const GATE_ROW = 5;
-/** 箭塔在城墙后一列。 */
-export const TOWER_COL = 12;
+/** 主楼在城墙后两列、正中那一行 —— 守军部署在 14 列，不会撞上。 */
+export const KEEP_COL = 13;
 /** 护城河在城墙前一列：站上去的攻方部队防御 -2。 */
 export const MOAT_COL = 10;
 /** 站在护城河里的惩罚。 */
 export const MOAT_DEFENSE_PENALTY = 2;
 
-/** 箭塔数量随城墙等级递增：先中塔，再上侧塔，最后下侧塔。 */
-const TOWER_ROWS: Record<number, number[]> = {
-  1: [GATE_ROW],
-  2: [1, GATE_ROW],
-  3: [1, GATE_ROW, FIELD_H - 2],
+/**
+ * 角塔（turret）**直接砌在城墙列上**，这是照 HOMM3 来的：
+ * 城防线的上下两端各有一座塔楼，它们是墙的一部分，不是墙后面的独立建筑。
+ *
+ * 这么摆是玩法驱动：打掉一座角塔，城墙上就真的多了一个口子。
+ * 早期版本把塔放在墙后一列（12 列），塔就只是个"飘在城里的射击点" ——
+ * 既不像城防，拆它也没有任何战术意义。位置选错了。
+ *
+ * 主楼（keep）才是墙后那座高建筑：它不占城墙列，所以拆主楼不会开出通路，
+ * 但它是火力最猛的射手，攻方要么忍着挨打，要么冲进去把它敲掉。
+ */
+const TURRET_ROWS: Record<number, number[]> = {
+  1: [],
+  2: [1],
+  3: [1, FIELD_H - 2],
 };
+
+/**
+ * 普通部队打城防的伤害折损。
+ *
+ * 这是让「投石车」有意义的关键设定：箭矢砸在石墙上基本是挠痒痒，只有投石车
+ * 能按全额伤害轰。没有这条，30 个弓箭手 4 回合就能捅穿城墙，投石车那 1500 金
+ * 买来的只是"快了一回合"—— 实测下来有没有它胜负完全一样，等于白给。
+ */
+export const UNIT_SIEGE_RESIST = 0.5;
 
 /**
  * 一段墙塌了，紧挨着的那两段也要跟着掉血。
@@ -73,6 +96,16 @@ const TOWER_ROWS: Record<number, number[]> = {
  * 让缺口自己变宽之后，破门才真的意味着"冲进去"。
  */
 export const COLLAPSE_RATIO = 0.4;
+
+/**
+ * 城门塌了会连带把两侧的城墙一起带塌 —— 门楼是嵌在城墙里的，它没了墙就站不住。
+ *
+ * 这条是「投石车值不值 1500 金」的关键。投石车优先砸城门，城门一塌就立刻
+ * 出现一个三格宽的口子，部队能并排冲进去；没有投石车的话，攻方只能慢慢啃
+ * 城墙段，啃开一个格子宽的洞，然后像排队送死一样被守军挨个点名。
+ * 0.4 的普通崩塌比值撑不起这个差别 —— 实测有没有投石车胜负完全一样。
+ */
+export const GATE_COLLAPSE_RATIO = 1;
 
 /* ---------------- 建造 ---------------- */
 
@@ -88,10 +121,12 @@ export function createSiege(level: number): SiegeState | null {
   const lv = Math.min(3, Math.max(1, level));
 
   const structures: SiegeStructure[] = [];
+  const turretRows = TURRET_ROWS[lv];
 
-  const segHp = 200 + 55 * lv;
+  const segHp = 240 + 60 * lv;
   for (let row = 0; row < FIELD_H; row++) {
     if (row === GATE_ROW) continue; // 正中留作城门
+    if (turretRows.includes(row)) continue; // 上下两端留给角塔
     structures.push({
       id: `wall_${row}`,
       kind: 'wall',
@@ -102,7 +137,7 @@ export function createSiege(level: number): SiegeState | null {
     });
   }
 
-  const gateHp = 380 + 110 * lv;
+  const gateHp = 480 + 120 * lv;
   structures.push({
     id: 'gate',
     kind: 'gate',
@@ -112,15 +147,15 @@ export function createSiege(level: number): SiegeState | null {
     defense: 2,
   });
 
-  const towerHp = 120 + 50 * lv;
+  const towerHp = 180 + 60 * lv;
   const towerAtk = 4 + 2 * lv;
   const shotMin = 8 + 2 * lv;
   const shotMax = 12 + 4 * lv;
-  for (const row of TOWER_ROWS[lv]) {
+  for (const row of turretRows) {
     structures.push({
       id: `tower_${row}`,
       kind: 'tower',
-      hex: { col: TOWER_COL, row },
+      hex: { col: WALL_COL, row },
       hp: towerHp,
       maxHp: towerHp,
       defense: 4,
@@ -129,6 +164,26 @@ export function createSiege(level: number): SiegeState | null {
       attack: towerAtk,
     });
   }
+
+  // 主楼：城里那座高塔，火力最猛，但不占城墙列 —— 拆它不会开出通路
+  //
+  // 火力刻意压得比角塔只高一点点：主楼在 1 星城防就存在，
+  // 如果它太猛，"没墙"和"1 星墙"之间会出现一道断崖 ——
+  // 实测过一轮，主楼一轮能打死 2 个弓手时，开局那点兵去打哪怕是 1 星城也是 0% 胜率，
+  // 玩家除了"先攒兵"之外没有任何选择。现在 1 星主楼约等于多一个弓手队，
+  // 2~3 星再靠角塔把火力叠上去。
+  const keepHp = 260 + 70 * lv;
+  structures.push({
+    id: 'keep',
+    kind: 'keep',
+    hex: { col: KEEP_COL, row: GATE_ROW },
+    hp: keepHp,
+    maxHp: keepHp,
+    defense: 5,
+    shotMin: 8 + 2 * lv,
+    shotMax: 13 + 3 * lv,
+    attack: 5 + lv,
+  });
 
   return { level: lv, structures };
 }
@@ -178,22 +233,35 @@ export function isMoat(h: Hex): boolean {
   return h.col === MOAT_COL;
 }
 
-/** 还立着的箭塔。 */
-export function liveTowers(siege: SiegeState | null | undefined): SiegeStructure[] {
+/** 还立着的城防射手：角塔 + 主楼。攻城时每回合开始各射一发。 */
+export function liveShooters(siege: SiegeState | null | undefined): SiegeStructure[] {
   if (!siege) return [];
-  return siege.structures.filter((st) => st.kind === 'tower' && st.hp > 0);
+  return siege.structures.filter(
+    (st) => st.hp > 0 && (st.kind === 'tower' || st.kind === 'keep'),
+  );
+}
+
+/** 还立着的城墙列结构（墙 / 门 / 角塔）—— 投石车只砸这些。 */
+export function liveFortifications(siege: SiegeState | null | undefined): SiegeStructure[] {
+  if (!siege) return [];
+  return siege.structures.filter((st) => st.hp > 0 && st.hex.col === WALL_COL);
 }
 
 /**
- * 一段墙被砸塌：连带削弱上下相邻的两段。
+ * 一段墙被砸塌：连带削弱城墙列上紧挨着的那两段。
+ * 角塔也算城墙的一部分，所以拆塔同样会震裂旁边的墙 —— 这正是"拆塔开口子"的由来。
  * 返回被这次崩塌一起带塌的结构 id（UI 用来一次性画掉）。
  */
 export function collapseNeighbors(siege: SiegeState | null | undefined, st: SiegeStructure): string[] {
-  if (!siege || st.kind !== 'wall') return [];
+  if (!siege) return [];
+  if (st.kind !== 'wall' && st.kind !== 'tower' && st.kind !== 'gate') return [];
   const fell: string[] = [];
-  const splash = Math.round(st.maxHp * COLLAPSE_RATIO);
+  // 城门塌了门楼两侧的墙跟着全塌，普通墙段只震裂 40% —— 见 GATE_COLLAPSE_RATIO
+  const ratio = st.kind === 'gate' ? GATE_COLLAPSE_RATIO : COLLAPSE_RATIO;
+  const splash = Math.round(st.maxHp * ratio);
   for (const other of siege.structures) {
-    if (other.kind !== 'wall' || other.hp <= 0) continue;
+    if (other.hp <= 0) continue;
+    if (other.kind !== 'wall' && other.kind !== 'tower') continue;
     if (other.hex.col !== st.hex.col) continue;
     if (Math.abs(other.hex.row - st.hex.row) !== 1) continue;
     other.hp = Math.max(0, other.hp - splash);
@@ -210,5 +278,6 @@ export function isBreached(siege: SiegeState | null | undefined): boolean {
 export const STRUCTURE_NAME: Record<StructureKind, string> = {
   wall: '城墙',
   gate: '城门',
-  tower: '箭塔',
+  tower: '角塔',
+  keep: '主楼',
 };

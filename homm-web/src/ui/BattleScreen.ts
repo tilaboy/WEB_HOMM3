@@ -7,6 +7,7 @@
  */
 import type { GameState } from '../core/types.js';
 import { getUnit } from '../core/data/units.js';
+import { WAR_MACHINES } from '../core/data/warmachines.js';
 import { effectivePrimary } from '../core/game/hero.js';
 import {
   actDefend,
@@ -104,9 +105,18 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   }
   const manaEl = document.createElement('div');
   manaEl.className = 'bt-mana';
+  // 攻城器械：攻方带了才显示，提醒玩家"这几样东西每回合都会自动开火"
+  const machineEl = document.createElement('div');
+  machineEl.className = 'bt-machines';
+  const carriedMachines = opts.attacker.warMachines ?? [];
+  if (carriedMachines.length) {
+    machineEl.textContent = `攻城器械：${carriedMachines.map((m) => WAR_MACHINES[m].name).join('、')}`;
+  } else {
+    machineEl.style.display = 'none';
+  }
   const headActions = document.createElement('div');
   headActions.className = 'bt-head-actions';
-  head.append(title, roundEl, statsEl, manaEl, headActions);
+  head.append(title, roundEl, statsEl, manaEl, machineEl, headActions);
   root.appendChild(head);
 
   const body = document.createElement('div');
@@ -466,6 +476,50 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
                 hit = true;
                 addFloat(`-${e.damage}`, hexOf(e.targetId), '#ffb347');
                 if (e.killed) addFloat(`-${e.killed}`, hexOf(e.targetId), '#ffdcd2');
+              }
+              arrow = null;
+            }
+          },
+          end: () => {
+            arrow = null;
+          },
+        };
+        break;
+      }
+      case 'machine': {
+        // 器械摆在部署区最外一列（见 BattleRenderer.drawWarMachines），
+        // 动画就从那个位置发出：投石车走大抛物线，弩车走平直的直射
+        const list = battle.machines?.[e.side] ?? [];
+        const i = Math.max(0, list.indexOf(e.machine));
+        const row = i === 0 ? 0 : FIELD_H - 1;
+        const a = hexCenter(e.side === 0 ? { col: 0, row } : { col: FIELD_W - 1, row });
+        const targetHex = e.structureId
+          ? structureById(battle.siege, e.structureId)?.hex ?? hexOf(e.targetId ?? '')
+          : hexOf(e.targetId ?? '');
+        const b = hexCenter(targetHex);
+        const isCat = e.machine === 'catapult';
+        let hit = false;
+        anim = {
+          t: 0,
+          dur: isCat ? 760 : 580,
+          step: (p) => {
+            if (p < 0.55) {
+              const k = p / 0.55;
+              arrow = {
+                x: a.x + (b.x - a.x) * k,
+                y: a.y + (b.y - a.y) * k - Math.sin(k * Math.PI) * (isCat ? 52 : 10),
+                tx: b.x,
+                ty: b.y,
+              };
+            } else {
+              if (!hit) {
+                hit = true;
+                addFloat(`-${e.damage}`, targetHex, '#ffd08a');
+                if (e.destroyed) {
+                  const kind = structureById(battle.siege, e.structureId ?? '')?.kind ?? 'wall';
+                  addFloat(`${STRUCTURE_NAME[kind]}崩塌`, targetHex, '#ff9a6b');
+                }
+                if (e.killed) addFloat(`-${e.killed}`, targetHex, '#ffdcd2');
               }
               arrow = null;
             }
