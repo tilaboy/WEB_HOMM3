@@ -9,6 +9,8 @@ import { endDay } from '../dist/core/game/turn.js';
 import { factionIds } from '../dist/core/data/factions.js';
 import { evaluateOutcome, isEliminated, outcomeSummary } from '../dist/core/game/victory.js';
 import { BASE_TOWN_INCOME } from '../dist/core/data/buildings.js';
+import { HOME_MINE_RING, MINE_NAME, MINE_PER_DAY, RARE_RESOURCES } from '../dist/core/data/mines.js';
+import { MARKET_RATES } from '../dist/core/game/town.js';
 import { getUnit } from '../dist/core/data/units.js';
 import { bfs, distance, hexCenter, hexLine, hexList, inField, neighbors, pickHex, FIELD_H, FIELD_W } from '../dist/core/combat/hex.js';
 import {
@@ -388,17 +390,20 @@ ok(!!mineMon, '地图上存在守矿的野怪');
 const h8 = g8.heroes.hero1;
 h8.pos = { ...mineMon.pos };
 h8.army = [{ unitTypeId: 'angel', count: 30 }];
+// M7 起地图上本来就摆着十几座无主矿，所以这里只能断言"多出一座、且归我方"
+const minesBefore = Object.values(g8.map.objects).filter((o) => o.kind === 'mine').length;
 const win8 = applyInteraction(g8, 'hero1', mineMon.id, true);
 ok(win8.message.includes('矿'), `攻下矿场（${win8.message.split('\n')[1] ?? ''}）`);
 const mines = Object.values(g8.map.objects).filter((o) => o.kind === 'mine');
-ok(mines.length === 1, '地图上出现了一座矿');
-ok(mines[0].payload.owner === 'p1', '矿场归我方');
+ok(mines.length === minesBefore + 1, `地图上多出一座矿（${minesBefore} → ${mines.length}）`);
+const mine8 = mines.find((m) => m.payload.owner === 'p1');
+ok(!!mine8, '矿场归我方');
 const before8 = { ...g8.players.p1.resources };
 endDay(g8);
-const res8 = mines[0].payload.resource;
+const res8 = mine8.payload.resource;
 ok(
   (g8.players.p1.resources[res8] ?? 0) > (before8[res8] ?? 0),
-  `矿场每日产出 ${res8} +${mines[0].payload.perDay} 已发放`,
+  `矿场每日产出 ${res8} +${mine8.payload.perDay} 已发放`,
 );
 
 /* ================= M3：六边形战术战斗 ================= */
@@ -1156,5 +1161,176 @@ function runTactical(attacker, defender, seed) {
   );
   ok(WAR_MACHINES.catapult.cost.gold > 0 && WAR_MACHINES.ballista.cost.gold > 0, '两种器械都要花钱');
 }
+
+/* ================= M7：矿场与宝库区 ================= */
+console.log('\n--- M7 矿场与宝库区 ---');
+
+// 1. 独立矿场：每张图都该有一批，且七种资源迟早都会出现
+{
+  const seen = new Set();
+  let minMines = 999;
+  for (const seed of [1, 42, 777, 20260912, 99999]) {
+    const g = createGame(seed);
+    const mines = Object.values(g.map.objects).filter((o) => o.kind === 'mine');
+    minMines = Math.min(minMines, mines.length);
+    for (const m of mines) seen.add(m.payload.resource);
+  }
+  ok(minMines >= 8, `每张图至少 8 座独立矿场（最少的一张 ${minMines} 座）`);
+  ok(
+    RARE_RESOURCES.every((r) => seen.has(r)),
+    `七种资源都有矿：${[...seen].map((r) => MINE_NAME[r]).join('、')}`,
+  );
+}
+
+// 2. 每家主城 3~7 格内保底一座锯木场 + 一座采石场
+{
+  const g = createGame({ seed: 20260912, opponents: 3, difficulty: 'normal', playerName: 'P' });
+  // 只看阵营主城：中立城不享受"保底矿"，它们是给玩家去抢的
+  const homes = Object.values(g.towns).filter((t) => t.owner !== 'neutral');
+  const mines = Object.values(g.map.objects).filter((o) => o.kind === 'mine');
+  let missing = 0;
+  for (const t of homes) {
+    for (const res of ['wood', 'ore']) {
+      const near = mines.some(
+        (m) =>
+          m.payload.resource === res &&
+          Math.abs(m.pos.x - t.pos.x) + Math.abs(m.pos.y - t.pos.y) <= HOME_MINE_RING.max,
+      );
+      if (!near) missing++;
+    }
+  }
+  ok(missing === 0, `每座城附近都有木矿与石矿（缺 ${missing} 处）`);
+}
+
+// 3. 矿场初始无主；踩上去就插旗，敌方也能抢走
+{
+  const g = createGame({ seed: 4242, opponents: 3, difficulty: 'normal', playerName: 'P' });
+  const mine = Object.values(g.map.objects).find((o) => o.kind === 'mine');
+  ok(mine.payload.owner === 'neutral', '独立矿场开局无主');
+  ok(mine.payload.perDay > 0, `${MINE_NAME[mine.payload.resource]} 每日 +${mine.payload.perDay}`);
+
+  const h = g.heroes.hero1;
+  h.pos = { ...mine.pos };
+  const res = applyInteraction(g, 'hero1', mine.id, true);
+  ok(mine.payload.owner === 'p1', '我方英雄踩上去即占领');
+  ok(res.title.includes('占领'), `占领提示：${res.title}`);
+  // 自家矿不再反复弹窗
+  ok(pendingObjectAt(g, 'hero1') === null, '自家矿场不再触发交互');
+
+  // 敌方（p2）来抢
+  const foeId = g.heroOrder.find((id) => g.heroes[id].owner === 'p2');
+  const foe = g.heroes[foeId];
+  foe.pos = { ...mine.pos };
+  const steal = applyInteraction(g, foeId, mine.id, true);
+  ok(mine.payload.owner === 'p2', '敌方英雄可以夺走矿场');
+  ok(steal.title.includes('夺取'), `夺取提示：${steal.title}`);
+  ok(steal.message.includes('晨曦') || steal.message.includes('赤焰') || steal.message.includes('翠林') || steal.message.includes('紫晶'), '夺取时点名了原来的主人');
+
+  // 我方再抢回来
+  h.pos = { ...mine.pos };
+  applyInteraction(g, 'hero1', mine.id, true);
+  ok(mine.payload.owner === 'p1', '矿场可以反复易主');
+}
+
+// 4. 七种资源都能进每日收入
+{
+  const g = createGame(555);
+  const mine = Object.values(g.map.objects).find((o) => o.kind === 'mine');
+  mine.payload.resource = 'mercury';
+  mine.payload.perDay = MINE_PER_DAY.mercury;
+  mine.payload.owner = 'p1';
+  const before = g.players.p1.resources.mercury ?? 0;
+  endDay(g);
+  ok(
+    (g.players.p1.resources.mercury ?? 0) === before + MINE_PER_DAY.mercury,
+    `水银矿每日 +${MINE_PER_DAY.mercury} 已发放（${before} → ${g.players.p1.resources.mercury}）`,
+  );
+}
+
+// 5. 宝库区：重兵守宝，打赢才拿得到，拿完就没了
+{
+  const g = createGame(31337);
+  const vaults = Object.values(g.map.objects).filter((o) => o.kind === 'vault');
+  ok(vaults.length >= 2, `地图上有 ${vaults.length} 处宝库区`);
+  ok(
+    vaults.every((v) => v.payload.army.length > 0 && v.payload.reward.gold > 0),
+    '每处宝库都有守军和财物',
+  );
+
+  const v = vaults[0];
+  const h = g.heroes.hero1;
+  h.pos = { ...v.pos };
+  h.army = [{ unitTypeId: 'angel', count: 200 }];
+  const preview = previewInteraction(g, 'hero1', v.id);
+  ok(preview?.kind === 'battle', '宝库要先打一仗');
+  ok(preview.message.includes('库中财物'), '预估里写明了库中财物');
+  ok(!!preview.estimate, '宝库战斗带损失预估');
+
+  const goldBefore = g.players.p1.resources.gold ?? 0;
+  const win = applyInteraction(g, 'hero1', v.id, true);
+  ok(win.title.length > 0 && (g.players.p1.resources.gold ?? 0) > goldBefore, `开库得金（+${(g.players.p1.resources.gold ?? 0) - goldBefore}）`);
+  ok(!g.map.objects[v.id], '宝库拿完就没了（一次性）');
+
+  // 打不过就是打不过
+  const v2 = Object.values(g.map.objects).find((o) => o.kind === 'vault');
+  if (v2) {
+    const h2 = g.heroes.hero1;
+    h2.pos = { ...v2.pos };
+    h2.army = [{ unitTypeId: 'peasant', count: 1 }];
+    const lose = applyInteraction(g, 'hero1', v2.id, true);
+    ok(lose.heroDefeated === true, '兵力不足强攻宝库会全军覆没');
+    ok(!!g.map.objects[v2.id], '没打赢，宝库还立在那儿');
+  }
+
+  // 宝库能进战术战场（和野怪共用一套战斗参数）
+  // 换一局：上面那位英雄已经在强攻中阵亡了
+  const g9 = createGame(31337);
+  const v3 = Object.values(g9.map.objects).find((o) => o.kind === 'vault');
+  const setup = battleSetup(g9, 'hero1', v3);
+  ok(!!setup && setup.defender.army.length > 0, '宝库战可以启动战术战场');
+  ok(setup.defender.army[0].count > 0, `守库兵力 ${setup.defender.army.map((s) => s.count + ' ' + s.unitTypeId).join('，')}`);
+}
+
+// 6. 隘口守卫：深处的宝贝前面都有强档野怪挡着
+{
+  let guarded = 0;
+  let total = 0;
+  for (const seed of [1, 42, 777, 20260912, 99999]) {
+    const g = createGame(seed);
+    const deep = Object.values(g.map.objects).filter(
+      (o) => o.kind === 'vault' || (o.kind === 'mine' && RARE_RESOURCES.includes(o.payload.resource)),
+    );
+    const strong = Object.values(g.map.objects).filter(
+      (o) => o.kind === 'wanderingMonster' && o.payload.tier === 'strong',
+    );
+    for (const d of deep) {
+      total++;
+      if (strong.some((m) => Math.abs(m.pos.x - d.pos.x) <= 6 && Math.abs(m.pos.y - d.pos.y) <= 6)) guarded++;
+    }
+  }
+  ok(
+    guarded === total,
+    `宝库与稀有矿都有强档守卫挡路（${guarded}/${total}）`,
+  );
+}
+
+// 7. 市场：稀有资源按个交易
+{
+  const g = createGame(2468);
+  const t = Object.values(g.towns).find((x) => x.owner === 'p1');
+  t.buildings.push('market');
+  g.players.p1.resources.gold = 5000;
+  g.players.p1.resources.gem = 0;
+  ok(marketBuy(g, 'gem') === true, '可以买 1 个宝石');
+  ok(g.players.p1.resources.gem === 1, '买到 1 个宝石');
+  ok(g.players.p1.resources.gold === 5000 - MARKET_RATES.gem.buyGold, `扣了 ${MARKET_RATES.gem.buyGold} 金`);
+  ok(marketSell(g, 'gem') === true, '可以卖 1 个宝石');
+  ok(g.players.p1.resources.gem === 0 && g.players.p1.resources.gold === 5000 - MARKET_RATES.gem.buyGold + MARKET_RATES.gem.sellGold, `卖得 ${MARKET_RATES.gem.sellGold} 金`);
+  // 木石仍是按批交易的老规矩
+  g.players.p1.resources.wood = 10;
+  marketSell(g, 'wood');
+  ok(g.players.p1.resources.wood === 5, '木/矿仍是 5 个一批');
+}
+
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);
 process.exit(fails === 0 ? 0 : 1);

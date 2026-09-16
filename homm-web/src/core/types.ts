@@ -148,6 +148,7 @@ export type MapObjectKind =
   | 'wanderingMonster'
   | 'town'
   | 'mine'
+  | 'vault'
   | 'obstacle';
 
 export interface ResourcePilePayload {
@@ -166,7 +167,7 @@ export type GuardReward =
   | { kind: 'gold'; amount: number }
   | { kind: 'resource'; resource: ResourceKind; amount: number }
   | { kind: 'artifact'; artifactId: string }
-  | { kind: 'mine'; resource: 'gold' | 'wood' | 'ore'; perDay: number };
+  | { kind: 'mine'; resource: ResourceKind; perDay: number };
 
 export interface MonsterPayload {
   army: Army;
@@ -183,11 +184,20 @@ export interface TownPayload {
 export interface ObstaclePayload {
   variant: 'tree' | 'rock' | 'mountain';
 }
-/** 已占领的矿场，每日产出资源。 */
+/** 已占领的矿场，每日产出资源。M7 起七种资源都能产出。 */
 export interface MinePayload {
-  resource: 'gold' | 'wood' | 'ore';
+  resource: ResourceKind;
   perDay: number;
   owner: PlayerId;
+}
+/**
+ * 宝库区：一群重兵守着的金库，打赢才拿得到，拿完就没了（once）。
+ * 和野怪的区别是——它不守路，它是个"值得专门跑一趟"的目标。
+ */
+export interface VaultPayload {
+  army: Army;
+  tier: 'mid' | 'strong';
+  reward: { gold: number; resources: ResourceBag; artifactId?: string };
 }
 export type ObjectPayload =
   | ResourcePilePayload
@@ -198,6 +208,7 @@ export type ObjectPayload =
   | ObstaclePayload
   | ArtifactPayload
   | MinePayload
+  | VaultPayload
   | null;
 
 export interface MapObject {

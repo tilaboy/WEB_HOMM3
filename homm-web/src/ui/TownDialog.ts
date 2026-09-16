@@ -1,12 +1,15 @@
-import type { GameState, ResourceBag } from '../core/types.js';
+import type { GameState, ResourceBag, ResourceKind } from '../core/types.js';
 import { BUILDINGS, BUILDING_ORDER, HERO_HIRE_COST } from '../core/data/buildings.js';
 import { WAR_MACHINES, WAR_MACHINE_IDS } from '../core/data/warmachines.js';
 import { getUnit } from '../core/data/units.js';
+
+/** 市场按钮上的短名（"木材"太长，挤不进小按钮）。 */
+const RESOURCE_LABEL: Partial<Record<ResourceKind, string>> = {
+  gold: '金', wood: '木', ore: '矿',
+  gem: '宝石', crystal: '水晶', sulfur: '硫磺', mercury: '水银',
+};
 import {
-  MARKET_BUY_AMOUNT,
-  MARKET_BUY_GOLD,
-  MARKET_SELL_AMOUNT,
-  MARKET_SELL_GOLD,
+  MARKET_RATES,
   build,
   buildStatus,
   canHireHero,
@@ -242,24 +245,45 @@ function paint(root: HTMLElement, opts: TownDialogOptions, note: string, say: Sa
     const wrap = document.createElement('div');
     wrap.className = 'ex-row';
     const t = document.createElement('span');
-    t.textContent = `市场 · ${MARKET_BUY_GOLD} 金买 ${MARKET_BUY_AMOUNT} 木/矿 · 卖 ${MARKET_SELL_AMOUNT} 木/矿得 ${MARKET_SELL_GOLD} 金`;
+    const bulk = MARKET_RATES.wood;
+    t.textContent =
+      `市场 · ${bulk.buyGold} 金买 ${bulk.buyAmount} 木/矿 · 卖 ${bulk.sellAmount} 木/矿得 ${bulk.sellGold} 金 · ` +
+      `稀有资源 ${MARKET_RATES.gem.buyGold} 金买 1 / 卖 1 得 ${MARKET_RATES.gem.sellGold} 金`;
     wrap.appendChild(t);
-    wrap.appendChild(
-      actionBtn('买木', (res.gold ?? 0) >= MARKET_BUY_GOLD, () =>
-        act(() => (marketBuy(state, 'wood') ? '买入木材' : '金币不足'))),
-    );
-    wrap.appendChild(
-      actionBtn('买矿', (res.gold ?? 0) >= MARKET_BUY_GOLD, () =>
-        act(() => (marketBuy(state, 'ore') ? '买入矿石' : '金币不足'))),
-    );
-    wrap.appendChild(
-      actionBtn('卖木', (res.wood ?? 0) >= MARKET_SELL_AMOUNT, () =>
-        act(() => (marketSell(state, 'wood') ? '卖出木材' : '木材不足'))),
-    );
-    wrap.appendChild(
-      actionBtn('卖矿', (res.ore ?? 0) >= MARKET_SELL_AMOUNT, () =>
-        act(() => (marketSell(state, 'ore') ? '卖出矿石' : '矿石不足'))),
-    );
+    for (const r of ['wood', 'ore'] as const) {
+      const rate = MARKET_RATES[r];
+      wrap.appendChild(
+        actionBtn(`买${RESOURCE_LABEL[r]}`, (res.gold ?? 0) >= rate.buyGold, () =>
+          act(() => (marketBuy(state, r) ? `买入${RESOURCE_LABEL[r]}` : '金币不足'))),
+      );
+    }
+    for (const r of ['wood', 'ore'] as const) {
+      const rate = MARKET_RATES[r];
+      wrap.appendChild(
+        actionBtn(`卖${RESOURCE_LABEL[r]}`, (res[r] ?? 0) >= rate.sellAmount, () =>
+          act(() => (marketSell(state, r) ? `卖出${RESOURCE_LABEL[r]}` : `${RESOURCE_LABEL[r]}不足`))),
+      );
+    }
+    // 稀有资源：按个交易，卖出比买入便宜一半（市场是变现渠道，不是印钞机）
+    for (const r of ['gem', 'crystal', 'sulfur', 'mercury'] as const) {
+      const rate = MARKET_RATES[r];
+      wrap.appendChild(
+        actionBtn(
+          `买${RESOURCE_LABEL[r]}(${rate.buyGold})`,
+          (res.gold ?? 0) >= rate.buyGold,
+          () => act(() => (marketBuy(state, r) ? `买入${RESOURCE_LABEL[r]}` : '金币不足')),
+          `${rate.buyGold} 金买 1 个${RESOURCE_LABEL[r]}；魔法行会与宝库都用得上`,
+        ),
+      );
+      wrap.appendChild(
+        actionBtn(
+          `卖${RESOURCE_LABEL[r]}(${rate.sellGold})`,
+          (res[r] ?? 0) >= rate.sellAmount,
+          () => act(() => (marketSell(state, r) ? `卖出${RESOURCE_LABEL[r]}` : `${RESOURCE_LABEL[r]}不足`)),
+          `卖 1 个${RESOURCE_LABEL[r]}得 ${rate.sellGold} 金`,
+        ),
+      );
+    }
     extra.appendChild(wrap);
   }
   // 工坊：攻城器械只有在英雄站在城里时才能装到他身上

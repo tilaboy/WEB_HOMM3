@@ -12,6 +12,7 @@ export { pushLog } from './log.js';
 
 const RESOURCE_NAME: Record<string, string> = {
   gold: '金币', wood: '木材', ore: '矿石',
+  gem: '宝石', crystal: '水晶', sulfur: '硫磺', mercury: '水银',
 };
 
 export interface IncomeReport {

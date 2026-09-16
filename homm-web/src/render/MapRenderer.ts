@@ -48,6 +48,8 @@ function objSprite(state: GameState, obj: MapObject, hash: number): string | nul
       return `res_${(obj.payload as { resource: string }).resource}`;
     case 'mine':
       return `mine_${(obj.payload as { resource: string }).resource}`;
+    case 'vault':
+      return 'vault';
     case 'treasureChest':
       return 'chest';
     case 'fountain':
@@ -109,6 +111,33 @@ export class MapRenderer {
     const f = this.atlas.get(name);
     if (!f) return;
     this.ctx.drawImage(this.atlas.canvas, f.x, f.y, f.w, f.h, wx, wy, f.w, f.h);
+  }
+
+  /**
+   * 矿场归属旗。
+   *
+   * 为什么不是像城堡那样把颜色烘进精灵里：矿有 7 种 × 5 个阵营 = 35 张图，
+   * 而旗子只是两笔——一根杆加一个三角，直接画比烘 35 张图划算得多。
+   */
+  private blitMineFlag(obj: MapObject, tx: number, ty: number): void {
+    if (obj.kind !== 'mine') return;
+    const owner = (obj.payload as { owner: string }).owner;
+    if (!owner || owner === 'neutral') return; // 无主矿不插旗：一眼能看出哪些还没人占
+    const ctx = this.ctx;
+    const x = tx * TILE + TILE - 7;
+    const y = ty * TILE + 4;
+    ctx.fillStyle = '#3a2a18';
+    ctx.fillRect(x, y, 1.5, 11);
+    ctx.fillStyle = factionColor(owner as never);
+    ctx.beginPath();
+    ctx.moveTo(x + 1.5, y + 1);
+    ctx.lineTo(x + 8, y + 4);
+    ctx.lineTo(x + 1.5, y + 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(20,16,10,0.55)';
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
   }
 
   draw(vm: ViewModel): void {
@@ -256,6 +285,8 @@ export class MapRenderer {
         if (sprite) this.blit(sprite, d.x, d.y);
         const mk = guardMarker(d.obj);
         if (mk) this.blitAt(mk, d.x * TILE + 17, d.y * TILE + 17);
+        // 矿场归属旗：没旗子 = 还没人占，插上谁的旗就归谁产
+        this.blitMineFlag(d.obj, d.x, d.y);
         // 记忆中的（已探索但当前不可见）物件压暗；多格物件逐格判断
         ctx.fillStyle = 'rgba(6,10,18,0.4)';
         for (const c of footprintOf(d.obj)) {

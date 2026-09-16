@@ -7,9 +7,13 @@ import type {
   MapObject,
   MinePayload,
   PlayerId,
+  ResourceBag,
+  VaultPayload,
 } from '../types.js';
 import { ARTIFACTS } from '../data/artifacts.js';
+import { MINE_NAME } from '../data/mines.js';
 import { getUnit } from '../data/units.js';
+import { factionName } from '../data/factions.js';
 import { idx, isPassable, objectAt } from '../map/grid.js';
 import { lossGrade, lossRatio, quickBattle } from '../combat/battle.js';
 import type { BattleOutcome, BattleSide } from '../combat/battle.js';
@@ -47,6 +51,17 @@ const RESOURCE_NAME: Record<string, string> = {
 };
 
 /** 把守卫奖励翻译成一句人话。 */
+/** 把宝库里的财物写成一句人话。 */
+function describeVaultReward(reward: VaultPayload['reward']): string {
+  const parts: string[] = [`${reward.gold} 金币`];
+  for (const [k, v] of Object.entries(reward.resources) as [keyof ResourceBag, number][]) {
+    parts.push(`${RESOURCE_NAME[k] ?? k} ×${v}`);
+  }
+  if (reward.artifactId) parts.push(`宝物「${ARTIFACTS[reward.artifactId]?.name ?? '未知'}」`);
+  return parts.join('、');
+}
+
+
 export function describeGuard(guard: GuardReward | undefined): string {
   if (!guard) return '';
   switch (guard.kind) {
@@ -159,14 +174,39 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
         message: '饮下清冽的泉水，今日移动力恢复一半。',
       };
     }
+    case 'vault': {
+      const payload = obj.payload as { army: Army; tier: string; reward: VaultPayload['reward'] };
+      const { attacker, defender } = sides(state, heroId, obj);
+      const outcome = quickBattle(attacker, defender, battleSeed(state, obj));
+      const ratio = lossRatio(outcome);
+      const grade = lossGrade(ratio);
+      return {
+        objId,
+        kind: 'battle',
+        title: payload.tier === 'strong' ? '重兵把守的宝库' : '宝库',
+        message:
+          `守库兵力：${describeArmy(payload.army)}。\n` +
+          `库中财物：${describeVaultReward(payload.reward)}，只有取胜才能拿到。` +
+          `\n预估战果：${outcome.win ? '可以攻下' : '难以攻克'}。`,
+        confirmLabel: '强攻',
+        cancelLabel: '撤退',
+        estimate: outcome,
+        lossText: `${grade.text}（约损失 ${Math.round(ratio * 100)}% 兵力）`,
+      };
+    }
     case 'mine': {
       const p = obj.payload as MinePayload;
-      const res = RESOURCE_NAME[p.resource] ?? p.resource;
+      const name = MINE_NAME[p.resource] ?? RESOURCE_NAME[p.resource] ?? p.resource;
+      // 自家矿场在 pendingObjectAt 就被挡掉了，能走到这里的都是中立或敌方的矿。
+      // 用 'pickup'：HOMM 的传统是踩上去就插旗，不需要再点一次确认。
       return {
-        objId, kind: 'info', title: `${res}矿`,
-        message: p.owner === hero.owner
-          ? `我方矿场，每日产出 ${res} +${p.perDay}。`
-          : '敌方矿场，占领后才能产出。',
+        objId,
+        kind: 'pickup',
+        title: p.owner === 'neutral' ? `占领${name}` : `夺取${name}`,
+        message:
+          p.owner === 'neutral'
+            ? `插上你的旗帜，${name}每日产出 ${RESOURCE_NAME[p.resource] ?? p.resource} +${p.perDay}。`
+            : `这是${factionName(p.owner)}的${name}，插上你的旗帜，产出归你（每日 +${p.perDay}）。`,
       };
     }
     case 'town': {
@@ -237,8 +277,9 @@ export function applyInteraction(
   const empty: InteractionResult = { title: '', message: '', levelUps: [], heroDefeated: false };
   if (!hero || !obj) return empty;
 
-  if (obj.kind === 'wanderingMonster') {
-    const payload = obj.payload as { army: Army; guard?: GuardReward };
+  // 野怪与宝库区：同一套战斗流程，差别只在于打赢之后发什么
+  if (obj.kind === 'wanderingMonster' || obj.kind === 'vault') {
+    const payload = obj.payload as { army: Army; guard?: GuardReward; reward?: VaultPayload['reward'] };
     // 撤退有两种来源：战前直接点"撤退"，或进了战场又主动逃跑
     if (!accept || opts.outcome?.fled) {
       hero.army = hero.army
@@ -271,7 +312,10 @@ export function applyInteraction(
     if (outcome.win) {
       removeObject(state, obj);
       const notes = gainExp(state, hero, outcome.expGained);
-      const loot = grantGuard(state, heroId, obj.pos, payload.guard);
+      const loot =
+        obj.kind === 'vault' && payload.reward
+          ? grantVault(state, heroId, payload.reward)
+          : grantGuard(state, heroId, obj.pos, payload.guard);
       pushLog(state, `${hero.name} 击败了 ${describeArmy(payload.army)}${loot ? `，${loot}` : ''}`);
       return {
         title: '战斗胜利',
@@ -384,6 +428,25 @@ export function applyInteraction(
       pushLog(state, note);
       return { title: '宝物', message: note, levelUps: [], heroDefeated: false };
     }
+    case 'mine': {
+      const p = obj.payload as MinePayload;
+      const name = MINE_NAME[p.resource] ?? RESOURCE_NAME[p.resource] ?? p.resource;
+      const from = p.owner;
+      if (from === hero.owner) return empty;
+      p.owner = hero.owner;
+      const verb = from === 'neutral' ? '占领了' : `从${factionName(from)}手中夺取了`;
+      pushLog(state, `${hero.name} ${verb}${name}（每日 +${p.perDay}）`);
+      return {
+        title: from === 'neutral' ? `占领${name}` : `夺取${name}`,
+        message:
+          from === 'neutral'
+            ? `旗帜已插上，${name}每日产出 ${RESOURCE_NAME[p.resource] ?? p.resource} +${p.perDay}。`
+            : `${factionName(from)}的守军被驱散，${name}从此每日为你产出 ${RESOURCE_NAME[p.resource] ?? p.resource} +${p.perDay}。` +
+              `\n（它随时可能被别人再抢回去——矿场是要派兵守的。）`,
+        levelUps: [],
+        heroDefeated: false,
+      };
+    }
     case 'fountain': {
       if (obj.visitedBy.includes(hero.owner)) {
         return { title: '清泉', message: '这眼泉水已经喝干了。', levelUps: [], heroDefeated: false };
@@ -433,6 +496,22 @@ function grantGuard(state: GameState, heroId: string, pos: GridPos, guard?: Guar
   }
 }
 
+/** 打开宝库：金币 + 稀有资源 + 可能的宝物，一次给清。 */
+function grantVault(state: GameState, heroId: string, reward: VaultPayload['reward']): string {
+  const hero = state.heroes[heroId];
+  if (!hero) return '';
+  addResources(state, hero.owner, { gold: reward.gold, ...reward.resources });
+  const parts: string[] = [`${reward.gold} 金币`];
+  for (const [k, v] of Object.entries(reward.resources) as [keyof ResourceBag, number][]) {
+    parts.push(`${RESOURCE_NAME[k] ?? k} ×${v}`);
+  }
+  if (reward.artifactId) {
+    const note = equipArtifact(state, heroId, reward.artifactId);
+    if (note) parts.push(note);
+  }
+  return parts.join('、');
+}
+
 function equipArtifact(state: GameState, heroId: string, artifactId: string): string {
   const hero = state.heroes[heroId];
   const def = ARTIFACTS[artifactId];
@@ -468,7 +547,8 @@ export function battleSetup(
     warMachines: hero.warMachines,
   };
 
-  if (obj.kind === 'wanderingMonster') {
+  // 宝库区的守卫和野怪走同一套战斗规则，只是不掉"看守物"、改成开库拿钱
+  if (obj.kind === 'wanderingMonster' || obj.kind === 'vault') {
     const payload = obj.payload as { army: Army };
     return { attacker, defender: { army: payload.army, attack: 0, defense: 0 }, seed: battleSeed(state, obj) };
   }

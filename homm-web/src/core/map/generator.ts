@@ -9,12 +9,20 @@ import type {
   MapObject,
   PlayerState,
   ResourceBag,
+  ResourceKind,
   TerrainKind,
   Town,
 } from '../types.js';
 import { MAP_SIZES } from '../types.js';
 import { TERRAIN } from '../data/terrains.js';
 import { ARTIFACTS } from '../data/artifacts.js';
+import {
+  HOME_MINE_RING,
+  MINE_PER_DAY,
+  RARE_RESOURCES,
+  VAULTS,
+  vaultRareBundle,
+} from '../data/mines.js';
 import { HERO_TEMPLATES, START_ARMY } from '../data/heroes.js';
 import { DEFAULT_CONFIG, DIFFICULTIES, FACTIONS, FACTION_ORDER } from '../data/factions.js';
 import { mulberry32, randInt, shuffle, pick } from '../rng.js';
@@ -292,8 +300,10 @@ function guardFor(rng: () => number, tier: 'weak' | 'mid' | 'strong'): GuardRewa
 }
 
 function mineGuard(rng: () => number, tier: 'weak' | 'mid' | 'strong'): GuardReward {
-  if (tier === 'strong') return { kind: 'mine', resource: 'gold', perDay: 400 };
-  return { kind: 'mine', resource: rng() < 0.5 ? 'wood' : 'ore', perDay: 3 };
+  // 守着矿的野怪：强档守金矿，中弱档守木/石矿。稀有矿不靠掉落，直接摆在深处（见下）
+  if (tier === 'strong') return { kind: 'mine', resource: 'gold', perDay: MINE_PER_DAY.gold };
+  const res = rng() < 0.5 ? 'wood' : 'ore';
+  return { kind: 'mine', resource: res, perDay: MINE_PER_DAY[res] };
 }
 
 /**
@@ -595,14 +605,14 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
     Math.min(...homeSpots.map((hp) => Math.abs(hp.x - p.x) + Math.abs(hp.y - p.y)));
 
   // 野怪：按距最近主城的距离分档，每支都守着一份战利品
+  const weakMax = 9 * k;
+  const midMax = 18 * k;
   const monsterCount = Math.max(6, Math.round(18 * k));
   const monsterSpots: { p: GridPos; tier: 'weak' | 'mid' | 'strong' }[] = [];
   for (let i = 0; i < monsterCount; i++) {
     const p = takeSpot();
     if (!p) break;
     const d = dNearestHome(p);
-    const weakMax = 9 * k;
-    const midMax = 18 * k;
     monsterSpots.push({ p, tier: d < weakMax ? 'weak' : d < midMax ? 'mid' : 'strong' });
   }
   // 至少三处野怪守着真正的矿（中档/强档各来一处，有富余再补一处）
@@ -626,6 +636,145 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
       once: true, blocking: false, visitedBy: [],
     });
   });
+
+  /* ---------------- 矿场与宝库区（M7） ---------------- */
+
+  const walkable = (x: number, y: number): boolean =>
+    x >= 0 && y >= 0 && x < w && y < h && isPassable(map, x, y);
+
+  /**
+   * 按候选顺序挑第一个满足条件的格子，并把它"消耗掉"。
+   * 消耗方式是把它换到游标位置再前进——spots 本身是打乱过的，所以结果仍然随机。
+   */
+  const takeWhere = (pred: (p: GridPos) => boolean): GridPos | null => {
+    for (let i = cursor; i < spots.length; i++) {
+      const cell = spots[i];
+      if (map.tiles[cell].objectId || reach[cell] !== 1) continue;
+      const p = toPos(cell);
+      if (!pred(p)) continue;
+      const tmp = spots[cursor];
+      spots[cursor] = cell;
+      spots[i] = tmp;
+      cursor += 1;
+      return p;
+    }
+    return null;
+  };
+
+  const addMine = (p: GridPos, resource: ResourceKind): void => {
+    placer.add({
+      kind: 'mine',
+      pos: p,
+      // 独立矿场开局归"中立"：谁先走到就是谁的，和 HOMM 一致
+      payload: { resource, perDay: MINE_PER_DAY[resource], owner: 'neutral' as const },
+      once: false,
+      blocking: false,
+      visitedBy: [],
+    });
+  };
+
+  // 1) 每家保底一座锯木场 + 一座采石场，摆在离家 3~7 格
+  //    （木石是建筑树硬通货，开局摸不到矿的阵营会被卡死整整一周）
+  for (const home of homeSpots) {
+    for (const res of ['wood', 'ore'] as const) {
+      const p = takeWhere((q) => {
+        const d = Math.abs(q.x - home.x) + Math.abs(q.y - home.y);
+        return d >= HOME_MINE_RING.min && d <= HOME_MINE_RING.max;
+      });
+      if (p) addMine(p, res);
+    }
+  }
+
+  // 2) 散布的金矿与稀有矿：金矿别贴着主城，稀有矿一律藏在深处
+  //    注意这里用的是**线性**尺度 kl，不是上面那个按面积算的 k：
+  //    面积翻一倍地图边长只长 41%，用面积尺度会把"深处"推到地图之外，
+  //    实测中型/大型图上稀有矿和宝库区一座都放不出来。
+  const kl = Math.min(w, h) / 32;
+  const goldMines = Math.max(1, Math.round(1.5 * k));
+  const rareEach = Math.max(1, Math.round(0.8 * k));
+  const deepSpots: GridPos[] = [];
+  for (let i = 0; i < goldMines; i++) {
+    const p = takeWhere((q) => dNearestHome(q) >= 8 * kl);
+    if (p) addMine(p, 'gold');
+  }
+  for (const res of RARE_RESOURCES) {
+    for (let i = 0; i < rareEach; i++) {
+      const p = takeWhere((q) => dNearestHome(q) >= 14 * kl);
+      if (!p) continue;
+      addMine(p, res);
+      deepSpots.push(p);
+    }
+  }
+
+  // 3) 宝库区：重兵守着的一库金子，打赢才拿得到，拿完就没了
+  const vaultCount = Math.max(2, Math.round(3 * k));
+  for (let i = 0; i < vaultCount; i++) {
+    const p = takeWhere((q) => dNearestHome(q) >= 13 * kl);
+    if (!p) continue;
+    const tier = dNearestHome(p) >= 16 * kl ? 'strong' : 'mid';
+    const def = VAULTS[tier];
+    const army: Army = def.army.map((s) => ({
+      unitTypeId: s.unitTypeId,
+      count: randInt(rng, s.count[0], s.count[1]),
+    }));
+    const reward = {
+      gold: randInt(rng, def.reward.gold[0], def.reward.gold[1]),
+      resources: vaultRareBundle(rng, def.reward.rare),
+      artifactId:
+        rng() < def.reward.artifactChance ? pick(rng, Object.keys(ARTIFACTS)) : undefined,
+    };
+    placer.add({
+      kind: 'vault',
+      pos: p,
+      payload: { army, tier, reward },
+      once: true,
+      blocking: false,
+      visitedBy: [],
+    });
+    deepSpots.push(p);
+  }
+
+  // 4) 隘口守卫：给每处深处的宝贝配一个"卡在路口"的强档野怪
+  //    走廊格 = 正交邻居里恰好两个能走、而且是正对的一对（南北通或东西通）
+  for (const target of deepSpots) {
+    const targetD = dNearestHome(target);
+    /** 找守卫位：优先真正的走廊格，找不到就退而求其次挑最窄的那一格。 */
+    let best: { p: GridPos; score: number } | null = null;
+    for (let dy = -6; dy <= 6; dy++) {
+      for (let dx = -6; dx <= 6; dx++) {
+        const x = target.x + dx;
+        const y = target.y + dy;
+        if (!walkable(x, y)) continue;
+        const cell = idx(map, x, y);
+        if (map.tiles[cell].objectId || reach[cell] !== 1) continue;
+        // 守卫必须比它守的东西更靠近主城，这样才是"进谷口先挨一仗"
+        if (dNearestHome({ x, y }) >= targetD) continue;
+        const n = walkable(x, y - 1);
+        const s = walkable(x, y + 1);
+        const e = walkable(x + 1, y);
+        const w2 = walkable(x - 1, y);
+        const open = [n, s, e, w2].filter(Boolean).length;
+        if (open === 0) continue;
+        const corridor = (n && s && !e && !w2) || (e && w2 && !n && !s);
+        // 走廊格给 10 分底分，普通格用"越窄越好"折算（最多 9 分），再减一点路程
+        const score = (corridor ? 10 : 4 - open * 0.1 + (open === 2 ? 2 : 0)) * 10 - (Math.abs(dx) + Math.abs(dy));
+        if (!best || score > best.score) best = { p: { x, y }, score };
+      }
+    }
+    if (!best) continue;
+    placer.add({
+      kind: 'wanderingMonster',
+      pos: best.p,
+      payload: {
+        army: monsterArmy(rng, 'strong'),
+        tier: 'strong',
+        guard: { kind: 'gold', amount: randInt(rng, 1200, 2200) },
+      },
+      once: true,
+      blocking: false,
+      visitedBy: [],
+    });
+  }
 
   // 资源堆（大头战利品在野怪身上；宝石/水晶是魔法行会的硬通货）
   const pileTotal = Math.round(20 * k);

@@ -349,8 +349,14 @@ function resOre(pb: PixBuf): void {
   shadow(pb, 16, 28, 11, 2.5);
 }
 
-function mine(pb: PixBuf, kind: 'gold' | 'wood' | 'ore'): void {
-  const ore = kind === 'gold' ? '#e0b62a' : kind === 'wood' ? '#8a5f34' : '#8a857e';
+/** 七种资源各自的矿石配色，和 resIcon 用的是同一套。 */
+const RES_COLOR: Record<string, string> = {
+  gold: '#e0b62a', wood: '#8a5f34', ore: '#8a857e',
+  gem: '#d05fa0', crystal: '#7ec8e3', sulfur: '#e0d24a', mercury: '#b8b8c4',
+};
+
+function mine(pb: PixBuf, kind: string): void {
+  const ore = RES_COLOR[kind] ?? '#8a857e';
   pb.poly([[2, 38], [6, 20], [16, 12], [26, 20], [30, 38]], '#5a5148');
   pb.poly([[2, 38], [6, 20], [16, 12], [16, 38]], '#6e6459');
   pb.poly([[16, 38], [16, 30], [26, 38]], '#241a10');
@@ -362,6 +368,24 @@ function mine(pb: PixBuf, kind: 'gold' | 'wood' | 'ore'): void {
   pb.ellipse(23, 34, 3, 2, shade(ore, 0.35), 0.9);
   pb.outline(OUTLINE);
   shadow(pb, 16, 39, 13, 2.5);
+}
+
+/**
+ * 宝库区：一座嵌在山体里的石门，门缝里透出金光。
+ * 和野怪精灵（狼/猪/魔）在剪影上刻意拉开距离——它是一栋建筑，不是一队兵。
+ */
+function vault(pb: PixBuf): void {
+  pb.poly([[1, 40], [6, 14], [16, 6], [26, 14], [31, 40]], '#585047');
+  pb.poly([[1, 40], [6, 14], [16, 6], [16, 40]], '#6b6257');
+  for (let x = 3; x < 30; x += 5) pb.rect(x, 18, 2, 20, '#4c453d', 0.5);
+  // 门洞：外框石拱 + 里面一层金光
+  pb.poly([[16, 16], [23, 22], [23, 40], [9, 40], [9, 22]], '#2a2018');
+  pb.poly([[16, 18], [21, 23], [21, 40], [11, 40], [11, 23]], '#c9a227', 0.85);
+  pb.poly([[16, 22], [19, 26], [19, 40], [13, 40], [13, 26]], '#f0d24a', 0.9);
+  pb.rect(9, 22, 14, 3, '#8a6b3c');
+  pb.set(16, 20, '#f7e98a');
+  pb.outline(OUTLINE);
+  shadow(pb, 16, 41, 14, 2.5);
 }
 
 function town(pb: PixBuf, roof: string, wall: string, tier: number): void {
@@ -789,11 +813,15 @@ export class Atlas {
     resOre(b);
     put('res_ore', b);
 
-    for (const k of ['gold', 'wood', 'ore'] as const) {
+    for (const k of ['gold', 'wood', 'ore', 'gem', 'crystal', 'sulfur', 'mercury']) {
       b = p(32, 42);
       mine(b, k);
       put(`mine_${k}`, b);
     }
+
+    b = p(32, 44);
+    vault(b);
+    put('vault', b);
 
     for (const key of SPRITE_OWNERS) {
       const { roof, wall } = ownerPalette(key);

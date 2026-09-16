@@ -28,6 +28,24 @@ export const MARKET_BUY_AMOUNT = 5;
 export const MARKET_SELL_GOLD = 500;
 export const MARKET_SELL_AMOUNT = 5;
 
+/**
+ * 各资源的交易汇率（M7）。
+ *
+ * 稀有资源按"个"交易而不是按"批"：宝石水晶只喂魔法行会（各 4 个），
+ * 一次买 5 个既用不完又贵得离谱；按个买卖才能让稀有矿的日产出真的有用。
+ * 定价上刻意让稀有资源**卖出比买入划算一半**——市场是变现渠道，不是印钞机。
+ */
+export type TradableResource = Exclude<ResourceKind, 'gold'>;
+export const MARKET_TRADABLE: TradableResource[] = ['wood', 'ore', 'gem', 'crystal', 'sulfur', 'mercury'];
+export const MARKET_RATES: Record<TradableResource, { buyGold: number; buyAmount: number; sellGold: number; sellAmount: number }> = {
+  wood: { buyGold: 1000, buyAmount: 5, sellGold: 500, sellAmount: 5 },
+  ore: { buyGold: 1000, buyAmount: 5, sellGold: 500, sellAmount: 5 },
+  gem: { buyGold: 800, buyAmount: 1, sellGold: 400, sellAmount: 1 },
+  crystal: { buyGold: 800, buyAmount: 1, sellGold: 400, sellAmount: 1 },
+  sulfur: { buyGold: 800, buyAmount: 1, sellGold: 400, sellAmount: 1 },
+  mercury: { buyGold: 800, buyAmount: 1, sellGold: 400, sellAmount: 1 },
+};
+
 /* ---------------- queries ---------------- */
 
 export function hasBuilding(town: Town, id: string): boolean {
@@ -484,15 +502,19 @@ export function hireHero(state: GameState, town: Town): Hero | null {
 
 /* ---------------- market ---------------- */
 
-export function marketBuy(state: GameState, res: 'wood' | 'ore'): boolean {
-  if (!pay(state, 'p1', { gold: MARKET_BUY_GOLD })) return false;
-  addResources(state, 'p1', { [res]: MARKET_BUY_AMOUNT });
+export function marketBuy(state: GameState, res: TradableResource): boolean {
+  const rate = MARKET_RATES[res];
+  if (!rate) return false;
+  if (!pay(state, 'p1', { gold: rate.buyGold })) return false;
+  addResources(state, 'p1', { [res]: rate.buyAmount });
   return true;
 }
 
-export function marketSell(state: GameState, res: 'wood' | 'ore'): boolean {
-  if (!pay(state, 'p1', { [res]: MARKET_SELL_AMOUNT })) return false;
-  addResources(state, 'p1', { gold: MARKET_SELL_GOLD });
+export function marketSell(state: GameState, res: TradableResource): boolean {
+  const rate = MARKET_RATES[res];
+  if (!rate) return false;
+  if (!pay(state, 'p1', { [res]: rate.sellAmount })) return false;
+  addResources(state, 'p1', { gold: rate.sellGold });
   return true;
 }
 

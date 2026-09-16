@@ -249,6 +249,34 @@ function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate 
       continue;
     }
 
+    // 宝库区：和野怪同一套"打不赢就不去"的规矩，只是更值钱
+    if (obj.kind === 'vault') {
+      const payload = obj.payload as { tier: string };
+      const preview = previewInteraction(state, hero.id, obj.id);
+      if (!preview?.estimate?.win) continue;
+      const lost = preview.estimate.losses.reduce((s, l) => s + (l.before - l.after), 0);
+      const total = preview.estimate.losses.reduce((s, l) => s + l.before, 0);
+      if (total > 0 && lost / total > 0.7) continue; // 惨胜不值当
+      const value = payload.tier === 'strong' ? 620 : 450;
+      candidates.push({ pos: obj.pos, kind: 'monster', score: value - travelPenalty });
+      continue;
+    }
+
+    // 矿场：踩上去就插旗，不用打。这份分值就是"AI 会不会去抢矿"的全部原因
+    if (obj.kind === 'mine') {
+      const p = obj.payload as { resource: string; perDay: number; owner: string };
+      if (p.owner === player) continue;
+      // 金矿一天 400 ≈ 一座建满的城；木石是建筑线硬通货；稀有资源喂魔法行会
+      const base =
+        p.resource === 'gold' ? 430
+        : p.resource === 'wood' || p.resource === 'ore' ? 280
+        : 240;
+      // 从敌人手里抢，既加自己又减对方，值当一些
+      const denial = p.owner === 'neutral' ? 1 : 1.35;
+      candidates.push({ pos: obj.pos, kind: 'loot', score: base * denial - travelPenalty });
+      continue;
+    }
+
     const value =
       obj.kind === 'artifact' ? 200
       : obj.kind === 'treasureChest' ? 170
