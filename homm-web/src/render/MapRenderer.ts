@@ -7,6 +7,7 @@ import { Camera } from './camera.js';
 import { TILE } from './ortho.js';
 import { getAtlas } from './atlas.js';
 import { hash2 } from './pixel.js';
+import { TerrainLayer } from './terrainLayer.js';
 
 export interface ViewModel {
   state: GameState;
@@ -77,6 +78,7 @@ export class MapRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
   private atlas = getAtlas();
+  private terrain = new TerrainLayer();
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -165,37 +167,26 @@ export class MapRenderer {
     const x1 = Math.min(map.width - 1, Math.ceil((cam.viewW - cam.x) / (TILE * cam.zoom)) + 1);
     const y1 = Math.min(map.height - 1, Math.ceil((cam.viewH - cam.y) / (TILE * cam.zoom)) + 1);
 
-    /* --- 第一遍：地块 + 岸线 --- */
+    /* --- 地形层：陆地/岸线/装饰整图烘焙，一帧一次 drawImage --- */
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(this.terrain.ensure(map), 0, 0);
+
+    /* --- 水面：唯一会动的地形，按帧画（只占可见且已探索的格子） --- */
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
-        const i = idx(map, x, y);
+        if (map.tiles[idx(map, x, y)].terrain !== 'water') continue;
         if (!isRevealed(state, player, x, y)) continue;
-        const terrain = map.tiles[i].terrain;
         const h = hash2(x, y, 17);
-        const name = terrain === 'water'
-          ? `g_water_${h < 0.5 ? 0 : 1}_${waterFrame}`
-          : `g_${terrain}_${Math.floor(h * 3) % 3}`;
-        this.blit(name, x, y);
+        this.blit(`g_water_${h < 0.5 ? 0 : 1}_${waterFrame}`, x, y);
+      }
+    }
 
-        if (terrain !== 'water') {
-          const isW = (nx: number, ny: number): boolean =>
-            nx >= 0 && ny >= 0 && nx < map.width && ny < map.height &&
-            map.tiles[idx(map, nx, ny)].terrain === 'water';
-          if (isW(x, y - 1)) this.blit('sh_n', x, y);
-          if (isW(x, y + 1)) this.blit('sh_s', x, y);
-          if (isW(x - 1, y)) this.blit('sh_w', x, y);
-          if (isW(x + 1, y)) this.blit('sh_e', x, y);
-          if (isW(x - 1, y - 1) && !isW(x, y - 1) && !isW(x - 1, y)) this.blit('sh_nw', x, y);
-          if (isW(x + 1, y - 1) && !isW(x, y - 1) && !isW(x + 1, y)) this.blit('sh_ne', x, y);
-          if (isW(x - 1, y + 1) && !isW(x, y + 1) && !isW(x - 1, y)) this.blit('sh_sw', x, y);
-          if (isW(x + 1, y + 1) && !isW(x, y + 1) && !isW(x + 1, y)) this.blit('sh_se', x, y);
-
-          // 空地撒装饰：约 1/5 的格子有小花/草丛/碎石，让大地不显得空
-          const hasObj = !!map.tiles[i].objectId;
-          const hd = hash2(x, y, 233);
-          if (!hasObj && hd < 0.22) {
-            this.blitAt(`deco_${Math.floor(hd * 100) % 6}`, x * TILE + 8, y * TILE + 10);
-          }
+    /* --- 未探索遮盖：烘焙层含全图，未探索区用底色盖回去（与迷雾语义一致） --- */
+    ctx.fillStyle = '#0b0d10';
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (!isRevealed(state, player, x, y)) {
+          ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
         }
       }
     }
