@@ -166,6 +166,14 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   let think = 0;
   let auto = false;
   let finished = false;
+  /**
+   * 演出速度倍率（1/2/3）：统一乘在每帧 dt 上，动画、AI 思考间隔、
+   * 飘字、打击特效全部同步加速。偏好存 localStorage，下一场沿用。
+   */
+  let speed = (() => {
+    const v = Number(localStorage.getItem('homm.battleSpeed') ?? '1');
+    return v === 2 || v === 3 ? v : 1;
+  })();
   let hover: Hex | null = null;
   let lunge: { unitId: string; dx: number; dy: number } | null = null;
   let arrow: { x: number; y: number; tx: number; ty: number; color?: string } | null = null;
@@ -1013,8 +1021,10 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     } else if (e.key === ' ' && !busy()) {
       e.preventDefault();
       doWait();
-    } else if ((e.key === 'd' || e.key === 'D') && !busy()) {
-      doDefend();
+    } else if (e.key === 'd' || e.key === 'D') {
+      if (!busy()) doDefend();
+    } else if (e.key === '1' || e.key === '2' || e.key === '3') {
+      setSpeed(Number(e.key));
     }
   }
 
@@ -1032,7 +1042,22 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   btnFlee.className = 'btn danger';
   btnFlee.textContent = '撤退';
   btnFlee.addEventListener('click', doFlee);
-  headActions.append(btnAuto, btnFlee);
+
+  // 速度档位：1×→2×→3× 循环，键盘 1/2/3 直选
+  const btnSpeed = document.createElement('button');
+  btnSpeed.className = 'btn';
+  const syncSpeed = (): void => {
+    btnSpeed.textContent = `速度 ${speed}×`;
+    btnSpeed.title = '演出速度（键盘 1/2/3 直选）';
+  };
+  const setSpeed = (v: number): void => {
+    speed = v === 1 || v === 2 || v === 3 ? v : 1;
+    localStorage.setItem('homm.battleSpeed', String(speed));
+    syncSpeed();
+  };
+  btnSpeed.addEventListener('click', () => setSpeed(speed % 3 + 1));
+  syncSpeed();
+  headActions.append(btnSpeed, btnAuto, btnFlee);
 
   const btnDefend = document.createElement('button');
   btnDefend.className = 'btn';
@@ -1069,7 +1094,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   let last = performance.now();
   let raf = 0;
   function frame(now: number): void {
-    const dt = Math.min(60, now - last);
+    // dt 统一乘速度倍率：动画、AI 间隔、飘字、打击特效一起加速
+    const dt = Math.min(60, now - last) * speed;
     last = now;
 
     if (think > 0) {
@@ -1101,6 +1127,19 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     for (let i = spellFx.length - 1; i >= 0; i--) {
       spellFx[i].life -= dt / 520;
       if (spellFx[i].life <= 0) spellFx.splice(i, 1);
+    }
+    // 打击特效也要走生命周期 —— 之前漏了这段，p 永远停在 0，
+    // 每次近战的刀光就以满透明度永远留在战场上（和悬停印记是同一类病）
+    for (let i = impacts.length - 1; i >= 0; i--) {
+      const im = impacts[i];
+      im.p += dt / im.dur;
+      if (im.p >= 1) impacts.splice(i, 1);
+    }
+    // 闪电同理：bolt.p 赋 1 之后没人衰减，一道雷永远钉在战场上 ——
+    // 玩家报的"施法后印记一直留在战场上"，本尊就是它
+    if (bolt) {
+      bolt.p -= dt / 360;
+      if (bolt.p <= 0) bolt = null;
     }
 
     const u = currentUnit(battle);
