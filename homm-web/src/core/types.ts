@@ -33,10 +33,17 @@ export interface FactionDef {
   dark: string;
 }
 
+/**
+ * 地图宏观布局模板。噪声只负责"纹理"，这四档负责"结构"——
+ * 水在哪、山在哪、哪块地最富庶，进游戏前就能一眼看懂这张图的打法。
+ */
+export type MapLayout = 'wild' | 'ring' | 'islands' | 'lanes';
+
 /** 一局游戏的开局设置，随存档一起保存，读档后局面可完全复现。 */
 export interface GameConfig {
   size: MapSize;
   seed: number;
+  layout: MapLayout;
   /** 电脑对手数量 0~3 */
   opponents: number;
   difficulty: Difficulty;

@@ -1,4 +1,4 @@
-import type { Difficulty, GameConfig, MapSize } from '../core/types.js';
+import type { Difficulty, GameConfig, MapLayout, MapSize } from '../core/types.js';
 import { MAP_SIZES } from '../core/types.js';
 import {
   DEFAULT_CONFIG,
@@ -10,6 +10,7 @@ import {
   factionColor,
 } from '../core/data/factions.js';
 import { TERRAIN } from '../core/data/terrains.js';
+import { LAYOUTS, LAYOUT_ORDER } from '../core/data/layouts.js';
 import { createGame } from '../core/map/generator.js';
 import { idx } from '../core/map/grid.js';
 
@@ -37,6 +38,9 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   const cfg: GameConfig = {
     size: opts.initial?.size ?? DEFAULT_CONFIG.size,
     seed: opts.initial?.seed ?? randomSeed(),
+    layout: LAYOUTS[opts.initial?.layout ?? DEFAULT_CONFIG.layout]
+      ? (opts.initial?.layout ?? DEFAULT_CONFIG.layout)
+      : DEFAULT_CONFIG.layout,
     opponents: opts.initial?.opponents ?? DEFAULT_CONFIG.opponents,
     difficulty: opts.initial?.difficulty ?? DEFAULT_CONFIG.difficulty,
     playerName: opts.initial?.playerName ?? DEFAULT_CONFIG.playerName,
@@ -98,6 +102,26 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
     },
   );
   form.appendChild(field('地图尺寸', sizeRow));
+
+  /* 地图布局：结构靠模板，纹理靠种子——右侧预览会跟着重画 */
+  const layoutHint = document.createElement('div');
+  layoutHint.className = 'ss-hint';
+  layoutHint.textContent = LAYOUTS[cfg.layout].desc;
+  const layoutRow = segment<MapLayout>(
+    LAYOUT_ORDER.map((id) => ({
+      value: id,
+      title: LAYOUTS[id].name,
+      sub: LAYOUTS[id].sub,
+      hint: LAYOUTS[id].desc,
+    })),
+    cfg.layout,
+    (v) => {
+      cfg.layout = v;
+      layoutHint.textContent = LAYOUTS[v].desc;
+      sync();
+    },
+  );
+  form.appendChild(field('地图布局', layoutRow, layoutHint));
 
   /* 电脑对手 */
   const oppRow = segment<number>(
@@ -277,7 +301,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
     const heroCount = Object.keys(state.heroes).length;
     summary.innerHTML = '';
     summary.append(
-      line('地图', `${MAP_SIZES[cfg.size].name} · ${m.width}×${m.height}`),
+      line('地图', `${MAP_SIZES[cfg.size].name} · ${LAYOUTS[cfg.layout].name} · ${m.width}×${m.height}`),
       line('据点', `共 ${townCount} 座（${townCount - factions.length} 座中立）`),
       line('起始英雄', `${heroCount} 位`),
       line('宝物 / 野怪', `${countKind(state, 'artifact')} / ${countKind(state, 'wanderingMonster')}`),
@@ -316,7 +340,7 @@ function line(k: string, v: string): HTMLElement {
   return row;
 }
 
-function field(label: string, control: HTMLElement, hint?: string): HTMLElement {
+function field(label: string, control: HTMLElement, hint?: string | HTMLElement): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'ss-field';
   const lb = document.createElement('label');
@@ -324,9 +348,9 @@ function field(label: string, control: HTMLElement, hint?: string): HTMLElement 
   wrap.appendChild(lb);
   wrap.appendChild(control);
   if (hint) {
-    const h = document.createElement('div');
-    h.className = 'ss-hint';
-    h.textContent = hint;
+    const h = typeof hint === 'string' ? document.createElement('div') : hint;
+    h.classList.add('ss-hint');
+    if (typeof hint === 'string') h.textContent = hint;
     wrap.appendChild(h);
   }
   return wrap;

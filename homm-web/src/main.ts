@@ -24,6 +24,7 @@ import { castAdventure, canAdventureCast, type AdventureTarget } from './core/ga
 import { getSpell } from './core/data/spells.js';
 import { manaMaxOf } from './core/game/hero.js';
 import type { BattleOutcome } from './core/combat/battle.js';
+import { LAYOUTS } from './core/data/layouts.js';
 import { endDay } from './core/game/turn.js';
 import { evaluateOutcome, outcomeSummary } from './core/game/victory.js';
 import { Camera } from './render/camera.js';
@@ -635,6 +636,8 @@ function openStart(): void {
   if (size && size in MAP_SIZES) initial.size = size as GameConfig['size'];
   const seed = Number.parseInt(bootParams.get('devseed') ?? '', 10);
   if (Number.isFinite(seed) && seed > 0) initial.seed = seed;
+  const layout = bootParams.get('devlayout');
+  if (layout && layout in LAYOUTS) initial.layout = layout as GameConfig['layout'];
 
   openStartScreen(app, {
     initial,
@@ -1039,10 +1042,12 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
 if (bootParams.has('devquick')) {
   const n = Number.parseInt(bootParams.get('devquick') ?? '1', 10);
   const sz = bootParams.get('devsize');
+  const lyt = bootParams.get('devlayout');
   startNewGame({
     ...DEFAULT_CONFIG,
     ...(loadConfig() ?? {}),
     ...(sz && sz in MAP_SIZES ? { size: sz as GameConfig['size'] } : {}),
+    ...(lyt && lyt in LAYOUTS ? { layout: lyt as GameConfig['layout'] } : {}),
     opponents: Number.isFinite(n) ? Math.max(0, Math.min(3, n)) : 1,
     seed: Number.parseInt(bootParams.get('devseed') ?? '', 10) || loadConfig()?.seed || Math.floor(Math.random() * 1e9),
   });

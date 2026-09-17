@@ -1,4 +1,12 @@
-import type { Difficulty, DifficultyDef, FactionDef, FactionId, MapSize, PlayerId } from '../types.js';
+import type {
+  Difficulty,
+  DifficultyDef,
+  FactionDef,
+  FactionId,
+  MapLayout,
+  MapSize,
+  PlayerId,
+} from '../types.js';
 import { MAP_SIZES } from '../types.js';
 
 /**
@@ -77,6 +85,8 @@ export function sizeLabel(size: MapSize): string {
 /** 开局默认设置：与 M4 之前的手感一致（32×32、无对手、普通）。 */
 export const DEFAULT_CONFIG = {
   size: 'medium' as MapSize,
+  /** 默认走"旷野"：地形全交给噪声，和 M7 之前的每一局手感一致 */
+  layout: 'wild' as MapLayout,
   opponents: 0,
   difficulty: 'normal' as Difficulty,
   playerName: '指挥官',

@@ -1407,5 +1407,193 @@ console.log('\n--- M8 战斗回合与终局回归 ---');
   ok(b.over && b.winner === 0, '射击收掉最后一个敌人后 battle.over 立即为真');
 }
 
+
+/* ================= M9：地图布局模板 ================= */
+console.log('\n--- M9 地图布局模板 ---');
+
+/** 从起点 4 邻域洪泛，返回 Uint8Array（只走可通行格）。 */
+function flood(map, start) {
+  const seen = new Uint8Array(map.width * map.height);
+  const st = [start.y * map.width + start.x];
+  seen[st[0]] = 1;
+  while (st.length) {
+    const c = st.pop();
+    const x = c % map.width;
+    const y = (c / map.width) | 0;
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
+      const ni = ny * map.width + nx;
+      if (seen[ni] || !isPassable(map, nx, ny)) continue;
+      seen[ni] = 1;
+      st.push(ni);
+    }
+  }
+  return seen;
+}
+
+const LAYOUT_IDS = ['wild', 'ring', 'islands', 'lanes'];
+const tileCount = (map, pred) => map.tiles.filter(pred).length;
+
+// 1. 老存档/老调用没有 layout 字段 → 必须补成旷野，行为与 M7 一致
+ok(createGame({ seed: 7, layout: undefined }).config.layout === 'wild', '不传 layout 时默认旷野');
+
+// 2. 四种布局 × 12 种子：都生得出来，且四家全部连通、城镇四格都可通行
+{
+  let bad = [];
+  for (const layout of LAYOUT_IDS) {
+    for (let i = 0; i < 12; i++) {
+      const st = createGame({ seed: 500 + i * 977, layout, size: 'medium', opponents: 3 });
+      const map = st.map;
+      if (Object.keys(st.towns).length < 6) bad.push(`${layout}#${i} 城太少`);
+      if (st.config.layout !== layout) bad.push(`${layout}#${i} 配置回退`);
+      const seen = flood(map, st.heroes[st.heroOrder[0]].pos);
+      for (const t of Object.values(st.towns)) {
+        if (seen[t.pos.y * map.width + t.pos.x] !== 1) bad.push(`${layout}#${i} 城走不到`);
+        // 城门可通行，其余三格被城堡自己挡住（"有门的城"这条规则不能破）
+        const cells = castleCells(t.pos);
+        if (!isPassable(map, t.pos.x, t.pos.y)) bad.push(`${layout}#${i} 城门不可通行`);
+        for (const c of cells) {
+          if (c.x === t.pos.x && c.y === t.pos.y) continue;
+          if (isPassable(map, c.x, c.y)) bad.push(`${layout}#${i} 城堡侧格能站人`);
+        }
+      }
+      for (const h of Object.values(st.heroes)) {
+        if (seen[h.pos.y * map.width + h.pos.x] !== 1) bad.push(`${layout}#${i} 英雄走不到`);
+      }
+    }
+  }
+  ok(bad.length === 0, `四种布局各 12 局全部生成成功且连通（${bad.slice(0, 2).join(' / ') || 'ok'}）`);
+}
+
+// 3. 布局真的换了地形：同一颗种子下，三档布局与旷野的差异都很大
+{
+  const base = createGame({ seed: 9090, layout: 'wild', size: 'medium' });
+  for (const layout of ['ring', 'islands', 'lanes']) {
+    const st = createGame({ seed: 9090, layout, size: 'medium' });
+    const diff = st.map.tiles.filter(
+      (t, i) => t.terrain !== base.map.tiles[i].terrain,
+    ).length / st.map.tiles.length;
+    ok(diff > 0.3, `同心环/双子岛/三路走廊与旷野地形差异 ${(diff * 100).toFixed(0)}%（${layout}）`);
+  }
+}
+
+// 4. 同心环：两道护城河真的存在，中央高地最富（强档宝库落在中心）
+{
+  const st = createGame({ seed: 9137, layout: 'ring', size: 'medium', opponents: 3 });
+  const map = st.map;
+  const cx = (map.width - 1) / 2;
+  const cy = (map.height - 1) / 2;
+  const min = Math.min(map.width, map.height);
+  const core = Math.max(3, min * 0.14);
+  const moat = Math.max(1.5, min * 0.06);
+  const inner = core + moat;
+  const ringEnd = Math.max(inner + 2.5, min * 0.26);
+  const outer = ringEnd + moat;
+  const isWater = (x, y) => map.tiles[y * map.width + x].terrain === 'water';
+  // 在 12 个方向各采一次：内护城河与外护城河都该是水（渡口最多占三分之一）
+  let innerWater = 0;
+  let outerWater = 0;
+  for (let k = 0; k < 12; k++) {
+    const a = (k * Math.PI) / 6;
+    const wx = Math.round(cx + Math.cos(a) * (inner - moat / 2));
+    const wy = Math.round(cy + Math.sin(a) * (inner - moat / 2));
+    const ox = Math.round(cx + Math.cos(a) * (outer - moat / 2));
+    const oy = Math.round(cy + Math.sin(a) * (outer - moat / 2));
+    if (isWater(wx, wy)) innerWater++;
+    if (isWater(ox, oy)) outerWater++;
+  }
+  ok(innerWater >= 8, `内护城河在 12 个方向上 ${innerWater} 处是水`);
+  ok(outerWater >= 8, `外护城河在 12 个方向上 ${outerWater} 处是水`);
+  // 强档宝库：同心环的腹地是中心，所以中心附近必须拿得到强档那一份
+  const vaults = Object.values(map.objects).filter((o) => o.kind === 'vault');
+  const strongCore = vaults.filter(
+    (v) => v.payload.tier === 'strong' && Math.hypot(v.pos.x - cx, v.pos.y - cy) < core * 1.4,
+  );
+  ok(strongCore.length >= 1, `中央高地有强档宝库（${strongCore.length} 座）`);
+  // 四家都在外护城河之外，起手区不会被河切开
+  const towns = Object.values(st.towns).filter((t) => t.owner !== 'neutral');
+  ok(
+    towns.every((t) => Math.hypot(t.pos.x - cx, t.pos.y - cy) > outer - 1),
+    '同心环四家主城都在外护城河之外',
+  );
+  ok(tileCount(map, (t) => t.terrain === 'water') > 0.1 * map.tiles.length, '同心环水面占比够高');
+}
+
+// 5. 双子岛：一条纵向海峡、两座桥，四家两家一岛
+{
+  const st = createGame({ seed: 9137, layout: 'islands', size: 'medium', opponents: 3 });
+  const map = st.map;
+  const mid = (map.width - 1) / 2;
+  let west = 0;
+  let east = 0;
+  for (const t of Object.values(st.towns)) {
+    if (t.owner === 'neutral') continue;
+    if (t.pos.x < mid) west++;
+    else east++;
+  }
+  ok(west === 2 && east === 2, `双子岛四家 2/2 分居东西（${west}/${east}）`);
+  // 海峡：中线上"水占多数"的行要够多
+  let wetRows = 0;
+  for (let y = 3; y < map.height - 3; y++) {
+    const row = [Math.floor(mid) - 1, Math.floor(mid), Math.ceil(mid)].filter((x) =>
+      map.tiles[y * map.width + x].terrain === 'water',
+    ).length;
+    if (row >= 2) wetRows++;
+  }
+  ok(wetRows >= (map.height - 6) * 0.5, `中线上 ${wetRows} 行是水（海峡成立）`);
+  ok(
+    map.tiles.filter((t) => t.terrain === 'water').length > 0.08 * map.tiles.length,
+    '双子岛水面占比 ≥8%',
+  );
+}
+
+// 6. 三路走廊：两道河脊各有缺口，四家分居三条走廊
+{
+  const st = createGame({ seed: 9137, layout: 'lanes', size: 'medium', opponents: 3 });
+  const map = st.map;
+  const ridges = [Math.round(map.height / 3), Math.round((2 * map.height) / 3)];
+  let ridgeOk = 0;
+  let gapsOk = 0;
+  for (const r of ridges) {
+    // 河脊两行里水要占绝大多数
+    let wet = 0;
+    for (const y of [r - 1, r]) {
+      for (let x = 2; x < map.width - 2; x++) {
+        if (map.tiles[y * map.width + x].terrain === 'water') wet++;
+      }
+    }
+    if (wet > (map.width - 4) * 1.2) ridgeOk++;
+    // 缺口：某一列两行都能走（这就是唯一的过路点）
+    let gaps = 0;
+    for (let x = 2; x < map.width - 2; x++) {
+      if (r > 0 && r < map.height - 1) {
+        const mid = map.tiles[r * map.width + x];
+        const above = map.tiles[(r - 1) * map.width + x];
+        if (mid.terrain !== 'water' && above.terrain !== 'water') gaps++;
+      }
+    }
+    if (gaps >= 1) gapsOk++;
+  }
+  ok(ridgeOk === 2, '两条河脊都以水为主');
+  ok(gapsOk === 2, '两条河脊都留着可通行的缺口');
+  const laneOf = (y) => (y < ridges[0] - 1 ? 0 : y < ridges[1] - 1 ? 1 : 2);
+  const lanes = Object.values(st.towns)
+    .filter((t) => t.owner !== 'neutral')
+    .map((t) => laneOf(t.pos.y));
+  ok(new Set(lanes).size === 3, `四家铺满三条走廊（${lanes.join(',')}）`);
+}
+
+// 7. 每种布局的资源都不缺：矿场 ≥ 8、宝库 ≥ 2、深处宝贝有守卫
+{
+  for (const layout of LAYOUT_IDS) {
+    const st = createGame({ seed: 31337, layout, size: 'medium', opponents: 3 });
+    const objs = Object.values(st.map.objects);
+    const mines = objs.filter((o) => o.kind === 'mine').length;
+    const vaults = objs.filter((o) => o.kind === 'vault').length;
+    const monsters = objs.filter((o) => o.kind === 'wanderingMonster').length;
+    ok(mines >= 8 && vaults >= 2 && monsters >= 8, `${layout}：矿 ${mines} / 宝库 ${vaults} / 野怪 ${monsters}`);
+  }
+}
+
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);
 process.exit(fails === 0 ? 0 : 1);

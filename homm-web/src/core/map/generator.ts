@@ -6,6 +6,7 @@ import type {
   GridPos,
   GuardReward,
   Hero,
+  MapLayout,
   MapObject,
   PlayerState,
   ResourceBag,
@@ -16,6 +17,7 @@ import type {
 import { MAP_SIZES } from '../types.js';
 import { TERRAIN } from '../data/terrains.js';
 import { ARTIFACTS } from '../data/artifacts.js';
+import { LAYOUTS } from '../data/layouts.js';
 import {
   HOME_MINE_RING,
   MINE_PER_DAY,
@@ -72,15 +74,169 @@ function fbm(rng: () => number, w: number, h: number): number[] {
   return out;
 }
 
+/* ---------------- 宏观布局（M8） ---------------- */
+
+/** 把 0~1 的噪声压到一条基准线附近：base ± amp/2。噪声只负责"纹理"。 */
+function band(noise: number, base: number, amp: number): number {
+  return base + (noise - 0.5) * amp;
+}
+
+/** 水面基准线（低于 classify 的 0.3 阈值），陆地基准线（落在草地~土路之间）。 */
+const SEA = 0.12;
+const LAND = 0.5;
+/** 渡口/桥梁的基准高度：落在"土路"那一档，跨水的地方一眼能认出来是条路。 */
+const CAUSEWAY = 0.66;
+
+/**
+ * 同心环的几条半径（**单位是格，不是归一化值**）。
+ *
+ * 这里刻意用绝对格数而不是"半径的百分比"：用百分比时小图上两道护城河加起来
+ * 才一格宽，玩家看到的是一圈虚线；用格数则小/中/大三张图的河宽手感一致。
+ * 主城环（home）取"外护城河外沿再往外一点"，并留在地图九成半径以内，
+ * 免得城堡被海岸线吞掉。
+ */
+function ringRadii(w: number, h: number): {
+  R: number;
+  core: number;
+  inner: number;
+  ringEnd: number;
+  outer: number;
+  home: number;
+} {
+  const min = Math.min(w, h);
+  const R = min / 2;
+  const core = Math.max(3, min * 0.14);
+  const moat = Math.max(1.5, min * 0.06);
+  const inner = core + moat;
+  const ringEnd = Math.max(inner + 2.5, min * 0.26);
+  const outer = ringEnd + moat;
+  return { R, core, inner, ringEnd, outer, home: Math.min(R * 0.9, outer + min * 0.1) };
+}
+
+/**
+ * 按布局模板重写高度场。
+ *
+ * 关键取舍：**在噪声之上"盖章"，而不是替换噪声**。
+ * 先用半径/距中线距离这类几何量划出结构带，再把每格的原噪声塞回带内，
+ * 于是同一档布局在每局都保持同一个骨架，湖岸线却又各不相同。
+ * 渡口/桥梁一律**最后刻**，盖在带之上——它们是布局的"承重墙"，
+ * 一旦被别的规则改掉，整张图就断开成走不到的孤岛。
+ */
+function applyLayout(layout: MapLayout, height: number[], w: number, h: number, rng: () => number): void {
+  if (layout === 'wild') return;
+  const cx = (w - 1) / 2;
+  const cy = (h - 1) / 2;
+  const put = (x: number, y: number, v: number): void => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return;
+    height[y * w + x] = v;
+  };
+
+  if (layout === 'ring') {
+    // 三层环带：中心高地（最富）→ 内护城河 → 内环（金矿）→ 外护城河 → 外环（四家起手）
+    const N = height.slice();
+    const { R: rR, core, inner, ringEnd, outer } = ringRadii(w, h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        const r = Math.hypot(x - cx, y - cy);
+        const n = N[i];
+        if (r < core) height[i] = band(n, 0.8, 0.14); // 中央高地：岩地雪原，藏着强档宝库
+        else if (r < inner) height[i] = band(n, SEA, 0.08); // 内护城河
+        else if (r < ringEnd) height[i] = band(n, 0.52, 0.2); // 内环：金矿与中等野怪
+        else if (r < outer) height[i] = band(n, SEA, 0.08); // 外护城河
+        else height[i] = band(n, LAND, 0.24); // 外环：四家起手区
+      }
+    }
+    // 三处渡口：沿半径刻一条两格宽的浅滩，把三层串起来
+    const gaps = 3;
+    for (let g = 0; g < gaps; g++) {
+      const ang = (g * Math.PI * 2) / gaps + (rng() - 0.5) * 0.7;
+      for (let t = 0; t <= rR + 2; t += 0.5) {
+        const x = Math.round(cx + Math.cos(ang) * t);
+        const y = Math.round(cy + Math.sin(ang) * t);
+        for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
+          put(x + dx, y + dy, band(rng(), CAUSEWAY, 0.08));
+        }
+      }
+    }
+    return;
+  }
+
+  if (layout === 'islands') {
+    // 一条蜿蜒的纵向海峡：用正弦把中线推开，看起来像真实的海峡而不是一条直沟
+    const phase = rng() * Math.PI * 2;
+    const amp = 1.2 + rng() * 1.1;
+    const half = 1.5;
+    const center = (y: number): number => cx + Math.sin(y * 0.4 + phase) * amp;
+    const N = height.slice();
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        const d = Math.abs(x - center(y));
+        height[i] = d < half ? band(N[i], SEA, 0.08) : band(N[i], LAND, 0.24);
+      }
+    }
+    // 两座桥：横向切过海峡（各两格宽，天然是"桥头堡"）
+    for (let b = 0; b < 2; b++) {
+      const by = Math.round(h * (0.26 + 0.42 * b) + (rng() - 0.5) * h * 0.06);
+      for (let dy = 0; dy < 2; dy++) {
+        for (let x = 0; x < w; x++) {
+          if (Math.abs(x - center(by + dy)) < half + 2) {
+            put(x, by + dy, band(rng(), CAUSEWAY, 0.08));
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  // lanes：两条横向河脊把地图切成三条走廊
+  const ridges = [Math.round(h / 3), Math.round((2 * h) / 3)];
+  const isRidge = new Set<number>();
+  for (const r of ridges) {
+    isRidge.add(r - 1);
+    isRidge.add(r);
+  }
+  const N = height.slice();
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      height[i] = isRidge.has(y) ? band(N[i], SEA, 0.08) : band(N[i], LAND, 0.24);
+    }
+  }
+  // 每条河脊只留两个缺口：绕路还是正面突破，是这张图的核心决策
+  for (const r of ridges) {
+    for (const base of [0.3, 0.7]) {
+      const x0 = Math.max(
+        2,
+        Math.min(w - 4, Math.round(w * base + (rng() - 0.5) * w * 0.1)),
+      );
+      for (let dy = -1; dy <= 2; dy++) {
+        for (let dx = 0; dx < 2; dx++) {
+          put(x0 + dx, r + dy, band(rng(), CAUSEWAY, 0.08));
+        }
+      }
+    }
+  }
+}
+
 /* ---------------- terrain ---------------- */
 
-function buildTerrain(seed: number, w: number, h: number): { map: GameMap; height: number[] } {
+function buildTerrain(
+  seed: number,
+  w: number,
+  h: number,
+  layout: MapLayout,
+): { map: GameMap; height: number[] } {
   const rngH = mulberry32(seed);
   const rngM = mulberry32(seed ^ 0x9e3779b9);
   const height = fbm(rngH, w, h);
   const moisture = fbm(rngM, w, h);
 
-  // 边缘一圈强制为水，形成自然海岸线
+  // 布局在噪声之后、海岸线之前盖章：结构由模板定，纹理由种子定
+  applyLayout(layout, height, w, h, mulberry32(seed ^ 0x1f2e3d4c));
+
+  // 边缘一圈强制为水，形成自然海岸线（放在布局之后，否则模板会把边框变回陆地）
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const edge = Math.min(x, y, w - 1 - x, h - 1 - y);
@@ -307,44 +463,94 @@ function mineGuard(rng: () => number, tier: 'weak' | 'mid' | 'strong'): GuardRew
 }
 
 /**
- * 各阵营的主城位置：围绕地图中心均分成一个正多边形（p1 从正左方开始）。
+ * 各阵营主城的**理想锚点**。
  *
- * 关键点是**整体旋转 + 整体平移**，而不是每家各自随机：
- * 这样任意两家的相对距离在每一局里都完全相等，谁也不会抽到更近的邻居；
- * 但整张布局随种子旋转，所以每局的开局位置又不一样。
+ * 旷野与同心环沿用"围绕地图中心的正多边形"：整体旋转 + 整体平移，
+ * 于是任意两家的相对距离在每一局里都完全相等，谁也不会抽到更近的邻居，
+ * 但整张布局随种子旋转，每局的开局方位又不一样。
+ * 双子岛与三路走廊则直接给出"这一档该在哪一带"的锚点——地形骨架已经明确了，
+ * 主城再随机就白做了。
  */
-function pickHomeSpots(
+function layoutHomeIdeals(
   rng: () => number,
-  map: GameMap,
-  land: number[],
+  layout: MapLayout,
   w: number,
   h: number,
   count: number,
 ): GridPos[] {
+  const cx = (w - 1) / 2;
+  const cy = (h - 1) / 2;
+  const min = Math.min(w, h);
+  const jit = (amount: number): number => (rng() - 0.5) * amount;
+
+  if (layout === 'islands') {
+    // 一岛一家（两家时），四家时每岛两家、一北一南
+    const wx = Math.round(w * 0.23);
+    const ex = Math.round(w * 0.77);
+    const seq: GridPos[] = [
+      { x: wx, y: Math.round(cy) },
+      { x: ex, y: Math.round(cy) },
+      { x: wx, y: Math.round(h * 0.28) },
+      { x: ex, y: Math.round(h * 0.72) },
+    ];
+    return seq.slice(0, count).map((p) => ({ x: p.x + jit(min * 0.08), y: p.y + jit(min * 0.08) }));
+  }
+
+  if (layout === 'lanes') {
+    // 走廊两端：p1 固定在中路西端，对手分别占中路东端与上下两路
+    const laneY = [0, 1, 2].map((i) => Math.round(((i + 0.5) * h) / 3));
+    const lx = Math.round(w * 0.14);
+    const rx = Math.round(w * 0.86);
+    const seq: GridPos[] = [
+      { x: lx, y: laneY[1] },
+      { x: rx, y: laneY[1] },
+      { x: lx, y: laneY[0] },
+      { x: rx, y: laneY[2] },
+    ];
+    return seq.slice(0, count).map((p) => ({ x: p.x + jit(min * 0.08), y: p.y + jit(min * 0.06) }));
+  }
+
+  // wild / ring：围绕中心的正多边形，p1 从正左方出发，其余按逆时针均分
+  // 同心环的主城必须落在"外护城河之外"，所以半径直接取环带几何算出来的 home
+  const radius = layout === 'ring' ? ringRadii(w, h).home : min * 0.35;
+  const rot = (rng() - 0.5) * Math.PI * 0.5;
+  const jx = (rng() - 0.5) * 4;
+  const jy = (rng() - 0.5) * 4;
+  const out: GridPos[] = [];
+  for (let k = 0; k < count; k++) {
+    const angle = Math.PI + rot + (k * Math.PI * 2) / count;
+    out.push({
+      x: Math.round(cx + jx + Math.cos(angle) * radius),
+      y: Math.round(cy + jy + Math.sin(angle) * radius),
+    });
+  }
+  return out;
+}
+
+/**
+ * 把理想锚点"吸附"到真正放得下 2×2 城堡的格子上。
+ *
+ * 只从 `castleFits` 通过的格子（城门位）里挑，否则后面还要回退，得不偿失。
+ */
+function snapHomeSpots(
+  map: GameMap,
+  land: number[],
+  w: number,
+  h: number,
+  ideals: GridPos[],
+): GridPos[] {
   const toPos = (i: number): GridPos => ({ x: i % w, y: (i / w) | 0 });
-  const cx = w / 2;
-  const cy = h / 2;
-  const radius = Math.min(w, h) * 0.35;
+  const count = ideals.length;
   const minGap = Math.max(8, Math.round(Math.min(w, h) * 0.3));
 
-  // 只从"放得下 2×2 城堡"的格子（城门位）里挑，否则后面还要回退，得不偿失
   const fits = land.map(toPos).filter((p) => castleFits(map, p));
   if (fits.length < count) return [];
   /** 外圈宽敞一点，别把城堡塞进一格宽的缝里。 */
   const roomy = (p: GridPos): boolean => castleRoom(map, p) >= 8;
 
-  const rot = (rng() - 0.5) * Math.PI * 0.5;
-  const jx = (rng() - 0.5) * 4;
-  const jy = (rng() - 0.5) * 4;
-
   const out: GridPos[] = [];
   for (let k = 0; k < count; k++) {
-    // p1 从正左方出发，其余按逆时针均分
-    const angle = Math.PI + rot + (k * Math.PI * 2) / count;
-    const ideal = {
-      x: cx + jx + Math.cos(angle) * radius,
-      y: cy + jy + Math.sin(angle) * radius,
-    };
+    const ideal = ideals[k];
     const gapOk = fits.filter((p) =>
       out.every((o) => Math.abs(o.x - p.x) + Math.abs(o.y - p.y) >= minGap),
     );
@@ -444,6 +650,8 @@ function normalizeConfig(opts: number | GenOptions): GameConfig {
   return {
     size: o.size ?? DEFAULT_CONFIG.size,
     seed: o.seed ?? Math.floor(Math.random() * 1e9),
+    // 老存档/老调用没有 layout 字段：补成旷野，行为与 M7 完全一致
+    layout: o.layout && LAYOUTS[o.layout] ? o.layout : DEFAULT_CONFIG.layout,
     opponents: Math.max(0, Math.min(3, Math.floor(o.opponents ?? DEFAULT_CONFIG.opponents))),
     difficulty: o.difficulty ?? DEFAULT_CONFIG.difficulty,
     playerName: rawName || DEFAULT_CONFIG.playerName,
@@ -454,7 +662,19 @@ export function createGame(opts: number | GenOptions = {}): GameState {
   return buildGame(normalizeConfig(opts), 0);
 }
 
+/**
+ * 地形不理想时换个种子重试的**上限**。
+ * 超过上限说明这一档布局在这组设置下根本落不下四座城（比如小图上被水切得太碎），
+ * 那就退回旷野——旷野是验证过的最强兜底。没有这道闸，重试会一路递归到栈溢出。
+ */
+const MAX_GEN_ATTEMPTS = 20;
+
 function buildGame(cfg: GameConfig, attempt: number): GameState {
+  if (attempt >= MAX_GEN_ATTEMPTS) {
+    if (cfg.layout !== 'wild') return buildGame({ ...cfg, layout: 'wild' }, 0);
+    // 旷野都生不出来只能认账：给一张最小尺寸的图，至少不崩
+    if (cfg.size !== 'small') return buildGame({ ...cfg, size: 'small' }, 0);
+  }
   // 地形不理想时换个种子重试，所以实际种子会带上重试次数
   const seed = (cfg.seed + attempt * 7919) >>> 0;
   const size = MAP_SIZES[cfg.size];
@@ -463,7 +683,7 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   /** 物件密度按面积缩放，小图不至于挤满、大图不至于空旷。 */
   const k = (w * h) / (MAP_SIZES.medium.width * MAP_SIZES.medium.height);
 
-  const { map } = buildTerrain(seed, w, h);
+  const { map } = buildTerrain(seed, w, h, cfg.layout);
   keepLargestLandmass(map);
 
   const rng = mulberry32(seed ^ 0x5bf03635);
@@ -476,9 +696,10 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   }
   if (land.length < Math.round(150 * k)) return buildGame(cfg, attempt + 1);
 
-  // 1. 各阵营主城：围绕地图中心均分，p1 固定从左侧出发
+  // 1. 各阵营主城：先按布局模板取理想锚点，再吸附到真正放得下城堡的格子
   const factions = FACTION_ORDER.slice(0, 1 + cfg.opponents);
-  const homeSpots = pickHomeSpots(rng, map, land, w, h, factions.length);
+  const ideals = layoutHomeIdeals(rng, cfg.layout, w, h, factions.length);
+  const homeSpots = snapHomeSpots(map, land, w, h, ideals);
   // 地图太碎、放不下这么多 2×2 城堡 → 换个偏移种子重掷地形
   if (homeSpots.length < factions.length) return buildGame(cfg, attempt + 1);
   const homePos = homeSpots[0];
@@ -604,6 +825,20 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   const dNearestHome = (p: GridPos) =>
     Math.min(...homeSpots.map((hp) => Math.abs(hp.x - p.x) + Math.abs(hp.y - p.y)));
 
+  /**
+   * "深处"的度量。旷野/双子岛/三路走廊都是"离所有主城都远"，
+   * 但同心环的腹地是**地图中心**——那里的同心环中心离各家主城只有六七格，
+   * 用 dNearestHome 会得出一张"中间啥都没有"的环带图，白瞎了布局。
+   * 系数 1.35 是把半径（格）换算到与上面几个 kl 档位同一个量纲：
+   * 中心（最深处）在三种尺寸下都刚好越过"强档宝库"的 16·kl 门槛。
+   */
+  const cx = (w - 1) / 2;
+  const cy = (h - 1) / 2;
+  const deepness = (p: GridPos): number => {
+    if (cfg.layout !== 'ring') return dNearestHome(p);
+    return Math.round((Math.min(w, h) / 2 - Math.hypot(p.x - cx, p.y - cy)) * 1.35);
+  };
+
   // 野怪：按距最近主城的距离分档，每支都守着一份战利品
   const weakMax = 9 * k;
   const midMax = 18 * k;
@@ -694,12 +929,12 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   const rareEach = Math.max(1, Math.round(0.8 * k));
   const deepSpots: GridPos[] = [];
   for (let i = 0; i < goldMines; i++) {
-    const p = takeWhere((q) => dNearestHome(q) >= 8 * kl);
+    const p = takeWhere((q) => deepness(q) >= 8 * kl);
     if (p) addMine(p, 'gold');
   }
   for (const res of RARE_RESOURCES) {
     for (let i = 0; i < rareEach; i++) {
-      const p = takeWhere((q) => dNearestHome(q) >= 14 * kl);
+      const p = takeWhere((q) => deepness(q) >= 14 * kl);
       if (!p) continue;
       addMine(p, res);
       deepSpots.push(p);
@@ -709,9 +944,9 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   // 3) 宝库区：重兵守着的一库金子，打赢才拿得到，拿完就没了
   const vaultCount = Math.max(2, Math.round(3 * k));
   for (let i = 0; i < vaultCount; i++) {
-    const p = takeWhere((q) => dNearestHome(q) >= 13 * kl);
+    const p = takeWhere((q) => deepness(q) >= 13 * kl);
     if (!p) continue;
-    const tier = dNearestHome(p) >= 16 * kl ? 'strong' : 'mid';
+    const tier = deepness(p) >= 16 * kl ? 'strong' : 'mid';
     const def = VAULTS[tier];
     const army: Army = def.army.map((s) => ({
       unitTypeId: s.unitTypeId,
