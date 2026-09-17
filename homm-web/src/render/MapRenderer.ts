@@ -15,6 +15,8 @@ export interface ViewModel {
   reachable: Float64Array | null;
   path: GridPos[] | null;
   hover: GridPos | null;
+  /** 跨天行程的目的地：画一面小旗，提醒玩家"昨天没走完"。 */
+  dest: GridPos | null;
   selectedHeroId: string | null;
   heroRender: Record<string, { x: number; y: number }>;
 }
@@ -243,6 +245,25 @@ export class MapRenderer {
         const p = vm.path[k];
         ctx.fillRect(p.x * TILE + TILE / 2 - 2, p.y * TILE + TILE / 2 - 2, 4, 4);
       }
+    }
+
+    // 跨天行程的目的地小旗：杆 + 三角旗，金色与路径点呼应
+    if (vm.dest && isRevealed(state, player, vm.dest.x, vm.dest.y)) {
+      const bx = vm.dest.x * TILE + TILE / 2;
+      const by = vm.dest.y * TILE;
+      ctx.strokeStyle = 'rgba(240,205,110,0.95)';
+      ctx.lineWidth = 1.5 / cam.zoom;
+      ctx.beginPath();
+      ctx.moveTo(bx, by + TILE - 1);
+      ctx.lineTo(bx, by + 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(240,205,110,0.95)';
+      ctx.beginPath();
+      ctx.moveTo(bx, by + 2);
+      ctx.lineTo(bx + 7, by + 4.5);
+      ctx.lineTo(bx, by + 7);
+      ctx.closePath();
+      ctx.fill();
     }
 
     if (vm.hover && isRevealed(state, player, vm.hover.x, vm.hover.y)) {

@@ -22,7 +22,7 @@ import {
 import { openBattleScreen, isBattleOpen } from './ui/BattleScreen.js';
 import { castAdventure, canAdventureCast, type AdventureTarget } from './core/game/spells.js';
 import { getSpell } from './core/data/spells.js';
-import { manaMaxOf } from './core/game/hero.js';
+import { manaMaxOf, maxMovePoints } from './core/game/hero.js';
 import type { BattleOutcome } from './core/combat/battle.js';
 import { LAYOUTS } from './core/data/layouts.js';
 import { endDay } from './core/game/turn.js';
@@ -94,6 +94,11 @@ let hover: GridPos | null = null;
 let anim: { heroId: string; path: GridPos[]; i: number; t: number } | null = null;
 /** 英雄踏入当前格之前所在的格子，野怪战撤退时要退回这里 */
 let lastStepFrom: GridPos | null = null;
+/**
+ * 跨天行程：目的地一天走不完时记下来，次日按 M 继续走。
+ * 走完全程 / 被战斗或物件交互打断 / 改点别处时清空。
+ */
+let pendingDest: { heroId: string; dest: GridPos } | null = null;
 const heroRender: Record<string, { x: number; y: number }> = {};
 
 const camera = new Camera();
@@ -209,9 +214,13 @@ function tryMove(target: GridPos): void {
   const f = computePaths(state, hero.pos, Infinity);
   const p = buildPath(state, f, hero.pos, target);
   if (!p.length) {
+    if (pendingDest?.heroId === selected) pendingDest = null;
     hint('那里去不了');
     return;
   }
+  // 全程费用超过今日剩余移动力 → 记为跨天行程，地图上插目的地小旗
+  const total = f.cost[idx(state.map, target.x, target.y)];
+  pendingDest = total > hero.movePoints ? { heroId: selected as string, dest: target } : null;
   anim = { heroId: selected as string, path: p, i: 0, t: 0 };
   previewPath = null;
 }
@@ -230,7 +239,7 @@ function tickAnim(dt: number): void {
     const cost = stepCost(state, hero.pos, to);
     if (cost > hero.movePoints) {
       anim = null;
-      hint('移动力不足，剩余行程明日再走');
+      hint(pendingDest ? '移动力耗尽，明天按 M 继续行程' : '移动力不足，剩余行程明日再走');
       recomputeField();
       refresh();
       return;
@@ -241,6 +250,7 @@ function tickAnim(dt: number): void {
       const heroId = anim.heroId;
       const foeId = foe.id;
       anim = null;
+      pendingDest = null;
       recomputeField();
       refresh();
       startHeroEncounter(heroId, foeId);
@@ -255,6 +265,7 @@ function tickAnim(dt: number): void {
     if (obj) {
       const heroId = anim.heroId;
       anim = null;
+      pendingDest = null;
       recomputeField();
       refresh();
       onArrive(heroId, obj);
@@ -263,6 +274,7 @@ function tickAnim(dt: number): void {
   }
   if (anim && anim.i >= anim.path.length) {
     anim = null;
+    pendingDest = null;
     recomputeField();
     refresh();
     saveGame(state);
@@ -708,8 +720,33 @@ function doEndDay(): void {
   renderLog();
   saveGame(state);
   if (afterWorldChange()) return;
+  if (pendingDest && state.heroes[pendingDest.heroId]) {
+    hint('按 M 继续昨日的行程（小旗处）');
+    return;
+  }
   const last = state.log[state.log.length - 1];
   hint(last ? `D${last.day} · ${last.text}` : '新的一天');
+}
+
+/** 继续跨天行程：朝 pendingDest 的目的地重新寻路出发。 */
+function continueJourney(): void {
+  if (!pendingDest || anim || isModalOpen() || isBattleOpen()) return;
+  const hero = state.heroes[pendingDest.heroId];
+  if (!hero) {
+    pendingDest = null;
+    return;
+  }
+  if (hero.movePoints <= 0) {
+    hint('移动力已耗尽，点击右上角「结束一天」');
+    return;
+  }
+  if (selected !== pendingDest.heroId) {
+    selected = pendingDest.heroId;
+    recomputeField();
+    refresh();
+  }
+  camera.centerOn(hero.pos.x, hero.pos.y);
+  tryMove(pendingDest.dest);
 }
 
 /* ---------------- input ---------------- */
@@ -894,7 +931,11 @@ function updateHover(e: PointerEvent): void {
   if (hero && fieldFull && isFinite(cost) && cost > 0) {
     const path = buildPath(state, fieldFull, hero.pos, g);
     previewPath = path.length ? path : null;
-    if (cost > hero.movePoints) text += '（今日移动力不足）';
+    if (cost > hero.movePoints) {
+      // 今天走不完：按每日上限折算还要几天
+      const days = 1 + Math.ceil((cost - hero.movePoints) / maxMovePoints(hero));
+      text += `（今日不够，约需 ${days} 天）`;
+    }
   } else {
     previewPath = null;
   }
@@ -986,6 +1027,8 @@ window.addEventListener('keydown', (e) => {
     hideInfoPopup();
   } else if (e.key === 'Enter' && !isModalOpen()) {
     doEndDay();
+  } else if ((e.key === 'm' || e.key === 'M') && !isModalOpen()) {
+    continueJourney();
   } else if (e.key === ' ' && selected) {
     e.preventDefault();
     const h = state.heroes[selected];
@@ -1018,6 +1061,7 @@ function frame(now: number): void {
     reachable: fieldTurn ? fieldTurn.cost : null,
     path: previewPath,
     hover,
+    dest: pendingDest && state.heroes[pendingDest.heroId] ? pendingDest.dest : null,
     selectedHeroId: selected,
     heroRender,
   });
@@ -1083,11 +1127,43 @@ if (bootParams.has('devquick')) {
 if (bootParams.has('devreveal') && state.players.p1) {
   state.players.p1.revealed = new Array(state.map.width * state.map.height).fill(1);
 }
-// 调试：?devzoom=0.6 缩到整图，一眼看完四方势力
+// 调试：?devzoom=0.6 缩到整图，一眼看完四方势力（缩放后重新对到当前英雄，不然镜头还停在旧缩放的夹紧位置）
 const devZoom = Number.parseFloat(bootParams.get('devzoom') ?? '');
 if (Number.isFinite(devZoom) && devZoom > 0) {
   camera.setZoom(devZoom);
+  const h = currentHero();
+  if (h) camera.centerOn(h.pos.x, h.pos.y);
 }
+// 调试：?devclear=1 清掉野怪/宝箱/矿场等可交互物件（端到端移动审计用，避免长途行程被交互打断；只留城镇与障碍）
+if (bootParams.has('devclear')) {
+  const CLEAR_KINDS = new Set([
+    'wanderingMonster', 'treasureChest', 'resourcePile', 'artifact', 'fountain', 'vault', 'mine',
+  ]);
+  for (const [id, o] of Object.entries(state.map.objects)) {
+    if (CLEAR_KINDS.has(o.kind)) delete state.map.objects[id];
+  }
+  for (const t of state.map.tiles) {
+    if (t.objectId && !state.map.objects[t.objectId]) t.objectId = null;
+  }
+}
+// 调试：?devprobe=1 暴露行程状态（tools/destaudit.mjs 端到端审计用）
+if (bootParams.has('devprobe')) {
+  const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void };
+  w.__journey = () => ({
+    pendingDest,
+    walking: !!anim,
+    selected,
+    heroPos: selected ? state.heroes[selected]?.pos ?? null : null,
+    movePoints: selected ? state.heroes[selected]?.movePoints ?? null : null,
+    maxMovePoints: selected && state.heroes[selected] ? maxMovePoints(state.heroes[selected]) : null,
+    cam: { x: camera.x, y: camera.y, zoom: camera.zoom },
+    hint: hintEl.textContent,
+  });
+  // 直接对指定格子发移动指令：审计脚本用它做确定性的长途行程
+  // （合成鼠标点击依赖相机换算，无头环境下屏幕边缘换算不可靠）
+  w.__journeyGo = (tx, ty) => tryMove({ x: tx, y: ty });
+}
+
 // 调试：?devdays=20 直接空过 N 天，用来观察电脑对手的推进与终局判定
 const devDays = Number.parseInt(bootParams.get('devdays') ?? '', 10);
 if (Number.isFinite(devDays) && devDays > 0) {
