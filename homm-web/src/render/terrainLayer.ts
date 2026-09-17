@@ -1,8 +1,29 @@
-import type { GameMap } from '../core/types.js';
+import type { GameMap, TerrainKind } from '../core/types.js';
+import { TERRAIN } from '../core/data/terrains.js';
 import { idx } from '../core/map/grid.js';
 import { TILE } from './ortho.js';
 import { getAtlas } from './atlas.js';
 import { hash2 } from './pixel.js';
+
+/**
+ * 地形过渡优先级：序号高的地形会向序号低的"漫"过去。
+ * 沙滩漫进草地、雪原漫进一切——这是 HoMM/SoC 像素地图的经典处理，
+ * 没有它地形之间是生硬的棋盘格边界。水面不走这套（有专门的岸线精灵）。
+ */
+const TERRAIN_SPREAD: Record<TerrainKind, number> = {
+  grass: 0, swamp: 1, rock: 2, dirt: 3, sand: 4, snow: 5, water: -1,
+};
+
+/** 4×4 Bayer 抖动矩阵：把"颜色渐变"翻译成像素画能说的"疏密渐变"。 */
+const BAYER4 = [
+  0, 8, 2, 10,
+  12, 4, 14, 6,
+  3, 11, 1, 9,
+  15, 7, 13, 5,
+];
+
+/** 过渡带深度（像素）：从邻接边向低优先级地形内部渗入的距离。 */
+const FRINGE_DEPTH = 6;
 
 /**
  * 地形层：把"永远不会动"的部分一次性烘进一张整图大小的离屏画布。
@@ -90,6 +111,69 @@ export class TerrainLayer {
         const hd = hash2(x, y, 233);
         if (!hasObj && hd < 0.22) {
           blitAt(`deco_${Math.floor(hd * 100) % 6}`, x * TILE + 8, y * TILE + 10);
+        }
+      }
+    }
+
+    /* --- 地形边缘抖动过渡：高优先级地形向低优先级"漫"一条疏密渐变的边 --- */
+    this.bakeFringes(ctx, map);
+  }
+
+  /**
+   * 相邻两块不同地形之间画抖动过渡带。
+   *
+   * 单方向绘制：只有高优先级一侧的颜色漫进低优先级一侧，避免两边互画
+   * 打架。抖动用 Bayer 矩阵控制密度（越深越稀），再叠一层坐标哈希
+   * 抖动打散规则感——纯 Bayer 会有明显的"纱窗"纹理。
+   */
+  private bakeFringes(ctx: CanvasRenderingContext2D, map: GameMap): void {
+    const terrainAt = (nx: number, ny: number): TerrainKind | null =>
+      nx >= 0 && ny >= 0 && nx < map.width && ny < map.height
+        ? map.tiles[idx(map, nx, ny)].terrain
+        : null;
+
+    // 四个方向：dx/dy 是邻居方位，fringe 画在本格贴邻居的那条边上
+    const DIRS: { dx: number; dy: number; edge: 'n' | 's' | 'w' | 'e' }[] = [
+      { dx: 0, dy: -1, edge: 'n' },
+      { dx: 0, dy: 1, edge: 's' },
+      { dx: -1, dy: 0, edge: 'w' },
+      { dx: 1, dy: 0, edge: 'e' },
+    ];
+
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        const self = map.tiles[idx(map, x, y)].terrain;
+        if (self === 'water') continue;
+        const selfPrio = TERRAIN_SPREAD[self];
+        for (const { dx, dy, edge } of DIRS) {
+          const n = terrainAt(x + dx, y + dy);
+          if (!n || n === 'water' || n === self) continue;
+          if (TERRAIN_SPREAD[n] <= selfPrio) continue;
+
+          ctx.fillStyle = TERRAIN[n].top;
+          // 一条边的像素先攒进同一个 Path 再一次性 fill：
+          // 巨型图过渡像素上百万级，逐像素 fillRect 会让开局烘焙多花几百 ms
+          const path = new Path2D();
+          for (let d = 0; d < FRINGE_DEPTH; d++) {
+            // 越深越稀：阈值从 0 升到 1，Bayer 值小于阈值的像素不画
+            const threshold = d / FRINGE_DEPTH;
+            for (let p = 0; p < TILE; p++) {
+              let px: number;
+              let py: number;
+              switch (edge) {
+                case 'n': px = p; py = d; break;
+                case 's': px = p; py = TILE - 1 - d; break;
+                case 'w': px = d; py = p; break;
+                default: px = TILE - 1 - d; py = p; break;
+              }
+              const bayer = BAYER4[(py % 4) * 4 + (px % 4)] / 16;
+              // 坐标哈希打散规则纹理，让边缘"咬"出不规则小齿
+              const jitter = hash2(x * TILE + px, y * TILE + py, 997) * 0.3;
+              if (bayer + jitter < threshold) continue;
+              path.rect(x * TILE + px, y * TILE + py, 1, 1);
+            }
+          }
+          ctx.fill(path);
         }
       }
     }

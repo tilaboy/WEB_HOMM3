@@ -150,7 +150,9 @@ export class MapRenderer {
     const { state, player } = vm;
     const map = state.map;
     const now = performance.now();
-    const waterFrame = Math.floor(now / 520) % 4;
+    // 水面翻页动画：4 帧一循环。260ms/帧比原来的 520ms 顺滑，
+    // 再叠加下面连续移动的高光带，肉眼基本感觉不到跳帧
+    const waterFrame = Math.floor(now / 260) % 4;
 
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
@@ -172,12 +174,29 @@ export class MapRenderer {
     ctx.drawImage(this.terrain.ensure(map), 0, 0);
 
     /* --- 水面：唯一会动的地形，按帧画（只占可见且已探索的格子） --- */
+    // 高光带：一条沿对角线扫过整张地图的正弦波，只有波峰经过的格子
+    // 才点亮 2px 高光。波是连续移动的，看起来就是"碎光在水面上淌"，
+    // 这是 SoC 水面氛围里性价比最高的一笔。每格采三个固定采样点。
+    const GLINT_SPOTS: readonly (readonly [number, number])[] = [[9, 12], [22, 20], [14, 26]];
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         if (map.tiles[idx(map, x, y)].terrain !== 'water') continue;
         if (!isRevealed(state, player, x, y)) continue;
         const h = hash2(x, y, 17);
         this.blit(`g_water_${h < 0.5 ? 0 : 1}_${waterFrame}`, x, y);
+
+        for (const [ox, oy] of GLINT_SPOTS) {
+          const wx = x * TILE + ox;
+          const wy = y * TILE + oy;
+          const wave = Math.sin((wx + wy * 0.6) / 13 - now / 430);
+          if (wave > 0.9) {
+            ctx.fillStyle = 'rgba(196,228,246,0.55)';
+            ctx.fillRect(wx, wy, 2, 1);
+          } else if (wave > 0.82) {
+            ctx.fillStyle = 'rgba(150,200,230,0.3)';
+            ctx.fillRect(wx, wy, 1, 1);
+          }
+        }
       }
     }
 
