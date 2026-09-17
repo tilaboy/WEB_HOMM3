@@ -4,6 +4,7 @@ import { factionColor, factionName } from '../core/data/factions.js';
 import { dayOfWeek, weekOf } from '../core/game/turn.js';
 import { getAtlas } from '../render/atlas.js';
 import { isMuted, setMuted, sfx } from './sfx.js';
+import { lightingOn, setLightingOn } from '../render/lightLayer.js';
 
 /**
  * 顶栏显示**全部七种资源**。
@@ -91,6 +92,20 @@ export class HUD {
     });
     syncMute();
     this.el.appendChild(muteBtn);
+
+    // 光照开关：🌗 开 / ☀️ 关（关掉就是恒定正午），偏好存 localStorage
+    const lightBtn = document.createElement('button');
+    lightBtn.className = 'btn';
+    const syncLight = (): void => {
+      lightBtn.textContent = lightingOn() ? '🌗' : '☀️';
+      lightBtn.title = lightingOn() ? '关闭昼夜光照' : '开启昼夜光照';
+    };
+    lightBtn.addEventListener('click', () => {
+      setLightingOn(!lightingOn());
+      syncLight();
+    });
+    syncLight();
+    this.el.appendChild(lightBtn);
 
     const restartBtn = document.createElement('button');
     restartBtn.className = 'btn danger';

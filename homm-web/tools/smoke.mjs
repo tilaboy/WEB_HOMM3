@@ -1,4 +1,5 @@
 import { Camera } from '../dist/render/camera.js';
+import { lightTintAt } from '../dist/render/lightLayer.js';
 import { BASE_MOVE_POINTS, createGame, monsterArmy } from '../dist/core/map/generator.js';
 import { mulberry32 } from '../dist/core/rng.js';
 import { computePaths, buildPath } from '../dist/core/map/pathfinding.js';
@@ -1718,6 +1719,51 @@ function freshCam() {
   const x2 = cam.x;
   cam.edgeScroll(400, 300, 16); // 居中不滚
   ok(cam.x === x2, '鼠标居中时不滚屏');
+}
+
+/* ================= P1.3：昼夜光照（lightTintAt 纯函数） ================= */
+console.log('\n--- P1.3 昼夜光照 ---');
+
+// 1. 正午是无效果的纯白（亮度不能被常态光照拉低）
+{
+  const t = lightTintAt(0.22);
+  ok(t.r === 255 && t.g === 255 && t.b === 255, `正午纯白无叠色（实际 rgb(${t.r},${t.g},${t.b})）`);
+  ok(t.warm === 0, '正午无暖光');
+}
+
+// 2. 深夜显著压暗且偏蓝，但不能黑到影响读图（下限 55% 亮度）
+{
+  const t = lightTintAt(0.68);
+  ok(t.r < 170 && t.b > t.r, `深夜压暗且偏蓝（rgb(${t.r},${t.g},${t.b})）`);
+  ok(t.r >= 120, `深夜不黑过下限（r=${t.r} ≥ 120，保住可读性）`);
+}
+
+// 3. 黄昏偏暖（r > b）且带暖光
+{
+  const t = lightTintAt(0.5);
+  ok(t.r > t.b && t.warm > 0.1, `黄昏暖橘（rgb(${t.r},${t.g},${t.b}) warm=${t.warm.toFixed(2)}）`);
+}
+
+// 4. 连续性：全周期细扫，相邻相位不能跳变（渐变必须平滑）
+{
+  let maxJump = 0;
+  let prev = lightTintAt(0);
+  for (let i = 1; i <= 720; i++) {
+    const cur = lightTintAt(i / 720);
+    const jump = Math.max(Math.abs(cur.r - prev.r), Math.abs(cur.g - prev.g), Math.abs(cur.b - prev.b));
+    if (jump > maxJump) maxJump = jump;
+    prev = cur;
+  }
+  ok(maxJump <= 2, `全周期相邻相位最大跳变 ${maxJump}（≤2 视为平滑）`);
+}
+
+// 5. 相位取模：负数与 >1 的相位不会炸，且与归一化后一致
+{
+  const a = lightTintAt(1.68);
+  const b = lightTintAt(0.68);
+  const c = lightTintAt(-0.32);
+  ok(a.r === b.r && a.g === b.g && a.b === b.b, '相位 1.68 ≡ 0.68（正向取模）');
+  ok(c.r === b.r && c.g === b.g && c.b === b.b, '相位 -0.32 ≡ 0.68（负向取模）');
 }
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);

@@ -8,6 +8,7 @@ import { TILE } from './ortho.js';
 import { getAtlas } from './atlas.js';
 import { hash2 } from './pixel.js';
 import { TerrainLayer } from './terrainLayer.js';
+import { currentLightTint, lightingOn } from './lightLayer.js';
 
 export interface ViewModel {
   state: GameState;
@@ -153,6 +154,9 @@ export class MapRenderer {
     // 水面翻页动画：4 帧一循环。260ms/帧比原来的 520ms 顺滑，
     // 再叠加下面连续移动的高光带，肉眼基本感觉不到跳帧
     const waterFrame = Math.floor(now / 260) % 4;
+    // 夜深程度 0~1：决定城镇灯火光晕的强度（深夜≈0.4，正午=0）
+    const lightTint = lightingOn() ? currentLightTint(now) : { r: 255, g: 255, b: 255, warm: 0 };
+    const nightDepth = Math.max(0, 1 - (lightTint.r + lightTint.g + lightTint.b) / 765);
 
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
@@ -312,6 +316,21 @@ export class MapRenderer {
 
     for (const d of draws) {
       if (d.t === 'obj') {
+        // 夜晚的城镇会亮灯：暖色光晕垫在精灵底下，像从窗户里透出来的光。
+        // 只加深夜才看得见的那点火气——夜色越深灯越亮，正午完全不开。
+        if (d.obj.kind === 'town' && nightDepth > 0.08) {
+          const fp = d.obj.footprint ? 1 : 0.5;
+          const cx = d.x * TILE + TILE * fp;
+          const cy = d.y * TILE + TILE * fp;
+          const radius = TILE * (d.obj.footprint ? 2.4 : 1.8);
+          const alpha = Math.min(0.5, nightDepth * 1.15);
+          const glow = ctx.createRadialGradient(cx, cy, TILE * 0.3, cx, cy, radius);
+          glow.addColorStop(0, `rgba(255,186,92,${alpha.toFixed(3)})`);
+          glow.addColorStop(0.55, `rgba(255,150,60,${(alpha * 0.4).toFixed(3)})`);
+          glow.addColorStop(1, 'rgba(255,140,50,0)');
+          ctx.fillStyle = glow;
+          ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+        }
         const sprite = objSprite(state, d.obj, hash2(d.x, d.y, 91));
         if (sprite) this.blit(sprite, d.x, d.y);
         const mk = guardMarker(d.obj);
@@ -347,6 +366,53 @@ export class MapRenderer {
       }
     }
 
+    ctx.restore();
+
+    /* --- 光照层（屏幕空间）：昼夜 multiply 叠色 + 暖光 + 暗角 --- */
+    if (lightingOn()) this.applyLighting(now);
+  }
+
+  /**
+   * 屏幕空间光照：一次 multiply 全屏叠色（深夜压蓝、清晨黄昏带暖），
+   * 再加一个很轻的暗角把视线往画面中心收。
+   * 全在主画布上原地合成，不开离屏——multiply 覆盖全屏一次的开销可以忽略。
+   */
+  private applyLighting(now: number): void {
+    const ctx = this.ctx;
+    const { viewW: w, viewH: h } = this.camera;
+    const tint = currentLightTint(now);
+
+    if (tint.r < 255 || tint.g < 255 || tint.b < 255) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = `rgb(${tint.r},${tint.g},${tint.b})`;
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+    }
+
+    // 清晨/黄昏的暖光：从右上斜进来的正橘色，强度随时间起伏
+    if (tint.warm > 0.01) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'overlay';
+      const g = ctx.createLinearGradient(w, 0, 0, h);
+      g.addColorStop(0, `rgba(255,196,120,${(tint.warm * 0.9).toFixed(3)})`);
+      g.addColorStop(0.55, `rgba(255,170,100,${(tint.warm * 0.35).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(255,150,90,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+    }
+
+    // 暗角：很轻，只为把视线收向中心（SoC 截图里几乎张张都有）
+    ctx.save();
+    const v = ctx.createRadialGradient(
+      w / 2, h / 2, Math.min(w, h) * 0.42,
+      w / 2, h / 2, Math.hypot(w, h) / 1.6,
+    );
+    v.addColorStop(0, 'rgba(8,10,16,0)');
+    v.addColorStop(1, 'rgba(8,10,16,0.22)');
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, w, h);
     ctx.restore();
   }
 }

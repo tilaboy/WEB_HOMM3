@@ -29,6 +29,7 @@ import { endDay } from './core/game/turn.js';
 import { evaluateOutcome, outcomeSummary } from './core/game/victory.js';
 import { Camera } from './render/camera.js';
 import { MapRenderer } from './render/MapRenderer.js';
+import { setLightPhaseOverride } from './render/lightLayer.js';
 import { HUD } from './ui/HUD.js';
 import { HeroPanel } from './ui/HeroPanel.js';
 import { openStartScreen } from './ui/StartScreen.js';
@@ -1145,6 +1146,11 @@ if (Number.isFinite(devZoom) && devZoom > 0) {
   camera.setZoom(devZoom);
   const h = currentHero();
   if (h) camera.centerOn(h.pos.x, h.pos.y);
+}
+// 调试：?devlight=0.68 锁定光照相位（0=清晨 0.22=正午 0.5=黄昏 0.68=深夜，截图/调色用）
+const devLight = Number.parseFloat(bootParams.get('devlight') ?? '');
+if (Number.isFinite(devLight)) {
+  setLightPhaseOverride(devLight);
 }
 // 调试：?devclear=1 清掉野怪/宝箱/矿场等可交互物件（端到端移动审计用，避免长途行程被交互打断；只留城镇与障碍）
 if (bootParams.has('devclear')) {
