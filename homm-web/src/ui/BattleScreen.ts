@@ -61,6 +61,11 @@ export interface BattleOptions {
   autoStart?: boolean;
   /** 调试用：跳过全部动画，直接结算（配合无头截图）。 */
   instant?: boolean;
+  /**
+   * 调试用：把每帧真正画出的悬停格写到 window.__battleHover。
+   * 悬停残留是纯视觉 bug，截图看不出来，自动化只能靠这个断言（tools/hoveraudit.mjs）。
+   */
+  debugProbe?: boolean;
   onDone: (outcome: BattleOutcome) => void;
 }
 
@@ -1001,6 +1006,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       e.stopPropagation();
     } else if ((e.key === 'c' || e.key === 'C') && !busy()) {
       e.preventDefault();
+      // 同 btnCast：开面板前先清掉悬停格
+      clearAim();
       renderSpellBook();
       spellPanel.style.display = spellPanel.style.display === 'none' ? 'flex' : 'none';
     } else if (e.key === ' ' && !busy()) {
@@ -1047,8 +1054,12 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     }
     const panelOpen = spellPanel.style.display !== 'none';
     spellPanel.style.display = panelOpen ? 'none' : 'flex';
-    if (!panelOpen) renderSpellBook();
-    else selectSpell(null);
+    if (!panelOpen) {
+      // 展开法术书也算"换了个状态"：先把上一拍的悬停格收掉，
+      // 否则那圈白框会停在开面板前的位置，看着像施法留下的印记
+      clearAim();
+      renderSpellBook();
+    } else selectSpell(null);
   });
 
   actionBar.append(btnDefend, btnWait, btnCast);
@@ -1109,14 +1120,23 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     btnWait.disabled = busy() || !u || u.side !== 0 || !!u?.waited;
     btnCast.disabled = busy() || !combatSpells().length;
 
+    // 演出中（移动/打击/敌方回合）不画悬停格：那会儿鼠标下面那圈白框
+    // 既没有意义，又会被误认成"施法的印记"一直挂着
+    const effHover = !busy() && u && u.side === 0 ? hover : null;
+    // 调试探针：把"这一帧真正画出去的悬停格"暴露给自动化（tools/hoveraudit.mjs）。
+    // 悬停残留是个纯视觉 bug，截图看不出来，只能这样断言。
+    if (opts.debugProbe) {
+      (window as unknown as Record<string, unknown>)['__battleHover'] = effHover
+        ? [effHover.col, effHover.row]
+        : null;
+    }
+
     renderer.draw({
       battle,
       activeId: u && u.side === 0 ? u.id : null,
       reachable: reachableSet,
       attackable: attackableSet,
-      // 演出中（移动/打击/敌方回合）不画悬停格：那会儿鼠标下面那圈白框
-      // 既没有意义，又会被误认成"施法的印记"一直挂着
-      hover: !busy() && u && u.side === 0 ? hover : null,
+      hover: effHover,
       posOverride,
       lunge,
       arrow,

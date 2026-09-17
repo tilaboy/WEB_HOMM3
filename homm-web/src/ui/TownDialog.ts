@@ -365,6 +365,15 @@ function buildStateLine(st: BuildStatus): HTMLElement {
     return el;
   }
   el.className = 'bs short';
+  // 先把完整造价摆出来，再点出缺哪几项。
+  // 只写"还差"会让玩家看不到总价（4500 金 + 4 水晶），
+  // 只写总价又正是当初那条"资源不足（4500 金）"的误导来源——两行都要。
+  if (st.cost) {
+    const full = document.createElement('span');
+    full.className = 'cost';
+    full.textContent = `${formatCost(st.cost)}　`;
+    el.append(full);
+  }
   el.append(document.createTextNode('还差：'));
   st.missing.forEach((m, i) => {
     if (i) el.append(document.createTextNode('、'));

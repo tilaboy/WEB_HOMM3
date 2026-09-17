@@ -8,7 +8,12 @@
     "watch": "tsc --watch",
     "start": "node tools/serve.mjs",
     "dev": "npm run build && npm run start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "smoke": "node tools/smoke.mjs",
+    "audit:layout": "node tools/layoutaudit.mjs",
+    "audit:mines": "node tools/minesaudit.mjs",
+    "audit:ai": "node tools/ailayout.mjs",
+    "audit:hover": "node tools/hoveraudit.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

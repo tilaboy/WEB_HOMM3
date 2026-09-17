@@ -1109,6 +1109,31 @@ if (bootParams.has('devbattle') && selected && state.heroes[selected]) {
     seed: 20260913,
     autoStart: bootParams.has('devauto'),
     instant: bootParams.has('devinstant'),
+    debugProbe: bootParams.has('devprobe'),
     onDone: () => hint('调试战斗结束'),
   });
+}
+
+// 调试：?devsetup=1 给玩家发一笔资源并在首城补好前置建筑，
+// 用来复现"金很多但缺稀有资源"的场景（截图/人工验证建造面板文案用）。
+// 大法师塔(guild3) 造价 = 4500 金 + 4 水晶，所以这里水晶故意留 0。
+if (bootParams.has('devsetup') && state.players.p1) {
+  const p1 = state.players.p1;
+  p1.resources = {
+    ...p1.resources,
+    gold: 12000, wood: 50, ore: 50,
+    gem: 12, crystal: 0, sulfur: 8, mercury: 8,
+  };
+  const home = Object.values(state.towns).find((t) => t.owner === 'p1');
+  if (home) {
+    home.buildings = [...new Set([...home.buildings, 'tavern', 'guild1', 'guild2'])];
+    // 前置建筑补好了，但"今天建过"要清掉，否则卡片只会说"明日再来"
+    home.builtDay = -1;
+  }
+}
+
+// 调试：?devtown=1 直接打开我方首座城镇面板（需配合 ?devquick 才有城镇）
+if (bootParams.has('devtown')) {
+  const home = Object.values(state.towns).find((t) => t.owner === 'p1');
+  if (home) openTownById(home.id);
 }

@@ -490,6 +490,12 @@ table.est td:last-child {
   font-weight: 600;
 }
 
+/* 造价本身压暗一档：它是"背景信息"，红字才是玩家要看的结论 */
+.bcard .bs.short .cost {
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+
 .bcard .bs.built {
   color: #7ab55a;
 }
