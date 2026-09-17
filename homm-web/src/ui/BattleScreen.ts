@@ -7,6 +7,7 @@
  */
 import type { GameState } from '../core/types.js';
 import { getUnit } from '../core/data/units.js';
+import { sfx } from './sfx.js';
 import { WAR_MACHINES } from '../core/data/warmachines.js';
 import { effectivePrimary } from '../core/game/hero.js';
 import {
@@ -603,6 +604,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         break;
       }
       case 'shoot': {
+        sfx.shoot();
         const a = hexCenter(e.from ?? hexOf(e.unitId));
         const b = hexCenter(hexOf(e.targetId));
         let hit = false;
@@ -634,6 +636,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         const color = SPELL_FX_COLOR[e.spellId] ?? '#f0e0b0';
         const b = hexCenter(hex);
         const hitFx = (): void => {
+          sfx.spell();
           if (e.damage) addFloat(`-${e.damage}`, hex, color);
           if (e.killed) addFloat(`-${e.killed}`, hex, '#ffdcd2');
           spellFx.push({ hex, life: 1, color, splash: e.splash });
@@ -730,6 +733,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   function onMeleeHit(style: 'thrust' | 'slash' | 'smash', to: Hex, damage: number, killed: number): void {
     const c = hexCenter(to);
     impacts.push({ x: c.x, y: c.y, kind: style, p: 0, dur: style === 'smash' ? 420 : 300 });
+    sfx.hit();
     addFloat(`-${damage}`, to, '#ff6b52');
     if (killed) addFloat(`-${killed}`, to, '#ffdcd2');
   }
@@ -850,6 +854,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     if (finished) return;
     finished = true;
     const outcome = toOutcome(battle);
+    if (outcome.win && !outcome.fled) sfx.win();
+    else sfx.lose();
     renderResult(outcome);
   }
 

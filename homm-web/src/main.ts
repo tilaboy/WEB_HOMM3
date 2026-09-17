@@ -34,6 +34,7 @@ import { HeroPanel } from './ui/HeroPanel.js';
 import { openStartScreen } from './ui/StartScreen.js';
 import { openTownDialog } from './ui/TownDialog.js';
 import { closeModal, hideInfoPopup, isModalOpen, lossTable, showInfoPopup, showModal } from './ui/Dialogs.js';
+import { sfx } from './ui/sfx.js';
 import { clearSave, hasSave, loadConfig, loadGame, saveConfig, saveGame } from './save/persistence.js';
 
 /* ---------------- shell ---------------- */
@@ -260,6 +261,7 @@ function tickAnim(dt: number): void {
     hero.pos = to;
     hero.movePoints -= cost;
     anim.i += 1;
+    sfx.step();
     revealAround(state, hero.owner, hero.pos, HERO_SIGHT);
     const obj = pendingObjectAt(state, anim.heroId);
     if (obj) {
@@ -399,6 +401,15 @@ function resolve(heroId: string, obj: MapObject, accept: boolean, outcome?: Batt
     return;
   }
   if (!res.title) return;
+
+  // 拾取类交互给个亮响；占领矿场用锤音
+  if (accept) {
+    if (obj.kind === 'resourcePile' || obj.kind === 'treasureChest' || obj.kind === 'artifact' || obj.kind === 'fountain') {
+      sfx.pickup();
+    } else if (obj.kind === 'mine') {
+      sfx.build();
+    }
+  }
 
   // 攻下城镇后直接进城管理
   if (obj.kind === 'town') {
@@ -714,6 +725,7 @@ function doEndDay(): void {
   if (isModalOpen() || anim || isBattleOpen()) return;
   if (state.status !== 'playing') return;
   endDay(state);
+  sfx.day();
   lastStepFrom = null;
   recomputeField();
   refresh();

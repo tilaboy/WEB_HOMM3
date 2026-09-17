@@ -31,6 +31,7 @@ import {
 } from '../core/game/town.js';
 import type { BuildStatus } from '../core/game/town.js';
 import { showModal } from './Dialogs.js';
+import { sfx } from './sfx.js';
 
 export interface TownDialogOptions {
   state: GameState;
@@ -143,7 +144,11 @@ function paint(root: HTMLElement, opts: TownDialogOptions, note: string, say: Sa
       const ready = st.affordable && !st.spentToday;
       card.appendChild(actionBtn('建造', ready, () => {
         act(() => {
-          if (!build(state, town, id)) return st.spentToday ? '今日已建造过建筑' : '资源不足';
+          if (!build(state, town, id)) {
+            sfx.error();
+            return st.spentToday ? '今日已建造过建筑' : '资源不足';
+          }
+          sfx.build();
           return `${def.name} 建成`;
         });
       }));

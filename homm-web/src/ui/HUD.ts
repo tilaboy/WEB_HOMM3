@@ -3,6 +3,7 @@ import { RESOURCE_META } from '../core/data/terrains.js';
 import { factionColor, factionName } from '../core/data/factions.js';
 import { dayOfWeek, weekOf } from '../core/game/turn.js';
 import { getAtlas } from '../render/atlas.js';
+import { isMuted, setMuted, sfx } from './sfx.js';
 
 /**
  * 顶栏显示**全部七种资源**。
@@ -75,6 +76,21 @@ export class HUD {
     saveBtn.textContent = '存档';
     saveBtn.addEventListener('click', () => this.onSave());
     this.el.appendChild(saveBtn);
+
+    // 音效开关：🔊/🔇，全局生效（master gain），偏好存 localStorage
+    const muteBtn = document.createElement('button');
+    muteBtn.className = 'btn';
+    const syncMute = (): void => {
+      muteBtn.textContent = isMuted() ? '🔇' : '🔊';
+      muteBtn.title = isMuted() ? '取消静音' : '静音';
+    };
+    muteBtn.addEventListener('click', () => {
+      setMuted(!isMuted());
+      syncMute();
+      if (!isMuted()) sfx.click(); // 刚开声音就给个反馈
+    });
+    syncMute();
+    this.el.appendChild(muteBtn);
 
     const restartBtn = document.createElement('button');
     restartBtn.className = 'btn danger';
