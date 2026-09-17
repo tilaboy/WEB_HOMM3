@@ -150,6 +150,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   root.appendChild(foot);
 
   parent.appendChild(root);
+  // 战斗期间隐藏主界面顶栏（资源 / 结束一天 / 存档 / 新游戏）：它们跟战斗无关，
+  // 还会误点——打到一半"结束一天"是谁都不想要的意外
+  document.body.classList.add('in-battle');
 
   const renderer = new BattleRenderer(canvas);
 
@@ -162,7 +165,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   let finished = false;
   let hover: Hex | null = null;
   let lunge: { unitId: string; dx: number; dy: number } | null = null;
-  let arrow: { x: number; y: number; tx: number; ty: number } | null = null;
+  let arrow: { x: number; y: number; tx: number; ty: number; color?: string } | null = null;
   const floats: FloatText[] = [];
   const posOverride: Record<string, { x: number; y: number }> = {};
   const logs: string[] = [];
@@ -174,6 +177,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   let pendingSpell: string | null = null;
   let spellTargets: Set<string> | null = null;
   const spellFx: { hex: Hex; life: number; color: string; splash?: boolean }[] = [];
+  /** 近战打击特效与闪电（纯表演，p 走到头就移除）。 */
+  const impacts: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number; dur: number }[] = [];
+  let bolt: { x: number; y: number; p: number } | null = null;
 
   const alive = (u: BattleUnit) => u.count > 0;
 
@@ -192,8 +198,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       host.appendChild(cap);
       for (const u of battle.units.filter((x) => x.side === side)) {
         const def = getUnit(u.unitTypeId);
+        const isActive = alive(u) && currentUnit(battle)?.id === u.id;
         const card = document.createElement('div');
-        card.className = 'bt-card' + (alive(u) ? '' : ' dead') + (currentUnit(battle)?.id === u.id ? ' active' : '');
+        card.className = 'bt-card' + (alive(u) ? '' : ' dead') + (isActive ? ' active' : '');
         const top = document.createElement('div');
         top.className = 'bt-card-top';
         const nm = document.createElement('span');
@@ -201,15 +208,76 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         const ct = document.createElement('b');
         ct.textContent = alive(u) ? `×${u.count}` : '全灭';
         top.append(nm, ct);
-        const sub = document.createElement('div');
-        sub.className = 'bt-card-sub';
-        sub.textContent = `攻${def.attack} 防${def.defense} 速${def.speed}` + (def.shots ? ` 弹${u.shots}` : '');
-        card.append(top, sub);
+        card.append(top);
+        // 身上的时效法术画成小色点，具体信息悬停/右键看浮框
+        for (const e of u.effects) {
+          const dot = document.createElement('i');
+          dot.className = 'bt-effect';
+          dot.style.background = SPELL_FX_COLOR[e.spellId] ?? '#cccccc';
+          dot.style.color = SPELL_FX_COLOR[e.spellId] ?? '#cccccc';
+          dot.title = `${getSpell(e.spellId).name}（剩 ${e.rounds} 回合）`;
+          card.appendChild(dot);
+        }
+        attachUnitTip(card, () => unitTipText(u, isActive));
         host.appendChild(card);
       }
     };
     build(0, leftCards);
     build(1, rightCards);
+  }
+
+  /* ---------------- 部队信息浮框（悬停 1 秒 / 右键立即） ---------------- */
+
+  const tip = document.createElement('div');
+  tip.className = 'bt-tip';
+  tip.style.display = 'none';
+  root.appendChild(tip);
+  let tipTimer = 0;
+
+  function unitTipText(u: BattleUnit, isActive: boolean): string {
+    const def = getUnit(u.unitTypeId);
+    const lines = [
+      `${def.name} ×${u.count}${isActive ? '　▶ 正在行动' : ''}`,
+      `攻 ${def.attack}　防 ${def.defense}　速 ${def.speed}`,
+      `总生命 ${Math.round(poolOf(u))}${def.shots ? `　弹药 ${u.shots}` : ''}`,
+    ];
+    for (const e of u.effects) lines.push(`${getSpell(e.spellId).name} · 剩 ${e.rounds} 回合`);
+    if (u.defending) lines.push('防御中');
+    if (u.waited) lines.push('已等待');
+    return lines.join('\n');
+  }
+
+  function showTip(text: string, cx: number, cy: number): void {
+    tip.textContent = text;
+    tip.style.display = 'block';
+    // 量完尺寸再定位，贴着鼠标右下方，超出视口就往回扳
+    const r = tip.getBoundingClientRect();
+    const x = Math.min(cx + 14, window.innerWidth - r.width - 8);
+    const y = Math.min(cy + 16, window.innerHeight - r.height - 8);
+    tip.style.left = `${Math.max(8, x)}px`;
+    tip.style.top = `${Math.max(8, y)}px`;
+  }
+
+  function attachUnitTip(card: HTMLElement, text: () => string): void {
+    card.addEventListener('pointerenter', (e) => {
+      clearTimeout(tipTimer);
+      const cx = e.clientX;
+      const cy = e.clientY;
+      // 悬停 1 秒才弹：快速划过部队列表时不打扰视线
+      tipTimer = window.setTimeout(() => showTip(text(), cx, cy), 1000);
+    });
+    card.addEventListener('pointermove', (e) => {
+      if (tip.style.display !== 'none') showTip(text(), e.clientX, e.clientY);
+    });
+    card.addEventListener('pointerleave', () => {
+      clearTimeout(tipTimer);
+      tip.style.display = 'none';
+    });
+    card.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      clearTimeout(tipTimer);
+      showTip(text(), e.clientX, e.clientY);
+    });
   }
 
   function pushLog(text: string): void {
@@ -404,6 +472,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       return;
     }
     selectSpell(null);
+    // 施法完毕就收起法术书：它叠在底部操作条上方，开着会挡住防御/等待/施法
+    spellPanel.style.display = 'none';
     emit(ev);
   }
 
@@ -411,7 +481,12 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
 
   function emit(events: BattleEvent[]): void {
     for (const e of events) queue.push(e);
-    if (events.length) dirty = true;
+    // 引擎在伤害结算里就地翻 over（castSpell/actShoot/melee 的 checkOver），
+    // 但 end 事件不一定是它返回的 —— 这里兜底补发，保证战斗一定能收尾
+    if (battle.over && !finished && !queue.some((e) => e.t === 'end')) {
+      queue.push({ t: 'end', winner: battle.winner ?? null, fled: battle.fled });
+    }
+    if (queue.length) dirty = true;
     pushLogFor(events);
   }
 
@@ -442,7 +517,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
             const k = f - i;
             const a = pts[i];
             const b = pts[Math.min(n, i + 1)];
-            posOverride[e.unitId] = { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
+            // 行军小颠簸：每跨一格轻轻一跳，不然像在冰面上滑行
+            const bob = Math.abs(Math.sin(f * Math.PI)) * 2.5;
+            posOverride[e.unitId] = { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k - bob };
           },
           end: () => {
             delete posOverride[e.unitId];
@@ -451,7 +528,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         break;
       }
       case 'melee': {
-        anim = lungeAnim(e.unitId, e.from, hexOf(e.targetId), `-${e.damage}`, e.killed, '#ff6b52');
+        anim = meleeAnim(e.unitId, e.from, hexOf(e.targetId), e.damage, e.killed);
         break;
       }
       case 'siege': {
@@ -531,7 +608,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         break;
       }
       case 'retaliate': {
-        anim = lungeAnim(e.unitId, hexOf(e.unitId), hexOf(e.targetId), `-${e.damage}`, e.killed, '#ffb347');
+        anim = meleeAnim(e.unitId, hexOf(e.unitId), hexOf(e.targetId), e.damage, e.killed);
         break;
       }
       case 'shoot': {
@@ -550,6 +627,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
                 hit = true;
                 addFloat(`-${e.damage}`, hexOf(e.targetId), e.blocked ? '#ffb347' : '#ffe07a');
                 if (e.killed) addFloat(`-${e.killed}`, hexOf(e.targetId), '#ffdcd2');
+                impacts.push({ x: b.x, y: b.y, kind: 'thrust', p: 0, dur: 280 });
               }
               arrow = null;
             }
@@ -563,12 +641,63 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       case 'cast': {
         const hex = e.hex ?? hexOf(e.targetId ?? '');
         const color = SPELL_FX_COLOR[e.spellId] ?? '#f0e0b0';
-        spellFx.push({ hex, life: 1, color, splash: e.splash });
-        if (e.damage) addFloat(`-${e.damage}`, hex, color);
-        if (e.killed) addFloat(`-${e.killed}`, hex, '#ffdcd2');
-        if (e.revived) addFloat(`+${e.revived}`, hex, '#9ef0a8');
-        if (!e.damage && !e.revived) addFloat(getSpell(e.spellId).name, hex, color);
-        anim = { t: 0, dur: e.splash ? 520 : 420, step: () => undefined };
+        const b = hexCenter(hex);
+        const hitFx = (): void => {
+          if (e.damage) addFloat(`-${e.damage}`, hex, color);
+          if (e.killed) addFloat(`-${e.killed}`, hex, '#ffdcd2');
+          spellFx.push({ hex, life: 1, color, splash: e.splash });
+        };
+        if (e.spellId === 'lightningBolt') {
+          // 闪电：从目标头顶劈下，命中瞬间闪白 + 伤害浮字
+          bolt = { x: b.x, y: b.y, p: 1 };
+          let hit = false;
+          anim = {
+            t: 0,
+            dur: 520,
+            step: (p) => {
+              if (!hit && p >= 0.3) {
+                hit = true;
+                hitFx();
+              }
+            },
+          };
+        } else if (e.spellId === 'magicArrow' || e.spellId === 'iceBolt' || e.spellId === 'fireball') {
+          // 飞行道具：从施法方第一支部队飞向目标（英雄本尊不在战场上）
+          const originUnit = aliveOf(battle, e.side)[0];
+          const o = originUnit ? hexCenter(originUnit.hex) : { x: e.side === 0 ? 10 : BASE_W - 30, y: BASE_H / 2 };
+          let hit = false;
+          anim = {
+            t: 0,
+            dur: 460,
+            step: (p) => {
+              if (p < 0.6) {
+                const k = p / 0.6;
+                arrow = {
+                  x: o.x + (b.x - o.x) * k,
+                  y: o.y + (b.y - o.y) * k - Math.sin(k * Math.PI) * 10,
+                  tx: b.x,
+                  ty: b.y,
+                  color,
+                };
+              } else {
+                arrow = null;
+                if (!hit) {
+                  hit = true;
+                  hitFx();
+                }
+              }
+            },
+            end: () => {
+              arrow = null;
+            },
+          };
+        } else {
+          // 增益/减益/复活：目标格光环立即亮起
+          spellFx.push({ hex, life: 1, color });
+          if (e.revived) addFloat(`+${e.revived}`, hex, '#9ef0a8');
+          if (!e.damage && !e.revived) addFloat(getSpell(e.spellId).name, hex, color);
+          anim = { t: 0, dur: 420, step: () => undefined };
+        }
         break;
       }
       case 'die': {
@@ -599,7 +728,84 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     return u ? u.hex : { col: 0, row: 0 };
   }
 
-  /** 近战/反击共用的一段"前冲 + 收招"表演。 */
+  /** 按兵种定近战表演：长杆突刺 / 重型抡砸 / 其余挥砍。 */
+  function meleeStyle(unitTypeId: string): 'thrust' | 'slash' | 'smash' {
+    if (unitTypeId === 'pikeman' || unitTypeId === 'spearman') return 'thrust';
+    if (unitTypeId === 'ogre' || unitTypeId === 'boar') return 'smash';
+    return 'slash';
+  }
+
+  /** 命中瞬间：打击特效 + 伤害浮字（浮字跟着命中走，不再提前出现）。 */
+  function onMeleeHit(style: 'thrust' | 'slash' | 'smash', to: Hex, damage: number, killed: number): void {
+    const c = hexCenter(to);
+    impacts.push({ x: c.x, y: c.y, kind: style, p: 0, dur: style === 'smash' ? 420 : 300 });
+    addFloat(`-${damage}`, to, '#ff6b52');
+    if (killed) addFloat(`-${killed}`, to, '#ffdcd2');
+  }
+
+  /**
+   * 近战表演，按武器分三段：
+   *   突刺 = 快进快出（0.3 命中）；挥砍 = 前冲收招（0.35）；抡砸 = 先仰后砸（0.55）。
+   */
+  function meleeAnim(unitId: string, from: Hex, to: Hex, damage: number, killed: number): Anim {
+    const a = hexCenter(from);
+    const b = hexCenter(to);
+    const dx = Math.sign(b.x - a.x);
+    const dy = Math.sign(b.y - a.y);
+    const style = meleeStyle(unitById(battle, unitId)?.unitTypeId ?? '');
+    let hit = false;
+    const push = (k: number): void => {
+      lunge = { unitId, dx: dx * 7 * k, dy: dy * 5 * k };
+    };
+    const tryHit = (p: number, at: number): void => {
+      if (!hit && p >= at) {
+        hit = true;
+        onMeleeHit(style, to, damage, killed);
+      }
+    };
+    if (style === 'thrust') {
+      return {
+        t: 0,
+        dur: 400,
+        step: (p) => {
+          push(p < 0.3 ? p / 0.3 : Math.max(0, 1 - (p - 0.3) / 0.7));
+          tryHit(p, 0.3);
+        },
+        end: () => {
+          lunge = null;
+        },
+      };
+    }
+    if (style === 'smash') {
+      return {
+        t: 0,
+        dur: 660,
+        step: (p) => {
+          // 先往后仰（举武器），再砸下去，最后收招
+          if (p < 0.25) push(-(p / 0.25) * 0.45);
+          else if (p < 0.55) push(((p - 0.25) / 0.3) * 1);
+          else push(Math.max(0, 1 - (p - 0.55) / 0.45));
+          tryHit(p, 0.55);
+        },
+        end: () => {
+          lunge = null;
+        },
+      };
+    }
+    return {
+      t: 0,
+      dur: 480,
+      step: (p) => {
+        push(p < 0.35 ? p / 0.35 : Math.max(0, 1 - (p - 0.35) / 0.65));
+        tryHit(p, 0.35);
+      },
+      end: () => {
+        lunge = null;
+      },
+    };
+  }
+
+  /** 砸城防共用的一段"前冲 + 收招"表演（无反击对象，浮字立即出）。 */
   function lungeAnim(
     unitId: string,
     from: Hex,
@@ -640,6 +846,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       return;
     }
     if (u.side === 1 || auto) {
+      // 敌方行动时收起法术书，别让它挡着玩家的视野和操作条
+      if (spellPanel.style.display !== 'none') spellPanel.style.display = 'none';
       const ev = aiAct(battle, u);
       emit(ev);
       emit(endActivation(battle));
@@ -928,6 +1136,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       floats,
       spellTargets,
       spellFx,
+      bolt,
+      impacts,
       time: now,
     });
     raf = requestAnimationFrame(frame);
@@ -940,6 +1150,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     ro.disconnect();
     window.removeEventListener('keydown', onKey);
     if (root.parentElement) root.parentElement.removeChild(root);
+    document.body.classList.remove('in-battle');
     openRef = null;
   }
 

@@ -741,6 +741,7 @@ table.est td:last-child {
 }
 
 .bt-card {
+  position: relative;
   border: 1px solid var(--line);
   border-radius: 3px;
   background: rgba(20, 14, 6, 0.45);
@@ -750,8 +751,69 @@ table.est td:last-child {
 
 .bt-card.active {
   border-color: var(--gold);
-  background: rgba(90, 67, 38, 0.75);
-  box-shadow: inset 0 0 0 1px rgba(240, 212, 136, 0.35);
+  background: rgba(90, 67, 38, 0.85);
+  box-shadow:
+    inset 0 0 0 1px rgba(240, 212, 136, 0.55),
+    0 0 10px rgba(242, 212, 145, 0.45);
+  animation: bt-pulse 1.2s ease-in-out infinite;
+}
+
+/* 行动指示：当前行动单位的卡片左侧亮一个箭头 */
+.bt-card.active::before {
+  content: '▶';
+  position: absolute;
+  left: -11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--gold);
+  font-size: 10px;
+  text-shadow: 0 0 6px rgba(242, 212, 145, 0.8);
+}
+
+@keyframes bt-pulse {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(240, 212, 136, 0.55),
+      0 0 6px rgba(242, 212, 145, 0.3);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(240, 212, 136, 0.8),
+      0 0 14px rgba(242, 212, 145, 0.65);
+  }
+}
+
+/* 身上的时效法术：小色点，悬停看法术名 */
+.bt-effect {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin: 4px 3px 0 0;
+  box-shadow: 0 0 4px currentColor;
+}
+
+/* 战斗中隐藏主界面顶栏（资源 / 结束一天 / 存档 / 新游戏） */
+body.in-battle #topbar {
+  display: none;
+}
+
+/* 部队信息浮框：悬停 1 秒或右键弹出 */
+.bt-tip {
+  position: fixed;
+  z-index: 200;
+  max-width: 240px;
+  padding: 7px 10px;
+  background: rgba(18, 12, 5, 0.96);
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-line;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
 }
 
 .bt-card.dead {

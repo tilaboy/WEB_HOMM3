@@ -33,12 +33,16 @@ export interface BattleDraw {
   hover: Hex | null;
   posOverride: Record<string, { x: number; y: number }>;
   lunge: { unitId: string; dx: number; dy: number } | null;
-  arrow: { x: number; y: number; tx: number; ty: number } | null;
+  arrow: { x: number; y: number; tx: number; ty: number; color?: string } | null;
   floats: FloatText[];
   /** 施法目标格高亮（选了法术后点目标时用）。 */
   spellTargets?: Set<string> | null;
   /** 施法特效：格子 + 剩余生命（1 → 0），画一圈扩散的光环。 */
   spellFx?: { hex: Hex; life: number; color: string; splash?: boolean }[];
+  /** 闪电：从目标头顶劈下来（p: 剩余生命 1 → 0）。 */
+  bolt?: { x: number; y: number; p: number } | null;
+  /** 近战打击特效（p: 0 → 1 播放进度）。 */
+  impacts?: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number }[];
   time: number;
 }
 
@@ -101,12 +105,15 @@ export class BattleRenderer {
     this.drawWarMachines(g, d);
 
     if (d.arrow) {
-      g.fillStyle = '#f4e7c0';
+      g.fillStyle = d.arrow.color ?? '#f4e7c0';
       const a = d.arrow;
       for (let i = 0; i < 4; i++) {
         g.fillRect(Math.round(a.x - (a.tx - a.x) * 0.02 * i), Math.round(a.y - (a.ty - a.y) * 0.02 * i), 2, 2);
       }
     }
+
+    if (d.bolt) this.drawBolt(g, d.bolt);
+    for (const im of d.impacts ?? []) this.drawImpact(g, im);
 
     for (const f of d.floats) this.drawFloat(g, f);
     for (const fx of d.spellFx ?? []) this.drawSpellFx(g, fx);
@@ -115,6 +122,86 @@ export class BattleRenderer {
     c.imageSmoothingEnabled = false;
     c.clearRect(0, 0, this.canvas.width, this.canvas.height);
     c.drawImage(this.off, 0, 0, BASE_W, BASE_H, 0, 0, this.canvas.width, this.canvas.height);
+  }
+
+  /** 闪电：主干 + 两道分叉，命中点闪白。 */
+  private drawBolt(g: CanvasRenderingContext2D, b: { x: number; y: number; p: number }): void {
+    const x = b.x + PAD;
+    const y = b.y + PAD;
+    const a = Math.max(0, Math.min(1, b.p));
+    const segs: [number, number][] = [
+      [0, -46],
+      [-5, -34],
+      [4, -22],
+      [-3, -10],
+      [0, 0],
+    ];
+    g.globalAlpha = a;
+    for (const [w, color] of [
+      [3, '#f4f0ff'],
+      [1, '#8fb8ff'],
+    ] as const) {
+      g.strokeStyle = color;
+      g.lineWidth = w;
+      g.beginPath();
+      g.moveTo(x + segs[0][0], y + segs[0][1]);
+      for (let i = 1; i < segs.length; i++) g.lineTo(x + segs[i][0], y + segs[i][1]);
+      g.stroke();
+    }
+    if (a > 0.5) {
+      g.globalAlpha = (a - 0.5) * 1.6;
+      g.fillStyle = '#ffffff';
+      g.beginPath();
+      g.arc(x, y, 5 + (1 - a) * 8, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.globalAlpha = 1;
+  }
+
+  /** 近战打击特效：突刺 = 十字星，挥砍 = 弧光，重砸 = 扩散尘环 + 碎屑。 */
+  private drawImpact(
+    g: CanvasRenderingContext2D,
+    im: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number },
+  ): void {
+    const x = im.x + PAD;
+    const y = im.y + PAD;
+    const p = Math.max(0, Math.min(1, im.p));
+    const a = 1 - p;
+    g.globalAlpha = a;
+    if (im.kind === 'thrust') {
+      // 十字星：命中瞬间的白光
+      const r = 2 + p * 7;
+      g.strokeStyle = '#fff6d8';
+      g.lineWidth = 1.5;
+      for (let i = 0; i < 4; i++) {
+        const ang = (Math.PI / 2) * i + 0.4;
+        g.beginPath();
+        g.moveTo(x + Math.cos(ang) * 2, y + Math.sin(ang) * 2);
+        g.lineTo(x + Math.cos(ang) * r, y + Math.sin(ang) * r);
+        g.stroke();
+      }
+    } else if (im.kind === 'slash') {
+      // 弧光：一道扫过的月牙
+      g.strokeStyle = '#ffe9b0';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(x, y, 9 + p * 4, -0.9 + p * 1.2, 0.7 + p * 1.2);
+      g.stroke();
+    } else {
+      // 重砸：扩散的尘环 + 四溅的碎屑
+      g.strokeStyle = 'rgba(210, 180, 130, 0.9)';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.ellipse(x, y + 8, 4 + p * 14, 2 + p * 5, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.fillStyle = '#c9a86a';
+      for (let i = 0; i < 4; i++) {
+        const ang = -Math.PI + (Math.PI / 3) * i;
+        const d = p * 13;
+        g.fillRect(Math.round(x + Math.cos(ang) * d), Math.round(y + 6 + Math.sin(ang) * d * 0.5 - p * 4), 2, 2);
+      }
+    }
+    g.globalAlpha = 1;
   }
 
   private drawFloor(g: CanvasRenderingContext2D): void {

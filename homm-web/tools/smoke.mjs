@@ -14,8 +14,10 @@ import { MARKET_RATES } from '../dist/core/game/town.js';
 import { getUnit } from '../dist/core/data/units.js';
 import { bfs, distance, hexCenter, hexLine, hexList, inField, neighbors, pickHex, FIELD_H, FIELD_W } from '../dist/core/combat/hex.js';
 import {
+  actDefend,
   actFlee,
   actShoot,
+  actWait,
   aiAct,
   autoResolve,
   canShoot,
@@ -1330,6 +1332,79 @@ console.log('\n--- M7 矿场与宝库区 ---');
   g.players.p1.resources.wood = 10;
   marketSell(g, 'wood');
   ok(g.players.p1.resources.wood === 5, '木/矿仍是 5 个一批');
+}
+
+
+/* ================= M8：战斗回合与终局回归（线上 bug 复现） ================= */
+console.log('\n--- M8 战斗回合与终局回归 ---');
+
+// 1. 等待不再跳过下一个单位（食人魔站桩 bug）：
+//    速度 4/4/3 → 序列 [弓, 枪, 食人魔]；枪兵一等待，食人魔曾被整回合跳过
+{
+  const b = createBattle(
+    { army: [{ unitTypeId: 'archer', count: 1 }, { unitTypeId: 'pikeman', count: 1 }], attack: 0, defense: 0 },
+    { army: [{ unitTypeId: 'ogre', count: 1 }], attack: 0, defense: 0 },
+    9, 0,
+  );
+  actDefend(currentUnit(b));
+  endActivation(b); // 弓手完事 → 枪兵
+  const p = currentUnit(b);
+  ok(p.unitTypeId === 'pikeman', '轮到枪兵');
+  actWait(b, p);
+  endActivation(b); // UI 里等待之后必然紧跟 endActivation 推进指针
+  const u2 = currentUnit(b);
+  ok(!!u2 && u2.unitTypeId === 'ogre', `等待后紧随其后的食人魔行动（实际：${u2 ? u2.unitTypeId : 'null'}）`);
+  const before = { ...u2.hex };
+  aiAct(b, u2);
+  ok(
+    u2.hex.col !== before.col || u2.hex.row !== before.row,
+    `食人魔同一回合真的动了（${before.col},${before.row} → ${u2.hex.col},${u2.hex.row}）`,
+  );
+}
+
+// 2. 等待者本人仍会在回合末行动（不能把等待变成"跳过自己"）
+{
+  const b = createBattle(
+    { army: [{ unitTypeId: 'archer', count: 1 }], attack: 0, defense: 0 },
+    { army: [{ unitTypeId: 'ogre', count: 1 }], attack: 0, defense: 0 },
+    9, 0,
+  );
+  const a = currentUnit(b);
+  actWait(b, a);
+  const u2 = currentUnit(b); // 食人魔
+  aiAct(b, u2);
+  endActivation(b);
+  const u3 = currentUnit(b);
+  ok(!!u3 && u3.id === a.id, '等待的弓手在回合末获得行动权');
+}
+
+// 3. 法术击杀最后一个敌人 → 战斗立即终局（UI 卡死 bug 的根源）
+{
+  const b = createBattle(
+    {
+      army: [{ unitTypeId: 'archer', count: 30 }],
+      attack: 4, defense: 8,
+      caster: { spells: ['lightningBolt'], spellPower: 5, mana: 20 },
+    },
+    { army: [{ unitTypeId: 'peasant', count: 1 }], attack: 0, defense: 0 },
+    42, 0,
+  );
+  const t = b.units.find((u) => u.unitTypeId === 'peasant');
+  castSpell(b, 0, 'lightningBolt', t);
+  ok(b.over && b.winner === 0, '法术收掉最后一个敌人后 battle.over 立即为真');
+}
+
+// 4. 射击击杀最后一个敌人 → 战斗立即终局（不再等回合结束）
+{
+  const b = createBattle(
+    { army: [{ unitTypeId: 'archer', count: 30 }], attack: 9, defense: 8 },
+    { army: [{ unitTypeId: 'peasant', count: 1 }], attack: 0, defense: 0 },
+    42, 0,
+  );
+  const u = currentUnit(b);
+  const t = b.units.find((x) => x.unitTypeId === 'peasant');
+  actShoot(b, u, t);
+  ok(b.over && b.winner === 0, '射击收掉最后一个敌人后 battle.over 立即为真');
 }
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);

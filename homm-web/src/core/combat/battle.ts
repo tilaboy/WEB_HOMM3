@@ -575,6 +575,7 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
     ev.push({ t: 'retaliate', unitId: target.id, targetId: u.id, damage: back, killed: k2 });
     ev.push(...afterHit(u));
   }
+  checkOver(s);
   return ev;
 }
 
@@ -600,6 +601,7 @@ export function actShoot(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
   const killed = applyDamage(target, dmg);
   ev.push({ t: 'shoot', unitId: u.id, targetId: target.id, damage: dmg, killed, from, to, blocked, longRange });
   ev.push(...afterHit(target));
+  checkOver(s);
   return ev;
 }
 
@@ -770,9 +772,13 @@ export function actWait(s: BattleState, u: BattleUnit): BattleEvent[] {
   if (u.waited) return [];
   u.waited = true;
   const i = s.order.indexOf(u.id);
-  if (i >= 0) {
+  if (i >= 0 && i < s.order.length - 1) {
     s.order.splice(i, 1);
     s.order.push(u.id);
+    // 把自己挪到队尾，会让排在后面的单位整体前移一格，而 idx 是按位置走的：
+    // 不回退指针的话，紧随其后的那个单位会被整回合跳过——
+    // "食人魔站着一动不动被动挨打"的真凶（枪兵速度更快、每回合先等待，把它跳了）
+    if (i <= s.idx) s.idx -= 1;
   }
   return [{ t: 'wait', unitId: u.id }];
 }
