@@ -717,8 +717,13 @@ function doEndDay(): void {
 const pointers = new Map<number, { x: number; y: number }>();
 let dragged = false;
 let lastPan: { x: number; y: number } | null = null;
+let lastPanT = 0;
 let pinchDist = 0;
 let longPress = 0;
+/** 边缘滚屏用：鼠标在画布内的最近位置与是否在画布内。 */
+let mouseIn = false;
+let mouseX = 0;
+let mouseY = 0;
 
 function twoPointerDist(): number {
   const pts = [...pointers.values()];
@@ -735,9 +740,11 @@ canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   hideInfoPopup();
+  camera.stopFling();
   if (pointers.size === 1) {
     dragged = false;
     lastPan = { x: e.clientX, y: e.clientY };
+    lastPanT = performance.now();
     window.clearTimeout(longPress);
     longPress = window.setTimeout(() => {
       if (!dragged && pointers.size === 1) {
@@ -758,6 +765,10 @@ canvas.addEventListener('pointermove', (e) => {
     prev.x = e.clientX;
     prev.y = e.clientY;
   }
+  const lp = localPos(e);
+  mouseIn = true;
+  mouseX = lp.x;
+  mouseY = lp.y;
   if (pointers.size === 1 && lastPan) {
     const dx = e.clientX - lastPan.x;
     const dy = e.clientY - lastPan.y;
@@ -767,6 +778,9 @@ canvas.addEventListener('pointermove', (e) => {
     }
     if (dragged) {
       camera.pan(dx, dy);
+      const now = performance.now();
+      camera.trackFling(dx, dy, now - lastPanT);
+      lastPanT = now;
       lastPan = { x: e.clientX, y: e.clientY };
       hideInfoPopup();
     }
@@ -790,12 +804,17 @@ function endPointer(e: PointerEvent): void {
   if (pointers.size < 2) pinchDist = 0;
   if (pointers.size === 0) {
     if (!dragged) handleClick(e);
+    // 松手前最后一下移动离现在太久，说明是"停住再松手"，不该甩出惯性
+    if (!dragged || performance.now() - lastPanT > 120) camera.stopFling();
     lastPan = null;
   }
 }
 
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('pointerleave', () => {
+  mouseIn = false;
+});
 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
@@ -985,6 +1004,11 @@ let last = performance.now();
 function frame(now: number): void {
   const dt = Math.min(60, now - last);
   last = now;
+  camera.update(dt);
+  // 边缘滚屏：鼠标贴边且没在拖拽/捏合/弹窗/战斗时生效
+  if (mouseIn && pointers.size === 0 && !isModalOpen() && !isBattleOpen()) {
+    camera.edgeScroll(mouseX, mouseY, dt);
+  }
   if (anim) tickAnim(dt);
   updateHeroRender();
   renderer.draw({
@@ -1062,8 +1086,7 @@ if (bootParams.has('devreveal') && state.players.p1) {
 // 调试：?devzoom=0.6 缩到整图，一眼看完四方势力
 const devZoom = Number.parseFloat(bootParams.get('devzoom') ?? '');
 if (Number.isFinite(devZoom) && devZoom > 0) {
-  camera.zoom = devZoom;
-  camera.clamp();
+  camera.setZoom(devZoom);
 }
 // 调试：?devdays=20 直接空过 N 天，用来观察电脑对手的推进与终局判定
 const devDays = Number.parseInt(bootParams.get('devdays') ?? '', 10);

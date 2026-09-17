@@ -1,3 +1,4 @@
+import { Camera } from '../dist/render/camera.js';
 import { BASE_MOVE_POINTS, createGame, monsterArmy } from '../dist/core/map/generator.js';
 import { mulberry32 } from '../dist/core/rng.js';
 import { computePaths, buildPath } from '../dist/core/map/pathfinding.js';
@@ -1654,6 +1655,69 @@ console.log('\n--- M9.2 巨型地图与每城木石矿 ---');
   ok(costText(st.cost).includes('水晶'), `造价文本覆盖稀有资源（${costText(st.cost)}）`);
   g.players.p1.resources = { gold: 99999, wood: 99, ore: 99, crystal: 4 };
   ok(buildStatus(g, town, 'guild3').affordable, '补上水晶后大法师塔可建');
+}
+
+/* ================= P0.1：镜头手感（惯性 / 平滑缩放 / 边缘滚屏） ================= */
+console.log('\n--- P0.1 镜头手感 ---');
+
+function freshCam() {
+  const cam = new Camera();
+  cam.viewW = 800;
+  cam.viewH = 600;
+  cam.mapW = 48;
+  cam.mapH = 48;
+  cam.centerOn(24, 24);
+  return cam;
+}
+
+// 1. 惯性：松手后镜头继续滑行，且按指数衰减最终停稳
+{
+  const cam = freshCam();
+  for (let i = 0; i < 5; i++) cam.trackFling(5, 0, 16);
+  ok(cam.vx > 100, `拖拽轨迹累积出惯性初速度（vx=${Math.round(cam.vx)}px/s）`);
+  const x0 = cam.x;
+  cam.update(16);
+  ok(cam.x > x0, '松手后第一帧继续沿惯性方向滑行');
+  for (let i = 0; i < 300; i++) cam.update(16);
+  ok(cam.vx === 0 && cam.vy === 0, '惯性最终衰减到完全停止');
+  const xs = cam.x;
+  for (let i = 0; i < 30; i++) cam.update(16);
+  ok(cam.x === xs, '停稳后不再漂移（无亚像素爬行）');
+}
+
+// 2. 平滑缩放：滚轮只改目标值，动画收敛后锚点下的世界点不动
+{
+  const cam = freshCam();
+  const ax = 220;
+  const ay = 180;
+  const before = cam.screenToWorld(ax, ay);
+  cam.zoomAt(ax, ay, 1.2);
+  ok(cam.targetZoom > cam.zoom, `滚轮先改目标缩放（${cam.zoom} → ${cam.targetZoom}）`);
+  cam.zoomAt(ax, ay, 1.2); // 动画没播完又滚一下：基于目标值续档，不回退
+  for (let i = 0; i < 200 && cam.zoom !== cam.targetZoom; i++) cam.update(16);
+  ok(cam.zoom === cam.targetZoom, '缩放动画收敛到目标档位');
+  const after = cam.screenToWorld(ax, ay);
+  ok(
+    Math.abs(after.wx - before.wx) < 0.02 && Math.abs(after.wy - before.wy) < 0.02,
+    `缩放全程锚点下的世界点不动（偏差 ${Math.abs(after.wx - before.wx).toFixed(4)} 格）`,
+  );
+}
+
+// 3. 边缘滚屏：贴边平移、随深度加速，且会接管惯性
+{
+  const cam = freshCam();
+  cam.vx = 300; // 先给个惯性，边缘滚屏应接管（清零）
+  const x0 = cam.x;
+  cam.edgeScroll(4, 300, 16);
+  ok(cam.x < x0, '鼠标贴左边，镜头向左滚');
+  ok(cam.vx === 0, '边缘滚屏接管并停掉惯性');
+  const slow = Math.abs(cam.x - x0);
+  const x1 = cam.x;
+  cam.edgeScroll(0, 300, 16); // 贴得更死 → 更快
+  ok(Math.abs(cam.x - x1) > slow, '贴边越深滚得越快');
+  const x2 = cam.x;
+  cam.edgeScroll(400, 300, 16); // 居中不滚
+  ok(cam.x === x2, '鼠标居中时不滚屏');
 }
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);
