@@ -72,6 +72,12 @@ body {
   font-weight: 500;
 }
 
+/* 稀有资源（宝石/水晶/硫磺/水银）为 0 时压暗：它们在界面上"存在"，
+   但不至于在开局就跟金币抢视线 */
+.res.zero {
+  opacity: 0.45;
+}
+
 .spacer {
   flex: 1;
 }
@@ -472,6 +478,28 @@ table.est td:last-child {
 
 .bcard .bs.warn {
   color: #d8a04a;
+}
+
+/* "还差：水晶 0/4" —— 缺的那几项要红得有分量，这是玩家最需要的一行字 */
+.bcard .bs.short {
+  color: var(--text-dim);
+}
+
+.bcard .bs.short .lack {
+  color: #e8735b;
+  font-weight: 600;
+}
+
+.bcard .bs.built {
+  color: #7ab55a;
+}
+
+.chip-info.rare {
+  border-color: #6d5a8f;
+}
+
+.chip-info.rare.zero {
+  opacity: 0.55;
 }
 
 .town-sub {

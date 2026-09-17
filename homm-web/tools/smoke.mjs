@@ -10,7 +10,7 @@ import { factionIds } from '../dist/core/data/factions.js';
 import { evaluateOutcome, isEliminated, outcomeSummary } from '../dist/core/game/victory.js';
 import { BASE_TOWN_INCOME } from '../dist/core/data/buildings.js';
 import { HOME_MINE_RING, MINE_NAME, MINE_PER_DAY, RARE_RESOURCES } from '../dist/core/data/mines.js';
-import { MARKET_RATES } from '../dist/core/game/town.js';
+import { MARKET_RATES, costText } from '../dist/core/game/town.js';
 import { getUnit } from '../dist/core/data/units.js';
 import { bfs, distance, hexCenter, hexLine, hexList, inField, neighbors, pickHex, FIELD_H, FIELD_W } from '../dist/core/combat/hex.js';
 import {
@@ -1187,7 +1187,7 @@ console.log('\n--- M7 矿场与宝库区 ---');
 // 2. 每家主城 3~7 格内保底一座锯木场 + 一座采石场
 {
   const g = createGame({ seed: 20260912, opponents: 3, difficulty: 'normal', playerName: 'P' });
-  // 只看阵营主城：中立城不享受"保底矿"，它们是给玩家去抢的
+  // 只看阵营主城：中立城走下面单独那条断言（M9 之后中立城也要配齐木石矿）
   const homes = Object.values(g.towns).filter((t) => t.owner !== 'neutral');
   const mines = Object.values(g.map.objects).filter((o) => o.kind === 'mine');
   let missing = 0;
@@ -1593,6 +1593,67 @@ ok(createGame({ seed: 7, layout: undefined }).config.layout === 'wild', '不传 
     const monsters = objs.filter((o) => o.kind === 'wanderingMonster').length;
     ok(mines >= 8 && vaults >= 2 && monsters >= 8, `${layout}：矿 ${mines} / 宝库 ${vaults} / 野怪 ${monsters}`);
   }
+}
+
+
+/* ================= M9.2：巨型地图 + 每座城都配木石矿 ================= */
+console.log('\n--- M9.2 巨型地图与每城木石矿 ---');
+
+// 1. 巨型地图（48×48）能生成、四家连通、资源不缺
+{
+  let bad = [];
+  for (const layout of LAYOUT_IDS) {
+    const st = createGame({ seed: 8642, layout, size: 'huge', opponents: 3 });
+    const map = st.map;
+    if (map.width !== 48 || map.height !== 48) bad.push(`${layout} 尺寸不对`);
+    const seen = flood(map, st.heroes[st.heroOrder[0]].pos);
+    for (const t of Object.values(st.towns)) {
+      if (seen[t.pos.y * map.width + t.pos.x] !== 1) bad.push(`${layout} 城走不到`);
+    }
+    const objs = Object.values(map.objects);
+    if (objs.filter((o) => o.kind === 'mine').length < 20) bad.push(`${layout} 矿太少`);
+    if (objs.filter((o) => o.kind === 'vault').length < 4) bad.push(`${layout} 宝库太少`);
+  }
+  ok(bad.length === 0, `巨型地图四档布局全部生成成功且连通（${bad.slice(0, 2).join(' / ') || 'ok'}）`);
+}
+
+// 2. 每座城（含中立城）附近都要有锯木场与采石场：抢来的城也得能马上开工
+{
+  let bad = [];
+  for (const size of ['small', 'medium', 'large']) {
+    for (const layout of ['wild', 'lanes']) {
+      const g = createGame({ seed: 777 + size.length * 31, opponents: 3, size, layout });
+      const mines = Object.values(g.map.objects).filter((o) => o.kind === 'mine');
+      for (const t of Object.values(g.towns)) {
+        for (const res of ['wood', 'ore']) {
+          const near = mines.some(
+            (m) =>
+              m.payload.resource === res &&
+              Math.abs(m.pos.x - t.pos.x) + Math.abs(m.pos.y - t.pos.y) <= HOME_MINE_RING.max + 5,
+          );
+          if (!near) bad.push(`${size}/${layout} ${t.id} 缺 ${res}`);
+        }
+      }
+    }
+  }
+  ok(bad.length === 0, `每座城（含中立城）附近都有木矿与石矿（${bad.slice(0, 2).join(' / ') || 'ok'}）`);
+}
+
+// 3. 建造面板要说清楚"到底缺什么"：不能只报金币而玩家金币一大把
+{
+  const g = createGame({ seed: 4242, opponents: 0 });
+  const town = g.towns.town_home;
+  town.buildings = ['tavern', 'guild1', 'guild2'];  // 前置齐备，只剩"钱够不够"
+  g.players.p1.resources = { gold: 99999, wood: 99, ore: 99 };  // 金木矿管够，稀有资源为零
+  const st = buildStatus(g, town, 'guild3');                    // 大法师塔：4500 金 + 4 水晶
+  ok(!st.affordable && st.reason.includes('水晶'), `大法师塔如实报告缺水晶（${st.reason}）`);
+  ok(
+    st.missing.some((m) => m.resource === 'crystal' && m.need === 4 && m.have === 0),
+    '缺料明细带"现有 / 需要"',
+  );
+  ok(costText(st.cost).includes('水晶'), `造价文本覆盖稀有资源（${costText(st.cost)}）`);
+  g.players.p1.resources = { gold: 99999, wood: 99, ore: 99, crystal: 4 };
+  ok(buildStatus(g, town, 'guild3').affordable, '补上水晶后大法师塔可建');
 }
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);

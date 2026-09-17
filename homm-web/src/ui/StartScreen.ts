@@ -92,7 +92,9 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
             ? '节奏快，一场 20~30 天'
             : s.name === '中型'
               ? '标准地图，探索与攻城都有余地'
-              : '大地图，四家混战才铺得开',
+              : s.name === '大型'
+                ? '大地图，四家混战才铺得开'
+                : '四家各占一大片，矿业与宝库都管够；一局要打很久',
       };
     }),
     cfg.size,

@@ -4,10 +4,19 @@ import { factionColor, factionName } from '../core/data/factions.js';
 import { dayOfWeek, weekOf } from '../core/game/turn.js';
 import { getAtlas } from '../render/atlas.js';
 
-const SHOWN: (keyof typeof RESOURCE_META)[] = ['gold', 'wood', 'ore'];
+/**
+ * 顶栏显示**全部七种资源**。
+ * M7 之后宝石/水晶/硫磺/水银都会真实进账（矿场、市场、造价），
+ * 只显示金/木/矿会让玩家看不懂"我明明有两万金，为什么造不了大法师塔"——
+ * 那 4 个水晶一直没在界面上出现过。
+ */
+const SHOWN: (keyof typeof RESOURCE_META)[] = [
+  'gold', 'wood', 'ore', 'gem', 'crystal', 'sulfur', 'mercury',
+];
 
 export class HUD {
   private resEls = new Map<string, HTMLElement>();
+  private resWrapEls = new Map<string, HTMLElement>();
   private dateEl: HTMLElement;
   private endBtn: HTMLButtonElement;
   private playerEl: HTMLElement;
@@ -36,6 +45,7 @@ export class HUD {
       wrap.appendChild(val);
       this.el.appendChild(wrap);
       this.resEls.set(k, val);
+      this.resWrapEls.set(k, wrap);
     }
 
     const spacer = document.createElement('div');
@@ -78,6 +88,8 @@ export class HUD {
     for (const [k, el] of this.resEls) {
       const v = (res as Record<string, number | undefined>)[k] ?? 0;
       el.textContent = String(v);
+      // 数量为 0 的稀有资源压暗：既保持"七种资源都在"的认知，又不抢视线
+      this.resWrapEls.get(k)?.classList.toggle('zero', v <= 0);
     }
     this.dateEl.textContent = `第 ${weekOf(state.day)} 周 第 ${dayOfWeek(state.day)} 天（总第 ${state.day} 天）`;
 

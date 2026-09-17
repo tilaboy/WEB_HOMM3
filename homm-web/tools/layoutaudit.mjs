@@ -7,7 +7,7 @@ import { isPassable } from '../dist/core/map/grid.js';
 import { TERRAIN } from '../dist/core/data/terrains.js';
 
 const LAYOUTS = ['wild', 'ring', 'islands', 'lanes'];
-const SIZES = ['small', 'medium', 'large'];
+const SIZES = ['small', 'medium', 'large', 'huge'];
 const SEEDS = Number(process.env.SEEDS ?? 40);
 
 function reach(map, start) {

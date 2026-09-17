@@ -29,6 +29,7 @@ import {
   townDefenseBonus,
   townGrowthMultiplier,
 } from '../core/game/town.js';
+import type { BuildStatus } from '../core/game/town.js';
 import { showModal } from './Dialogs.js';
 
 export interface TownDialogOptions {
@@ -99,6 +100,11 @@ function paint(root: HTMLElement, opts: TownDialogOptions, note: string, say: Sa
   );
   head.appendChild(chip(`木材 ${res.wood ?? 0}`));
   head.appendChild(chip(`矿石 ${res.ore ?? 0}`));
+  // 稀有资源也摆出来：大法师塔要水晶、天使要宝石，界面上不给看就很难推理
+  for (const k of ['gem', 'crystal', 'sulfur', 'mercury'] as const) {
+    const v = res[k] ?? 0;
+    head.appendChild(chip(`${RESOURCE_LABEL[k]} ${v}`, v > 0 ? 'rare' : 'rare zero'));
+  }
   head.appendChild(chip(`每日税收 ${townDailyIncome(town)}`));
   if (townDefenseBonus(town)) head.appendChild(chip(`城防 +${townDefenseBonus(town)}`));
   if (townGrowthMultiplier(town) > 1) {
@@ -129,9 +135,7 @@ function paint(root: HTMLElement, opts: TownDialogOptions, note: string, say: Sa
     const ds = document.createElement('div');
     ds.className = 'bd';
     ds.textContent = def.desc;
-    const stt = document.createElement('div');
-    stt.className = 'bs' + (st.spentToday ? ' warn' : '');
-    stt.textContent = st.built ? '✓ 已建成' : st.reason;
+    const stt = buildStateLine(st);
     card.appendChild(nm);
     card.appendChild(ds);
     card.appendChild(stt);
@@ -334,11 +338,42 @@ function doRecruit(opts: TownDialogOptions, unitTypeId: string, count: number, t
 
 /* ---------------- dom helpers ---------------- */
 
-function chip(text: string): HTMLElement {
+function chip(text: string, extra = ''): HTMLElement {
   const e = document.createElement('span');
-  e.className = 'chip-info';
+  e.className = 'chip-info' + (extra ? ` ${extra}` : '');
   e.textContent = text;
   return e;
+}
+
+/**
+ * 建筑卡片的状态行。
+ *
+ * 关键点：**把"还差什么"写在脸上**。后端会给出 missing（现有/需要），
+ * 这里逐项渲染成红字；否则玩家看到"资源不足（4500 金）"而自己有两万金，
+ * 会以为是 bug——实际上是那 4 个水晶没露面。
+ */
+function buildStateLine(st: BuildStatus): HTMLElement {
+  const el = document.createElement('div');
+  if (st.built) {
+    el.className = 'bs built';
+    el.textContent = '✓ 已建成';
+    return el;
+  }
+  if (!st.missing.length) {
+    el.className = 'bs' + (st.spentToday ? ' warn' : '');
+    el.textContent = st.reason;
+    return el;
+  }
+  el.className = 'bs short';
+  el.append(document.createTextNode('还差：'));
+  st.missing.forEach((m, i) => {
+    if (i) el.append(document.createTextNode('、'));
+    const b = document.createElement('b');
+    b.className = 'lack';
+    b.textContent = `${RESOURCE_LABEL[m.resource] ?? m.resource} ${m.have}/${m.need}`;
+    el.append(b);
+  });
+  return el;
 }
 
 function sectionTitle(text: string): HTMLElement {

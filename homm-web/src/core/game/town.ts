@@ -101,12 +101,49 @@ export function pay(state: GameState, player: PlayerId, cost: ResourceBag): bool
   return true;
 }
 
+/**
+ * 造价的显示顺序与简称。
+ *
+ * **必须覆盖全部七种资源**：M7 之后宝石/水晶/硫磺/水银都真的会进造价
+ * （大法师塔就要 4 水晶），而早期这里只印金/木/矿——玩家看到
+ * "资源不足（4500 金）"、自己明明有两万金，真正缺的水晶却根本没露面。
+ */
+export const COST_ORDER: ResourceKind[] = [
+  'gold', 'wood', 'ore', 'gem', 'crystal', 'sulfur', 'mercury',
+];
+
+export const COST_LABEL: Record<ResourceKind, string> = {
+  gold: '金',
+  wood: '木',
+  ore: '矿',
+  gem: '宝石',
+  crystal: '水晶',
+  sulfur: '硫磺',
+  mercury: '水银',
+};
+
 export function costText(cost: ResourceBag): string {
-  const parts: string[] = [];
-  if (cost.gold) parts.push(`${cost.gold} 金`);
-  if (cost.wood) parts.push(`${cost.wood} 木`);
-  if (cost.ore) parts.push(`${cost.ore} 矿`);
+  const parts = COST_ORDER.filter((k) => (cost[k] ?? 0) > 0).map(
+    (k) => `${cost[k]} ${COST_LABEL[k]}`,
+  );
   return parts.length ? parts.join(' · ') : '免费';
+}
+
+/** 还差哪些资源（现有 / 需要）。UI 直接拿它画红字，不用自己猜。 */
+export function missingResources(
+  state: GameState,
+  player: PlayerId,
+  cost: ResourceBag,
+): { resource: ResourceKind; have: number; need: number }[] {
+  const bag = state.players[player]?.resources ?? {};
+  const out: { resource: ResourceKind; have: number; need: number }[] = [];
+  for (const k of COST_ORDER) {
+    const need = cost[k] ?? 0;
+    if (!need) continue;
+    const have = bag[k] ?? 0;
+    if (have < need) out.push({ resource: k, have, need });
+  }
+  return out;
 }
 
 /* ---------------- building ---------------- */
@@ -119,10 +156,19 @@ export interface BuildStatus {
   /** 今天这座城是否已经建过别的建筑（HOMM 规则：每城每日限一座） */
   spentToday: boolean;
   reason: string;
+  /** 这座建筑的完整造价（七种资源，UI 用来画明细） */
+  cost: ResourceBag;
+  /** 到底差哪些资源：UI 把这几项标红，玩家一眼知道缺什么 */
+  missing: { resource: ResourceKind; have: number; need: number }[];
 }
 
-function fail(reason: string): BuildStatus {
-  return { built: false, unlocked: false, affordable: false, spentToday: false, reason };
+const NO_COST: ResourceBag = {};
+
+function fail(reason: string, cost: ResourceBag = NO_COST): BuildStatus {
+  return {
+    built: false, unlocked: false, affordable: false, spentToday: false,
+    reason, cost, missing: [],
+  };
 }
 
 export function buildStatus(state: GameState, town: Town, id: string, actor: PlayerId = 'p1'): BuildStatus {
@@ -131,30 +177,39 @@ export function buildStatus(state: GameState, town: Town, id: string, actor: Pla
   if (town.owner !== actor) {
     return {
       built: hasBuilding(town, id), unlocked: false, affordable: false, spentToday: false,
-      reason: '非我方城镇',
+      reason: '非我方城镇', cost: def.cost, missing: [],
     };
   }
   if (hasBuilding(town, id)) {
-    return { built: true, unlocked: true, affordable: true, spentToday: false, reason: '已建成' };
+    return {
+      built: true, unlocked: true, affordable: true, spentToday: false,
+      reason: '已建成', cost: def.cost, missing: [],
+    };
   }
-  const missing = def.requires.filter((r) => !hasBuilding(town, r));
-  if (missing.length) {
-    const names = missing.map((m) => BUILDINGS[m]?.name ?? m).join('、');
-    return { ...fail(`需先建造：${names}`) };
+  const lacks = def.requires.filter((r) => !hasBuilding(town, r));
+  if (lacks.length) {
+    const names = lacks.map((m) => BUILDINGS[m]?.name ?? m).join('、');
+    return fail(`需先建造：${names}`, def.cost);
   }
   if (town.builtDay === state.day) {
     return {
       built: false, unlocked: true, affordable: false, spentToday: true,
-      reason: `今日已在 ${town.name} 建造过，明日再来`,
+      reason: `今日已在 ${town.name} 建造过，明日再来`, cost: def.cost, missing: [],
     };
   }
-  const affordable = canAfford(state, town.owner, def.cost);
+  // 差什么就说差什么，并把"现有 / 需要"一起报出来：
+  // 只说"资源不足"而玩家看不到宝石水晶的库存，等于什么也没说
+  const short = missingResources(state, town.owner, def.cost);
   return {
     built: false,
     unlocked: true,
-    affordable,
+    affordable: short.length === 0,
     spentToday: false,
-    reason: affordable ? costText(def.cost) : `资源不足（${costText(def.cost)}）`,
+    cost: def.cost,
+    missing: short,
+    reason: short.length
+      ? `资源不足：${short.map((m) => `${COST_LABEL[m.resource]} ${m.have}/${m.need}`).join('、')}`
+      : costText(def.cost),
   };
 }
 

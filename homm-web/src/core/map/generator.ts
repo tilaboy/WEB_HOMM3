@@ -908,14 +908,22 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
     });
   };
 
-  // 1) 每家保底一座锯木场 + 一座采石场，摆在离家 3~7 格
-  //    （木石是建筑树硬通货，开局摸不到矿的阵营会被卡死整整一周）
-  for (const home of homeSpots) {
+  // 1) **每座城**（含中立城）保底一座锯木场 + 一座采石场，摆在 3~7 格外。
+  //    木石是建筑树硬通货，开局摸不到矿的阵营会被卡死整整一周；
+  //    中立城同样要配齐——占了城却发现方圆十格没木没石，那座城就是个摆设，
+  //    而"抢中立城"正是中期最主要的扩张手段。
+  //    城挨得近时环带会被别的城先占掉，这时退一档放到更外面（+5 格），
+  //    免得出现"地图上明明有城，却没有木矿"的死角。
+  const allTowns: GridPos[] = [...homeSpots, ...neutralSpots];
+  for (const town of allTowns) {
+    const dHome = (q: GridPos): number => Math.abs(q.x - town.x) + Math.abs(q.y - town.y);
     for (const res of ['wood', 'ore'] as const) {
-      const p = takeWhere((q) => {
-        const d = Math.abs(q.x - home.x) + Math.abs(q.y - home.y);
-        return d >= HOME_MINE_RING.min && d <= HOME_MINE_RING.max;
-      });
+      let p = takeWhere(
+        (q) => dHome(q) >= HOME_MINE_RING.min && dHome(q) <= HOME_MINE_RING.max,
+      );
+      if (!p) {
+        p = takeWhere((q) => dHome(q) >= 2 && dHome(q) <= HOME_MINE_RING.max + 5);
+      }
       if (p) addMine(p, res);
     }
   }

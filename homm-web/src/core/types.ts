@@ -2,7 +2,7 @@
 export type FactionId = 'p1' | 'p2' | 'p3' | 'p4';
 export type PlayerId = FactionId | 'neutral';
 
-export type MapSize = 'small' | 'medium' | 'large';
+export type MapSize = 'small' | 'medium' | 'large' | 'huge';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
 /** 攻城器械（M6）。具体数值在 data/warmachines.ts。 */
@@ -54,6 +54,8 @@ export const MAP_SIZES: Record<MapSize, { width: number; height: number; name: s
   small: { width: 24, height: 24, name: '小型' },
   medium: { width: 32, height: 32, name: '中型' },
   large: { width: 40, height: 40, name: '大型' },
+  // M9：四家各占一片、每座城都要有木石矿，40×40 开始显得挤，所以再加一档
+  huge: { width: 48, height: 48, name: '巨型' },
 };
 
 export type ResourceKind = 'gold' | 'wood' | 'ore' | 'gem' | 'crystal' | 'sulfur' | 'mercury';

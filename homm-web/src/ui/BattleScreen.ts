@@ -240,6 +240,18 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     }, 1000);
   }
 
+  /**
+   * 把"瞄准类"的临时提示一次清干净：战场上的悬停格、部队属性浮框。
+   * 下达指令、开始演出、指针离开战场时都要调 —— 否则那圈白色六边形会停在
+   * 你刚才点过的格子上，看着像施法留下的印记，怎么都不消失。
+   */
+  function clearAim(): void {
+    hover = null;
+    clearTimeout(tipTimer);
+    tipTimer = 0;
+    tip.style.display = 'none';
+  }
+
   function pushLog(text: string): void {
     if (!text) return;
     logs.push(text);
@@ -287,6 +299,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   function playerMove(h: Hex): boolean {
     const u = currentUnit(battle);
     if (!u || u.side !== 0 || u.moved) return false;
+    clearAim();
     const paths = reachable(battle, u);
     const path = paths.get(hexKey(h));
     if (!path || !path.length) return false;
@@ -299,6 +312,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   function playerAttack(target: BattleUnit): boolean {
     const u = currentUnit(battle);
     if (!u || u.side !== 0) return false;
+    clearAim();
     if (isAdjacent(u.hex, target.hex)) {
       emit(actMelee(battle, u, target));
     } else if (canShoot(battle, u)) {
@@ -315,6 +329,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   function playerSiege(st: SiegeStructure): boolean {
     const u = currentUnit(battle);
     if (!u || u.side !== 0 || st.hp <= 0) return false;
+    clearAim();
     const ev = actSiege(battle, u, st);
     if (!ev.length) {
       hint('够不着这段城防');
@@ -328,6 +343,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   function doWait(): void {
     const u = currentUnit(battle);
     if (!u || u.side !== 0) return;
+    clearAim();
     emit(actWait(battle, u));
     emit(endActivation(battle));
   }
@@ -335,6 +351,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   function doDefend(): void {
     const u = currentUnit(battle);
     if (!u || u.side !== 0) return;
+    clearAim();
     emit(actDefend(u));
     emit(endActivation(battle));
   }
@@ -346,6 +363,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
 
   function doAuto(): void {
     if (battle.over) return;
+    clearAim();
     auto = true;
     hint('自动战斗中…');
   }
@@ -382,6 +400,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   function selectSpell(id: string | null): void {
     pendingSpell = id;
     spellTargets = null;
+    clearAim();
     if (!id) {
       hint('');
       renderSpellBook();
@@ -424,6 +443,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   }
 
   function doCast(spellId: string, target: BattleUnit | Hex | undefined): void {
+    clearAim();
     const ev = castSpell(battle, 0, spellId, target);
     if (!ev.length) {
       hint('这个法术现在放不出来');
@@ -914,12 +934,14 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     }
   });
 
-  canvas.addEventListener('pointerleave', () => {
-    hover = null;
-    clearTimeout(tipTimer);
-    tipTimer = 0;
-    tip.style.display = 'none';
-  });
+  canvas.addEventListener('pointerleave', clearAim);
+  // 指针滑到法术书/操作条上、或者切出去看别的东西，都不该在战场上留一圈白框
+  fieldWrap.addEventListener('pointerleave', clearAim);
+  window.addEventListener('blur', clearAim);
+  const onHidden = (): void => {
+    if (document.hidden) clearAim();
+  };
+  document.addEventListener('visibilitychange', onHidden);
 
   // 右键：立刻看这支部队的属性（左键是下命令，右键只查询）
   canvas.addEventListener('contextmenu', (e) => {
@@ -1092,7 +1114,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       activeId: u && u.side === 0 ? u.id : null,
       reachable: reachableSet,
       attackable: attackableSet,
-      hover,
+      // 演出中（移动/打击/敌方回合）不画悬停格：那会儿鼠标下面那圈白框
+      // 既没有意义，又会被误认成"施法的印记"一直挂着
+      hover: !busy() && u && u.side === 0 ? hover : null,
       posOverride,
       lunge,
       arrow,
@@ -1112,6 +1136,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     cancelAnimationFrame(raf);
     ro.disconnect();
     window.removeEventListener('keydown', onKey);
+    window.removeEventListener('blur', clearAim);
+    document.removeEventListener('visibilitychange', onHidden);
     if (root.parentElement) root.parentElement.removeChild(root);
     document.body.classList.remove('in-battle');
     openRef = null;

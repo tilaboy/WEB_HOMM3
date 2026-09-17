@@ -75,7 +75,7 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyDef> = {
 };
 
 export const DIFFICULTY_ORDER: Difficulty[] = ['easy', 'normal', 'hard'];
-export const SIZE_ORDER: MapSize[] = ['small', 'medium', 'large'];
+export const SIZE_ORDER: MapSize[] = ['small', 'medium', 'large', 'huge'];
 
 export function sizeLabel(size: MapSize): string {
   const s = MAP_SIZES[size];
