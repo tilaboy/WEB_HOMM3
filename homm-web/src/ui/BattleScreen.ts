@@ -122,8 +122,6 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   const body = document.createElement('div');
   body.className = 'bt-body';
 
-  const leftCards = document.createElement('div');
-  leftCards.className = 'bt-army left';
   const fieldWrap = document.createElement('div');
   fieldWrap.className = 'bt-field';
   const canvas = document.createElement('canvas');
@@ -133,9 +131,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   spellPanel.className = 'bt-spells';
   spellPanel.style.display = 'none';
   fieldWrap.appendChild(spellPanel);
-  const rightCards = document.createElement('div');
-  rightCards.className = 'bt-army right';
-  body.append(leftCards, fieldWrap, rightCards);
+  // 两侧不再摆"我方 / 敌方"列表：场上每支部队都自带数量牌，当前行动的那支脚下有金色光圈，
+  // 想看属性就把鼠标停在它身上（1 秒）或右键点一下。列表纯占地方还挡视野。
+  body.append(fieldWrap);
   root.appendChild(body);
 
   const foot = document.createElement('div');
@@ -172,7 +170,6 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   let reachableSet: Set<string> | null = null;
   let attackableSet: Set<string> | null = null;
   let lastActive = '';
-  let dirty = false;
   /** 已选中待指定目标的法术（点面板 → 点目标）。 */
   let pendingSpell: string | null = null;
   let spellTargets: Set<string> | null = null;
@@ -181,52 +178,13 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   const impacts: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number; dur: number }[] = [];
   let bolt: { x: number; y: number; p: number } | null = null;
 
-  const alive = (u: BattleUnit) => u.count > 0;
-
   function fit(): void {
     const w = fieldWrap.clientWidth;
     const h = fieldWrap.clientHeight;
     renderer.fit(w || BASE_W, h || BASE_H);
   }
 
-  function refreshCards(): void {
-    const build = (side: 0 | 1, host: HTMLElement): void => {
-      host.innerHTML = '';
-      const cap = document.createElement('div');
-      cap.className = 'bt-army-cap';
-      cap.textContent = side === 0 ? '我方' : '敌方';
-      host.appendChild(cap);
-      for (const u of battle.units.filter((x) => x.side === side)) {
-        const def = getUnit(u.unitTypeId);
-        const isActive = alive(u) && currentUnit(battle)?.id === u.id;
-        const card = document.createElement('div');
-        card.className = 'bt-card' + (alive(u) ? '' : ' dead') + (isActive ? ' active' : '');
-        const top = document.createElement('div');
-        top.className = 'bt-card-top';
-        const nm = document.createElement('span');
-        nm.textContent = def.name;
-        const ct = document.createElement('b');
-        ct.textContent = alive(u) ? `×${u.count}` : '全灭';
-        top.append(nm, ct);
-        card.append(top);
-        // 身上的时效法术画成小色点，具体信息悬停/右键看浮框
-        for (const e of u.effects) {
-          const dot = document.createElement('i');
-          dot.className = 'bt-effect';
-          dot.style.background = SPELL_FX_COLOR[e.spellId] ?? '#cccccc';
-          dot.style.color = SPELL_FX_COLOR[e.spellId] ?? '#cccccc';
-          dot.title = `${getSpell(e.spellId).name}（剩 ${e.rounds} 回合）`;
-          card.appendChild(dot);
-        }
-        attachUnitTip(card, () => unitTipText(u, isActive));
-        host.appendChild(card);
-      }
-    };
-    build(0, leftCards);
-    build(1, rightCards);
-  }
-
-  /* ---------------- 部队信息浮框（悬停 1 秒 / 右键立即） ---------------- */
+  /* ---------------- 部队信息浮框（场上悬停 1 秒 / 右键立即） ---------------- */
 
   const tip = document.createElement('div');
   tip.className = 'bt-tip';
@@ -258,26 +216,28 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     tip.style.top = `${Math.max(8, y)}px`;
   }
 
-  function attachUnitTip(card: HTMLElement, text: () => string): void {
-    card.addEventListener('pointerenter', (e) => {
-      clearTimeout(tipTimer);
-      const cx = e.clientX;
-      const cy = e.clientY;
-      // 悬停 1 秒才弹：快速划过部队列表时不打扰视线
-      tipTimer = window.setTimeout(() => showTip(text(), cx, cy), 1000);
-    });
-    card.addEventListener('pointermove', (e) => {
-      if (tip.style.display !== 'none') showTip(text(), e.clientX, e.clientY);
-    });
-    card.addEventListener('pointerleave', () => {
-      clearTimeout(tipTimer);
+  /**
+   * 光标停在某支部队上就准备弹属性框：immediate=true（右键）立刻弹，
+   * 否则等 1 秒——快速划过战场时不该被弹窗糊一脸。
+   */
+  function tipForHex(h: Hex | null, e: { clientX: number; clientY: number }, immediate = false): void {
+    clearTimeout(tipTimer);
+    tipTimer = 0;
+    const u = h ? unitAt(battle, h) : null;
+    if (!u || u.count <= 0) {
       tip.style.display = 'none';
-    });
-    card.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      clearTimeout(tipTimer);
-      showTip(text(), e.clientX, e.clientY);
-    });
+      return;
+    }
+    const text = unitTipText(u, currentUnit(battle)?.id === u.id);
+    // 已经弹着就跟着鼠标更新内容，不用再等一秒
+    if (immediate || tip.style.display !== 'none') {
+      showTip(text, e.clientX, e.clientY);
+      return;
+    }
+    tipTimer = window.setTimeout(() => {
+      tipTimer = 0;
+      showTip(text, e.clientX, e.clientY);
+    }, 1000);
   }
 
   function pushLog(text: string): void {
@@ -333,7 +293,6 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     emit(actMove(battle, u, h));
     // 移动后仍可攻击：不结束行动，只是不能再走
     recomputeOptions();
-    refreshCards();
     return true;
   }
 
@@ -486,7 +445,6 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     if (battle.over && !finished && !queue.some((e) => e.t === 'end')) {
       queue.push({ t: 'end', winner: battle.winner ?? null, fled: battle.fled });
     }
-    if (queue.length) dirty = true;
     pushLogFor(events);
   }
 
@@ -924,6 +882,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   canvas.addEventListener('pointermove', (e) => {
     const h = hexFromEvent(e);
     hover = h;
+    tipForHex(h, e);
     if (!h) {
       hint('');
       return;
@@ -957,6 +916,15 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
 
   canvas.addEventListener('pointerleave', () => {
     hover = null;
+    clearTimeout(tipTimer);
+    tipTimer = 0;
+    tip.style.display = 'none';
+  });
+
+  // 右键：立刻看这支部队的属性（左键是下命令，右键只查询）
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    tipForHex(hexFromEvent(e), e, true);
   });
 
   canvas.addEventListener('click', (e) => {
@@ -1091,11 +1059,6 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     }
     if (!anim && !queue.length) pump();
 
-    if (dirty) {
-      dirty = false;
-      refreshCards();
-    }
-
     for (let i = floats.length - 1; i >= 0; i--) {
       const f = floats[i];
       f.life -= dt / 900;
@@ -1158,8 +1121,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
 
   fit();
   recomputeOptions();
-  refreshCards();
   pushLog('战斗开始');
+  hint('鼠标停在部队上（或右键点击）查看它的属性');
   // 调试：?devspell=1 进场就展开法术面板（截图验证用）
   if (new URLSearchParams(location.search).has('devspell')) renderSpellBook();
   raf = requestAnimationFrame(frame);
