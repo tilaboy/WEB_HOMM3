@@ -1,8 +1,17 @@
 # 移动端平台规格（手机优先 · Capacitor）
 
+> ## 实现状态（2026-09-18 更新 · 程基岩）——先读这段，勿把「设计」当「现状」
+>
+> 本文档现在**混合「已交付代码」与「仍是设计」两部分**。这正是 `production/roadmap.md` 中 G-10 记录的同类风险（把目标状态写成了现状），所以逐条标注：
+>
+> - **已实现并提交**（commit `9aba485`）：§4.4 的全部降级开关、§4.2/§4.3 的分档与启动探测、以及第 6 节的 **M-01 / M-02 / M-03 / M-04**。代码里真实生效的档位值见 **§4.5**（authoritative）。
+> - **仍是设计、未写一行代码**：§2 Capacitor 打包、§3 触屏交互、§5 中除 DPI 分档（§5.3）之外的安全区/横屏/后台暂停、以及第 6 节的 **M-05 ~ M-14**。
+> - 第 6 节每条已加 **「实现状态」** 列；原稿中被实测证伪的两处前提（M-02 的 `Path2D`、M-07/M-09 的「截图基线」）已更正。
+> - **行号提示**：M-01~M-04 已改动 `main.ts` / `MapRenderer.ts` / `BattleRenderer.ts` / `terrainLayer.ts`，§1、§3.6 里引用的旧行号可能已位移——**以实现时的代码为准**（关键位移已在 §3.6、第 6 节标注）。
+
 > 状态：定稿待批 | 作者：程基岩（技术方向） | 任务：E1
 > 目标平台：**iOS + Android，手机优先，横屏锁定**
-> 本轮只出方案，**未改动任何 `src/` 代码，未 commit**。
+> 首稿只出方案，**未改动任何 `src/` 代码**；后续轮次已按第 6 节把 M-01~M-04 落地（见上方「实现状态」与 §4.5）。
 > 所有"现状核实"基于对仓库的实际阅读；性能数字凡属估算均标注依据，未实测的一律标 **未验证**。
 
 ---
@@ -276,6 +285,8 @@ IDLE ──pointerdown──> PRESS(t=0, p0)
 | `main.ts:1065` | **加 `lastPointerType === 'mouse'` 守卫**（P0） |
 | `main.ts:1031–1050` | 键盘处理保留（蓝牙键盘/桌面壳仍可用），不动 |
 
+> **行号与状态提示（2026-09-18）**：本表原为设计稿，行号基于写作时源码。M-01 已落地——`lastPointerType` 现于 `main.ts:780` 声明、`:799`（pointerdown）与 `:824`（pointermove）记录、`:1100` 处 gate（即原 `1065`）；`Camera.edgeScroll` 保留未删。表中**其余各条**（`pointers` 的 `type` 字段、手势状态机、双击居中、长按阈值 4→8 px、`updateHover` 的 mouse/pen gate 等）**仍未实现**，属 §3 设计。
+
 ---
 
 ## 4. 性能预算与分档
@@ -362,6 +373,35 @@ hoverEffects: boolean        // 触屏恒 false
 selectionPulseHz: 4 | 2
 ```
 
+### 4.5 已实现的档位（authoritative · `src/render/quality.ts`）
+
+> 下表是**代码里真实生效**的映射（由 `settingsForTier(tier)` 产出，`commit 9aba485`）。§4.2 的表格是设计意图；二者若有出入，**以本表为准**。渲染层只读 `quality` 单例，改档只能走 `applyTier` / `initQuality`。
+
+| 字段 | 低端 low | 中端 mid | 高端 high |
+|---|---|---|---|
+| `lighting` | `'multiply'` | `'multiply'` | `'full'` |
+| `vignette` | 关 | 开 | 开 |
+| `warmOverlay` | 关 | 关 | 开 |
+| `waterGlint` | 关 | 开 | 开 |
+| `townGlow` | 关 | 开（半径 ×0.7） | 开 |
+| `gridLines` | 关 | 开 | 开 |
+| `dprCap` | **1.5** | **2** | **3** |
+| `maxMapSize` | **32** | **40** | **48** |
+| `selectionPulseHz` | 2 | 4 | 4 |
+| `hoverEffects` | 关 | 关 | 关（由设备能力 `hoverCapable()` 决定，触屏恒关） |
+
+**与 §4.2 的偏差（均为有意，需记录在案）**：
+
+- **暖光强度改走 `globalAlpha`**：梯度固定按 `warm = 1` 建，实际强度用 `ctx.globalAlpha = tint.warm` 施加。观感与旧实现等价（`stopAlpha × warm` 与旧 `warm × stopAlpha` 数学相同），但梯度对象得以按视口尺寸**复用**，从而消除每帧 `createLinearGradient`——这是 M-03 去 GC 的手段。
+- **中端城镇灯火半径 ×0.7**：照 §4.2 表实现，但这是**对现状（改动前）的一处可见变化**——改动前所有档位半径都取满值。**不是 no-op**，需美术/设计知悉。
+- **低端 `selectionPulseHz: 2` 映射为「更慢的脉冲」**（脉冲正弦的周期除数 260 → 500 ms），而非字面「2 Hz」。字面 2 Hz 会变成高频闪烁，判断不是设计本意；若确需 2 Hz 请在设计上明示。
+- **`lighting: 'off'` 态不被任何档位直接使用**：三态里的 `'off'` 与既有总开关 `lightingOn()`（`homm.lighting`，`src/render/lightLayer.ts`）叠加——总开关关掉即等效 `'off'`，两者都保留。
+- **`maxMapSize` 是唯一能压住地形烘焙面的杠杆**：`TILE` 固定 32，**不能降采样**（会让烘焙面与格子网格错位），所以上限只能落在**地图尺寸**上，在开局处夹紧（`main.ts` 的 `startNewGame` + `ui/StartScreen.ts` 的尺寸选项过滤）。低端 32×32 的烘焙面恰好 `32×32×32²×4 = 4 MiB`。
+
+**探测与持久化（对应 §4.3）**：`probeTier` 在**真实 `MapRenderer.draw`**（含光照）上采样 30 帧取 p95（`>20 ms → low`，`>12 ms → mid`，否则 `dpr ≥ 2 ? high : mid`），结果写入 `localStorage['homm.tier']`；`setMode('auto'|'low'|'mid'|'high')` 提供手动覆盖（key `homm.tierMode`）。**无 `getImageData`/无头环境一律 fail-safe 退回 `mid`、绝不抛**。探测期间默认按 `mid` 渲染，探测完成经 `onTierChange` 触发 `resize()`。
+
+**已补的 smoke 单测（+48 项，全量 519 PASS / 0 FAIL）**：`settingsForTier` 三档映射、`classifyProbe` 边界、`probeTier` 的 fail-safe（sync/draw 抛错、时钟 NaN）、`clampMapSize`/`allowedMapSizes`、`shouldEdgeScroll` 真值表、`bakeBytes` 预算。
+
 ---
 
 ## 5. 安全区 / 横屏 / DPI / 后台暂停
@@ -438,30 +478,32 @@ export function resumeAudio(): void  { if (ctx?.state === 'suspended') void ctx.
 
 ## 6. P0.1 与 P1 返工清单（可直接当任务列表）
 
-共 **14 条**。格式：`ID · 优先级 · 改什么 · 为什么`。**每条都在"测试影响"列标明对 471 项 smoke / CDP 审计的影响。**
+共 **14 条**。格式：`ID · 优先级 · 改什么 · 为什么`。**每条都在"测试影响"列标明对 smoke / CDP 审计的影响**（本文档写作时 smoke 基线 471 项；M-01~M-04 落地后为 519 项，随后续改动仍在增长）。**「实现状态」列标明该条是已交付代码还是仍是设计**——这是 G-10 的同类整改项：勿让「设计」冒充「现状」。
 
-| ID | 级别 | 改什么（文件:行） | 为什么 | 测试影响 |
-|---|---|---|---|---|
-| **M-01** | **P0** | `main.ts:1065` 边缘滚屏调用加 `lastPointerType === 'mouse'` 守卫；`main.ts:774` 引入 `lastPointerType`。**不删 `Camera.edgeScroll`** | 手机抬手后 `mouseIn` 可能仍为 true → 镜头自爬；且触屏无"贴边"概念 | 无（smoke 直接调 `Camera.edgeScroll`，方法保留 → 3 个测试仍绿） |
-| **M-02** | **P0** | 地形烘焙内存治理：`terrainLayer.ts:55–120` 加质档联动——低端强制 `maxMapSize=32`（烘焙 ≤4 MiB）；并把 `bakeFringes`（第 129–180 行）的 `Path2D` **按边分块提交**而非攒到一条边全部像素 | 巨型图 1536² = 9 MiB canvas；且 fringe 的 Path2D 在烘焙瞬间可能攒入近百万个 `rect()`，**瞬时峰值内存远超 9 MiB** | 无（smoke 不触渲染）；`audit:layout` 可能需放宽到不同地图尺寸 |
-| **M-03** | **P0** | 光照分档：`MapRenderer:371–417` 按 `quality.lighting` 三态渲染；把 `createLinearGradient`/`createRadialGradient` **按尺寸缓存**（尺寸变才重建）；低端只留 multiply | 三遍全屏混合 ≈ 8.9 Mpx/帧（iPhone 14），是最大单项；每帧新建 gradient 产生 GC | 无（`lightTintAt` 纯函数不动 → 8 个光照测试仍绿） |
-| **M-04** | **P0** | DPR 钳制：`MapRenderer:95`、`BattleRenderer:76` 改为 `Math.min(dpr, quality.dprCap)` 且**保留小数**；质档切换后重跑 `resize()` | 现状无上限且 `Math.round` 吞掉 1.5 档；1× → 3× 是 9 倍像素量 | 无 |
-| **M-05** | P1 | 生命周期：新增 `Lifecycle` 模块，接 `visibilitychange` / `pagehide` / Capacitor `appStateChange` → 停 rAF + suspend 音频 + **自动存档**；恢复时重置 `last` | `main.ts` 目前**完全没有**后台处理，切后台 rAF 空转耗电、音频不释放、被系统杀进程丢进度 | 无；需新增 CDP 测试项（无法用 smoke 覆盖） |
-| **M-06** | P1 | `sfx.ts` 导出 `suspendAudio/resumeAudio`，`ac()` 去掉自动 resume（第 41 行） | 见 §5.4：后台被中断后自动 resume 可能爆音 | 无（smoke 不测音频） |
-| **M-07** | P1 | 安全区：`public/index.html` 加 `viewport-fit=cover`；`style.css` `#app` 加四边 `env()` padding；顶/底栏高度改 `calc(...)` | 刘海/灵动岛/挖孔/手势条遮挡 HUD | 无；但 `audit:layout` 的截图基线会变（截图尺寸含 inset） |
-| **M-08** | P1 | 横屏锁定：Android manifest `sensorLandscape`；iOS `Info.plist` 手机只留 Landscape、iPad 留四向；加 `orientationchange` → `resize()+clamp()`；加竖屏提示兜底 | 竖屏放不下右侧面板与战斗场 | 无 |
-| **M-09** | P1 | 触控热区：`style.css` 全部按钮 `min-height` 30–32 → **44/48 px**；相邻间距 ≥8 px；横屏压顶/底栏高度 | 现状 30–32 px 低于移动下限，误触率高 | `audit:layout` 需重拍基线（布局会变大） |
-| **M-10** | P1 | 长按：位移阈值 `main.ts:825` 由 4 px → **8 px**；触发时接 `@capacitor/haptics`（`impact('light')`）；CSS 加 `-webkit-touch-callout:none` / `user-select:none` / `overscroll-behavior:none` | 手指抖动大于鼠标，4 px 太紧会误判成拖拽；缺 iOS 长按菜单抑制 | 无 |
-| **M-11** | P1 | 双击居中：`endPointer`（`main.ts:851–861`）记录 `lastTapT/lastTapPos`，判定双击 → `camera.centerOn()` 平滑版 | 边缘滚屏在手机上废弃后，缺少"远距离移动镜头"手段 | 无；建议新增 smoke 单测（纯逻辑可测） |
-| **M-12** | P2 | 手势状态机重构：把 `dragged/lastPan/pinchDist/longPress` 收敛为显式状态机（§3.5） | 手势种类变多后散变量互相打架；长按"吞点击"靠 `dragged=true` 很脆 | 需补手势单测（把状态机抽成纯函数即可进 smoke） |
-| **M-13** | P2 | 存档迁移：`persistence.ts` 6 个函数改双写 Preferences + localStorage | iOS WKWebView 会回收 localStorage → 丢档（Top3 风险 ③） | 无（函数签名不变）；需补"Preferences 不可用时回落"的单测 |
-| **M-14** | P2 | 图集瘦身：实测 `atlas.ts:751` 2048² 的**实际占用面积**，缩到能容纳的最小 2 的幂（预计可到 1024² 或 2048×1024，省 8–12 MiB）；`combatAtlas.ts:91` 同样 | 16 MiB 常驻内存，是低端机内存压力的主要来源之一 | 无（帧坐标由 Packer 动态计算） |
+| ID | 级别 | 改什么（文件:行） | 为什么 | 测试影响 | 实现状态 |
+|---|---|---|---|---|---|
+| **M-01** | **P0** | `main.ts:1100`（原 1065）边缘滚屏调用加 `lastPointerType === 'mouse'` 守卫；`main.ts:780`（原 774）引入 `lastPointerType`。**不删 `Camera.edgeScroll`** | 手机抬手后 `mouseIn` 可能仍为 true → 镜头自爬；且触屏无"贴边"概念 | 无（smoke 直接调 `Camera.edgeScroll`，方法保留 → 3 项仍绿）；已补 `shouldEdgeScroll` 纯谓词单测 | ✅ **已实现**（9aba485） |
+| **M-02** | **P0** | 地形烘焙内存治理：烘焙面 = `W × H × TILE² × 4` 字节，低端把**地图尺寸**夹到 32（=4 MiB，`main.ts` 的 `startNewGame` + `StartScreen.ts`）；`terrainLayer.bakeFringes` 改为**按边分块提交** | **已核实——原稿前提有误**：9 MiB 来自**烘焙画布本身**（巨型 1536² ≈ 9.0 MiB），**不是** `Path2D`。`beginPath()` 在 DIRS 循环内（`terrainLayer.ts:186`），单条路径最多 `FRINGE_DEPTH × TILE = 192` 个 `rect()`，不存在"近百万 rect 攒入一条路径"。fringe 分块是**锦上添花**（峰值有界、免去每边 `Path2D` 分配），**真正压内存的是地图尺寸夹紧**；`TILE` 固定 32 不能降采样（会使烘焙面与网格错位） | 无（smoke 不触渲染）；`audit:layout` 是**纯生成器审计**，不受渲染改动影响 | ✅ **已实现**（9aba485） |
+| **M-03** | **P0** | 光照分档：`MapRenderer` 光照段按 `quality.lighting` 三态渲染；`createLinearGradient`/`createRadialGradient` **按尺寸缓存**（暖光改由 `globalAlpha` 承载强度，见 §4.5）；低端只留 multiply | 三遍全屏混合 ≈ 8.9 Mpx/帧（iPhone 14），是最大单项；每帧新建 gradient 产生 GC | 无（`lightTintAt` 纯函数不动 → 8 个光照测试仍绿） | ✅ **已实现**（9aba485） |
+| **M-04** | **P0** | DPR 钳制：`MapRenderer.resize`（原 `:95`）、`BattleRenderer.fit`（原 `:76`）改为 `Math.min(dpr, quality.dprCap)` 且**保留小数**；质档切换后重跑 `resize()` | 现状无上限且 `Math.round` 吞掉 1.5 档；1× → 3× 是 9 倍像素量 | 无 | ✅ **已实现**（9aba485） |
+| **M-05** | P1 | 生命周期：新增 `Lifecycle` 模块，接 `visibilitychange` / `pagehide` / Capacitor `appStateChange` → 停 rAF + suspend 音频 + **自动存档**；恢复时重置 `last` | `main.ts` 目前**完全没有**后台处理，切后台 rAF 空转耗电、音频不释放、被系统杀进程丢进度 | 无；需新增 CDP 测试项（无法用 smoke 覆盖） | ⬜ 未实现（设计） |
+| **M-06** | P1 | `sfx.ts` 导出 `suspendAudio/resumeAudio`，`ac()` 去掉自动 resume（第 41 行） | 见 §5.4：后台被中断后自动 resume 可能爆音 | 无（smoke 不测音频） | ⬜ 未实现（设计） |
+| **M-07** | P1 | 安全区：`public/index.html` 加 `viewport-fit=cover`；`style.css` `#app` 加四边 `env()` padding；顶/底栏高度改 `calc(...)` | 刘海/灵动岛/挖孔/手势条遮挡 HUD | 无；`audit:layout` 是**纯生成器审计，不产截图、不做图像比对**（已实测 640 局全过）——**不存在"截图基线"**（原稿此处判断有误，已更正） | ⬜ 未实现（设计） |
+| **M-08** | P1 | 横屏锁定：Android manifest `sensorLandscape`；iOS `Info.plist` 手机只留 Landscape、iPad 留四向；加 `orientationchange` → `resize()+clamp()`；加竖屏提示兜底 | 竖屏放不下右侧面板与战斗场 | 无 | ⬜ 未实现（设计） |
+| **M-09** | P1 | 触控热区：`style.css` 全部按钮 `min-height` 30–32 → **44/48 px**；相邻间距 ≥8 px；横屏压顶/底栏高度 | 现状 30–32 px 低于移动下限，误触率高 | 无；`audit:layout` **无截图基线**（见 M-07 更正），原稿"需重拍基线"有误 | ⬜ 未实现（设计） |
+| **M-10** | P1 | 长按：位移阈值 `main.ts:825` 由 4 px → **8 px**；触发时接 `@capacitor/haptics`（`impact('light')`）；CSS 加 `-webkit-touch-callout:none` / `user-select:none` / `overscroll-behavior:none` | 手指抖动大于鼠标，4 px 太紧会误判成拖拽；缺 iOS 长按菜单抑制 | 无 | ⬜ 未实现（设计） |
+| **M-11** | P1 | 双击居中：`endPointer`（`main.ts:851–861`）记录 `lastTapT/lastTapPos`，判定双击 → `camera.centerOn()` 平滑版 | 边缘滚屏在手机上废弃后，缺少"远距离移动镜头"手段 | 无；建议新增 smoke 单测（纯逻辑可测） | ⬜ 未实现（设计） |
+| **M-12** | P2 | 手势状态机重构：把 `dragged/lastPan/pinchDist/longPress` 收敛为显式状态机（§3.5） | 手势种类变多后散变量互相打架；长按"吞点击"靠 `dragged=true` 很脆 | 需补手势单测（把状态机抽成纯函数即可进 smoke） | ⬜ 未实现（设计） |
+| **M-13** | P2 | 存档迁移：`persistence.ts` 6 个函数改双写 Preferences + localStorage | iOS WKWebView 会回收 localStorage → 丢档（Top3 风险 ③） | 无（函数签名不变）；需补"Preferences 不可用时回落"的单测 | ⬜ 未实现（设计） |
+| **M-14** | P2 | 图集瘦身：实测 `atlas.ts:751` 2048² 的**实际占用面积**，缩到能容纳的最小 2 的幂（预计可到 1024² 或 2048×1024，省 8–12 MiB）；`combatAtlas.ts:91` 同样 | 16 MiB 常驻内存，是低端机内存压力的主要来源之一 | 无（帧坐标由 Packer 动态计算） | ⬜ 未实现（设计） |
 
 ### 6.1 建议实施顺序（按"解锁价值 / 风险"排）
 
 1. **M-01**（一行守卫，立刻消除手机镜头自爬）→ 2. **M-04**（DPR 钳制，为所有性能档位铺路）→ 3. **M-03 + M-02**（光照与地形，两个最大开销）→ 4. **M-05 + M-06**（生命周期，省电 + 防丢档）→ 5. **M-07 + M-08 + M-09 + M-10 + M-11**（触屏体验成套上）→ 6. M-12/M-13/M-14（打磨）。
 
 **M-01～M-04 是"手机能不能玩"的分水岭**，建议下一轮优先做这四条。
+
+> **进度（2026-09-18）**：上述第 1~3 步已全部完成——**M-01 / M-04 / M-03 / M-02 均已实现并提交 `9aba485`**。下一步进入第 4 步（M-05 + M-06 生命周期），再成套上 M-07~M-11。
 
 ---
 
@@ -512,6 +554,17 @@ export function resumeAudio(): void  { if (ctx?.state === 'suspended') void ctx.
 | `env(safe-area-inset-*)` 在老 Android WebView 可用性 | 若目标机含极老 WebView，需走 §5.1 的 CSS 变量兜底 |
 | Capacitor 6 的具体版本与插件兼容矩阵 | 未核对当前最新版本号，实施前需 `npm view @capacitor/cli version` 确认 |
 | App Store 4.2 审核尺度 | 是否会被判定为"网站套壳"只能提交后知道；缓解手段见 §2.5-4 |
+
+**M-01~M-04 已落地，但以下子项仍只能真机验证（2026-09-18 补）**：
+
+| 项 | 说明 |
+|---|---|
+| **探测真机行为与 20/12 ms 阈值** | `probeTier` 按 §4.3 采样 30 帧取 p95（`>20 → low`、`>12 → mid`），**阈值未在任何真机校准**；探测本身约耗时 0.5 s。真机上 p95 的实际分布未知 |
+| **M-01~M-04 的真实帧时间收益** | 全部为几何推算 / 代码推理，**未在真机测量一帧**。需上 Capacitor 壳后用 Safari Web Inspector / Chrome DevTools 采样后校准分档阈值 |
+| **风险 ①（`multiply`/`overlay` 是否掉出 GPU 快路径）** | 未验证，且属设备 / WebView 版本相关，模拟器测不出。文档 §7 的两条缓解——"把 tint 烘进地形层"与"改用 DOM `mix-blend-mode` 层"——**均未实现**；当前只有低端"只留 multiply 单次" + 既有 `lightingOn()` 总开关两条退路 |
+| **低端水面仍逐帧 blit 水格** | 低端只冻结了水面高光与 4 帧动画（`waterFrame = 0`），水面格仍每帧 `drawImage`；把水面烘进地形层**未做**，收益未量化 |
+| **`BattleRenderer` 不响应"战斗中途切档"** | 每场战斗新建渲染器，只在 `fit()` 时读 `dprCap`；档位中途变化要等下一次 `resize()` 才生效（未订阅 `onTierChange`）。战斗内切档概率极低，暂不处理 |
+| **加载"已在档的巨型存档"不受夹紧** | `maxMapSize` 只在 `startNewGame` 夹新开局；直接读一个巨型存档时烘焙面仍可能超预算，只打一条一次性 `console.warn`（`terrainLayer.ts`） |
 
 ### 8.2 需要用户拍板的 3 个问题
 
