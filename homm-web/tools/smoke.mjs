@@ -1876,5 +1876,72 @@ console.log('\n--- 移动端画质分档 ---');
   ok(mib(bakeBytes(settingsForTier('low').maxMapSize, settingsForTier('low').maxMapSize)) <= 4, '低端上限能把烘焙面压到 ≤4 MiB');
 }
 
+/* ================= E3 无城 7 日宽限期出局 ================= */
+console.log('\n--- E3 无城 7 日出局 ---');
+
+// 1. 边界：有英雄、没城，恰好在第 NO_TOWN_GRACE_DAYS 天出局
+{
+  const g = createGame({ size: 'medium', seed: 91, opponents: 1 });
+  for (const t of Object.values(g.towns)) if (t.owner === 'p2') t.owner = 'neutral';
+  ok(g.heroOrder.some((id) => g.heroes[id]?.owner === 'p2'), '前置：p2 丢掉最后一座城，但还有英雄');
+  ok(noTownDaysOf(g, 'p2') === 0, '刚丢城当天，无城天数从 0 起算');
+  ok(!isEliminated(g, 'p2'), '丢城当天不出局（还有翻盘窗口）');
+
+  for (let d = 0; d < NO_TOWN_GRACE_DAYS - 1; d++) advanceNoTownStreaks(g);
+  ok(noTownDaysOf(g, 'p2') === NO_TOWN_GRACE_DAYS - 1, `撑到第 ${NO_TOWN_GRACE_DAYS - 1} 天：天数已累计但未满`);
+  ok(!isEliminated(g, 'p2'), '第 6 天仍在宽限期内 → 未出局');
+
+  const timedOut = advanceNoTownStreaks(g); // 第 7 天
+  ok(noTownDaysOf(g, 'p2') === NO_TOWN_GRACE_DAYS, '第 7 天：无城天数恰好到达上限');
+  ok(timedOut.includes('p2'), `advanceNoTownStreaks 恰好在第 ${NO_TOWN_GRACE_DAYS} 天把 p2 报出`);
+  ok(isEliminated(g, 'p2'), `恰好第 ${NO_TOWN_GRACE_DAYS} 天 → 判定 p2 出局`);
+}
+
+// 2. 处置：出局即清场（不留"有英雄但不动"的僵尸）并写一条日志
+{
+  const g = createGame({ size: 'medium', seed: 92, opponents: 1 });
+  for (const t of Object.values(g.towns)) if (t.owner === 'p2') t.owner = 'neutral';
+  for (let d = 0; d < NO_TOWN_GRACE_DAYS; d++) advanceNoTownStreaks(g);
+  const logsBefore = g.log.length;
+  eliminateFaction(g, 'p2');
+  ok(!g.heroOrder.some((id) => g.heroes[id]?.owner === 'p2'), '出局后 p2 名下的英雄全部退场');
+  ok(g.log.length === logsBefore + 1, '出局写了一条日志');
+  eliminateFaction(g, 'p2'); // 再处置一次：英雄已清空，不应报错
+  ok(!g.heroOrder.some((id) => g.heroes[id]?.owner === 'p2'), '重复处置幂等（已清空的英雄不会再动）');
+}
+
+// 3. 有城的阵营不计时：重新拿回一座城 → 无城天数归零
+{
+  const g = createGame({ size: 'medium', seed: 93, opponents: 1 });
+  ok(Object.values(g.towns).some((t) => t.owner === 'p2'), '前置：p2 开局有城');
+  g.players.p2.noTownDays = 4; // 模拟它此前短暂丢过城
+  advanceNoTownStreaks(g);
+  ok(noTownDaysOf(g, 'p2') === 0, '只要手上还有城，无城天数就归零');
+  ok(!isEliminated(g, 'p2'), '有城阵营永远不因这条规则出局');
+}
+
+// 4. 玩家（p1）豁免：无城再久也不计时、不进超时名单
+{
+  const g = createGame({ size: 'medium', seed: 94, opponents: 1 });
+  for (const t of Object.values(g.towns)) if (t.owner === 'p1') t.owner = 'neutral';
+  const seen = [];
+  for (let d = 0; d < NO_TOWN_GRACE_DAYS + 5; d++) seen.push(...advanceNoTownStreaks(g));
+  ok(!seen.includes('p1'), 'advanceNoTownStreaks 从不把 p1 计入超时名单');
+  ok(noTownDaysOf(g, 'p1') === 0, 'p1 的无城天数始终为 0（人类不吃这条规则）');
+  ok(!isEliminated(g, 'p1'), '玩家无城也能继续（还有英雄）');
+}
+
+// 5. 与 evaluateOutcome 的联动：唯一对手撑满宽限期 → 玩家判定胜利
+{
+  const g = createGame({ size: 'medium', seed: 95, opponents: 1 });
+  for (const t of Object.values(g.towns)) if (t.owner === 'p2') t.owner = 'neutral';
+  for (let d = 0; d < NO_TOWN_GRACE_DAYS; d++) {
+    for (const f of advanceNoTownStreaks(g)) eliminateFaction(g, f);
+    evaluateOutcome(g);
+  }
+  ok(isEliminated(g, 'p2'), '连续 7 天后 p2 出局');
+  ok(g.status === 'won', '敌方全部出局 → evaluateOutcome 自动判定胜利');
+}
+
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);
 process.exit(fails === 0 ? 0 : 1);

@@ -30,6 +30,7 @@ import { getUnit } from '../dist/core/data/units.js';
 import { BUILDINGS } from '../dist/core/data/buildings.js';
 import { heroPower } from '../dist/core/game/hero.js';
 import { factionName } from '../dist/core/data/factions.js';
+import { isEliminated, noTownDaysOf, NO_TOWN_GRACE_DAYS } from '../dist/core/game/victory.js';
 
 const SEEDS = Number(process.env.SEEDS ?? 3);
 const DAYS = Number(process.env.DAYS ?? 60);
@@ -61,6 +62,8 @@ function snapshot(state, f) {
   const mines = mineOwners(state).filter((o) => o.payload.owner === f);
   return {
     day: state.day,
+    eliminated: isEliminated(state, f),
+    noTownDays: noTownDaysOf(state, f),
     buildings: towns.flatMap((t) => t.buildings),
     buildingCount: towns.reduce((s, t) => s + t.buildings.length, 0),
     gold: res.gold ?? 0,
@@ -204,6 +207,14 @@ for (let s = 0; s < SEEDS; s++) {
       maxGarrisonHp: Math.max(0, ...series[f].map((x) => x.garrisonHp)),
       /** 英雄兵数全程为 0 的天数 */
       daysHeroEmpty: series[f].filter((x) => x.heroes.length === 0 || x.heroTroops === 0).length,
+      /** 出局的日子（无城撑满宽限期），null = 整局都在场 */
+      eliminatedDay: series[f].find((x) => x.eliminated)?.day ?? null,
+      /** 无城天数的全程峰值（看它是不是长期没有城） */
+      maxNoTownDays: Math.max(0, ...series[f].map((x) => x.noTownDays ?? 0)),
+      /** 终局是否仍是 0 城 */
+      endTownless: series[f][series[f].length - 1].towns === 0,
+      /** 终局所在场上的英雄数（出局后应为 0：不该留僵尸） */
+      endHeroes: series[f][series[f].length - 1].heroes.length,
       // 资源枯竭天数：金币贴着 0 / 木矿贴着 0
       daysGoldUnder200: series[f].filter((x) => x.gold < 200).length,
       daysOreZero: series[f].filter((x) => x.ore === 0).length,
@@ -281,8 +292,27 @@ for (const f of allFids) {
       `末建=${avg((e) => e.lastBuildDay ?? 0).toFixed(1)} ` +
       `末募兵=${avg((e) => e.lastRecruitDay ?? 0).toFixed(1)} ` +
       `终局金=${avg((e) => e.end.gold).toFixed(0)} ` +
-      `丢城局数=${all.filter((e) => e.end.buildings === 0).length}`,
+      `丢城局数=${all.filter((e) => e.endTownless).length} ` +
+      `出局局数=${all.filter((e) => e.eliminatedDay !== null).length}`,
   );
+
+  // 1c) 只看"终局仍在场上"的阵营：出局的阵营各项都是 0，会把均值冲淡
+  const live = all.filter((e) => e.eliminatedDay === null);
+  if (live.length && live.length !== all.length) {
+    const lsum = (fn) => live.reduce((s, e) => s + fn(e), 0);
+    const lavg = (fn) => lsum(fn) / live.length;
+    console.log(
+      `AGG-live 存活局数=${live.length}/${all.length} ` +
+        `建筑数=${lavg((e) => e.end.buildings).toFixed(1)} ` +
+        `占矿=${lavg((e) => e.end.mines).toFixed(1)} ` +
+        `英雄兵=${lavg((e) => e.end.heroTroops).toFixed(1)} ` +
+        `英雄兵峰=${lavg((e) => e.maxHeroTroops).toFixed(1)} ` +
+        `驻军兵=${lavg((e) => e.end.garrisonTroops).toFixed(1)} ` +
+        `英雄0兵天数=${lavg((e) => e.daysHeroEmpty).toFixed(1)}/${DAYS} ` +
+        `末建=${lavg((e) => e.lastBuildDay ?? 0).toFixed(1)} ` +
+        `终局金=${lavg((e) => e.end.gold).toFixed(0)}`,
+    );
+  }
 }
 
 // 2) 关键事件时间线
@@ -299,7 +329,10 @@ for (const r of runs) {
         `            英雄兵: 终 ${pad(e.end.heroTroops, 4)} / 峰 ${pad(e.maxHeroTroops, 4)}（开局 20）· ` +
         `驻军兵: 终 ${pad(e.end.garrisonTroops, 4)} / 峰HP ${pad(e.maxGarrisonHp, 5)} · ` +
         `英雄补兵次数 ${pad(e.heroRecruitEvents, 3)} · 驻军补兵次数 ${pad(e.garrisonRecruitEvents, 3)} · ` +
-        `英雄0兵天数 ${e.daysHeroEmpty}/${DAYS}`,
+        `英雄0兵天数 ${e.daysHeroEmpty}/${DAYS} · ` +
+        (e.eliminatedDay !== null
+          ? `**第 ${e.eliminatedDay} 天出局**（无城天数峰 ${e.maxNoTownDays}，终局英雄 ${e.endHeroes}）`
+          : `在场（终局英雄 ${e.endHeroes}）`),
     );
   }
 }

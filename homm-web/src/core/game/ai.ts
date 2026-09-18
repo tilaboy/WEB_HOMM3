@@ -38,6 +38,7 @@ import {
   townDefenseBonus,
 } from './town.js';
 import { pushLog } from './log.js';
+import { isEliminated } from './victory.js';
 
 /**
  * 电脑对手（"影子领主"）。设计目标不是聪明，而是**可信**：
@@ -295,6 +296,31 @@ function aiRecruit(state: GameState, player: FactionId): void {
 
 /* ---------------- 3. 目标选择 ---------------- */
 
+/**
+ * 各资源的"够用线"：库存到这条线就视为不缺。
+ * 金币的收支比其它资源大一个数量级（一次建筑 1500~9000、每天税收 500+），
+ * 所以参考值必须分开给 —— 用一个统一数字的话，对金币永远不触发、对稀有资源永远触发。
+ */
+const RESOURCE_REF: Record<string, number> = {
+  gold: 3000, wood: 20, ore: 20, gem: 6, crystal: 6, sulfur: 6, mercury: 6,
+};
+
+/**
+ * 资源缺口系数：1.0（库存充足）~ 2.2（一点都没有）。
+ *
+ * 为什么不改 `base` 而乘一个系数：base 表达的是"这种矿本身值多少"，
+ * 是稳定的；这里表达的是"这个阵营此刻有多缺它"，是随局势变的。
+ * 两者相乘，库存充裕的阵营排出来的顺序和以前基本一致，
+ * 而卡在某一种资源上的阵营会把对应的矿顶到最前面 ——
+ * 这正是"缺什么资源就优先抢什么矿"想要的行为。
+ */
+function scarcityNeed(stock: Record<string, number | undefined>, res: string): number {
+  const ref = RESOURCE_REF[res];
+  if (!ref) return 1;
+  const missing = Math.max(0, ref - (stock[res] ?? 0)) / ref;
+  return 1 + Math.min(1, missing) * 1.2;
+}
+
 function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate | null {
   const field = computePaths(state, hero.pos, Infinity);
   const m = state.map;
@@ -309,6 +335,8 @@ function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate 
   };
   /** 电脑对手只能针对自己"见过"的东西：不透视迷雾，是难度之外最基本的公平。 */
   const seen = (p: GridPos): boolean => isRevealed(state, player, p.x, p.y);
+  /** 这个阵营的资源库存，用于给矿场按"缺口"加权。 */
+  const stock = (state.players[player]?.resources ?? {}) as Record<string, number | undefined>;
 
   for (const obj of Object.values(m.objects)) {
     if (obj.kind === 'obstacle') continue;
@@ -367,7 +395,12 @@ function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate 
         : 240;
       // 从敌人手里抢，既加自己又减对方，值当一些
       const denial = p.owner === 'neutral' ? 1 : 1.35;
-      candidates.push({ pos: obj.pos, kind: 'loot', score: base * denial - travelPenalty });
+      // 再按"这个阵营到底缺不缺这种资源"加权：缺什么就先抢什么矿
+      candidates.push({
+        pos: obj.pos,
+        kind: 'loot',
+        score: base * scarcityNeed(stock, p.resource) * denial - travelPenalty,
+      });
       continue;
     }
 
@@ -543,6 +576,9 @@ function maybeHireHero(state: GameState, player: FactionId): void {
 export function runAiTurn(state: GameState, player: FactionId): void {
   if (state.status !== 'playing') return;
   if (state.players[player]?.isHuman !== false) return;
+  // 已出局（含"连续 7 天没有城镇"）的阵营不再行动。turn.ts 也会跳过它们，
+  // 这里是第二道闸：单独跑 runAiTurn 的测试/工具也不会让出局阵营复活。
+  if (isEliminated(state, player)) return;
 
   const rng = mulberry32(deriveSeed(state.seed, state.day, player.charCodeAt(1) * 7919));
 

@@ -669,7 +669,8 @@ export function applyHeroBattle(
   };
 }
 
-function removeHero(state: GameState, heroId: string): void {
+/** 英雄退场：从世界与行动顺序里一并摘掉（战败、阵营出局都用这一处）。 */
+export function removeHero(state: GameState, heroId: string): void {
   delete state.heroes[heroId];
   state.heroOrder = state.heroOrder.filter((id) => id !== heroId);
 }

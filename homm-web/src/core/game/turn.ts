@@ -5,7 +5,7 @@ import { applyWeeklyGrowth, mineIncome, ownedTowns, townDailyIncome } from './to
 import { isNewWeek } from './calendar.js';
 import { pushLog } from './log.js';
 import { runAiTurn } from './ai.js';
-import { evaluateOutcome } from './victory.js';
+import { advanceNoTownStreaks, eliminateFaction, evaluateOutcome, isEliminated } from './victory.js';
 
 export { DAYS_PER_WEEK, dayOfWeek, weekOf, isNewWeek } from './calendar.js';
 export { pushLog } from './log.js';
@@ -84,9 +84,16 @@ export function endDay(state: GameState): void {
 
   pushLog(state, `第 ${state.day} 天开始，${parts.join('；')}，移动力已恢复`);
 
+  // 无城宽限期：每天推进一次。放在 AI 行动之前，这样"撑满 7 天"当天就生效，
+  // 当天的 evaluateOutcome 就能把"所有对手出局"翻成胜利。
+  for (const player of advanceNoTownStreaks(state)) eliminateFaction(state, player);
+
   for (const player of ids) {
     if (player === 'p1') continue;
-    if (!state.players[player]?.isHuman) runAiTurn(state, player);
+    if (state.players[player]?.isHuman) continue;
+    // 已出局的阵营不再行动（它的英雄已经在 eliminateFaction 里清掉了）
+    if (isEliminated(state, player)) continue;
+    runAiTurn(state, player);
   }
 
   evaluateOutcome(state);

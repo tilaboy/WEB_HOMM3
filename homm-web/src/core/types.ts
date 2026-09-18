@@ -301,6 +301,15 @@ export interface PlayerState {
   isHuman: boolean;
   resources: ResourceBag;
   revealed: number[];
+  /**
+   * 连续多少天没有城镇，每天在 endDay 里推进一次。
+   *
+   * 这是**历史**，推不出来（只看当前状态无法知道"已经没城几天了"），所以必须落盘。
+   * 电脑对手连满 NO_TOWN_GRACE_DAYS 天判出局：既给它留一个翻盘窗口，
+   * 又不会让图上永远留着一个"有英雄但什么也做不了"的僵尸阵营。
+   * 可选字段 —— 旧存档读出来是 undefined，按 0 天算，谁也不会被追溯出局。
+   */
+  noTownDays?: number;
 }
 
 /** 一局的终局状态。playing 之外的状态会锁定操作并弹结算界面。 */
