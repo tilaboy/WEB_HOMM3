@@ -1,17 +1,21 @@
 # 移动端平台规格（手机优先 · Capacitor）
 
-> ## 实现状态（2026-09-18 更新 · 程基岩）——先读这段，勿把「设计」当「现状」
+> ## 实现状态（2026-09-18 更新（第二轮）· 程基岩）——先读这段，勿把「设计」当「现状」
 >
-> 本文档现在**混合「已交付代码」与「仍是设计」两部分**。这正是 `production/roadmap.md` 中 G-10 记录的同类风险（把目标状态写成了现状），所以逐条标注：
+> 本文档**混合「已交付代码」与「仍是设计」两部分**。这正是 `production/roadmap.md` 中 G-10 记录的同类风险（把目标状态写成了现状），所以逐条标注：
 >
-> - **已实现并提交**（commit `9aba485`）：§4.4 的全部降级开关、§4.2/§4.3 的分档与启动探测、以及第 6 节的 **M-01 / M-02 / M-03 / M-04**。代码里真实生效的档位值见 **§4.5**（authoritative）。
-> - **仍是设计、未写一行代码**：§2 Capacitor 打包、§3 触屏交互、§5 中除 DPI 分档（§5.3）之外的安全区/横屏/后台暂停、以及第 6 节的 **M-05 ~ M-14**。
+> - **已实现并提交（性能 / 渲染基础）**：§4.4 全部降级开关、§4.2/§4.3 分档与启动探测、第 6 节 **M-01 / M-02 / M-03 / M-04**（commit `9aba485`）。代码里真实生效的档位值见 **§4.5**（authoritative）。
+> - **已实现并提交（Capacitor 打包 + 生命周期 + 存档）**：§2 的 **Android 内测打包**，以及第 6 节 **M-05 生命周期 / M-06 音频挂起 / M-13 Preferences 双写**——模块由 eng-package（`49c2678`）落地，随后由 team-lead（`be7d9c9`）**接线进 `main.ts`**。⚠️ **接线才是生效前提**：`installLifecycle()` 未接入 `main.ts` 前，`src/app/lifecycle.ts` 是**死代码**；`hydratePersistence()` 未接入前，M-13 的 Preferences 水合**永不运行**。
+> - **已实现并提交（触屏体验 + 安全区）**：第 6 节 **M-07 安全区 / M-08 横屏 / M-09 触控热区 / M-11 双击居中**，以及 **M-10 的 web 侧**（`a668e63`；M-09 分级残余 `17e1b29`）。
+> - **部分实现**：**M-10 长按**——web 侧（位移阈值 4→8px + CSS 长按菜单抑制）已交付，但**原生触觉 `@capacitor/haptics` 尚未接线**（插件已装，`impact('light')` 未接 → 长按暂无原生触觉反馈）。
+> - **仍是设计、未写一行代码**：§3.5 手势状态机（**M-12**）、第 6 节 **M-14 图集瘦身**；§2 的 **iOS 侧**（`Info.plist` 方向锁定 / 状态栏 / 图标资产，本轮到 Android 内测为止）。
 > - 第 6 节每条已加 **「实现状态」** 列；原稿中被实测证伪的两处前提（M-02 的 `Path2D`、M-07/M-09 的「截图基线」）已更正。
-> - **行号提示**：M-01~M-04 已改动 `main.ts` / `MapRenderer.ts` / `BattleRenderer.ts` / `terrainLayer.ts`，§1、§3.6 里引用的旧行号可能已位移——**以实现时的代码为准**（关键位移已在 §3.6、第 6 节标注）。
+> - **本文档不再维护「打包 / 构建环境」的事实**（Capacitor 版本、SDK 级别、JDK、无打包器约束等）——那部分已迁到 **`docs/architecture/android-build-runbook.md`**，本文档 §2 中相关段落只作历史标注（见 §2 顶部提示）。
+> - **行号提示**：M-01~M-04 改动 `main.ts` / `MapRenderer.ts` / `BattleRenderer.ts` / `terrainLayer.ts`；随后 M-05~M-11 又多次改动 `main.ts`、`style.css`、`HUD.ts`、`HeroPanel.ts`、`TownDialog.ts`、`persistence.ts`、`sfx.ts`。§1、§3.6 里引用的旧行号**已大幅位移**——**以实现时的代码为准**（关键位移已在 §3.6、第 6 节标注）。
 
 > 状态：定稿待批 | 作者：程基岩（技术方向） | 任务：E1
-> 目标平台：**iOS + Android，手机优先，横屏锁定**
-> 首稿只出方案，**未改动任何 `src/` 代码**；后续轮次已按第 6 节把 M-01~M-04 落地（见上方「实现状态」与 §4.5）。
+> 目标平台：**iOS + Android，手机优先，横屏锁定**（本轮到 Android 内测打包为止）
+> 首稿只出方案，**未改动任何 `src/` 代码**；后续轮次已按第 6 节把 **M-01~M-11 与 M-13 落地**（其中 **M-10 仅 web 侧**；**M-12 / M-14 仍是设计**），见上方「实现状态」、§4.5 与第 6 节「实现状态」列。
 > 所有"现状核实"基于对仓库的实际阅读；性能数字凡属估算均标注依据，未实测的一律标 **未验证**。
 
 ---
@@ -65,6 +69,8 @@
 
 ## 2. Capacitor 打包方案
 
+> **⚠️ 本节写于 Capacitor 6 时代，不是落地现状（2026-09-18 标注）。** 实际落地用的是 **Capacitor 8.5.2**，本节各处的版本数字——§2.2 的 **JDK 17**、§2.4 的 **`compileSdk/targetSdk 34` / `minSdk 23`**、§2.5 的 **iOS 部署目标 ≥ 13**、§2.7 的 **运行时体积**——都属**写作时前提**，与真参数不符。**打包 / 构建环境的权威事实见 `docs/architecture/android-build-runbook.md`**（Capacitor 8 vs 6 的差异：JDK **21**、compileSdk/targetSdk **36**、minSdk **24**、**零打包器 ⇒ 必须走原生注入的 `window.Capacitor` 全局**、Android 15+ edge-to-edge ⇒ `SystemBars`）。本节仅作方案论证保留，不再逐条改写（§2.2 / §2.4 已就地标注）。
+
 ### 2.1 为什么"改代码量≈0"就能包
 
 `core/` 是零 DOM 的纯 TS；`render/`+`ui/` 只依赖标准 DOM/Canvas2D/WebAudio。Capacitor 壳子本质上是一个指向 `dist/` 的 WebView，**不需要为了"能跑"改任何业务代码**。需要动的只是：入口 HTML 的 meta、CSS 的 insets、以及 §3/§4/§5 的触屏与性能专项。
@@ -94,7 +100,7 @@ npm run build && npx cap sync        # 只同步 dist/ 与插件原生定义
 
 # 6) 打开原生工程
 npx cap open ios        # 需要 Xcode 15+
-npx cap open android    # 需要 Android Studio + JDK 17
+npx cap open android    # 需要 Android Studio + JDK 21（⚠️ 原稿写 17；Capacitor 8 实为 21，见 runbook）
 ```
 
 `npx cap sync` 只做两件事：把 `dist/` 拷进原生工程、按 `package.json` 里的 Capacitor 插件更新原生依赖——**不会重编 Web 代码**，所以迭代节奏仍是"改 → `npm run build` → `cap sync` → 真机跑"。
@@ -134,7 +140,7 @@ export default config;
 
 ### 2.4 Android 注意事项
 
-1. **最低 / 目标 SDK**：`compileSdk 34`、`targetSdk 34`、`minSdk 23`（Capacitor 6 默认）。targetSdk 34 是 Google Play 2024 的硬要求。
+1. **最低 / 目标 SDK**：`compileSdk 36`、`targetSdk 36`、`minSdk 24`（**Capacitor 8 实际值**；⚠️ 原稿写 `34 / 34 / 23`，属 Capacitor 6 时代）。targetSdk 是 Google Play 逐年抬高的硬要求——落地值以 `docs/architecture/android-build-runbook.md` 为准。
 2. **方向锁定**：`android/app/src/main/AndroidManifest.xml` 的 `<activity>` 上加
    `android:screenOrientation="sensorLandscape"`（sensor 前缀允许左右翻转，用户体验更好；纯 `landscape` 会锁死一个方向）。
 3. **WebView 版本**：Android 4.4 之后的 WebView 可独立升级，Canvas2D 走 GPU 的前提是 WebView ≥ 74（`multiply`/`overlay` 合成）。minSdk 23 的机器可能带老 WebView。**加一个运行时探测**（见 §4.3）兜底。
@@ -198,6 +204,8 @@ npx capacitor-assets generate --iconBackgroundColor '#3a2a14' \
 ---
 
 ## 3. 触屏交互规格
+
+> **⚠️ 本节是规格原稿（写作时的「要改成什么样」）。** 落地现状以**第 6 节「实现状态」列**为准：§3.1 指针模型、§3.2 双击居中、§3.3 长按（8px）与双击、§3.6 对接点**均已实现**（`a668e63`）；**唯一仍是设计**的是 **§3.5 手势状态机**（M-12）。§3.3 / §3.4 表里的「现状」列是**写作时**的现状，勿再当今日现状读。
 
 ### 3.1 指针模型统一（保留 `pointers` Map，只加字段）
 
@@ -285,7 +293,7 @@ IDLE ──pointerdown──> PRESS(t=0, p0)
 | `main.ts:1065` | **加 `lastPointerType === 'mouse'` 守卫**（P0） |
 | `main.ts:1031–1050` | 键盘处理保留（蓝牙键盘/桌面壳仍可用），不动 |
 
-> **行号与状态提示（2026-09-18）**：本表原为设计稿，行号基于写作时源码。M-01 已落地——`lastPointerType` 现于 `main.ts:780` 声明、`:799`（pointerdown）与 `:824`（pointermove）记录、`:1100` 处 gate（即原 `1065`）；`Camera.edgeScroll` 保留未删。表中**其余各条**（`pointers` 的 `type` 字段、手势状态机、双击居中、长按阈值 4→8 px、`updateHover` 的 mouse/pen gate 等）**仍未实现**，属 §3 设计。
+> **行号与状态提示（2026-09-18 · 第二轮）**：本表原为设计稿，行号基于写作时源码，**已大幅位移，以实现代码为准**。已落地：`lastPointerType`（`main.ts:807` 声明、`:824`/`:849` 记录、`:1164` 处 gate 边缘滚屏；`Camera.edgeScroll` 保留未删）；**长按阈值 4→8 px**（`main.ts:864`）；**双击居中**（`endPointer`，`main.ts:891-920`，`isDoubleTap`）；**`updateHover` 的 mouse/pen gate**（`main.ts:888`，`shouldHover`）；**`orientationchange` 重排**（`main.ts:1118`）。**唯一仍是设计的**是 §3.5 的**手势状态机**（`dragged`/`lastPan`/`pinchDist`/`longPress` 散变量仍未收敛，**M-12**）——`pointers` 的 `type` 字段亦随 M-01 一并落地。
 
 ---
 
@@ -311,6 +319,8 @@ IDLE ──pointerdown──> PRESS(t=0, p0)
 > **估算依据与未验证声明**：以上像素量为几何推算（CSS 尺寸 × DPR²），非实测。真实帧时间**未在真机测量**。要拿实测数字，用 §4.3 的微基准，或在原生壳里接 Chrome DevTools / Safari Web Inspector 采样。
 
 ### 4.2 分档表（具体数字）
+
+> **⚠️ 本表是「设计意图」，不是落地值。** 已交付的档位映射以 **§4.5** 为准（由 `settingsForTier(tier)` 产出，`commit 9aba485`）。下表保留作论证与偏差对照；§4.5 明列了有意为之的偏差。
 
 | 档位 | 典型设备 | 目标帧率 | 帧预算 | DPR 上限 | 光照 | 水面高光 | 城镇灯火 | 地图尺寸上限 | 其它 |
 |---|---|---|---|---|---|---|---|---|---|
@@ -408,6 +418,13 @@ selectionPulseHz: 4 | 2
 
 ### 5.1 安全区（刘海 / 灵动岛 / 挖孔 / 手势条）
 
+> **⚠️ 已实现，但落地写法与本节的 `env()` 示例不同（2026-09-18）。** 代码里三处安全区都用
+> **`var(--safe-area-inset-*, env(safe-area-inset-*, 0px))`**（`style.css` 的 `#app:63-66`、
+> `#rotate-hint:775`、`#start-screen:1381-1384`）。原因：Capacitor 8 的 `SystemBars`
+> （`insetsHandling:'css'`）会把 inset **注入成 CSS 变量**；本工程 targetSdk 36 = Android 15+，
+> 裸 `env()` 在该 WebView 上会**静默取 0**。`env()` 仅作浏览器 / iOS 的兜底。下面 §5.1.2 的
+> `env()` 片段是**原设计写法**，已被上述 `var()` 覆盖，勿照抄。
+
 一套做法同时覆盖 iOS 与 Android（**这是最省事的方案**）：
 
 1. `public/index.html` 的 viewport 改为：
@@ -478,7 +495,9 @@ export function resumeAudio(): void  { if (ctx?.state === 'suspended') void ctx.
 
 ## 6. P0.1 与 P1 返工清单（可直接当任务列表）
 
-共 **14 条**。格式：`ID · 优先级 · 改什么 · 为什么`。**每条都在"测试影响"列标明对 smoke / CDP 审计的影响**（本文档写作时 smoke 基线 471 项；M-01~M-04 落地后为 519 项，随后续改动仍在增长）。**「实现状态」列标明该条是已交付代码还是仍是设计**——这是 G-10 的同类整改项：勿让「设计」冒充「现状」。
+共 **14 条**。格式：`ID · 优先级 · 改什么 · 为什么`。**每条都在"测试影响"列标明对 smoke / CDP 审计的影响**（smoke 基线变化：本文档写作时 471 项 → M-01~M-04 落地后 519 项 → M-01~M-11 落地后全量 **550 PASS / 0 FAIL**）。**「实现状态」列标明该条是已交付代码还是仍是设计**——这是 G-10 的同类整改项：勿让「设计」冒充「现状」。
+
+> **打包 / 构建环境不在本表范围。** Capacitor 版本、SDK 级别、JDK、零打包器约束等（决定 M-05/M-06/M-13 与 M-10 原生侧能否真机跑通）以 **`docs/architecture/android-build-runbook.md`** 为准。2026-09-18 落地状态：**M-01~M-09、M-11、M-13 已实现**（M-10 仅 web 侧）；**M-12 / M-14 仍是设计**。
 
 | ID | 级别 | 改什么（文件:行） | 为什么 | 测试影响 | 实现状态 |
 |---|---|---|---|---|---|
@@ -486,24 +505,24 @@ export function resumeAudio(): void  { if (ctx?.state === 'suspended') void ctx.
 | **M-02** | **P0** | 地形烘焙内存治理：烘焙面 = `W × H × TILE² × 4` 字节，低端把**地图尺寸**夹到 32（=4 MiB，`main.ts` 的 `startNewGame` + `StartScreen.ts`）；`terrainLayer.bakeFringes` 改为**按边分块提交** | **已核实——原稿前提有误**：9 MiB 来自**烘焙画布本身**（巨型 1536² ≈ 9.0 MiB），**不是** `Path2D`。`beginPath()` 在 DIRS 循环内（`terrainLayer.ts:186`），单条路径最多 `FRINGE_DEPTH × TILE = 192` 个 `rect()`，不存在"近百万 rect 攒入一条路径"。fringe 分块是**锦上添花**（峰值有界、免去每边 `Path2D` 分配），**真正压内存的是地图尺寸夹紧**；`TILE` 固定 32 不能降采样（会使烘焙面与网格错位） | 无（smoke 不触渲染）；`audit:layout` 是**纯生成器审计**，不受渲染改动影响 | ✅ **已实现**（9aba485） |
 | **M-03** | **P0** | 光照分档：`MapRenderer` 光照段按 `quality.lighting` 三态渲染；`createLinearGradient`/`createRadialGradient` **按尺寸缓存**（暖光改由 `globalAlpha` 承载强度，见 §4.5）；低端只留 multiply | 三遍全屏混合 ≈ 8.9 Mpx/帧（iPhone 14），是最大单项；每帧新建 gradient 产生 GC | 无（`lightTintAt` 纯函数不动 → 8 个光照测试仍绿） | ✅ **已实现**（9aba485） |
 | **M-04** | **P0** | DPR 钳制：`MapRenderer.resize`（原 `:95`）、`BattleRenderer.fit`（原 `:76`）改为 `Math.min(dpr, quality.dprCap)` 且**保留小数**；质档切换后重跑 `resize()` | 现状无上限且 `Math.round` 吞掉 1.5 档；1× → 3× 是 9 倍像素量 | 无 | ✅ **已实现**（9aba485） |
-| **M-05** | P1 | 生命周期：新增 `Lifecycle` 模块，接 `visibilitychange` / `pagehide` / Capacitor `appStateChange` → 停 rAF + suspend 音频 + **自动存档**；恢复时重置 `last` | `main.ts` 目前**完全没有**后台处理，切后台 rAF 空转耗电、音频不释放、被系统杀进程丢进度 | 无；需新增 CDP 测试项（无法用 smoke 覆盖） | ⬜ 未实现（设计） |
-| **M-06** | P1 | `sfx.ts` 导出 `suspendAudio/resumeAudio`，`ac()` 去掉自动 resume（第 41 行） | 见 §5.4：后台被中断后自动 resume 可能爆音 | 无（smoke 不测音频） | ⬜ 未实现（设计） |
-| **M-07** | P1 | 安全区：`public/index.html` 加 `viewport-fit=cover`；`style.css` `#app` 加四边 `env()` padding；顶/底栏高度改 `calc(...)` | 刘海/灵动岛/挖孔/手势条遮挡 HUD | 无；`audit:layout` 是**纯生成器审计，不产截图、不做图像比对**（已实测 640 局全过）——**不存在"截图基线"**（原稿此处判断有误，已更正） | ⬜ 未实现（设计） |
-| **M-08** | P1 | 横屏锁定：Android manifest `sensorLandscape`；iOS `Info.plist` 手机只留 Landscape、iPad 留四向；加 `orientationchange` → `resize()+clamp()`；加竖屏提示兜底 | 竖屏放不下右侧面板与战斗场 | 无 | ⬜ 未实现（设计） |
-| **M-09** | P1 | 触控热区：`style.css` 全部按钮 `min-height` 30–32 → **44/48 px**；相邻间距 ≥8 px；横屏压顶/底栏高度 | 现状 30–32 px 低于移动下限，误触率高 | 无；`audit:layout` **无截图基线**（见 M-07 更正），原稿"需重拍基线"有误 | ⬜ 未实现（设计） |
-| **M-10** | P1 | 长按：位移阈值 `main.ts:825` 由 4 px → **8 px**；触发时接 `@capacitor/haptics`（`impact('light')`）；CSS 加 `-webkit-touch-callout:none` / `user-select:none` / `overscroll-behavior:none` | 手指抖动大于鼠标，4 px 太紧会误判成拖拽；缺 iOS 长按菜单抑制 | 无 | ⬜ 未实现（设计） |
-| **M-11** | P1 | 双击居中：`endPointer`（`main.ts:851–861`）记录 `lastTapT/lastTapPos`，判定双击 → `camera.centerOn()` 平滑版 | 边缘滚屏在手机上废弃后，缺少"远距离移动镜头"手段 | 无；建议新增 smoke 单测（纯逻辑可测） | ⬜ 未实现（设计） |
+| **M-05** | P1 | 生命周期：新增 `Lifecycle` 模块，接 `visibilitychange` / `pagehide` / Capacitor `appStateChange` → 停 rAF + suspend 音频 + **自动存档**；恢复时重置 `last` | `main.ts` 目前**完全没有**后台处理，切后台 rAF 空转耗电、音频不释放、被系统杀进程丢进度 | 无；需新增 CDP 测试项（无法用 smoke 覆盖） | ✅ **已实现**（模块 `49c2678`；接线 `be7d9c9`）——`src/app/lifecycle.ts`（`installLifecycle`）接 `visibilitychange`/`pagehide`/`freeze` + 原生 `appStateChange`；`main.ts:1277` 传入 `onPause`（`cancelAnimationFrame` + `saveGame`）/ `onResume`（**先重置 `last`** 再重启 rAF）。**⚠️ 未接入 `main.ts` 前是死代码** |
+| **M-06** | P1 | `sfx.ts` 导出 `suspendAudio/resumeAudio`，`ac()` 去掉自动 resume（第 41 行） | 见 §5.4：后台被中断后自动 resume 可能爆音 | 无（smoke 不测音频） | ✅ **已实现**（`49c2678`）——`sfx.ts:34/43` 已导出 `suspendAudio`/`resumeAudio`，由 `lifecycle.ts` 在 pause/resume 时调用（音频 suspend/resume 职责归 Lifecycle 模块） |
+| **M-07** | P1 | 安全区：`public/index.html` 加 `viewport-fit=cover`；`style.css` `#app` 加四边 `env()` padding；顶/底栏高度改 `calc(...)` | 刘海/灵动岛/挖孔/手势条遮挡 HUD | 无；`audit:layout` 是**纯生成器审计，不产截图、不做图像比对**（已实测 640 局全过）——**不存在"截图基线"**（原稿此处判断有误，已更正） | ✅ **已实现**（`a668e63`）——`index.html:7` 加 `viewport-fit=cover`；`style.css` 三处改 **`var(--safe-area-inset-*, env(...))`**（`#app:63-66` / `#rotate-hint:775` / `#start-screen:1381-1384`，理由见 §5.1 提示）。**⚠️ 安卓 `--safe-area-inset-*` 注入路径未真机验证**——本地只跑到 `env()` 兜底分支（浏览器不注入该变量） |
+| **M-08** | P1 | 横屏锁定：Android manifest `sensorLandscape`；iOS `Info.plist` 手机只留 Landscape、iPad 留四向；加 `orientationchange` → `resize()+clamp()`；加竖屏提示兜底 | 竖屏放不下右侧面板与战斗场 | 无 | ✅ **已实现（web + Android 原生）**——**web 侧**（`a668e63`）：`main.ts:1118` `orientationchange` → 120ms 后 `renderer.resize()` + `camera.clamp()`（延迟一拍等可视尺寸稳定）；`index.html:18` 加 `#rotate-hint` 竖屏提示。**原生侧**：`AndroidManifest.xml:16` `android:screenOrientation="sensorLandscape"`。**iOS `Info.plist` 方向锁定本轮未做**（Android 优先，属后续） |
+| **M-09** | P1 | 触控热区：`style.css` 全部按钮 `min-height` 30–32 → **44/48 px**；相邻间距 ≥8 px；横屏压顶/底栏高度 | 现状 30–32 px 低于移动下限，误触率高 | 无；`audit:layout` **无截图基线**（见 M-07 更正），原稿"需重拍基线"有误 | ✅ **已实现（分级方案）**（`a668e63` + 残余 `17e1b29`）——`.btn` **≥44px**、`.btn.primary` **≥48px**；**密集区**（`.hp-nav` 3px 间距、`.hp-tbtns`）不能扩命中区（一扩就压到邻格），故把 **真实 `min-height` 抬到 32px**（`.btn.tiny`）；**宽松区**用 **`.btn.tiny.tap::after` 垂直扩张命中区**至 ~44px（`style.css:659`）；`.spellbook .btn.tiny` 真 44px（`:1068`）。**由 `tools/tinytargetaudit.mjs`（`npm run audit:touch`）实测守卫**——用 `elementFromPoint` 量真实热区，非 `getBoundingClientRect` |
+| **M-10** | P1 | 长按：位移阈值 `main.ts:825` 由 4 px → **8 px**；触发时接 `@capacitor/haptics`（`impact('light')`）；CSS 加 `-webkit-touch-callout:none` / `user-select:none` / `overscroll-behavior:none` | 手指抖动大于鼠标，4 px 太紧会误判成拖拽；缺 iOS 长按菜单抑制 | 无 | ◐ **部分实现（仅 web 侧）**（`a668e63`）——位移阈值 **4→8px**（`main.ts:864`，`Math.abs(dx)+Math.abs(dy) > 8`）+ CSS `-webkit-touch-callout/user-select:none`、`body{overscroll-behavior:none}` 已上；**`@capacitor/haptics` 未接线**（插件已装、`impact('light')` 未接 → 长按暂无原生触觉反馈） |
+| **M-11** | P1 | 双击居中：`endPointer`（`main.ts:851–861`）记录 `lastTapT/lastTapPos`，判定双击 → `camera.centerOn()` 平滑版 | 边缘滚屏在手机上废弃后，缺少"远距离移动镜头"手段 | 无；建议新增 smoke 单测（纯逻辑可测） | ✅ **已实现**（`a668e63`）——`endPointer`（`main.ts:891-920`）记录 `lastTap`，`isDoubleTap`（<300ms / 落点 <12px）→ `camera.centerOn(g.x,g.y)`。**首击仍照常执行 `handleClick`**（选中/移动照旧，不加 300ms 单击延迟——刻意的即时反馈取舍）；已补 smoke `isDoubleTap` 单测（8 项） |
 | **M-12** | P2 | 手势状态机重构：把 `dragged/lastPan/pinchDist/longPress` 收敛为显式状态机（§3.5） | 手势种类变多后散变量互相打架；长按"吞点击"靠 `dragged=true` 很脆 | 需补手势单测（把状态机抽成纯函数即可进 smoke） | ⬜ 未实现（设计） |
-| **M-13** | P2 | 存档迁移：`persistence.ts` 6 个函数改双写 Preferences + localStorage | iOS WKWebView 会回收 localStorage → 丢档（Top3 风险 ③） | 无（函数签名不变）；需补"Preferences 不可用时回落"的单测 | ⬜ 未实现（设计） |
-| **M-14** | P2 | 图集瘦身：实测 `atlas.ts:751` 2048² 的**实际占用面积**，缩到能容纳的最小 2 的幂（预计可到 1024² 或 2048×1024，省 8–12 MiB）；`combatAtlas.ts:91` 同样 | 16 MiB 常驻内存，是低端机内存压力的主要来源之一 | 无（帧坐标由 Packer 动态计算） | ⬜ 未实现（设计） |
+| **M-13** | P2 | 存档迁移：`persistence.ts` 6 个函数改双写 Preferences + localStorage | iOS WKWebView 会回收 localStorage → 丢档（Top3 风险 ③） | 无（函数签名不变）；需补"Preferences 不可用时回落"的单测 | ✅ **已实现**（模块 `49c2678`；接线 `be7d9c9`）——`persistence.ts` 6 个函数保持同步签名不变、内部**双写** Preferences（权威）+ localStorage（兜底），新增 `hydratePersistence()`/`preferencesAvailable()`；走原生注入的 `window.Capacitor` 全局（零打包器约束），Web 下自动退回 localStorage。**⚠️ `hydratePersistence()` 在 `main.ts:109` 先于 `loadGame()` 执行——接线前水合永不运行**，存档会一直被误判为空 |
+| **M-14** | P2 | 图集瘦身：实测 `atlas.ts:751` 2048² 的**实际占用面积**，缩到能容纳的最小 2 的幂（预计可到 1024² 或 2048×1024，省 8–12 MiB）；`combatAtlas.ts:91` 同样 | 16 MiB 常驻内存，是低端机内存压力的主要来源之一 | 无（帧坐标由 Packer 动态计算） | ⬜ **未实现（设计）· 优先级已下调**——`A1 v2` 拍板"每族 ×4"后，实测占用：**冒险图集 17.0%**（2048²）、**战斗图集 33.6%**（1024×512）。多数面积是空槽而非碎片，**瘦身能省的空间较原估大幅缩小**，故降为低优先（详见 `design/art-bible/asset-spec.md`） |
 
 ### 6.1 建议实施顺序（按"解锁价值 / 风险"排）
 
 1. **M-01**（一行守卫，立刻消除手机镜头自爬）→ 2. **M-04**（DPR 钳制，为所有性能档位铺路）→ 3. **M-03 + M-02**（光照与地形，两个最大开销）→ 4. **M-05 + M-06**（生命周期，省电 + 防丢档）→ 5. **M-07 + M-08 + M-09 + M-10 + M-11**（触屏体验成套上）→ 6. M-12/M-13/M-14（打磨）。
 
-**M-01～M-04 是"手机能不能玩"的分水岭**，建议下一轮优先做这四条。
+**M-01～M-04 是"手机能不能玩"的分水岭**——已于 `9aba485` 全部完成。
 
-> **进度（2026-09-18）**：上述第 1~3 步已全部完成——**M-01 / M-04 / M-03 / M-02 均已实现并提交 `9aba485`**。下一步进入第 4 步（M-05 + M-06 生命周期），再成套上 M-07~M-11。
+> **进度（2026-09-18 · 第二轮）**：上述第 1~5 步**已全部完成**——**M-01 / M-04 / M-03 / M-02（`9aba485`）→ M-05 / M-06 / M-13（模块 `49c2678` + 接线 `be7d9c9`）→ M-07 / M-08 / M-09 / M-11 及 M-10 的 web 侧（`a668e63`；M-09 残余 `17e1b29`）**。仅剩第 6 步的打磨项 **M-12（手势状态机）与 M-14（图集瘦身，优先级已下调）仍是设计**；M-10 的原生触觉 `@capacitor/haptics` 待接线。
 
 ---
 
@@ -552,7 +571,7 @@ export function resumeAudio(): void  { if (ctx?.state === 'suspended') void ctx.
 | `pointerleave` 在 pointer capture 下的真机触发时机 | 影响 M-01 的"是否真会自爬"，但**不影响修法**（按指针类型 gate 与事件顺序无关） |
 | Podfile / Gradle 体积 | §2.7 的平台运行时体积是公开经验值，未在本机实打包 |
 | `env(safe-area-inset-*)` 在老 Android WebView 可用性 | 若目标机含极老 WebView，需走 §5.1 的 CSS 变量兜底 |
-| Capacitor 6 的具体版本与插件兼容矩阵 | 未核对当前最新版本号，实施前需 `npm view @capacitor/cli version` 确认 |
+| Capacitor 版本与插件兼容矩阵 | **已解决**：钉定 **Capacitor 8.5.2**（非 6），插件兼容矩阵见 `docs/architecture/android-build-runbook.md`（本文档 §2 的 Capacitor 6 描述已就地标注为过时） |
 | App Store 4.2 审核尺度 | 是否会被判定为"网站套壳"只能提交后知道；缓解手段见 §2.5-4 |
 
 **M-01~M-04 已落地，但以下子项仍只能真机验证（2026-09-18 补）**：
@@ -565,6 +584,17 @@ export function resumeAudio(): void  { if (ctx?.state === 'suspended') void ctx.
 | **低端水面仍逐帧 blit 水格** | 低端只冻结了水面高光与 4 帧动画（`waterFrame = 0`），水面格仍每帧 `drawImage`；把水面烘进地形层**未做**，收益未量化 |
 | **`BattleRenderer` 不响应"战斗中途切档"** | 每场战斗新建渲染器，只在 `fit()` 时读 `dprCap`；档位中途变化要等下一次 `resize()` 才生效（未订阅 `onTierChange`）。战斗内切档概率极低，暂不处理 |
 | **加载"已在档的巨型存档"不受夹紧** | `maxMapSize` 只在 `startNewGame` 夹新开局；直接读一个巨型存档时烘焙面仍可能超预算，只打一条一次性 `console.warn`（`terrainLayer.ts`） |
+
+**M-05~M-11、M-13 已落地，但以下子项仍只能真机验证（2026-09-18 第二轮补）**：
+
+| 项 | 说明 |
+|---|---|
+| **M-07 安卓安全区注入路径** | 代码用 `var(--safe-area-inset-*, env(...))`，但**本地只跑到 `env()` 兜底分支**（浏览器不注入该变量）。Android 上 `SystemBars` 是否真把 `--safe-area-inset-*` 注入 WebView、值是否正确，**须真机验证** |
+| **M-05 `appStateChange` 真机行为** | `lifecycle.ts` 走原生注入的 `window.Capacitor` 全局（零打包器约束，无法 `import '@capacitor/app'`）。`@capacitor/app` 是否在真机上注册并派发 `appStateChange`、pause/resume 时序是否正确，**未在真机验证**；Web 侧 `visibilitychange`/`pagehide` 已按标准事件实现 |
+| **M-13 Preferences 双写真机行为** | Web 下自动退回 localStorage（功能不变）；**原生 Preferences 的读写、`hydratePersistence()` 的回灌时序未真机验证**（本机无移动构建工具链，见 G-11） |
+| **M-10 原生触觉** | **未接线**可言验证——`@capacitor/haptics` 已装但 `impact('light')` 尚未接入长按回调 |
+| **M-09 真机热区** | 由 `npm run audit:touch` 用无头 Chrome 的 `elementFromPoint` 量真实热区（非模拟）；**触屏真机的手指命中感未验证**（无头鼠标指针 ≠ 手指） |
+| **双击 / 长按阈值** | `DOUBLE_TAP_MAX_MS=300` / `DOUBLE_TAP_MAX_DIST=12`、长按 `>8px` 位移阈值**均为代码推定值，未在真机手感校准**（登记为 device-tunable 参数） |
 
 ### 8.2 需要用户拍板的 3 个问题
 
