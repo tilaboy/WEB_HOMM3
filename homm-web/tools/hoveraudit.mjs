@@ -28,7 +28,10 @@ const root = process.cwd();
 const dist = path.join(root, 'dist');
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const APP_PORT = Number(process.env.PORT ?? 5173);
-const CDP_PORT = 9333;
+// 每次用不同端口：固定端口下若上一轮 Chrome 没退干净，findTarget 会连到那个**陈旧**实例、
+// 量到旧 DOM（假 PASS/假 FAIL——对验证工具而言是最糟的失效方式）。
+// 按 PID 派生端口，并与 tinytargetaudit.mjs 的 9200 段错开（9900 起），两个审计并行也不串台。
+const CDP_PORT = 9900 + (process.pid % 90);
 const PROBE_NAME = '_hoverprobe.html';
 const PROBE = path.join(dist, PROBE_NAME);
 

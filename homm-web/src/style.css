@@ -51,10 +51,19 @@ body {
   inset: 0;
   display: flex;
   flex-direction: column;
-  /* M-07 安全区：四边统一内缩到 env() 里。这样顶栏自动落在刘海/状态栏之下，
-     底部面板也在 home indicator 之上；配合 index.html 的 viewport-fit=cover 才生效。 */
-  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
-    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  /* M-07 安全区：四边统一内缩。**必须写成 var(--safe-area-inset-*, env(...))**，不要
+     "简化"回裸 env()：
+       · Capacitor 的 SystemBars（capacitor.config.ts 里 insetsHandling:'css'）会把
+         --safe-area-inset-* 注入 WebView；本工程 targetSdk 36 = Android 15+，系统强制
+         edge-to-edge，而 Android WebView 上裸 env() 不可靠、会**静默退化成 0** ——
+         那样安全区在首个发布平台（安卓）上等于没做。
+       · 保留 env() 兜底是为了普通浏览器和 iOS：它们没有注入变量，但有原生 env()。
+     顶栏因此自动落在刘海/状态栏之下、底部面板在 home indicator 之上；
+     配合 index.html 的 viewport-fit=cover 才生效。 */
+  padding: var(--safe-area-inset-top, env(safe-area-inset-top, 0px))
+    var(--safe-area-inset-right, env(safe-area-inset-right, 0px))
+    var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
+    var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
 }
 
 /* ---------- top bar ---------- */
@@ -763,7 +772,7 @@ table.est td:last-child {
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    top: calc(env(safe-area-inset-top, 0px) + 62px);
+    top: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 62px);
     z-index: 950;
     pointer-events: none;
     padding: 6px 14px;
@@ -1367,9 +1376,12 @@ body.in-battle #topbar {
   background:
     radial-gradient(120% 90% at 20% 0%, #4a3418 0%, #2a1c0c 55%, #1a1207 100%);
   overflow: auto;
-  /* M-07：开局页是 fixed(inset:0)，落在 #app 的内缩之外，需自己再避一次安全区 */
-  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
-    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  /* M-07：开局页是 fixed(inset:0)，落在 #app 的内缩之外，需自己再避一次安全区。
+     同样用 var(--safe-area-inset-*, env(...))——理由见 #app 处（安卓 WebView 裸 env() 会变 0）。 */
+  padding: var(--safe-area-inset-top, env(safe-area-inset-top, 0px))
+    var(--safe-area-inset-right, env(safe-area-inset-right, 0px))
+    var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
+    var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
 }
 
 .ss-panel {
