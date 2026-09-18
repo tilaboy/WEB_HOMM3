@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>卡通美术圣经 · 色板与明度测试表 V1</title>
+<style>
+  :root{
+    --ink0:#2a1a12; --ink1:#4a3524; --paper:#f3ead8; --paper2:#e6d9c0;
+    --wood:#4a3222; --gold:#c9a227;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:24px 20px 64px;
+    background:#1a1512 radial-gradient(120% 80% at 50% 0%, #2b231c 0%, #14100d 100%);
+    color:var(--paper);
+    font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  }
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px;letter-spacing:.5px;color:#f6e6c8}
+  h2{font-size:16px;margin:38px 0 6px;padding-bottom:6px;border-bottom:1px solid #3a2e24;color:#e8d3ad}
+  h3{font-size:13px;margin:22px 0 8px;color:#c9b48c;font-weight:600;letter-spacing:.3px}
+  .sub{color:#9a8b76;font-size:12.5px;margin:0 0 6px}
+  .note{background:#241c16;border-left:3px solid var(--gold);padding:9px 12px;margin:10px 0;font-size:12.5px;color:#cbbda4;border-radius:0 4px 4px 0}
+  .note b{color:#f0d79a}
+  .note.warn{border-left-color:#c0392b}
+  table{border-collapse:collapse;width:100%;margin:8px 0 4px;font-size:12.5px}
+  th,td{padding:6px 9px;text-align:left;border-bottom:1px solid #2e251d;vertical-align:middle}
+  th{color:#a8967a;font-weight:600;font-size:11.5px;letter-spacing:.4px}
+  td.mono,th.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .ramp{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;margin:8px 0}
+  .ramp .box{flex:0 0 auto}
+  .sw{width:96px;height:56px;border:1px solid #00000055;border-radius:3px;
+      display:flex;align-items:flex-end;justify-content:center;
+      font:10.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;padding-bottom:4px;color:#fff;
+      text-shadow:0 1px 2px #000c, 0 0 3px #0009}
+  .sw.small{width:64px;height:42px;font-size:9.5px}
+  .lbl{font-size:11px;color:#a8967a;margin-top:4px;text-align:center}
+  .faction{background:#241c1655;border:1px solid #33291f;border-radius:6px;padding:12px 14px;margin:12px 0}
+  .faction h3{margin-top:0;display:flex;align-items:center;gap:8px;font-size:14px;color:#f0dcb6}
+  .dot{width:14px;height:14px;border-radius:50%;border:1px solid #0006;display:inline-block}
+  .motif{font-size:12px;color:#a8967a;margin:2px 0 8px}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+  .grayrow .sw{filter:grayscale(1)}
+  .lstar{font-size:10.5px;color:#8f826e;text-align:center;margin-top:2px;font-family:ui-monospace,monospace}
+  footer{margin-top:44px;padding-top:14px;border-top:1px solid #33291f;font-size:11.5px;color:#7d715f}
+  .pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:10.5px;border:1px solid #4a3c2c;color:#c9b48c;margin-right:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>卡通美术圣经 · 色板与明度测试表</h1>
+  <p class="sub">V1 建议稿 · 任务 A1 · 配套 <code>cartoon-style.md</code> §3 与 <code>asset-spec.md</code> §2<br>
+  本页用于<b>拍板色板</b>与<b>验证灰度/夜间可辨性</b>。所有色值为 sRGB。</p>
+
+  <div class="note">
+    <b>怎么用这张表：</b>① 看 §A 基底色 —— 决定"不同资产像不像一家人"；② 看 §B 每族 7 色 —— 决定"4 个族有没有各自的脸"；
+    ③ 看 §C 灰度行 —— 关掉颜色后还能不能分出族；④ 看 §D 夜间行 —— 现有光照会把按 58% 压暗并偏蓝，色板能不能扛住。
+  </div>
+
+  <h2>A. 全局基底色板（所有族共用）</h2>
+  <p class="sub">这 11 组是"一家人"的保险：任何族的任何资产都只能从这里取中性色。</p>
+  <div id="base"></div>
+
+  <h2>B. 每族主题色（7 色 + 明度签名）</h2>
+  <p class="sub">保色相、推饱和、拉明度差 —— 这是对现有 <code>factions.ts</code> 主色的<b>微调</b>，不是替换（换色相会让 UI / 小地图 / 势力列表全部连坐）。</p>
+  <div id="factions"></div>
+
+  <h2>C. 灰度可辨测试（白化后是否还能分出 4 个族）</h2>
+  <p class="sub">判定标准：<b>相邻族明度差 ≥ 12 L*</b>。下方为各族"墙面主材 + 主色"两色的灰度表现与实测 L*。</p>
+  <div class="note" id="grayscaleVerdict"></div>
+  <div id="graytest"></div>
+
+  <h2>D. 夜间光照模拟（现有 vs 建议调整）</h2>
+  <p class="sub">左侧＝现状（<code>lightLayer.ts</code> 深夜关键帧 <code>rgb(148,164,208)</code>，等效乘数 R.58 / G.64 / B.82）；
+     右侧＝建议（<code>rgb(178,182,205)</code>，等效力 ≈ .70）。</p>
+  <div class="note warn">
+    现状的问题不是"变暗"，而是 <b>蓝通道被单独留了 0.82</b> —— 所有族的色相都被拽向蓝，
+    p2 的暖红和 p4 的暗紫在低明度下会糊成同一团深蓝紫。所以建议：<b>提高 floor + 降蓝饱和</b>。
+  </div>
+  <div id="nighttest"></div>
+
+  <h2>E. 族母题速查（32px 缩略下靠形状分辨）</h2>
+  <table>
+    <thead><tr><th>族</th><th>主色</th><th>轮廓母题</th><th>屋顶</th><th>兵种剪影</th><th>搞笑点</th></tr></thead>
+    <tbody id="motifs"></tbody>
+  </table>
+
+  <h2>F. 尺寸网格速查</h2>
+  <table>
+    <thead><tr><th class="mono">类别</th><th class="mono">画布</th><th class="mono">锚点</th><th>备注</th></tr></thead>
+    <tbody id="sizes"></tbody>
+  </table>
+
+  <footer>
+    林绘澄（美术定稿）· A1 · 待拍板项见 <code>cartoon-style.md</code> §9 与 <code>asset-spec.md</code> §8<br>
+    关键质疑：图集实际是 <b>2048×2048</b>（<code>atlas.ts:751</code>），文档写的 1024 是旧值，利用率仅约 9.6% —— 可缩到 1024²，省 12MB 显存。
+  </footer>
+</div>
+
+<script>
+/* ---------- 色彩工具 ---------- */
+const hex2rgb = h => { h=h.replace('#',''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; };
+const rgb2hex = (r,g,b) => '#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
+const lin = c => { c/=255; return c<=0.04045 ? c/12.92 : Math.pow((c+0.055)/1.055,2.4); };
+const relY = (r,g,b) => 0.2126*lin(r)+0.7152*lin(g)+0.0722*lin(b);
+function lstar(r,g,b){
+  const Y=relY(r,g,b);
+  return Y > 216/24389 ? 116*Math.cbrt(Y)-16 : 24389/27*Y;
+}
+const lstarOf = h => { const [r,g,b]=hex2rgb(h); return lstar(r,g,b); };
+const mul = (h, mr,mg,mb) => { const [r,g,b]=hex2rgb(h); return rgb2hex(r*mr,g*mg,b*mb); };
+const gray = h => { const [r,g,b]=hex2rgb(h); const y=relY(r,g,b)*255; return rgb2hex(y,y,y); };
+
+/* ---------- A. 基底 ---------- */
+const BASE = [
+  ['描边 ink0',   ['#2a1a12']],
+  ['结构线 ink1', ['#4a3524']],
+  ['高光',        ['#ffffff','#fff3c8']],
+  ['木材',        ['#a8703c','#8a5f34','#5f4022']],
+  ['石材',        ['#cfc6b4','#a9a093','#6f6858']],
+  ['金属',        ['#dfe6f0','#aab6c2','#6b7686']],
+  ['布/皮',       ['#e8d9a8','#b9a06a']],
+  ['肤色',        ['#f0c79a','#d8a878','#a87450']],
+  ['植被',        ['#6fc24a','#4a8438','#2f5a24']],
+  ['投影',        ['#3a2a4a']]
+];
+document.getElementById('base').innerHTML = '<div class="grid2">' + BASE.map(([name,cols])=>
+  `<div><div class="ramp">${cols.map(c=>`<div class="box"><div class="sw small" style="background:${c}">${c}</div></div>`).join('')}</div>
+   <div class="lbl">${name}</div></div>`).join('') + '</div>';
+
+/* ---------- B. 每族 ---------- */
+const FACTION = [
+  { id:'p1', name:'晨曦军团', motif:'垂直尖顶 · 高瘦', hue:'hue 220',
+    cols:[['accent','#3f8fe8'],['accentLight','#8ecdf8'],['accentDark','#22559e'],
+          ['wall','#eae3d2'],['wallShade','#b3a894'],['clash','#ffb020'],['emissive','#fff3c8']] },
+  { id:'p2', name:'赤焰部落', motif:'横向宽顶 · 矮胖 + 兽刺', hue:'hue 8',
+    cols:[['accent','#e04a34'],['accentLight','#f79a7a'],['accentDark','#9a2519'],
+          ['wall','#c98a4e'],['wallShade','#8a5a30'],['clash','#2fbfa0'],['emissive','#ffd06a']] },
+  { id:'p3', name:'翠林守望', motif:'有机不规整 · 顶部枝叶凸起', hue:'hue 145',
+    cols:[['accent','#3fbe6e'],['accentLight','#93e8a8'],['accentDark','#1f7a45'],
+          ['wall','#7a7a48'],['wallShade','#4f5130'],['clash','#e0538f'],['emissive','#d6ff9a']] },
+  { id:'p4', name:'紫晶密会', motif:'菱形晶体 + 悬浮 · 上细下宽', hue:'hue 275',
+    cols:[['accent','#a165e8'],['accentLight','#d4aefc'],['accentDark','#6232a8'],
+          ['wall','#58526e'],['wallShade','#38334a'],['clash','#3fe0d0'],['emissive','#8ffff0']] },
+  { id:'neutral', name:'中立（无主）', motif:'无母题 · 素色', hue:'—',
+    cols:[['accent','#a08a72'],['accentLight','#cfc6b4'],['accentDark','#6b5b48'],
+          ['wall','#cfc6b4'],['wallShade','#a9a093'],['clash','#d0d0d8'],['emissive','#f3ead8']] }
+];
+document.getElementById('factions').innerHTML = FACTION.map(f=>{
+  const wallL = lstarOf(f.cols.find(c=>c[0]==='wall')[1]);
+  return `<div class="faction">
+    <h3><span class="dot" style="background:${f.cols[0][1]}"></span>${f.id} · ${f.name}
+      <span class="pill">${f.hue}</span><span class="pill">墙面 L* ≈ ${wallL.toFixed(0)}</span></h3>
+    <div class="motif">母题：${f.motif}</div>
+    <div class="ramp">${f.cols.map(([n,c])=>`<div class="box"><div class="sw" style="background:${c}">${c}</div><div class="lbl">${n}</div></div>`).join('')}</div>
+  </div>`;
+}).join('');
+
+/* ---------- C. 灰度测试 ---------- */
+const GRAY = FACTION.filter(f=>f.id!=='neutral').map(f=>({
+  id:f.id, name:f.name,
+  wall:f.cols.find(c=>c[0]==='wall')[1],
+  accent:f.cols[0][1],
+  clash:f.cols.find(c=>c[0]==='clash')[1]
+}));
+const walls = GRAY.map(g=>lstarOf(g.wall));
+let ok = true; const gaps=[];
+for(let i=0;i<walls.length-1;i++){ const d=Math.abs(walls[i]-walls[i+1]); gaps.push(d); if(d<12) ok=false; }
+document.getElementById('grayscaleVerdict').innerHTML =
+  `<b>判定：</b>墙面明度台阶 ${walls.map(w=>w.toFixed(0)).join(' / ')} → 相邻差 ${gaps.map(g=>g.toFixed(0)).join(' / ')} L*，` +
+  (ok ? '<b style="color:#8fd18a">全部 ≥ 12，通过</b>' : '<b style="color:#e08a7a">有相邻差 &lt; 12，不通过</b>') +
+  `。（灰色方块＝该色的灰度值；两个方块为一族：左=墙面主材，右=族主色。）`;
+document.getElementById('graytest').innerHTML = '<div class="grayrow">' + GRAY.map(g=>
+  `<div class="faction" style="margin:6px 0">
+     <h3><span class="dot" style="background:${gray(g.wall)}"></span>${g.id} · ${g.name}</h3>
+     <div class="ramp">
+       <div class="box"><div class="sw" style="background:${g.wall}">${g.wall}</div><div class="lstar">L* ${lstarOf(g.wall).toFixed(0)} · 墙</div></div>
+       <div class="box"><div class="sw" style="background:${g.accent}">${g.accent}</div><div class="lstar">L* ${lstarOf(g.accent).toFixed(0)} · 主色</div></div>
+       <div class="box"><div class="sw" style="background:${g.clash}">${g.clash}</div><div class="lstar">L* ${lstarOf(g.clash).toFixed(0)} · 撞色</div></div>
+     </div>
+   </div>`).join('') + '</div>';
+
+/* ---------- D. 夜间模拟 ---------- */
+const CUR = [148/255,164/255,208/255];   // 现状
+const NEW = [178/255,182/255,205/255];   // 建议
+const per = GRAY.map(g=>g.wall).concat(GRAY.map(g=>g.accent));
+document.getElementById('nighttest').innerHTML = `<div class="grid2" style="grid-template-columns:1fr 1fr">
+  <div><h3 style="margin-top:0">现状：rgb(148,164,208) · floor 0.58</h3><div class="ramp">
+    ${per.map(c=>`<div class="box"><div class="sw small" style="background:${mul(c,...CUR)}">${mul(c,...CUR)}</div><div class="lstar">L* ${lstarOf(mul(c,...CUR)).toFixed(0)}</div></div>`).join('')}
+  </div></div>
+  <div><h3 style="margin-top:0">建议：rgb(178,182,205) · floor ≈ 0.70</h3><div class="ramp">
+    ${per.map(c=>`<div class="box"><div class="sw small" style="background:${mul(c,...NEW)}">${mul(c,...NEW)}</div><div class="lstar">L* ${lstarOf(mul(c,...NEW)).toFixed(0)}</div></div>`).join('')}
+  </div></div>
+</div>
+<p class="sub" style="margin-top:10px">顺序：p1墙 · p2墙 · p3墙 · p4墙 · p1主 · p2主 · p3主 · p4主。
+注意右组各族墙面仍保留了可区分的明度台阶，左组后 4 个色块的明度已压进同一暗域。</p>`;
+
+/* ---------- E. 母题 ---------- */
+const MOTIF = [
+  ['p1 晨曦','#3f8fe8','垂直尖顶（陡三角 ≥60°）','蓝瓦 + 旗杆','武器竖直向上，宽高比 ≤0.55','全员站军姿、表情一本正经'],
+  ['p2 赤焰','#e04a34','横向宽顶 + 屋顶 2–4 根兽刺','红陶 + 挑檐','前倾宽肩，武器横持 ≥30%','装备不合身：盔大盖眼、武器比自己沉'],
+  ['p3 翠林','#3fbe6e','不规则有机轮廓 + 不对称','圆弧/叶形，长出活枝','半蹲低重心，头戴叶冠','站姿歪、被藤蔓绊住、动物乱入'],
+  ['p4 紫晶','#a165e8','菱形晶体 + 悬浮石块','菱形晶体屋顶','无腿长袍 + 垂坠，宽高比 ≤0.5','物理最崩：杖比人高、帽浮空、袍下无腿']
+];
+document.getElementById('motifs').innerHTML = MOTIF.map(m=>
+  `<tr><td><span class="dot" style="background:${m[1]};display:inline-block;vertical-align:-2px;margin-right:6px"></span>${m[0]}</td>
+   <td class="mono">${m[1]}</td><td>${m[2]}</td><td>${m[3]}</td><td>${m[4]}</td><td>${m[5]}</td></tr>`).join('');
+
+/* ---------- F. 尺寸 ---------- */
+const SIZES = [
+  ['g_* / sh_*（地形）','32 × 32','0, 0','与 TILE 1:1，不动'],
+  ['deco_*（小装饰）','16 × 16','居中/贴地','6 种 → 12 种'],
+  ['mk_* / ic_* / crest_*（图标）','24 × 24','居中','从 16/18 统一，否则加粗描边爆框'],
+  ['tree / rock / mine / chest…（地图物件）','32 × 48','(0, −16) 贴地','高度从 40/42/44/46 统一到 48'],
+  ['u_*（地图兵种）','32 × 44','贴地','新增'],
+  ['hero_*（英雄）','32 × 48','贴地','44 → 48'],
+  ['town_*（城镇 2×2）','40 × 52','贴地','不变'],
+  ['castle_*（城堡 2×2）','72 × 96','ax −4, ay −32','锚点绝不能动'],
+  ['bld_*（城镇面板图标）','40 × 40','居中','可选，见 Q1'],
+  ['cf_ / chi_（hex 地板/高亮）','40 × 46','ax −20, ay −23','不变'],
+  ['cu_*（战斗兵种）','44 × 56','ax −22, ay −48','不变！手机上实际 176×224 ~ 264×336'],
+  ['fx_*（VFX）','48 × 48','居中','新增'],
+  ['crestL_*（阵营徽记大图）','128 × 128','—','AI 生成，≤4 张']
+];
+document.getElementById('sizes').innerHTML = SIZES.map(s=>
+  `<tr><td class="mono">${s[0]}</td><td class="mono">${s[1]}</td><td class="mono">${s[2]}</td><td>${s[3]}</td></tr>`).join('');
+</script>
+</body>
+</html>
