@@ -11,6 +11,7 @@
  *   asset-spec §9.1 的 7 条断言里：
  *     1 抠底无粉边   → 自动
  *     2 块众数降采样无糊 → 自动（色板归属 + 同族相邻台阶差）
+ *     8 相邻材质明度差 → 自动（美术 2026-09-19 拍板：ΔL*≥8；色相差<30° 时 ≥12）
  *     3 钳色后同色域 → **人工**（依赖 AI 资产 crestL_p1，本轮未产出）
  *     4 描边重跑干净 → 自动
  *     5 基线对齐     → 自动
@@ -65,15 +66,49 @@ function isMagenta(r, g, b) {
   return r > 180 && b > 180 && g < 100;
 }
 
-/** CIE L*（§2.4 用 L* 做明度签名，台阶阈值 12 L*）。 */
+/** CIE L*（§2.4 用 L* 做明度签名）。 */
 function lstar(r, g, b) {
   const f = (v) => {
     const c = v / 255;
-    const k = c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-    return k;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
   };
   const Y = 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
   return Y <= 0 ? 0 : 116 * Math.cbrt(Y) - 16;
+}
+
+/** HSL 色相（度）。低饱和度也照样给色相——断言 8 只看"是否同色系"。 */
+function hueOf(r, g, b) {
+  const mx = Math.max(r, g, b);
+  const mn = Math.min(r, g, b);
+  const d = mx - mn;
+  if (d === 0) return 0;
+  let h;
+  if (mx === r) h = ((g - b) / d) % 6;
+  else if (mx === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  h *= 60;
+  return h < 0 ? h + 360 : h;
+}
+
+/** 色相环上的最短距离（度）。 */
+function hueGap(a, b) {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+}
+
+/**
+ * 断言 8 的双阈值（美术拍板，2026-09-19）：
+ *   相邻不同材质对 ΔL\* ≥ 8；当两材质**色相差 < 30°（同色系）**时阈值升到 12。
+ * 为什么不是单阈值 12：12 L\* 是 §2.4 的**族间**明度签名阈值，那一档要靠明度单通道
+ * 完成"去色 32px 并排认族"，门槛必须高；精灵内相邻材质还有色相 / 形状 / 1px 描边
+ * 三条通道兜底，硬套 12 会误杀大量合法配色。
+ */
+const MIN_DL = 8;
+const MIN_DL_SAME_HUE = 12;
+const SAME_HUE_DEG = 30;
+
+function requiredDl(h1, h2) {
+  return hueGap(h1, h2) < SAME_HUE_DEG ? MIN_DL_SAME_HUE : MIN_DL;
 }
 
 /* ---------------------------------------------------------------- 取值 */
@@ -132,12 +167,10 @@ function assertNoFringe(name, d) {
   return pass;
 }
 
-/** 断言 2：块众数降采样无糊 —— 相邻色差 ≥2 个色板台阶（不是连续渐变）。 */
+/** 断言 2：块众数降采样无糊 —— 色板归属 + 同材质相邻台阶差 ≥2（不是连续渐变）。 */
 function assertNoSmear(name, d) {
   const offPalette = new Map();
   const stepViolations = [];
-  let crossMin = Infinity;
-  let crossMinPair = '';
   const colors = new Set();
   for (let y = 0; y < d.length; y++) {
     for (let x = 0; x < d[0].length; x++) {
@@ -160,16 +193,8 @@ function assertNoSmear(name, d) {
         if (qhex === hex) continue;
         const f = PAL.get(qhex);
         if (!f) continue;
-        if (f.family === e.family) {
-          if (Math.abs(f.idx - e.idx) < 2) {
-            stepViolations.push(`(${x},${y}) ${hex}[${e.family}#${e.idx}] ↔ ${qhex}[#${f.idx}]`);
-          }
-        } else {
-          const dl = Math.abs(lstar(p[0], p[1], p[2]) - lstar(q[0], q[1], q[2]));
-          if (dl < crossMin) {
-            crossMin = dl;
-            crossMinPair = `${hex}↔${qhex} @(${x},${y})`;
-          }
+        if (f.family === e.family && Math.abs(f.idx - e.idx) < 2) {
+          stepViolations.push(`(${x},${y}) ${hex}[${e.family}#${e.idx}] ↔ ${qhex}[#${f.idx}]`);
         }
       }
     }
@@ -180,7 +205,51 @@ function assertNoSmear(name, d) {
     distinctColors: colors.size,
     offPalette: [...offPalette.entries()].map(([h, n]) => `${h}×${n}`),
     stepViolations,
-    crossFamilyMinLuma: Number.isFinite(crossMin) ? `${crossMin.toFixed(1)} L* (${crossMinPair})` : 'n/a',
+  });
+  return pass;
+}
+
+/** 断言 8：相邻材质对的明度差（美术 2026-09-19 拍板，双阈值 + 色相判据）。 */
+function assertMaterialContrast(name, d) {
+  const violations = [];
+  let worst = { dl: Infinity, text: 'n/a' };
+  for (let y = 0; y < d.length; y++) {
+    for (let x = 0; x < d[0].length; x++) {
+      const p = d[y][x];
+      if (!opaque(p)) continue;
+      const hex = toHex(p[0], p[1], p[2]);
+      const e = PAL.get(hex);
+      if (!e) continue;
+      for (const [nx, ny] of [
+        [x + 1, y],
+        [x, y + 1],
+      ]) {
+        const q = A(d, nx, ny);
+        if (!opaque(q)) continue;
+        const qhex = toHex(q[0], q[1], q[2]);
+        if (qhex === hex) continue;
+        const f = PAL.get(qhex);
+        if (!f || f.family === e.family) continue; // 同材质归断言 2 的台阶规则
+        const h1 = hueOf(p[0], p[1], p[2]);
+        const h2 = hueOf(q[0], q[1], q[2]);
+        const need = requiredDl(h1, h2);
+        const dl = Math.abs(lstar(p[0], p[1], p[2]) - lstar(q[0], q[1], q[2]));
+        const key = `${hex}|${qhex}`;
+        const text = `${hex}↔${qhex} ΔL*=${dl.toFixed(1)} ΔH=${hueGap(h1, h2).toFixed(0)}° 需≥${need}`;
+        if (dl < need) {
+          const hit = violations.find((v) => v.key === key);
+          if (hit) hit.n++;
+          else violations.push({ key, text, n: 1, at: `(${x},${y})` });
+        }
+        if (dl < worst.dl) worst = { dl, text: `${text} @(${x},${y})` };
+      }
+    }
+  }
+  const pass = violations.length === 0;
+  record(8, '相邻材质明度差（断言 8）', pass, {
+    name,
+    violations: violations.map((v) => `${v.text} ×${v.n} @${v.at}`),
+    worstPair: worst.text,
   });
   return pass;
 }
@@ -514,6 +583,7 @@ for (const f of frames) {
   assertNoFringe(f.spec.name, f.d);
   assertNoSmear(f.spec.name, f.d);
   assertOutlineClean(f.spec.name, f.body, f.d);
+  assertMaterialContrast(f.spec.name, f.d);
 }
 
 // 断言 5：两族 map 帧脚底基线
@@ -537,7 +607,7 @@ for (const r of results) {
 
 console.log('\n── 自动断言（逐帧） ──');
 const verdict = new Map();
-for (const id of [1, 2, 4, 5]) {
+for (const id of [1, 2, 4, 5, 8]) {
   const rs = byId.get(id) ?? [];
   const pass = rs.every((r) => r.pass);
   verdict.set(id, pass);

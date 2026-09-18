@@ -18,7 +18,11 @@
  * 硬性纪律（违反即为 B0 不通过）：
  *   1. 颜色 **100% 取用 §3.2 / §3.3 的字面色板**，本文件不使用 shade()/mix() 现场造色（§3.4）。
  *   2. **不使用任何 alpha < 1 的绘制** —— 全图 alpha ∈ {0,255}（asset-spec §3.3 禁止半透明，
- *      也是验收断言 1「抠底无粉边」的前提）。投影改为 §1.4 的 AO 接触阴影（1px `ink1` 实色）。
+ *      也是验收断言 1「抠底无粉边」的前提）。投影用 §1.4 末条的 1px `ink1` **实色** AO 圈。
+ *      ⚠️ §1.4 的半透明冷紫投影 `rgba(58,42,74,0.28)` 已由美术于 2026-09-19 **正式撤回**，
+ *      不适用于程序化精灵：1 画布像素 = 手机上 4~6 物理像素，0.28 alpha 在 zoom2×dpr3 下
+ *      是一条 4~6px 宽的灰紫带，再被 lightLayer 的 multiply 一压就成脏边。冷紫只留给
+ *      将来「地面上的大面积投影」，不进任何精灵。
  *   3. 每个单位 **只有一处**比例失调（§1.3）：p1 = 比人还高的提灯杆；p2 = 比身体还大的破袋。
  *   4. 唯一高光 = 双眼右上的 1px `hi0` 反光（§1.4：只画 1 处、只 1px、光源右上）。
  *   5. 所有人造物（提灯 / 破桶 / 飞出的石块）四角切 1px 斜角（§1.2 禁止直角）。
@@ -384,7 +388,7 @@ function drawLampbearerCombat(pb: PixBuf, atk: boolean): void {
     C.p1a0,
   );
   pb.line(15, 45, 27, 44, C.ink1);
-  pb.rect(20, 45, 2, 1, C.metal0); // 暗金属扣：亮金属与石灰白罩衫明度几乎相同，会糊
+  pb.rect(16, 45, 2, 1, C.metal4); // 亮金属扣；必须避开竖条纹 p1w2（两者只差 0.7 L*）
   // 手臂：左手后摆、右手向前下方刺出
   pb.rect(11, 38, 3, 6, C.p1a0);
   pb.rect(11, 44, 3, 2, C.skin2);
@@ -448,8 +452,8 @@ function drawScavengerMap(pb: PixBuf): void {
   pb.rect(21, 38, 7, 4, C.canv2);
   aoContact(pb, 13, 26, 42);
   // 腿（短）
-  pb.rect(15, 36, 4, 3, C.p2w0);
-  pb.rect(21, 35, 4, 3, C.p2w0);
+  pb.rect(15, 36, 4, 3, C.p2a0);
+  pb.rect(21, 35, 4, 3, C.p2a0);
   // 躯干：楔形前倾（上宽下窄）
   pb.poly(
     [
@@ -489,8 +493,8 @@ function drawScavengerCombat(pb: PixBuf, atk: boolean): void {
     pb.rect(27, 50, 8, 5, C.canv2);
     aoContact(pb, 19, 33, 54);
     // 腿（短）
-    pb.rect(20, 47, 4, 3, C.p2w0);
-    pb.rect(28, 47, 4, 3, C.p2w0);
+    pb.rect(20, 47, 4, 3, C.p2a0);
+    pb.rect(28, 47, 4, 3, C.p2a0);
     // 躯干：楔形前倾（肩宽、下摆收）
     pb.poly(
       [
@@ -513,8 +517,8 @@ function drawScavengerCombat(pb: PixBuf, atk: boolean): void {
     );
     jagHem(pb, 21, 29, 48, C.p2a0, [1, 0]);
     // 破布腰带
-    pb.hline(20, 30, 43, C.p2w0);
-    pb.hline(20, 30, 44, C.p2w0);
+    pb.hline(20, 30, 43, C.canv4);
+    pb.hline(20, 30, 44, C.canv4);
     // 歪背带：从袋子斜跨到对侧胯
     thickLine(pb, 13, 30, 26, 45, C.canv4, C.canv4);
     // 手臂：左手拽袋（臂上系一块撞色破布，p2 唯一 clash 使用点，§4 H4）、右手拎破桶
@@ -545,8 +549,8 @@ function drawScavengerCombat(pb: PixBuf, atk: boolean): void {
   pb.rect(25, 50, 8, 5, C.canv2);
   aoContact(pb, 16, 32, 54);
   // 腿
-  pb.rect(18, 47, 4, 4, C.p2w0);
-  pb.rect(27, 46, 4, 4, C.p2w0);
+  pb.rect(18, 47, 4, 4, C.p2a0);
+  pb.rect(27, 46, 4, 4, C.p2a0);
   // 躯干：更狠的前扑楔形
   pb.poly(
     [
