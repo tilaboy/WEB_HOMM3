@@ -1,8 +1,9 @@
-import type { Army, FactionId, GameState, GridPos, GuardReward, Hero } from '../types.js';
+import type { Army, FactionId, GameState, GridPos, GuardReward, Hero, Town } from '../types.js';
 import { DIFFICULTIES, factionName } from '../data/factions.js';
 import { BUILDINGS } from '../data/buildings.js';
 import { WAR_MACHINES, WAR_MACHINE_IDS } from '../data/warmachines.js';
-import { MARKET_BUY_AMOUNT, MARKET_BUY_GOLD } from './town.js';
+import { MARKET_RATES, marketBuy } from './town.js';
+import type { TradableResource } from './town.js';
 import { getUnit } from '../data/units.js';
 import { mulberry32, deriveSeed, shuffle } from '../rng.js';
 import { idx } from '../map/grid.js';
@@ -24,6 +25,7 @@ import {
   canBuildToday,
   canHireHero,
   garrisonStrength,
+  garrisonToHero,
   guildLevel,
   hireHero,
   ownedTowns,
@@ -162,23 +164,115 @@ function aiArmWarMachines(state: GameState, player: FactionId): void {
 
 /**
  * 有市场就换资源。
+ *
  * 木/矿除了矿场没有别的来源，而矿场大多被中档以上的野怪守着，
  * 所以"缺木就买"是电脑对手能不能持续发育的分水岭——没有这一步，AI 会一直卡在 dwell3。
+ *
+ * 走 `marketBuy` 而不是自己减金币加资源：那个函数是玩家 UI 用的同一个，
+ * AI 与玩家共用一条汇率表，才谈得上"不作弊"。
  */
 function aiTrade(state: GameState, player: FactionId): void {
-  const market = ownedTowns(state, player).find((t) => t.buildings.includes('market'));
-  if (!market) return;
+  if (!ownedTowns(state, player).some((t) => t.buildings.includes('market'))) return;
   const bag = state.players[player]?.resources;
   if (!bag) return;
+
+  // 木/矿：一次买 5 个，攒到 4 批的钱才开始换（沿用原来的节奏，避免把募兵的钱花光）
   let bought = 0;
-  while ((bag.gold ?? 0) >= 4000 && bought < 3) {
-    const wood = bag.wood ?? 0;
-    const ore = bag.ore ?? 0;
-    if (wood >= 25 && ore >= 25) break;
-    const res = wood <= ore ? 'wood' : 'ore';
-    bag.gold = (bag.gold ?? 0) - MARKET_BUY_GOLD;
-    bag[res] = (bag[res] ?? 0) + MARKET_BUY_AMOUNT;
+  while ((bag.gold ?? 0) >= MARKET_RATES.wood.buyGold * 4 && bought < 3) {
+    if ((bag.wood ?? 0) >= 25 && (bag.ore ?? 0) >= 25) break;
+    const res: TradableResource = (bag.wood ?? 0) <= (bag.ore ?? 0) ? 'wood' : 'ore';
+    if (!marketBuy(state, res, player)) break;
     bought += 1;
+  }
+
+  aiBuyRare(state, player);
+}
+
+/**
+ * 补稀有资源：guild2 要 4 宝石、guild3 要 4 水晶。
+ *
+ * 为什么单列一步：市场是 AI 拿到宝石/水晶最稳的一条路——稀有矿大多压在野怪手里，
+ * 而且 pickTarget 给稀有矿打的分（240）还低于木/矿（280）与金矿（430），
+ * 永远排不到"今天要去的地方"。少了这一步，AI 的建筑线在 13 座之后**永久停摆**
+ * （实测 3 种子 × 60 天：末次动工普遍停在第 22~28 天，之后 30 多天一座不建，
+ * 金币堆到 5.7 万无处可花）——这正是玩家说的"对手都不建设"。
+ *
+ * 花钱很克制：只补"下一座真正轮得到、且只差稀有资源"的那一种，只补到够用，
+ * 且手里至少留 3 份的钱（募兵优先于买宝石）。
+ */
+function aiBuyRare(state: GameState, player: FactionId): void {
+  const towns = ownedTowns(state, player);
+  const bag = state.players[player]?.resources;
+  if (!bag || !towns.length) return;
+  for (const id of BUILD_ORDER) {
+    const def = BUILDINGS[id];
+    if (!def) continue;
+    if (towns.every((t) => t.buildings.includes(id))) continue;
+    const rare = (Object.keys(def.cost) as TradableResource[]).filter(
+      (k) => k === 'gem' || k === 'crystal',
+    );
+    // 还没轮到需要稀有资源的建筑（前面几座只等木/矿），交给上面那一段
+    if (!rare.length) return;
+    for (const res of rare) {
+      const need = def.cost[res] ?? 0;
+      let guard = 0;
+      while (
+        (bag[res] ?? 0) < need &&
+        (bag.gold ?? 0) >= MARKET_RATES[res].buyGold * 3 &&
+        guard++ < 8
+      ) {
+        if (!marketBuy(state, res, player)) break;
+      }
+    }
+    return; // 一天只推进一座建筑缺的稀有资源
+  }
+}
+
+/* ---------------- 2.5 驻军 → 英雄 ---------------- */
+
+/**
+ * 守城要留的血量：两波兵。
+ *
+ * 取两波而不是一波，是实测调出来的：留一波（200 血）时英雄会把城搬空，
+ * 主城只剩 200 血的驻军 + 城墙，被另一个 AI 一波带走 —— 8 种子 × 60 天里
+ * 有 7 局 AI 丢掉全部城镇（原状只有 1 局），丢城之后它没有收入、没有回城点，
+ * 建筑数与募兵直接归零，"不建设"反而更严重。
+ */
+const GARRISON_KEEP_HP = BASE_COMMIT * 2;
+
+/**
+ * 把驻军的富余兵力搬给英雄。
+ *
+ * 为什么必须有这一步（这是"电脑啥也不会干"的最大根因）：
+ * `aiRecruit` 在英雄行动**之前**就把当天的增长池抽干、全部送进驻军，
+ * 而英雄打完仗回到城里时池子已经空了——`recruitToHero` 什么也拿不到。
+ * 在此之前 AI 根本没有"驻军 → 英雄"这条通道，于是：
+ *   · 驻军一路囤到 200~290 名兵，躺着不动；
+ *   · 出门的英雄（玩家唯一看得见、打得着的 AI 单位）从头到尾只有开局那 20 个弓手，
+ *     打几仗就归零，然后 0 兵在城里城外来回晃。
+ * 实测 3 种子 × 60 天：9 个 AI 局里 5 局英雄**一次都没补到过兵**、3 局终局英雄 0 兵，
+ * 而同期驻军兵数增长 23~40 次——军队全长在玩家看不见的地方。
+ */
+function refillFromGarrison(state: GameState, hero: Hero, town: Town): void {
+  let ghHp = garrisonStrength(town.garrison);
+  if (ghHp <= GARRISON_KEEP_HP) return;
+  // 先搬高档兵：把最值钱的战力放到英雄身上，城防留低档的够用就行
+  const stacks = [...town.garrison].sort(
+    (a, b) => getUnit(b.unitTypeId).tier - getUnit(a.unitTypeId).tier,
+  );
+  let moved = 0;
+  for (const st of stacks) {
+    if (ghHp <= GARRISON_KEEP_HP) break;
+    const hpEach = getUnit(st.unitTypeId).hp;
+    const spare = Math.floor((ghHp - GARRISON_KEEP_HP) / hpEach);
+    const count = Math.min(st.count, spare);
+    if (count <= 0) continue;
+    const t = garrisonToHero(hero, town, st.unitTypeId, count);
+    moved += t;
+    ghHp -= t * hpEach;
+  }
+  if (moved > 0) {
+    pushLog(state, `${hero.name} 从 ${town.name} 的驻军带走了 ${moved} 名士兵（${armyTop(hero.army)}）`);
   }
 }
 
@@ -337,15 +431,26 @@ function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate 
     }
   }
 
-  // 回城补给：增长池攒着兵、或部队打残了就回家
+  // 回城补给：家里攒着兵、家里有富余驻军、或部队打残了就回家。
+  //
+  // 为什么"驻军富余"也要算成回城的理由：`aiRecruit` 每天在英雄行动**之前**
+  // 就把增长池抽干送进驻军，所以轮到 pickTarget 做决定时 pool 恒为 0 ——
+  // 唯一那个"家里有兵"的信号被自己抹掉了，英雄于是永远不回家，
+  // 驻军囤到 2000+ 血也没人带走（实测：去掉这一条，36 局里英雄补兵次数从 2.8 掉到 1.7）。
+  // 加上它之后闭环才成立：回家 → 带走富余驻军 → 再出门。
   const homes = ownedTowns(state, player);
   const pool = homes.reduce((s, t) => s + Object.values(t.growthPool).reduce((a, b) => a + b, 0), 0);
+  const surplus = homes.reduce(
+    (s, t) => s + Math.max(0, garrisonStrength(t.garrison) - GARRISON_KEEP_HP),
+    0,
+  );
   const wounded = power < commit * 0.6;
-  if (pool > 0 || wounded) {
+  if (pool > 0 || surplus > 0 || wounded) {
     for (const town of homes) {
       const cost = costAt(town.pos);
       if (!isFinite(cost) || cost <= 0) continue; // 到不了 / 已经在家
-      const pull = Math.min(120, pool * 22) + (wounded ? 400 : 0);
+      const pull =
+        Math.min(120, pool * 22) + (surplus > 0 ? Math.min(300, surplus * 0.4) : 0) + (wounded ? 400 : 0);
       candidates.push({ pos: town.pos, kind: 'home', score: pull - cost * 0.03 });
     }
   }
@@ -454,13 +559,15 @@ export function runAiTurn(state: GameState, player: FactionId): void {
     const before = { x: hero.pos.x, y: hero.pos.y };
     aiMarch(state, hero, target.pos);
 
-    // 站到自家城镇上：学法术 + 把增长池里的兵补进队伍
+    // 站到自家城镇上：学法术 + 把增长池里的兵补进队伍 + 从驻军抽调野战部队
     const town = ownedTowns(state, player).find((t) => t.pos.x === hero.pos.x && t.pos.y === hero.pos.y);
     if (town) {
       if (guildLevel(town) > 0) teachGuildSpells(state, hero, town);
       for (const unitTypeId of Object.keys(town.growthPool)) {
         recruitToHero(state, town, hero, unitTypeId, town.growthPool[unitTypeId] ?? 0);
       }
+      // 增长池通常已被当天的 aiRecruit 抽干送进驻军，这里把驻军的富余兵力搬回英雄身上
+      refillFromGarrison(state, hero, town);
       hero.manaMax = manaMaxOf(hero);
       hero.mana = hero.manaMax;
     }

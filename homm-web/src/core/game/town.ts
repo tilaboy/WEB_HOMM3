@@ -557,19 +557,34 @@ export function hireHero(state: GameState, town: Town): Hero | null {
 
 /* ---------------- market ---------------- */
 
-export function marketBuy(state: GameState, res: TradableResource): boolean {
+/**
+ * 在市场买入 / 卖出。
+ *
+ * `actor` 默认 'p1'（玩家的 UI 调用点不用改），电脑对手传自己的阵营 id ——
+ * AI 必须和玩家走**同一个函数**，否则汇率的每一次调整都要在两处同步，
+ * 而 ai.ts 里那份抄下来的「1000 金 → 5 单位」只对木/矿成立，会把稀有资源堵死。
+ */
+export function marketBuy(
+  state: GameState,
+  res: TradableResource,
+  actor: PlayerId = 'p1',
+): boolean {
   const rate = MARKET_RATES[res];
   if (!rate) return false;
-  if (!pay(state, 'p1', { gold: rate.buyGold })) return false;
-  addResources(state, 'p1', { [res]: rate.buyAmount });
+  if (!pay(state, actor, { gold: rate.buyGold })) return false;
+  addResources(state, actor, { [res]: rate.buyAmount });
   return true;
 }
 
-export function marketSell(state: GameState, res: TradableResource): boolean {
+export function marketSell(
+  state: GameState,
+  res: TradableResource,
+  actor: PlayerId = 'p1',
+): boolean {
   const rate = MARKET_RATES[res];
   if (!rate) return false;
-  if (!pay(state, 'p1', { [res]: rate.sellAmount })) return false;
-  addResources(state, 'p1', { gold: rate.sellGold });
+  if (!pay(state, actor, { [res]: rate.sellAmount })) return false;
+  addResources(state, actor, { gold: rate.sellGold });
   return true;
 }
 

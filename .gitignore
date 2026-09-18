@@ -3,3 +3,5 @@ dist/
 .DS_Store
 *.log
 .workbuddy/
+# aidiagnose 探针的生成数据（可随时重跑）
+homm-web/tools/_aidiagnose.json
