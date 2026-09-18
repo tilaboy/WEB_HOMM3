@@ -40,3 +40,43 @@ export function shouldEdgeScroll(s: EdgeScrollState): boolean {
     !s.battleOpen
   );
 }
+
+/**
+ * 悬停效果是否应该处理（Q-11）。
+ *
+ * 触屏没有"悬停"这一状态：手指抬起后不会留下 hover，指针一直在动。
+ * 如果在触屏上跑 `updateHover`，每次拖拽/点按都会走一遍"拾取格子→写 hint→
+ * 重建预览路径"的完整逻辑，既浪费又会在移动端留下"卡在半格"的假高亮。
+ * 因此只放行真正有悬停能力的鼠标/触控笔。
+ */
+export function shouldHover(lastPointerType: PointerKind | null): boolean {
+  return lastPointerType === 'mouse' || lastPointerType === 'pen';
+}
+
+/* ---------------- 双击识别（M-11：双击同一格居中） ---------------- */
+
+/** 两次点击的最大间隔（毫秒），超过就算两次独立单击。 */
+export const DOUBLE_TAP_MAX_MS = 300;
+/** 两次点击的最大位移（像素），超过就算点在别处。 */
+export const DOUBLE_TAP_MAX_DIST = 12;
+
+export interface TapRecord {
+  /** 点击时间戳（performance.now()）。 */
+  t: number;
+  /** 屏幕坐标（相对画布）。 */
+  x: number;
+  y: number;
+}
+
+/**
+ * 判断 `cur` 是否与上一次点击 `prev` 构成"双击"（M-11）。
+ *
+ * prev 为 null（本次是首次点击）时返回 false；时间倒退（时钟异常）也判否。
+ * 阈值抽成常量以便单测覆盖边界（正好 300 ms / 12 px 算双击）。
+ */
+export function isDoubleTap(prev: TapRecord | null, cur: TapRecord): boolean {
+  if (!prev) return false;
+  const dt = cur.t - prev.t;
+  if (dt < 0 || dt > DOUBLE_TAP_MAX_MS) return false;
+  return Math.hypot(cur.x - prev.x, cur.y - prev.y) <= DOUBLE_TAP_MAX_DIST;
+}

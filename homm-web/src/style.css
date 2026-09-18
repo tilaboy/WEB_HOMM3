@@ -18,6 +18,18 @@
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
+  /* M-10：长按不再弹出系统"复制/查找"菜单、不选中文本——手游里长按是"查看格子"手势，
+     弹出的原生菜单会打断操作。可编辑控件例外，保留下方单独放开。 */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 文本类控件仍可正常选中/编辑（避免把全局 user-select:none 误伤到输入框） */
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 html,
@@ -26,6 +38,8 @@ body {
   padding: 0;
   height: 100%;
   overflow: hidden;
+  /* M-10：关掉下拉刷新/边缘回弹，避免拖拽地图时误触发浏览器手势（尤其 Android Chrome） */
+  overscroll-behavior: none;
   background: var(--stone-3);
   color: var(--text);
   font-family: "Palatino", "Palatino Linotype", "Songti SC", "STSong", Georgia, serif;
@@ -37,12 +51,18 @@ body {
   inset: 0;
   display: flex;
   flex-direction: column;
+  /* M-07 安全区：四边统一内缩到 env() 里。这样顶栏自动落在刘海/状态栏之下，
+     底部面板也在 home indicator 之上；配合 index.html 的 viewport-fit=cover 才生效。 */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
 
 /* ---------- top bar ---------- */
 #topbar {
-  height: 46px;
-  flex: 0 0 46px;
+  /* M-09：顶栏要能容下 44px 触摸目标，抬高到 52px；安全区 inset 由 #app 统一承担，
+     这里不再叠加 env()，避免双重留白。 */
+  height: calc(52px);
+  flex: 0 0 calc(52px);
   display: flex;
   align-items: center;
   gap: 14px;
@@ -117,7 +137,8 @@ body {
   cursor: pointer;
   font-size: 13px;
   font-family: inherit;
-  min-height: 30px;
+  /* M-09：触摸目标下限 44px（iOS HIG / Material 均以此为准），主操作 48px。 */
+  min-height: 44px;
 }
 
 .btn:hover {
@@ -129,6 +150,8 @@ body {
   background: linear-gradient(180deg, #b08a3c, #7d5f20);
   color: #fff8e6;
   border-color: var(--gold);
+  /* 主操作（结束一天）再抬 4px，视觉与触摸都更突出 */
+  min-height: 48px;
 }
 
 .btn.danger {
@@ -655,6 +678,29 @@ table.est td:last-child {
 }
 
 @media (max-width: 860px) {
+  /* M-09：窄屏顶栏压缩——缩小资源图标与间距，整条支持横向滑动，
+     否则 7 种资源 + 6 个按钮会把「结束一天」挤出屏幕。 */
+  #topbar {
+    gap: 8px;
+    padding: 0 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  #topbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .res {
+    font-size: 12px;
+  }
+
+  .res img {
+    width: 15px;
+    height: 15px;
+  }
+
   #side {
     top: auto;
     left: 0;
@@ -684,6 +730,32 @@ table.est td:last-child {
 
   #logbox {
     width: 220px;
+  }
+}
+
+/* ---------- M-08 竖屏提示 ---------- */
+/* 竖屏下地图可视区太窄，给一条不拦截操作（pointer-events:none）的提示条。 */
+#rotate-hint {
+  display: none;
+}
+
+@media (orientation: portrait) and (max-width: 900px) {
+  #rotate-hint {
+    display: block;
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(env(safe-area-inset-top, 0px) + 62px);
+    z-index: 950;
+    pointer-events: none;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(30, 21, 9, 0.92);
+    border: 1px solid var(--frame);
+    color: var(--gold);
+    font-size: 12px;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
   }
 }
 
@@ -1265,6 +1337,9 @@ body.in-battle #topbar {
   background:
     radial-gradient(120% 90% at 20% 0%, #4a3418 0%, #2a1c0c 55%, #1a1207 100%);
   overflow: auto;
+  /* M-07：开局页是 fixed(inset:0)，落在 #app 的内缩之外，需自己再避一次安全区 */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
 
 .ss-panel {

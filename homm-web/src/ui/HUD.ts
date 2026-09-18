@@ -29,6 +29,7 @@ export class HUD {
     private onEndDay: () => void,
     private onSave: () => void,
     private onRestart: () => void,
+    private onQuality: () => void,
   ) {
     this.el.innerHTML = '';
     const atlas = getAtlas();
@@ -106,6 +107,14 @@ export class HUD {
     });
     syncLight();
     this.el.appendChild(lightBtn);
+
+    // 画质设置（Q-10）：弹窗里选 自动/低/中/高，并展示当前档位与"重新检测"。
+    const qualityBtn = document.createElement('button');
+    qualityBtn.className = 'btn';
+    qualityBtn.textContent = '画质';
+    qualityBtn.title = '画质设置（自动 / 低 / 中 / 高）';
+    qualityBtn.addEventListener('click', () => this.onQuality());
+    this.el.appendChild(qualityBtn);
 
     const restartBtn = document.createElement('button');
     restartBtn.className = 'btn danger';

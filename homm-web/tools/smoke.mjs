@@ -63,7 +63,14 @@ import {
   townDailyIncome,
 } from '../dist/core/game/town.js';
 import { settingsForTier, classifyProbe, probeTier, allowedMapSizes, clampMapSize, TIER_ORDER } from '../dist/render/quality.js';
-import { shouldEdgeScroll, normalizePointerType } from '../dist/render/pointerIntent.js';
+import {
+  shouldEdgeScroll,
+  normalizePointerType,
+  shouldHover,
+  isDoubleTap,
+  DOUBLE_TAP_MAX_MS,
+  DOUBLE_TAP_MAX_DIST,
+} from '../dist/render/pointerIntent.js';
 import { bakeBytes } from '../dist/render/terrainLayer.js';
 
 let fails = 0;
@@ -1941,6 +1948,44 @@ console.log('\n--- E3 无城 7 日出局 ---');
   }
   ok(isEliminated(g, 'p2'), '连续 7 天后 p2 出局');
   ok(g.status === 'won', '敌方全部出局 → evaluateOutcome 自动判定胜利');
+}
+
+/* ================= 第四轮移动端打磨：Q-11 hover 门控 + M-11 双击居中 ================= */
+
+// 7. Q-11 hover 门控（纯谓词，配合 main.ts 里 `if (!dragged && shouldHover(...)) updateHover(e)`）
+{
+  ok(shouldHover('mouse') === true, 'Q-11：鼠标 → 处理悬停');
+  ok(shouldHover('pen') === true, 'Q-11：触控笔 → 处理悬停');
+  ok(shouldHover('touch') === false, 'Q-11：触屏 → 不处理悬停（核心：触屏无 hover）');
+  ok(shouldHover(null) === false, 'Q-11：未识别/空指针类型 → 不处理悬停');
+}
+
+// 8. M-11 双击识别（纯分类器 + 边界：时间 300ms、位移 12px 都算"含"）
+{
+  const t0 = 1000;
+  const first = { t: t0, x: 100, y: 100 };
+  ok(isDoubleTap(null, first) === false, 'M-11：首次点击（无前次记录）不算双击');
+  ok(isDoubleTap(first, { t: t0 + 120, x: 104, y: 103 }) === true, 'M-11：120ms / 5px 内 → 双击');
+  ok(
+    isDoubleTap(first, { t: t0 + DOUBLE_TAP_MAX_MS, x: 100 + DOUBLE_TAP_MAX_DIST, y: 100 }) === true,
+    'M-11：正好 300ms / 12px → 双击（边界含）',
+  );
+  ok(
+    isDoubleTap(first, { t: t0 + DOUBLE_TAP_MAX_MS + 1, x: 100, y: 100 }) === false,
+    'M-11：301ms → 不算（超时）',
+  );
+  ok(
+    isDoubleTap(first, { t: t0 + 100, x: 100 + DOUBLE_TAP_MAX_DIST + 1, y: 100 }) === false,
+    'M-11：位移 13px → 不算（太远）',
+  );
+  // 用 hypot 判距离：3-4-5 对角线 5px 算双击，5-12-13 对角线 13px 不算
+  ok(isDoubleTap(first, { t: t0 + 100, x: 103, y: 104 }) === true, 'M-11：对角 5px（3-4-5）→ 双击');
+  ok(isDoubleTap(first, { t: t0 + 100, x: 105, y: 112 }) === false, 'M-11：对角 13px（5-12-13）→ 不算');
+  // 时间倒退（时钟异常）必须判否，否则会把"未来点"误当双击
+  ok(
+    isDoubleTap({ t: t0 + 200, x: 100, y: 100 }, { t: t0 + 100, x: 100, y: 100 }) === false,
+    'M-11：时间倒退（时钟异常）→ 不算',
+  );
 }
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);

@@ -31,14 +31,26 @@ import { Camera } from './render/camera.js';
 import { MapRenderer } from './render/MapRenderer.js';
 import type { ViewModel } from './render/MapRenderer.js';
 import { setLightPhaseOverride } from './render/lightLayer.js';
-import { quality, initQuality, onTierChange, clampMapSize, hoverCapable } from './render/quality.js';
-import { shouldEdgeScroll, normalizePointerType } from './render/pointerIntent.js';
-import type { PointerKind } from './render/pointerIntent.js';
+import {
+  quality,
+  initQuality,
+  onTierChange,
+  clampMapSize,
+  hoverCapable,
+  setMode,
+  readMode,
+  clearCachedTier,
+  TIER_LABEL,
+} from './render/quality.js';
+import type { QualityMode } from './render/quality.js';
+import { shouldEdgeScroll, shouldHover, isDoubleTap, normalizePointerType } from './render/pointerIntent.js';
+import type { PointerKind, TapRecord } from './render/pointerIntent.js';
 import { HUD } from './ui/HUD.js';
 import { HeroPanel } from './ui/HeroPanel.js';
 import { openStartScreen } from './ui/StartScreen.js';
 import { openTownDialog } from './ui/TownDialog.js';
 import { closeModal, hideInfoPopup, isModalOpen, lossTable, showInfoPopup, showModal } from './ui/Dialogs.js';
+import type { ModalAction } from './ui/Dialogs.js';
 import { sfx } from './ui/sfx.js';
 import { clearSave, hasSave, loadConfig, loadGame, saveConfig, saveGame } from './save/persistence.js';
 
@@ -170,6 +182,7 @@ const hud = new HUD(
     hint('已存档');
   },
   () => openStart(),
+  () => openQualitySettings(),
 );
 
 const STEP_MS = 165;
@@ -782,6 +795,8 @@ let mouseX = 0;
 let mouseY = 0;
 /** 最近一次指针事件的类型：边缘滚屏只在真实鼠标下生效（M-01）。 */
 let lastPointerType: PointerKind | null = null;
+/** 上一次"落点"记录，用于识别双击（M-11：双击同一格居中）。 */
+let lastTap: TapRecord | null = null;
 
 function twoPointerDist(): number {
   const pts = [...pointers.values()];
@@ -834,7 +849,9 @@ canvas.addEventListener('pointermove', (e) => {
   if (pointers.size === 1 && lastPan) {
     const dx = e.clientX - lastPan.x;
     const dy = e.clientY - lastPan.y;
-    if (!dragged && Math.abs(dx) + Math.abs(dy) > 4) {
+    // M-10：阈值 4→8px。触屏手指微抖常达 4~6px，4px 会把"点按"误判成拖拽，
+    // 于是点按既选不中目标、又会顺带平移镜头。8px 是"明显是拖"的起点。
+    if (!dragged && Math.abs(dx) + Math.abs(dy) > 8) {
       dragged = true;
       window.clearTimeout(longPress);
     }
@@ -857,7 +874,8 @@ canvas.addEventListener('pointermove', (e) => {
     }
     pinchDist = d;
   }
-  if (!dragged) updateHover(e);
+  // Q-11：悬停仅对真实鼠标/触控笔生效（触屏没有 hover，跑了只会浪费并留下假高亮）。
+  if (!dragged && shouldHover(lastPointerType)) updateHover(e);
 });
 
 function endPointer(e: PointerEvent): void {
@@ -865,7 +883,26 @@ function endPointer(e: PointerEvent): void {
   pointers.delete(e.pointerId);
   if (pointers.size < 2) pinchDist = 0;
   if (pointers.size === 0) {
-    if (!dragged) handleClick(e);
+    if (!dragged) {
+      // M-11：双击同一格 → 镜头平滑居中到该格。
+      // 单击仍照常走 handleClick（选中/移动），并记录落点供下次判定。
+      const p = localPos(e);
+      const cur: TapRecord = { t: performance.now(), x: p.x, y: p.y };
+      if (isDoubleTap(lastTap, cur)) {
+        lastTap = null; // 用掉这一对，避免三连点里第 2、3 下再凑成一对
+        const g = camera.pick(p.x, p.y);
+        if (inBounds(state.map, g.x, g.y)) {
+          camera.centerOn(g.x, g.y); // centerOn 内部已 stopFling + clamp
+          hint('镜头已居中');
+        }
+      } else {
+        lastTap = cur;
+        handleClick(e);
+      }
+    } else {
+      // 拖拽/捏合不是"点击"，且应打断双击链——否则"拖一下再点"会被误判为双击
+      lastTap = null;
+    }
     // 松手前最后一下移动离现在太久，说明是"停住再松手"，不该甩出惯性
     if (!dragged || performance.now() - lastPanT > 120) camera.stopFling();
     lastPan = null;
@@ -1066,6 +1103,15 @@ window.addEventListener('resize', () => {
   camera.clamp();
 });
 
+// M-08：朝向切换（横/竖屏）时可视尺寸在随后的 1~2 帧才稳定。
+// iOS Safari 有时不发 resize、或发得太早，故延迟一拍再重建分辨率并夹紧镜头。
+window.addEventListener('orientationchange', () => {
+  window.setTimeout(() => {
+    renderer.resize();
+    camera.clamp();
+  }, 120);
+});
+
 /* ---------------- loop ---------------- */
 
 let last = performance.now();
@@ -1150,6 +1196,55 @@ const probeSync = (): void => {
   canvas.getContext('2d')?.getImageData(0, 0, 1, 1);
 };
 void initQuality({ draw: drawScene, sync: probeSync, hoverCapable: hoverCapable() }).catch(() => undefined);
+
+/* ---------------- 画质设置（Q-10） ---------------- */
+
+/**
+ * 重跑一次自动探测：清缓存档（homm.tier）+ 把模式拉回 auto，再走 initQuality。
+ * 说明：initQuality 只在 mode==='auto' 时才真的探测，所以"重新检测"必须顺带切回 auto，
+ * 否则用户在手动档下点它只会"清了缓存但不重测"。
+ */
+async function reProbe(): Promise<void> {
+  setMode('auto');
+  clearCachedTier();
+  hint('正在检测设备性能…');
+  const tier = await initQuality({ draw: drawScene, sync: probeSync, hoverCapable: hoverCapable() });
+  hint(`画质已设为「${TIER_LABEL[tier]}」`);
+}
+
+/** 画质设置弹窗：自动 / 低 / 中 / 高 四选一 + 重新检测；当前模式以 primary 高亮。 */
+function openQualitySettings(): void {
+  const mode = readMode();
+  const modeLabel: Record<QualityMode, string> = { auto: '自动', low: '低', mid: '中', high: '高' };
+
+  const actions: ModalAction[] = (['auto', 'low', 'mid', 'high'] as QualityMode[]).map((m) => ({
+    label: modeLabel[m],
+    primary: mode === m,
+    onClick: (close) => {
+      if (m === 'auto') void reProbe(); // 选自动＝清缓存重测
+      else setMode(m); // 手动档：立即生效（onTierChange 会重建画布分辨率）
+      close();
+    },
+  }));
+  actions.push({
+    label: '重新检测',
+    onClick: (close) => {
+      void reProbe();
+      close();
+    },
+  });
+  actions.push({ label: '关闭', onClick: (close) => close() });
+
+  showModal(app, {
+    title: '画质设置',
+    body: [
+      `当前档位：${TIER_LABEL[quality.tier]} · 模式：${modeLabel[mode]}`,
+      '自动：启动时用一次微基准（约 0.5 秒）判定设备，之后复用缓存；换设备后可重测。',
+      '手动：固定档位、不再探测。低＝省电/老机，中＝默认，高＝桌面全效。',
+    ],
+    actions,
+  });
+}
 
 recomputeField();
 refresh();
