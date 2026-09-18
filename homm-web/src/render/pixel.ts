@@ -105,6 +105,16 @@ export class PixBuf {
     return this.d[(y * this.w + x) * 4 + 3];
   }
 
+  /**
+   * 只读取单个像素的 [r, g, b, a]。
+   * 只给 tools/ 下的离线验收脚本做像素级断言用，运行期渲染路径不碰它。
+   */
+  px(x: number, y: number): [number, number, number, number] {
+    if (!this.inBounds(x, y)) return [0, 0, 0, 0];
+    const i = (y * this.w + x) * 4;
+    return [this.d[i], this.d[i + 1], this.d[i + 2], this.d[i + 3]];
+  }
+
   set(x: number, y: number, color: string, a = 1): void {
     if (!this.inBounds(x, y)) return;
     const [r, g, b] = rgbOf(color);

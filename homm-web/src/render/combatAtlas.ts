@@ -8,6 +8,7 @@
  * 依然全部程序化绘制：零外部素材，启动一次性烘焙，之后只做 drawImage。
  */
 import { PixBuf, hash2, shade } from './pixel.js';
+import { B0_FRAMES, buildB0Frame } from './unitArt.js';
 
 export interface CFrame {
   x: number;
@@ -111,6 +112,14 @@ export class CombatAtlas {
       drawCombatUnit(pb, id);
       pb.outline('#1b1410', 0.9);
       put(`cu_${id}`, pb, -22, -48);
+    }
+
+    // B0 最小验证批（asset-spec §9.1）：战斗兵种槽位 `cu_<faction>_<unit>` 与
+    // 预烘焙攻击帧 `cu_<faction>_<unit>_atk`，44×56，锚点 ax=-22 / ay=-48（§1.2 网格表）。
+    // ⚠️ R-5：短名 lampbearer / scavenger 是 asset-spec §3.2 的建议值，等 races.ts 定稿后对齐。
+    for (const spec of B0_FRAMES) {
+      if (spec.kind === 'map') continue;
+      put(spec.name, buildB0Frame(spec.name), spec.ax, spec.ay);
     }
 
     const atlas = new CombatAtlas(shelf.canvas);
