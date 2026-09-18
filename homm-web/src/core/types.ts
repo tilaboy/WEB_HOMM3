@@ -17,8 +17,20 @@ export interface DifficultyDef {
   startMul: number;
   /** AI 每周增长的额外系数（0.1 = 多 10%） */
   growthBonus: number;
-  /** AI 出击所需的兵力阈值倍率：越低越早出门 */
+  /** AI 出击所需的兵力阈值倍率：越低越早出门。必须 < 4.0（否则 outward 权重系数转负） */
   aggression: number;
+
+  /* ---------- 玩家侧（本次重设计新增） ---------- */
+  /** 玩家（p1）起始资源倍率。基准 {2500, 10, 10} */
+  playerStartMul: number;
+  /** 玩家每周增长的额外系数，可为负（但不建议给负，会让旧存档中途变难）。
+   *  与 growthBonus 走同一条代码路径：累积小数余数，所以 +0.25 也能真正多产兵 */
+  playerGrowthBonus: number;
+  /** 玩家英雄每日移动力倍率（BASE_MOVE_POINTS = 1800） */
+  playerMoveMul: number;
+  /** 全部非玩家所属部队（野怪 / 中立城驻军 / 宝库守卫）的规模倍率。
+   *  必须在 randInt() **之后**相乘，禁止改变 rng 调用次数与顺序 */
+  monsterMul: number;
 }
 
 export interface FactionDef {
@@ -285,6 +297,10 @@ export interface Town {
   buildings: string[];
   garrison: Army;
   growthPool: Record<string, number>;
+  /** 每周增长的的小数余数累加器：growthBonus 让 g.count×mult 出现小数，
+   *  整数部分进 growthPool，余下小数攒在这里，攒满 1 再进位。
+   *  可选字段——旧存档读出来是 undefined，按 0 处理，不会崩。 */
+  growthRemainder?: Record<string, number>;
   /** 已招募过英雄的周次，用于酒馆每周限一次 */
   hiredWeek?: number;
   /** 最近一次建成建筑的日子；每座城每天只能建一座 */

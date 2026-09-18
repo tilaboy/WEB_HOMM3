@@ -1005,7 +1005,7 @@ function updateHover(e: PointerEvent): void {
     previewPath = path.length ? path : null;
     if (cost > hero.movePoints) {
       // 今天走不完：按每日上限折算还要几天
-      const days = 1 + Math.ceil((cost - hero.movePoints) / maxMovePoints(hero));
+      const days = 1 + Math.ceil((cost - hero.movePoints) / maxMovePoints(hero, state));
       text += `（今日不够，约需 ${days} 天）`;
     }
   } else {
@@ -1347,7 +1347,7 @@ if (bootParams.has('devprobe')) {
     selected,
     heroPos: selected ? state.heroes[selected]?.pos ?? null : null,
     movePoints: selected ? state.heroes[selected]?.movePoints ?? null : null,
-    maxMovePoints: selected && state.heroes[selected] ? maxMovePoints(state.heroes[selected]) : null,
+    maxMovePoints: selected && state.heroes[selected] ? maxMovePoints(state.heroes[selected], state) : null,
     cam: { x: camera.x, y: camera.y, zoom: camera.zoom },
     hint: hintEl.textContent,
   });

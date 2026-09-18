@@ -28,6 +28,7 @@ import {
 import { HERO_TEMPLATES, START_ARMY } from '../data/heroes.js';
 import { DEFAULT_CONFIG, DIFFICULTIES, FACTIONS, FACTION_ORDER } from '../data/factions.js';
 import { mulberry32, randInt, shuffle, pick } from '../rng.js';
+import { maxMovePoints } from '../game/hero.js';
 import { castleCells, idx, isPassable } from './grid.js';
 import { revealAround } from './fog.js';
 
@@ -426,17 +427,27 @@ function castleFits(map: GameMap, gate: GridPos): boolean {
  * 野怪规模是按"战术战场"实测出来的，不是拍脑袋：
  * 起手 20 弓手在 15×11 战场上能白嫖 3~4 轮射击，所以怪必须扛得住那几轮才有威胁。
  * 目标手感：弱 ≈ 稳赢小亏、中 ≈ 赢得下来但肉疼、强 ≈ 一半一半、绝望档必败。
+ *
+ * `mul`（默认 1）是难度对野怪的缩放倍率（monsterMul）。
+ * 红线：倍率必须施加在 `randInt()` **之后**，`randInt` 的调用次数与顺序绝不能变，
+ * 否则同种子生成的地图（地形 / 城镇坐标 / 野怪点位）会全部错位。
+ * 用 `Math.max(1, Math.round(...))` 兜底，避免倍率过低把某个兵栈缩成 0 而崩战斗。
  */
-export function monsterArmy(rng: () => number, tier: 'weak' | 'mid' | 'strong'): Army {
-  if (tier === 'weak') return [{ unitTypeId: 'wolf', count: randInt(rng, 20, 28) }];
+export function monsterArmy(
+  rng: () => number,
+  tier: 'weak' | 'mid' | 'strong',
+  mul = 1,
+): Army {
+  const scale = (count: number): number => Math.max(1, Math.round(count * mul));
+  if (tier === 'weak') return [{ unitTypeId: 'wolf', count: scale(randInt(rng, 20, 28)) }];
   if (tier === 'mid') {
     return rng() < 0.5
-      ? [{ unitTypeId: 'boar', count: randInt(rng, 11, 15) }]
-      : [{ unitTypeId: 'wolf', count: randInt(rng, 18, 26) }, { unitTypeId: 'boar', count: randInt(rng, 4, 7) }];
+      ? [{ unitTypeId: 'boar', count: scale(randInt(rng, 11, 15)) }]
+      : [{ unitTypeId: 'wolf', count: scale(randInt(rng, 18, 26)) }, { unitTypeId: 'boar', count: scale(randInt(rng, 4, 7)) }];
   }
   return rng() < 0.5
-    ? [{ unitTypeId: 'ogre', count: randInt(rng, 10, 13) }]
-    : [{ unitTypeId: 'boar', count: randInt(rng, 7, 10) }, { unitTypeId: 'ogre', count: randInt(rng, 5, 7) }];
+    ? [{ unitTypeId: 'ogre', count: scale(randInt(rng, 10, 13)) }]
+    : [{ unitTypeId: 'boar', count: scale(randInt(rng, 7, 10)) }, { unitTypeId: 'ogre', count: scale(randInt(rng, 5, 7)) }];
 }
 
 /** 野怪看守的东西：越强的怪守得越值钱，其中一部分守着能长期产出的矿。 */
@@ -687,6 +698,7 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   keepLargestLandmass(map);
 
   const rng = mulberry32(seed ^ 0x5bf03635);
+  const diff = DIFFICULTIES[cfg.difficulty];
   const placer = new ObjectPlacer(map);
   const toPos = (i: number): GridPos => ({ x: i % w, y: (i / w) | 0 });
 
@@ -867,7 +879,7 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
     placer.add({
       kind: 'wanderingMonster',
       pos: spot.p,
-      payload: { army: monsterArmy(rng, spot.tier), tier: spot.tier, guard },
+      payload: { army: monsterArmy(rng, spot.tier, diff.monsterMul), tier: spot.tier, guard },
       once: true, blocking: false, visitedBy: [],
     });
   });
@@ -956,9 +968,10 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
     if (!p) continue;
     const tier = deepness(p) >= 16 * kl ? 'strong' : 'mid';
     const def = VAULTS[tier];
+    // 宝库守军同样受 monsterMul 缩放；倍率施加在 randInt 之后，保持 rng 调用顺序不变
     const army: Army = def.army.map((s) => ({
       unitTypeId: s.unitTypeId,
-      count: randInt(rng, s.count[0], s.count[1]),
+      count: Math.max(1, Math.round(randInt(rng, s.count[0], s.count[1]) * diff.monsterMul)),
     }));
     const reward = {
       gold: randInt(rng, def.reward.gold[0], def.reward.gold[1]),
@@ -1009,7 +1022,7 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
       kind: 'wanderingMonster',
       pos: best.p,
       payload: {
-        army: monsterArmy(rng, 'strong'),
+        army: monsterArmy(rng, 'strong', diff.monsterMul),
         tier: 'strong',
         guard: { kind: 'gold', amount: randInt(rng, 1200, 2200) },
       },
@@ -1083,14 +1096,13 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   const towns: Record<string, Town> = {};
 
   const startRes = { gold: 2500, wood: 10, ore: 10 };
-  const diff = DIFFICULTIES[cfg.difficulty];
 
   factions.forEach((fid, i) => {
     const def = FACTIONS[fid];
     const isHuman = fid === 'p1';
     const tpl = HERO_TEMPLATES[Math.min(i, HERO_TEMPLATES.length - 1)];
-    // 电脑对手按难度给起始资源；玩家永远是标准配置
-    const mul = isHuman ? 1 : diff.startMul;
+    // 电脑对手按难度给起始资源；玩家按 playerStartMul 缩放
+    const mul = isHuman ? diff.playerStartMul : diff.startMul;
     const res: ResourceBag = {
       gold: Math.round(startRes.gold * mul),
       wood: Math.round(startRes.wood * mul),
@@ -1148,9 +1160,10 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
       footprint: castleCells(pos),
       owner: 'neutral',
       buildings: [],
+      // 中立城驻军同样受 monsterMul 缩放（无 rng，直接乘）
       garrison: [
-        { unitTypeId: 'wolf', count: 20 },
-        { unitTypeId: 'boar', count: 10 },
+        { unitTypeId: 'wolf', count: Math.max(1, Math.round(20 * diff.monsterMul)) },
+        { unitTypeId: 'boar', count: Math.max(1, Math.round(10 * diff.monsterMul)) },
       ],
       growthPool: {},
     };
@@ -1176,5 +1189,13 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
     revealAround(state, fid, h.pos, HERO_SIGHT);
     revealAround(state, fid, towns[fid === 'p1' ? 'town_home' : `town_${fid}`].pos, 4);
   }
+
+  // 起始英雄的移动力上限也要过 maxMovePoints：困难档玩家（p1）才会按 playerMoveMul
+  // 缩放，AI 不受影响。这样开局第一天玩家就拿到正确的移动力，而不是要到 endDay 才刷新。
+  for (const id of heroOrder) {
+    const h = state.heroes[id];
+    if (h) h.movePoints = maxMovePoints(h, state);
+  }
+
   return state;
 }

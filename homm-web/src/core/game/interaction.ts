@@ -452,7 +452,7 @@ export function applyInteraction(
         return { title: '清泉', message: '这眼泉水已经喝干了。', levelUps: [], heroDefeated: false };
       }
       obj.visitedBy.push(hero.owner);
-      const gain = Math.round(maxMovePoints(hero) * 0.5);
+      const gain = Math.round(maxMovePoints(hero, state) * 0.5);
       hero.movePoints += gain;
       pushLog(state, `饮下泉水，移动力 +${gain}`);
       return { title: '清泉', message: `移动力 +${gain}。`, levelUps: [], heroDefeated: false };

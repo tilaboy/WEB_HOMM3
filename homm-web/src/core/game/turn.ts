@@ -46,7 +46,7 @@ function restoreHeroes(state: GameState, player: FactionId): void {
   for (const id of state.heroOrder) {
     const h = state.heroes[id];
     if (!h || h.owner !== player) continue;
-    h.movePoints = maxMovePoints(h);
+    h.movePoints = maxMovePoints(h, state);
     h.manaMax = manaMaxOf(h);
     h.mana = h.manaMax;
   }

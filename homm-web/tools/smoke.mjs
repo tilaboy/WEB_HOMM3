@@ -1,6 +1,7 @@
 import { Camera } from '../dist/render/camera.js';
 import { lightTintAt } from '../dist/render/lightLayer.js';
 import { BASE_MOVE_POINTS, createGame, monsterArmy } from '../dist/core/map/generator.js';
+import { maxMovePoints } from '../dist/core/game/hero.js';
 import { mulberry32 } from '../dist/core/rng.js';
 import { computePaths, buildPath } from '../dist/core/map/pathfinding.js';
 import { isRevealed } from '../dist/core/map/fog.js';
@@ -80,7 +81,7 @@ const ok = (cond, msg) => {
 };
 
 for (const seed of [1, 42, 777, 20260912, 99999]) {
-  const s = createGame(seed);
+  const s = createGame({ seed, opponents: 0 });
   const m = s.map;
   const hero = s.heroes.hero1;
 
@@ -218,7 +219,7 @@ ok(siegeDuel.avgLoss > 0.4, '中立城：即使攻下也会元气大伤');
 /* ================= M2：城镇建设与兵种生产 ================= */
 console.log('\n--- M2 城镇 ---');
 
-const g = createGame(20260913);
+const g = createGame({ seed: 20260913, opponents: 0 });
 const home = g.towns.town_home;
 const neutral = g.towns.town_n1;
 
@@ -789,11 +790,23 @@ function runTactical(attacker, defender, seed) {
   );
   ok(JSON.stringify(a.towns) === JSON.stringify(b.towns), '同种子的城镇布局一致');
 
-  // 难度只影响电脑
+  // 难度现在**同时影响玩家与电脑**（重设计核心）：玩家起始资源随 playerStartMul 缩放
   const easy = createGame({ size: 'medium', seed: 9, opponents: 1, difficulty: 'easy' });
   const hard = createGame({ size: 'medium', seed: 9, opponents: 1, difficulty: 'hard' });
-  ok(easy.players.p1.resources.gold === hard.players.p1.resources.gold, '难度不改变玩家起始资源');
+  ok(easy.players.p1.resources.gold === 3000, '轻松档玩家起始金 3000（2500×1.2）');
+  ok(hard.players.p1.resources.gold === 1750, '困难档玩家起始金 1750（2500×0.7）');
+  ok(easy.players.p1.resources.gold > hard.players.p1.resources.gold, '轻松档玩家起始资源更多');
   ok(hard.players.p2.resources.gold > easy.players.p2.resources.gold, '困难档电脑起始资源更多');
+  // 野怪随 monsterMul 缩放：困难档野狼应比轻松档更多
+  const wolfOf = (g) => {
+    const ms = Object.values(g.map.objects).filter((o) => o.kind === 'wanderingMonster');
+    return ms.reduce((s, o) => s + (o.payload.army.find((x) => x.unitTypeId === 'wolf')?.count ?? 0), 0);
+  };
+  ok(wolfOf(hard) > wolfOf(easy), '困难档野怪规模更大（monsterMul 1.25 > 0.75）');
+  // 困难档玩家英雄（含招新）的移动力被 playerMoveMul 罚减（1800×0.9 = 1620）
+  ok(maxMovePoints(hard.heroes.hero1, hard) === 1620, '困难档玩家移动力上限 1620（1800×0.9）');
+  ok(maxMovePoints(easy.heroes.hero1, easy) === 2070, '轻松档玩家移动力上限 2070（1800×1.15）');
+  ok(maxMovePoints(hard.heroes.hero_p2, hard) === BASE_MOVE_POINTS, '困难档电脑移动力不受 playerMoveMul 影响');
 }
 
 // 2. 电脑对手真的会动

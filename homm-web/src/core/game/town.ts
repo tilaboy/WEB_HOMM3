@@ -16,7 +16,7 @@ import { DIFFICULTIES, factionIds, factionName } from '../data/factions.js';
 import { getSpell, spellsOfGuild } from '../data/spells.js';
 import { MAX_STACKS, getUnit } from '../data/units.js';
 import { HERO_TEMPLATES } from '../data/heroes.js';
-import { addResources } from './hero.js';
+import { addResources, maxMovePoints } from './hero.js';
 import { isNewWeek, weekOf } from './calendar.js';
 import { pushLog } from './log.js';
 import { idx, isPassable } from '../map/grid.js';
@@ -323,18 +323,39 @@ export interface AssembleResult {
 
 /* ---------------- weekly growth ---------------- */
 
-/** 每周增长：所有阵营一起结算，电脑对手按难度再拿一点额外增长。 */
+/**
+ * 每周增长：所有阵营一起结算。
+ *
+ * 此前 AI 的 `growthBonus` 因 `Math.floor(g.count * mult)` 对小产量兵种完全空转
+ * （弓手 5 × 1.1 = 5.5 → floor 5 → 增量 0）。现在把小数余数攒进 `growthRemainder`，
+ * 攒满 1 再进位进 `growthPool`，于是 +0.1 这类"小数加成"能真正多产兵。
+ *
+ * 玩家侧按 `playerGrowthBonus` 缩放（困难档为 0、即不罚）。
+ * `Math.max(0.5, ...)` 钳制：防止负向加成把乘数压到过低导致几乎不长兵。
+ */
 export function applyWeeklyGrowth(state: GameState): void {
-  const aiBonus = DIFFICULTIES[state.config?.difficulty ?? 'normal'].growthBonus;
+  const diff = DIFFICULTIES[state.config?.difficulty ?? 'normal'];
   for (const player of factionIds(state)) {
-    const bonus = state.players[player]?.isHuman ? 0 : aiBonus;
+    const isHuman = state.players[player]?.isHuman;
+    const bonus = isHuman ? diff.playerGrowthBonus : diff.growthBonus;
     for (const town of ownedTowns(state, player)) {
-      const mult = townGrowthMultiplier(town) + bonus;
+      const mult = Math.max(0.5, townGrowthMultiplier(town) + bonus);
+      if (!town.growthRemainder) town.growthRemainder = {};
       for (const id of town.buildings) {
         const g = BUILDINGS[id]?.growth;
         if (!g) continue;
-        const add = Math.floor(g.count * mult);
-        town.growthPool[g.unitTypeId] = (town.growthPool[g.unitTypeId] ?? 0) + add;
+        const exact = g.count * mult;
+        const whole = Math.floor(exact);
+        const frac = exact - whole;
+        let pool = (town.growthPool[g.unitTypeId] ?? 0) + whole;
+        let rem = (town.growthRemainder[g.unitTypeId] ?? 0) + frac;
+        if (rem >= 1) {
+          const carry = Math.floor(rem);
+          pool += carry;
+          rem -= carry;
+        }
+        town.growthPool[g.unitTypeId] = pool;
+        town.growthRemainder[g.unitTypeId] = rem;
       }
     }
   }
@@ -547,6 +568,9 @@ export function hireHero(state: GameState, town: Town): Hero | null {
     pos: spot,
     owner: town.owner,
   };
+  // 走与 hero.ts:maxMovePoints 相同的修正逻辑（含 playerMoveMul），
+  // 否则困难档玩家可反复招新英雄绕过移动力惩罚。必须在对象建好后再算。
+  hero.movePoints = maxMovePoints(hero, state);
   state.heroes[id] = hero;
   state.heroOrder.push(id);
   teachGuildSpells(state, hero, town);

@@ -128,6 +128,19 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   );
   form.appendChild(field('地图布局', layoutRow, layoutHint));
 
+  /* 难度提示：本方案难度**同时影响玩家**——起始资源、野怪强度、移动力、电脑对手
+   * 都会随难度变化。无对手时玩家侧杠杆（起始资源 / 野怪）依然生效，文案要切到对应表述。
+   * 必须在 opponents 段之前定义，因为切换对手数量时要实时刷新这段提示。 */
+  const diffHint = document.createElement('div');
+  diffHint.className = 'ss-hint';
+  const syncDiffHint = (): void => {
+    diffHint.textContent =
+      cfg.opponents === 0
+        ? '无对手时，难度通过你的起始资源与野怪强度生效'
+        : '同时影响你的起始资源、野怪强度与电脑对手';
+  };
+  syncDiffHint();
+
   /* 电脑对手 */
   const oppRow = segment<number>(
     [0, 1, 2, 3].map((n) => ({
@@ -144,6 +157,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
     cfg.opponents,
     (v) => {
       cfg.opponents = v;
+      syncDiffHint();
       sync();
     },
   );
@@ -162,7 +176,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
       sync();
     },
   );
-  form.appendChild(field('难度', diffRow, '只影响电脑对手，不削弱你的部队'));
+  form.appendChild(field('难度', diffRow, diffHint));
 
   /* 种子 */
   const seedInput = document.createElement('input');

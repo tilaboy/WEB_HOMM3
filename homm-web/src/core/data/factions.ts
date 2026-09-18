@@ -51,26 +51,40 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyDef> = {
   easy: {
     id: 'easy',
     name: '轻松',
-    desc: '电脑对手发育迟缓、兵力不足时不会主动出击。',
-    startMul: 0.75,
+    desc: '你起始资源更充裕、周增长更高、野怪更稀疏；电脑对手发育迟缓，兵力不足时不会主动出击。',
+    startMul: 0.7,
     growthBonus: 0,
-    aggression: 1.35,
+    aggression: 1.5,
+    playerStartMul: 1.2,
+    playerGrowthBonus: 0.25,
+    playerMoveMul: 1.15,
+    monsterMul: 0.75,
   },
   normal: {
     id: 'normal',
     name: '普通',
-    desc: '电脑对手正常发育，攒够兵力后会向外扩张。',
+    desc: '标准开局。电脑对手正常发育，攒够兵力后会向外扩张。',
     startMul: 1,
     growthBonus: 0.1,
-    aggression: 1,
+    aggression: 1.1,
+    playerStartMul: 1,
+    playerGrowthBonus: 0,
+    playerMoveMul: 1,
+    monsterMul: 1,
   },
   hard: {
     id: 'hard',
     name: '困难',
-    desc: '电脑对手起始资源更多、周增长更快，且更早发动进攻。',
-    startMul: 1.4,
-    growthBonus: 0.3,
-    aggression: 0.75,
+    desc: '你起始资源紧张、周增长与移动力受压，野怪更厚；电脑对手资源更多、增长更快，且更早发动进攻。',
+    startMul: 1.25,
+    growthBonus: 0.2,
+    aggression: 0.8,
+    playerStartMul: 0.7,
+    // 决策②：不给负向周增长（用户拍板）——避免天使周产 2→1 腰斩，
+    // 更重要的是不让进行中的旧存档中途被加难度。强度由开局 ×0.7 / 野怪 ×1.25 / AI 更早出击承担。
+    playerGrowthBonus: 0,
+    playerMoveMul: 0.9,
+    monsterMul: 1.25,
   },
 };
 
@@ -87,7 +101,10 @@ export const DEFAULT_CONFIG = {
   size: 'medium' as MapSize,
   /** 默认走"旷野"：地形全交给噪声，和 M7 之前的每一局手感一致 */
   layout: 'wild' as MapLayout,
-  opponents: 0,
+  /** 默认 1 家电脑对手：让难度选择器真正生效（E2/E3 之后 AI 会像玩家一样发育）。
+   *  注意：已存在的 homm-config-v1 会覆盖本默认值（loadConfig 只校验 seed），
+   *  所以只对首次启动 / 清档用户生效——这是预期的，不强行改写用户选择。 */
+  opponents: 1,
   difficulty: 'normal' as Difficulty,
   playerName: '指挥官',
 };

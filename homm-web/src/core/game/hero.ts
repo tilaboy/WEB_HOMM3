@@ -2,6 +2,7 @@ import type { Army, GameState, Hero, HeroPrimary, PlayerId, ResourceBag } from '
 import { ARTIFACTS } from '../data/artifacts.js';
 import { getUnit } from '../data/units.js';
 import { BASE_MOVE_POINTS } from '../map/generator.js';
+import { DIFFICULTIES } from '../data/factions.js';
 import { deriveSeed, mulberry32 } from '../rng.js';
 
 export function effectivePrimary(hero: Hero): HeroPrimary {
@@ -17,9 +18,21 @@ export function effectivePrimary(hero: Hero): HeroPrimary {
   return p;
 }
 
-export function maxMovePoints(hero: Hero): number {
+/**
+ * 英雄每日移动力上限（含宝物加成）。
+ *
+ * 传入 `state` 时，若英雄属于玩家（p1）则再乘难度的 `playerMoveMul`，
+ * 这样困难档玩家被罚移动力，且**无论新招还是老英雄、无论开局还是每日刷新都走同一处**，
+ * 不会被"反复招新英雄"绕过（见 town.ts 的 hireHero 与 turn.ts 的每日刷新）。
+ * 缺省 `state` 时不缩放（UI 预览等无需状态的场景安全退化）。
+ */
+export function maxMovePoints(hero: Hero, state?: GameState): number {
   let m = BASE_MOVE_POINTS;
   for (const id of hero.artifacts) m += ARTIFACTS[id]?.moveBonus ?? 0;
+  if (state && hero.owner === 'p1') {
+    const diff = DIFFICULTIES[state.config?.difficulty ?? 'normal'];
+    m = Math.round(m * (diff.playerMoveMul ?? 1));
+  }
   return m;
 }
 

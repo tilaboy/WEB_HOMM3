@@ -58,7 +58,7 @@ export class HeroPanel {
 
     this.el.appendChild(this.headSection(state, hero));
     if (this.showArtifacts) this.el.appendChild(this.artifactSection(hero));
-    this.el.appendChild(this.barSection(hero));
+    this.el.appendChild(this.barSection(hero, state));
     this.el.appendChild(this.statSection(hero));
     this.el.appendChild(this.armySection(hero));
     this.el.appendChild(this.factionSection(state));
@@ -119,10 +119,10 @@ export class HeroPanel {
 
   /* ---------------- 移动力 / 法力 ---------------- */
 
-  private barSection(hero: Hero): HTMLElement {
+  private barSection(hero: Hero, state: GameState): HTMLElement {
     const wrap = div('sec hp-bars');
 
-    const maxMp = maxMovePoints(hero);
+    const maxMp = maxMovePoints(hero, state);
     wrap.appendChild(
       barRow('移动力', Math.floor(hero.movePoints), maxMp, hero.movePoints, ''),
     );
