@@ -34,7 +34,7 @@
 | 最小触控热区 | **44×44 CSS px**（主要操作 48×48）；当前 HUD 按钮 min-height 只有 **30–32 px，不达标，必须改** |
 | 性能分档 | 低端 30fps / 中端 60fps / 高端 60fps（ProMotion 允许 120）；判定用**启动期 30 帧微基准 + localStorage 缓存**，见 §4.3 |
 | 返工清单 | **14 条**，其中 P0 四条：边缘滚屏 gate、地形烘焙内存、光照分档、DPR 钳制。见 §6 |
-| Top3 风险 | ① Canvas2D `multiply/overlay` 在移动 WebView 掉出 GPU 快路径 ② WebView 进程被内存告警杀掉 ③ iOS localStorage 被系统回收导致丢档。见 §7 |
+| Top3 风险 | ~~① Canvas2D `multiply/overlay` 在移动 WebView 掉出 GPU 快路径~~ **✅ 已消除（2026-09-18 真机实测）** ② WebView 进程被内存告警杀掉 ③ iOS localStorage 被系统回收导致丢档。见 §7 |
 | 需用户拍板 | 3 条开放问题，见 §8 |
 
 ---
@@ -585,7 +585,7 @@ export function resumeAudio(): void  { if (ctx?.state === 'suspended') void ctx.
 |---|---|
 | **探测真机行为与 20/12 ms 阈值** | `probeTier` 按 §4.3 采样 30 帧取 p95（`>20 → low`、`>12 → mid`），**阈值未在任何真机校准**；探测本身约耗时 0.5 s。真机上 p95 的实际分布未知 |
 | **M-01~M-04 的真实帧时间收益** | 全部为几何推算 / 代码推理，**未在真机测量一帧**。需上 Capacitor 壳后用 Safari Web Inspector / Chrome DevTools 采样后校准分档阈值 |
-| **风险 ①（`multiply`/`overlay` 是否掉出 GPU 快路径）** | 未验证，且属设备 / WebView 版本相关，模拟器测不出。文档 §7 的两条缓解——"把 tint 烘进地形层"与"改用 DOM `mix-blend-mode` 层"——**均未实现**；当前只有低端"只留 multiply 单次" + 既有 `lightingOn()` 总开关两条退路 |
+| **风险 ①（`multiply`/`overlay` 是否掉出 GPU 快路径）** | ~~未验证~~ → **✅ 2026-09-18 真机实测：未掉出快路径。** 设备 OPPO PMA110 / Chrome 151。方法：在**真机 WebView 内**（CDP，`tools/devprobe.mjs`）对**按 DPR 缩放的真实画布 2376×1080** 跑全屏 `drawImage` 微基准。结果：`source-over` 0.309ms、**`multiply` 0.259ms（0.84×）**、`overlay` 0.241ms（0.78×）—— 三者**同量级**，若掉 CPU 光栅化应慢 1~2 个数量级。按本作"光照三遍全屏"折算 ≈ **0.78ms/帧 = 60fps 帧预算的 4.7%**。→ §7 的两条缓解（"把 tint 烘进地形层"、"改用 DOM `mix-blend-mode` 层"）**不必再做**；低端"只留 multiply 单次" + `lightingOn()` 总开关保留即可。⚠️ **测量陷阱（已踩）**：若 canvas 只开 CSS 尺寸（792×360）不乘 DPR，会**低估 5.83 倍**（同脚本只量到 0.053ms）；**顺带**：真机 WebView 报 `getImageData` 应设 `willReadFrequently`（仅影响读回路径，与合成无关） |
 | **低端水面仍逐帧 blit 水格** | 低端只冻结了水面高光与 4 帧动画（`waterFrame = 0`），水面格仍每帧 `drawImage`；把水面烘进地形层**未做**，收益未量化 |
 | **`BattleRenderer` 不响应"战斗中途切档"** | 每场战斗新建渲染器，只在 `fit()` 时读 `dprCap`；档位中途变化要等下一次 `resize()` 才生效（未订阅 `onTierChange`）。战斗内切档概率极低，暂不处理 |
 | **加载"已在档的巨型存档"不受夹紧** | `maxMapSize` 只在 `startNewGame` 夹新开局；直接读一个巨型存档时烘焙面仍可能超预算，只打一条一次性 `console.warn`（`terrainLayer.ts`） |
