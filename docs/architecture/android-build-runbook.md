@@ -54,24 +54,60 @@ Android Studio 自带的 JDK 也可用（`Android Studio ▸ Settings ▸ Build 
   ```
   然后接受许可：`sdkmanager --licenses`
 
+  > brew cask 的目录布局是 `cmdline-tools/bin`（**没有** `latest` 层），部分版本的 `sdkmanager`
+  > 会因此定位不到 SDK 根、报警告或把包装错位置。若遇到，显式指定根目录：
+  > `sdkmanager --sdk_root="$ANDROID_HOME" --install ...`（`ANDROID_HOME` 见 §1.3，先配好再跑）。
+
 ### 1.3 环境变量（**关键**）
+
+> ⚠️ **先确定 SDK 根目录在哪 —— 本节最容易卡住的就是这里。**
+> - **Android Studio 路线** → 根目录是 `$HOME/Library/Android/sdk`
+> - **`brew install --cask android-commandlinetools` 路线** → 根目录是
+>   **`$(brew --prefix)/share/android-commandlinetools`**（Apple Silicon 通常是
+>   `/opt/homebrew/share/android-commandlinetools`）——**不是** `~/Library/Android/sdk`。
+>
+> brew 的 cask **不会**把 SDK 放进 `~/Library`。若照搬默认值，会出现「`sdkmanager` 往 A 目录装包、
+> `adb` 去 B 目录找不到」的错配，而且**报错位置会把人引去查 PATH**，实际是根目录写错了。
+> 若别的工具链（如 Flutter）要求 `~/Library/Android/sdk`，用软链统一即可：
+> ```bash
+> ln -sfn "$(brew --prefix)/share/android-commandlinetools" "$HOME/Library/Android/sdk"
+> ```
 
 ```bash
 # 追加到 ~/.zshrc 或 ~/.zprofile
-export ANDROID_HOME="$HOME/Library/Android/sdk"    # cmdline-tools 用户按其实际路径
+export ANDROID_HOME="$(brew --prefix)/share/android-commandlinetools"   # Android Studio 用户改回 "$HOME/Library/Android/sdk"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin"
 
 source ~/.zshrc
-adb version            # 验证
 ```
 
-验证三件事都就位：
+**验证（按顺序来：先「不依赖 Java」的，再「依赖 Java」的，便于定位问题出在哪一层）**
+
 ```bash
-java -version                 # 21.x
-echo $ANDROID_HOME            # 非空且目录存在
-ls "$ANDROID_HOME/platforms"  # 应能看到 android-36
+which adb && adb version               # ① 证明 platform-tools 已落地 + PATH 的 platform-tools 半边通了（不需要 Java）
+echo "$ANDROID_HOME"                   # ② 变量非空；再 ls 一眼确认目录真实存在
+ls "$ANDROID_HOME/platform-tools"      # ③ 应看到 adb
+which sdkmanager                       # ④ 证明 PATH 的 cmdline-tools/latest/bin 半边也通了
+sdkmanager --version                   # ⑤ 到这一步才需要 Java —— 它同时验证 PATH + JDK
+java -version                          # ⑥ 必须是 21.x（用 17 会在编译期报 release 版本错误）
+ls "$ANDROID_HOME/platforms"           # ⑦ 应看到 android-36
+ls "$ANDROID_HOME/build-tools"         # ⑧ 应看到 36.0.0 —— 缺了会一直潜伏到 Gradle 构建时才炸
 ```
+
+> **为什么①偏偏用 `adb`，而不是直接 `sdkmanager`？**
+> `sdkmanager` 是个 **Java 启动的脚本**：它一失败，你分不清到底是**PATH 没配好**还是**JDK 有问题**。
+> `adb` 是自带的**原生二进制、完全不依赖 Java**，所以它能干净地把「PATH / SDK 接线」这一层先排除掉，
+> 剩下的失败才归因到 JDK。**这个顺序本身就是为缩小排查面而设计的。**
+>
+> ⚠️ 但要清楚：**`adb` 不是构建 APK 的必需品。** 构建靠的是 JDK 21 + `platforms;android-36` +
+> `build-tools;36.0.0`；`adb` 的用途是**装到真机**（`adb install`，见 §5）与 logcat 调试。
+> 它出现在这里，纯粹是因为它是最快、且不依赖 Java 的「接线是否生效」探针。
+
+> **真正决定构建成败的是 ⑤⑥⑦⑧。** 尤其 **⑧ `build-tools`**：本工程 `variables.gradle` **没有**固定
+> `buildToolsVersion`，由 Gradle 按 AGP 8.13 的默认值取。若当初 `sdkmanager --install "build-tools;36.0.0"`
+> 静默失败（**许可未接受是常见原因**，`sdkmanager --licenses` 必须跑完），则 ①~⑦ 全绿，
+> **一路潜伏到十几分钟后 Gradle 构建失败才暴露**。
 
 ---
 
