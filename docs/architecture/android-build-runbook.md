@@ -153,8 +153,13 @@ cd android
 
 > 若报 `SDK location not found`，在 `android/local.properties` 写一行（此文件已被 gitignore，**不要提交**）：
 > ```
-> sdk.dir=/Users/<你>/Library/Android/sdk
+> # 值必须与 §1.3 的 $ANDROID_HOME 一致（两者不一致 ⇒ 这里也会报 SDK location not found）
+> sdk.dir=/opt/homebrew/share/android-commandlinetools            # brew cask（Apple Silicon）
+> # sdk.dir=/usr/local/share/android-commandlinetools             # brew cask（Intel Mac）
+> # sdk.dir=/Users/<你>/Library/Android/sdk                       # Android Studio 路线
 > ```
+> 不确定该填哪个就直接用变量代入：`echo "sdk.dir=$ANDROID_HOME" > android/local.properties`
+> （`ANDROID_HOME` 为空说明 §1.3 还没配好，先回去配）。
 
 ### 3.1 让 WebView 可调试（内测强烈建议）
 
