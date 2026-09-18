@@ -632,10 +632,28 @@ table.est td:last-child {
   flex: 1 1 140px;
 }
 
+/* M-09 残余：小按钮（.btn.tiny）的真机触摸目标。
+   .btn.tiny 视觉仍紧凑，但真实可点高度从 24px 抬到 32px——24px 低于所有移动端规范
+   (iOS 44pt / Android 48dp) 的下限，而 32px 是"密集布局里仍放得下"的折中底线。
+   需要 ~44px 的目标再叠加 .tap（见下）。 */
 .btn.tiny {
+  position: relative;
   padding: 3px 9px;
   font-size: 12px;
-  min-height: 24px;
+  min-height: 32px;
+}
+
+/* M-09 残余：给"纵向有余量"的小按钮把可点区上下各撑 6px（32 → ~44px 命中高度），
+   视觉盒子不变。**只撑纵轴**：这些按钮横向本就 ≥40px，且同排邻钮常只隔 8px，
+   横向一扩就会与邻钮的命中区重叠（点了哪个说不清，比按钮小更糟）。
+   适用站点：城镇弹窗各 actionBtn、侧栏「魔法书」按钮——它们的纵向最近邻至少隔 14px。 */
+.btn.tiny.tap::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  bottom: -6px;
 }
 
 .btn.tiny.off {
@@ -1035,6 +1053,13 @@ body.in-battle #topbar {
   opacity: 0.5;
 }
 
+/* 法术书：每行一个按钮，行间仅 ~9px（td padding + 边框），窄到容不下 ::after 纵向扩张
+   （上下各扩 6px 就会与相邻行的按钮命中区重叠）。但表格行能自由长高、弹窗可滚动，
+   所以直接给真实 44px——这是"腾出空间"而非"扩命中区"的做法。 */
+.spellbook .btn.tiny {
+  min-height: 44px;
+}
+
 /* ---------- right viewer, HOMM3 layout ---------- */
 
 .dim {
@@ -1107,10 +1132,13 @@ body.in-battle #topbar {
   text-overflow: ellipsis;
 }
 
+/* 密集上下文：相邻按钮只有 3px 间距（纵列），这里**不能**用 ::after 扩命中区——
+   一扩就与上下的按钮重叠。改为抬高真实 min-height（继承 .btn.tiny 的 32px），
+   并把列间距从 3px 放到 6px，降低误触。侧栏可滚动，多出来的高度可滚，不会挤爆。 */
 .hp-nav {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 6px;
 }
 
 .hp-nav .btn.tiny {
@@ -1266,13 +1294,15 @@ body.in-battle #topbar {
   font-variant-numeric: tabular-nums;
 }
 
+/* 密集上下文：同排 2~3 个按钮，横向只隔 3px。同样不走 ::after（横向扩会重叠），
+   改为抬高真实高度（继承 32px）+ 把横向间距放到 8px（满足"相邻 ≥8px"）+ 放宽左右内边距。 */
 .hp-tbtns {
   display: flex;
-  gap: 3px;
+  gap: 8px;
 }
 
 .hp-tbtns .btn.tiny {
-  padding: 0 4px;
+  padding: 0 8px;
   font-size: 11px;
 }
 

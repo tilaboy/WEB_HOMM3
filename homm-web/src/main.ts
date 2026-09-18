@@ -508,6 +508,7 @@ function openSpellBook(heroId: string): void {
     td3.textContent = String(sp.manaCost);
     const td4 = document.createElement('td');
     const btn = document.createElement('button');
+    // M-09：法术书行距仅 ~9px，走 .spellbook .btn.tiny 的真实 44px（不加 .tap，避免命中区重叠）。
     btn.className = 'btn tiny';
     if (!sp.combat) {
       const chk = canAdventureCast(state, hero, id);

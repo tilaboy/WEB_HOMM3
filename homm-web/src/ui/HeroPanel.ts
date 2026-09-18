@@ -132,7 +132,8 @@ export class HeroPanel {
     wrap.appendChild(manaRow);
 
     const btn = document.createElement('button');
-    btn.className = 'btn tiny';
+    // M-09：侧栏「魔法书」是孤立按钮，上下方都是非交互内容，可安全扩命中区到 ~44px。
+    btn.className = 'btn tiny tap';
     btn.textContent = '魔法书';
     btn.style.marginTop = '6px';
     btn.disabled = !hero.spells.length;
@@ -325,6 +326,8 @@ function span(cls: string, text: string): HTMLElement {
 
 function miniBtn(label: string, onClick: () => void, title?: string): HTMLButtonElement {
   const b = document.createElement('button');
+  // M-09：miniBtn 只用在 .hp-nav / .hp-tbtns 这两个"相邻仅 3px"的密集区，
+  // 不能加 .tap（::after 会与邻钮命中区重叠）；靠 .btn.tiny 的真实 32px 兜底。
   b.className = 'btn tiny';
   b.textContent = label;
   if (title) b.title = title;
