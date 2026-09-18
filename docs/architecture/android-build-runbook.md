@@ -1,16 +1,24 @@
 # Android 内测 APK 构建 Runbook
 
-> 目标：在**用户本机**上，从当前仓库产出一个可安装的 Android 内测 APK。
-> **状态更新（2026-09-18 17:04）：APK 已成功产出。**
-> 用户机器已装齐工具链（Temurin JDK 21.0.12.1 + brew cask `android-commandlinetools`，
-> SDK 根目录 `/opt/homebrew/share/android-commandlinetools`），`./gradlew assembleDebug`
-> **BUILD SUCCESSFUL**。产物见 §3 的「实测产物」。
-> 下文「本机（AI 工作环境）无工具链」的描述是**撰写时**的事实，现已不适用 —— 保留作历史说明。
+> 目标：从当前仓库产出一个可安装的 Android 内测 APK。
+>
+> **状态（最新，2026-09-18 20:20）：APK 已成功产出，且已按 D-16 改名后 clean 重打。**
+> 工具链：Temurin JDK 21.0.12.1 + brew cask `android-commandlinetools`，
+> SDK 根目录 `/opt/homebrew/share/android-commandlinetools`。
+> 当前产物：`com.a2studio.thecodeofchivalry` / 《骑士信条》/ 4.8 MB —— 详见 §3「实测产物」。
+>
 > 作者：程基岩（技术方向 / 打包） | 配套规格：`docs/architecture/mobile-platform.md` §2、ADR：`adr-mobile-first.md`
 >
-> **本机（AI 工作环境）无法产出 APK**：无 Java 运行时、无 `gradle`、`ANDROID_HOME` / `ANDROID_SDK_ROOT` 为空、
-> 无 `~/Library/Android/sdk`、无 Xcode。因此本文**明确区分「本机已验证」与「需在用户机器执行且未验证」**，
-> 不要把下文当成"已经打出包了"。
+> ---
+>
+> **⚠️ 以下段落为历史留档，不再是现状**（撰写时本机尚无工具链；该缺口即 **G-11**，现已闭环）：
+>
+> > ~~本机（AI 工作环境）无法产出 APK：无 Java 运行时、无 `gradle`、`ANDROID_HOME` / `ANDROID_SDK_ROOT` 为空、
+> > 无 `~/Library/Android/sdk`、无 Xcode。因此本文明确区分「本机已验证」与「需在用户机器执行且未验证」。~~
+>
+> **现状修正**：JDK 21 与 cmdline-tools 已在**本机**装齐，`./gradlew assembleDebug` 也已在本机跑通。
+> §0 表中标注「未验证」的项，现已收窄为**真机侧**（无设备），即 **G-12**，
+> **不再是**「无构建工具链」——请勿据此判断"这个仓库打不出包"。
 
 ---
 
@@ -156,26 +164,34 @@ cd android
   android/app/build/outputs/apk/debug/app-debug.apk
   ```
 
-#### 实测产物（2026-09-18 17:04，用户机）
+#### 实测产物（2026-09-18 20:20，用户机 · 改名后 clean 重打）
 
 | 项 | 值 |
 |---|---|
 | 路径 | `homm-web/android/app/build/outputs/apk/debug/app-debug.apk` |
-| 大小 | **4.8 MB**（582 项 / 未压缩 11.3 MB）——落在 §2.7 预估的 4–7 MB 区间内 |
-| SHA-256 | `ce461689677b98ac7e72d3cf3766b12b9372e21e41079c9642523c561d1c2ee4` |
-| 包名 | `com.lichao.heroesong`（**占位，待用户拍板**，见 §7） |
+| 大小 | **4.8 MB**（落在 §2.7 预估的 4–7 MB 区间内） |
+| SHA-256 | `69416fa8c25fb7a366818d2282581ad4239fc841d3f356dfa1947738e12d5eb2` |
+| 包名 | **`com.a2studio.thecodeofchivalry`**（已拍板，见 §7） |
 | versionCode / versionName | `1` / `1.0` |
 | minSdk / targetSdk / compileSdk | **24 / 36 / 36** |
-| application-label | `英雄之歌` |
-| 启动 Activity | `com.lichao.heroesong.MainActivity` |
+| application-label | **`骑士信条`** |
+| 启动 Activity | **`com.a2studio.thecodeofchivalry.MainActivity`** |
 | 方向锁 | `screenOrientation=6`（`sensorLandscape`）✅ |
 | 签名 | `CN=Android Debug`（debug key，可直接侧载）|
 | 权限 | `INTERNET`、`VIBRATE`（后者来自 `@capacitor/haptics`）|
 | 图标密度 | 7 档（120→640 dpi）|
 
+> **本次为 `./gradlew clean assembleDebug`**（165 tasks executed / 25 up-to-date）——
+> 刻意走 clean，避免改名后残留旧包名的中间产物造成假通过。
+> 已实测 APK 内 `AndroidManifest.xml` 中 **`com.lichao` 出现 0 次**，改名无残留。
+
 **已验证打包进 APK 的 web 资源**：119 个文件在 `assets/public/`；
 APK 内 `capacitor.config.json` 的 `webContentsDebuggingEnabled` = **`false`** ✅
 （未设 `CAP_WEBVIEW_DEBUG`，生产安全默认值保持住了）。
+
+**首版（改名前的 `com.lichao.heroesong`）留档**：2026-09-18 17:04，
+SHA-256 `ce461689677b98ac7e72d3cf3766b12b9372e21e41079c9642523c561d1c2ee4`。
+两版仅包身份与显示名不同，包体大小一致（4.8 MB）。
 
 **两条构建卫生提示（不阻塞内测，发布前应收）**：
 - **54 个 `.map` 源映射共 589 KB** 被打进 APK —— 比自研 JS 本体（≈493 KB）还大。
@@ -249,7 +265,7 @@ adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 把 `app-debug.apk` 通过 AirDrop / 网盘 / 数据线拷到手机，点击安装，允许"未知来源"。
 
 > debug APK 用 Android 默认调试签名，无需你自己的 keystore，但不能上架，也不要长期分发。
-> 装好后应看到：应用名 **英雄之歌**、图标为深金底立方体+旗帜、启动即**横屏**。
+> 装好后应看到：应用名 **骑士信条**、图标为深金底立方体+旗帜、启动即**横屏**。
 
 ---
 
@@ -298,9 +314,10 @@ cd android
 
 | # | 决定项 | 现状 | 为什么必须确认 |
 |---|---|---|---|
-| 1 | **appId / 包名** | `com.lichao.heroesong`（占位） | 一旦随包发布即为**不可更改**的包身份（Android `applicationId`、日后 iOS bundle id）。改了要重发。请确认或替换。 |
+| 1 | **appId / 包名** | ✅ **已拍板（2026-09-18）**：`com.a2studio.thecodeofchivalry` | ~~原占位 `com.lichao.heroesong` 已废弃~~。新值 = 工作室名 `a2studio` + 游戏名 `thecodeofchivalry`（《骑士信条》/ The Code of Chivalry）。**改名原因**：旧名《英雄之歌》与多款**仍在运营**的手游撞名（含一款同名策略卡牌、一款二次元卡牌、韩国 dooub 的《영웅의 노래》），商店搜不到且易混淆。一旦上架即为**不可更改**的包身份，已全部替换到位。 |
 | 2 | **keystore 归属与保管** | 未生成 | 丢失即永久失去更新权。必须指定保管人（见 §6.1）。 |
 | 3 | **上架范围** | 先 Android 内测 | Apple 开发者 $99/年 + Guideline 4.2（纯套壳会被拒）风险，见 ADR §4.2。 |
+| 4 | **美术调性：人物与地图「搞笑风格」** | ⚠️ **与现有美术圣经存在冲突，需确认口径** | 用户 2026-09-18 提出希望人物**和地图**都带搞笑风格。**单位侧已对齐**（`cartoon-style.md` §1.3「每单位只有一处比例失调」本就以「搞笑感」为目标，且写明「处处失调 → 搞笑感塌成乱码」）；**但环境层被明确冻结**（`cartoon-style.md` §3.1：地形砖 `g_*`/岸线 `sh_*`/小装饰 `deco_*` **一律不动**，理由是重写地形成本极高、收益极低）。**即：当前设计里「地图不会变搞笑」。** 要让地图也搞笑，需新增「喜剧布景层」或解冻 `deco_*` —— 见 roadmap D-17。 |
 
 ---
 

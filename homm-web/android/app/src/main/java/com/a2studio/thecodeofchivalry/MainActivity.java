@@ -1,4 +1,4 @@
-package com.lichao.heroesong;
+package com.a2studio.thecodeofchivalry;
 
 import com.getcapacitor.BridgeActivity;
 

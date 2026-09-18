@@ -11,10 +11,12 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * 以 `android/variables.gradle` 实际生成的值为准。
  */
 const config: CapacitorConfig = {
-  // ⚠️ 占位标识：由仓库作者（lichao）+ 游戏名（英雄之歌）推导。发布前必须由用户确认——
-  // 它一旦随包发出即成为不可更改的包身份（Android applicationId / iOS bundle id）。
-  appId: 'com.lichao.heroesong',
-  appName: '英雄之歌',
+  // 包身份（用户 2026-09-18 拍板）：a2studio = 工作室名；thecodeofchivalry = 游戏名
+  // 《骑士信条》/ The Code of Chivalry。
+  // ⚠️ 一旦随包上架即成为**不可更改**的包身份（Android applicationId / iOS bundle id），
+  // 改名需重发。原占位值 `com.lichao.heroesong` 已废弃（旧名《英雄之歌》与多款在运营手游撞名）。
+  appId: 'com.a2studio.thecodeofchivalry',
+  appName: '骑士信条',
   webDir: 'dist',
 
   // 与 manifest theme_color / CSS --stone-3 一致，避免启动瞬间白闪

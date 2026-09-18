@@ -1,6 +1,6 @@
 {
-  "name": "英雄之歌",
-  "short_name": "英雄之歌",
+  "name": "骑士信条",
+  "short_name": "骑士信条",
   "description": "等距视角的网页策略冒险游戏",
   "start_url": "/",
   "display": "standalone",

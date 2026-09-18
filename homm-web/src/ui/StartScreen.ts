@@ -58,7 +58,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   const brand = document.createElement('div');
   brand.className = 'ss-brand';
   const h1 = document.createElement('h1');
-  h1.textContent = '英雄之歌';
+  h1.textContent = '骑士信条';
   const sub = document.createElement('p');
   sub.textContent = '在四方的土地上建立城镇、招募军队、击败所有对手。';
   brand.append(h1, sub);

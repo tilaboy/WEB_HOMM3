@@ -89,7 +89,9 @@ npm i @capacitor/core @capacitor/app @capacitor/preferences @capacitor/haptics \
 npm i -D @capacitor/cli
 
 # 3) 初始化（webDir 必须指向 dist）
-npx cap init "英雄之歌" com.yourorg.herosong --web-dir=dist
+#    ⚠️ 下面这行是**首稿阶段的示意值**（`com.yourorg.herosong` 当时尚不存在）。
+#    实际已拍板并落地的是：appId `com.a2studio.thecodeofchivalry`、appName `骑士信条`（D-16）。
+npx cap init "骑士信条" com.a2studio.thecodeofchivalry --web-dir=dist
 
 # 4) 加平台
 npx cap add ios
@@ -111,8 +113,8 @@ npx cap open android    # 需要 Android Studio + JDK 21（⚠️ 原稿写 17�
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.yourorg.herosong',
-  appName: '英雄之歌',
+  appId: 'com.a2studio.thecodeofchivalry',  // D-16 拍板值（首稿示意值 com.yourorg.herosong 已作废；旧名撞名多款在运营手游）
+  appName: '骑士信条',
   webDir: 'dist',
   backgroundColor: '#1b1f24',       // 与 manifest theme_color 一致，避免启动白闪
   android: {
@@ -561,7 +563,7 @@ export function resumeAudio(): void  { if (ctx?.state === 'suspended') void ctx.
 
 ---
 
-## 8. 未验证项与需用户拍板的开放问题
+## 8. 未验证项与原开放问题（现均已拍板）
 
 ### 8.1 明确标注"未验证"
 
@@ -591,17 +593,20 @@ export function resumeAudio(): void  { if (ctx?.state === 'suspended') void ctx.
 |---|---|
 | **M-07 安卓安全区注入路径** | 代码用 `var(--safe-area-inset-*, env(...))`，但**本地只跑到 `env()` 兜底分支**（浏览器不注入该变量）。Android 上 `SystemBars` 是否真把 `--safe-area-inset-*` 注入 WebView、值是否正确，**须真机验证** |
 | **M-05 `appStateChange` 真机行为** | `lifecycle.ts` 走原生注入的 `window.Capacitor` 全局（零打包器约束，无法 `import '@capacitor/app'`）。`@capacitor/app` 是否在真机上注册并派发 `appStateChange`、pause/resume 时序是否正确，**未在真机验证**；Web 侧 `visibilitychange`/`pagehide` 已按标准事件实现 |
-| **M-13 Preferences 双写真机行为** | Web 下自动退回 localStorage（功能不变）；**原生 Preferences 的读写、`hydratePersistence()` 的回灌时序未真机验证**（本机无移动构建工具链，见 G-11） |
+| **M-13 Preferences 双写真机行为** | Web 下自动退回 localStorage（功能不变）；**原生 Preferences 的读写、`hydratePersistence()` 的回灌时序未真机验证**（原因已不是"无工具链"——该卡点随 **G-11 闭环**解除，APK 已产出；现在唯一缺口是**无真机 / 无设备**，见 **G-12**） |
 | **M-10 原生触觉** | **未接线**可言验证——`@capacitor/haptics` 已装但 `impact('light')` 尚未接入长按回调 |
 | **M-09 真机热区** | 由 `npm run audit:touch` 用无头 Chrome 的 `elementFromPoint` 量真实热区（非模拟）；**触屏真机的手指命中感未验证**（无头鼠标指针 ≠ 手指） |
 | **双击 / 长按阈值** | `DOUBLE_TAP_MAX_MS=300` / `DOUBLE_TAP_MAX_DIST=12`、长按 `>8px` 位移阈值**均为代码推定值，未在真机手感校准**（登记为 device-tunable 参数） |
 
-### 8.2 需要用户拍板的 3 个问题
+### 8.2 原 3 个开放问题 —— **已全部拍板**
 
-1. **上架范围**：只做 Android（无 Apple 年费、审核快、可先验证手感），还是 iOS + Android 同时上（多 $99/年 + 审核周期 + 4.2 风险）？
-   我的建议：**先 Android 内测 APK，手感与性能跑通后再上 iOS**——因为本方案的最大未知量就是移动 WebView 性能，先用门槛最低的渠道验证。
-2. **应用标识与签名归属**：`appId`（如 `com.yourorg.herosong`）、Apple 开发者账号、Android keystore 归谁？keystore 一旦丢失**无法再更新已上架的 App**，必须确定保管人。
-3. **是否接受"包壳"带来的依赖**：Capacitor 会往 `package.json` 里引入 6 个运行时依赖，打破当前"零运行时依赖"的纯度（见 ADR §代价）。确认接受，还是要求先尝试纯 PWA + 「添加到主屏幕」？
+本节的三个问题在 2026-09-18 均已闭环，**不再是开放项**：
+
+| # | 问题 | 结论 |
+|---|---|---|
+| 1 | **上架范围**：只做 Android，还是 iOS + Android 同时上？ | ✅ **已拍板 D-15：先 Android 内测 APK**。理由保留：本方案最大未知量是移动 WebView 性能，先用门槛最低的渠道验证；iOS 侧另有 $99/年 + Guideline 4.2（纯套壳被拒）风险，见 `adr-mobile-first.md` §4.2 |
+| 2 | **应用标识与签名归属**：`appId`、Apple 账号、Android keystore 归谁？ | ◐ **appId 已拍板 D-16**：~~`com.yourorg.herosong`（首稿示意值）、`com.lichao.heroesong`（占位）~~ → **`com.a2studio.thecodeofchivalry`**，显示名 **《骑士信条》**。**keystore 仍未生成**——须用户自行生成并**离线备份**，丢失即**永久失去更新权**（步骤见 `android-build-runbook.md` §6.1）。`appId` 一旦上架即为不可更改的包身份，故必须在**首次发布前**落定 |
+| 3 | **是否接受"包壳"带来的依赖**？ | ✅ **已接受（D-12/D-15）**：Capacitor 全家桶打破"零运行时依赖"纯度，成本与理由见 `adr-mobile-first.md` §代价 |
 
 ---
 
