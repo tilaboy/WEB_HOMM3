@@ -9,7 +9,15 @@ import { previewInteraction, applyInteraction, battleSetup, enemyHeroAt, heroBat
 import { isPassable, castleCells, footprintOf } from '../dist/core/map/grid.js';
 import { endDay } from '../dist/core/game/turn.js';
 import { factionIds } from '../dist/core/data/factions.js';
-import { evaluateOutcome, isEliminated, outcomeSummary } from '../dist/core/game/victory.js';
+import {
+  NO_TOWN_GRACE_DAYS,
+  advanceNoTownStreaks,
+  eliminateFaction,
+  evaluateOutcome,
+  isEliminated,
+  noTownDaysOf,
+  outcomeSummary,
+} from '../dist/core/game/victory.js';
 import { BASE_TOWN_INCOME } from '../dist/core/data/buildings.js';
 import { HOME_MINE_RING, MINE_NAME, MINE_PER_DAY, RARE_RESOURCES } from '../dist/core/data/mines.js';
 import { MARKET_RATES, costText } from '../dist/core/game/town.js';
@@ -54,6 +62,9 @@ import {
   recruitToHero,
   townDailyIncome,
 } from '../dist/core/game/town.js';
+import { settingsForTier, classifyProbe, probeTier, allowedMapSizes, clampMapSize, TIER_ORDER } from '../dist/render/quality.js';
+import { shouldEdgeScroll, normalizePointerType } from '../dist/render/pointerIntent.js';
+import { bakeBytes } from '../dist/render/terrainLayer.js';
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -1764,6 +1775,105 @@ console.log('\n--- P1.3 昼夜光照 ---');
   const c = lightTintAt(-0.32);
   ok(a.r === b.r && a.g === b.g && a.b === b.b, '相位 1.68 ≡ 0.68（正向取模）');
   ok(c.r === b.r && c.g === b.g && c.b === b.b, '相位 -0.32 ≡ 0.68（负向取模）');
+}
+
+/* ================= 移动端画质分档（quality 纯逻辑） ================= */
+console.log('\n--- 移动端画质分档 ---');
+
+// 1. 三档映射（§4.2 分档表）
+{
+  const low = settingsForTier('low');
+  ok(low.lighting === 'multiply' && !low.vignette && !low.warmOverlay, '低端：只 multiply，关暗角与暖光');
+  ok(!low.waterGlint && !low.townGlow && !low.gridLines, '低端：关水面高光/城镇灯火/网格线');
+  ok(low.dprCap === 1.5, `低端 DPR 上限 1.5（实际 ${low.dprCap}）`);
+  ok(low.maxMapSize === 32, `低端地图上限 32（实际 ${low.maxMapSize}）`);
+
+  const mid = settingsForTier('mid');
+  ok(mid.lighting === 'multiply' && mid.vignette && !mid.warmOverlay, '中端：multiply + 暗角，关 overlay 暖光');
+  ok(mid.dprCap === 2 && mid.maxMapSize === 40, `中端 DPR 2 / 地图 40（实际 ${mid.dprCap}/${mid.maxMapSize}）`);
+
+  const high = settingsForTier('high');
+  ok(high.lighting === 'full' && high.vignette && high.warmOverlay, '高端：光照全开');
+  ok(high.dprCap === 3 && high.maxMapSize === 48, `高端 DPR 3 / 地图 48（实际 ${high.dprCap}/${high.maxMapSize}）`);
+
+  ok(settingsForTier('high').hoverEffects === false, 'hoverEffects 默认 false（触屏优先）');
+  ok(settingsForTier('high', true).hoverEffects === true, 'hoverEffects 可由设备能力置 true');
+  ok(TIER_ORDER.every((t) => settingsForTier(t).tier === t), '每档回填正确的 tier');
+}
+
+// 2. 探测分类器边界（§4.3 阈值）
+{
+  ok(classifyProbe(25, 3) === 'low', 'p95=25ms → 低端');
+  ok(classifyProbe(20.1, 3) === 'low', 'p95 略超 20ms → 低端');
+  ok(classifyProbe(20, 3) === 'mid', 'p95=20ms 不算超 → 中端');
+  ok(classifyProbe(15, 3) === 'mid', 'p95=15ms → 中端');
+  ok(classifyProbe(12, 3) === 'high', 'p95=12ms 且 DPR3 → 高端');
+  ok(classifyProbe(5, 1) === 'mid', '轻载但 DPR1 → 中端（不冒进高端）');
+  ok(classifyProbe(5, 1.5) === 'mid', '轻载但 DPR1.5 → 中端');
+  ok(classifyProbe(5, 2) === 'high', '轻载且 DPR2 → 高端');
+}
+
+// 3. probeTier：注入时钟与让帧，验证阈值与 fail-safe（无头环境绝不抛）
+{
+  let t = 0;
+  const mk = (dt, opts = {}) => {
+    t = 0;
+    return probeTier({
+      draw: opts.draw ?? (() => {}),
+      sync: opts.sync,
+      now: opts.now ?? (() => (t += dt)),
+      yieldFrame: () => Promise.resolve(),
+      frames: 30,
+      dpr: opts.dpr ?? 3,
+    });
+  };
+  ok((await mk(25)) === 'low', 'probeTier 全帧 25ms → 低端');
+  ok((await mk(15)) === 'mid', 'probeTier 全帧 15ms → 中端');
+  ok((await mk(5, { dpr: 3 })) === 'high', 'probeTier 全帧 5ms/DPR3 → 高端');
+  ok((await mk(5, { dpr: 1 })) === 'mid', 'probeTier 全帧 5ms/DPR1 → 中端');
+
+  const safeSync = await mk(5, { dpr: 3, sync: () => { throw new Error('no getImageData'); } });
+  ok(safeSync === 'mid', 'probeTier 在 sync 抛错时 fail-safe 退回 mid');
+  const safeDraw = await mk(5, { dpr: 3, draw: () => { throw new Error('boom'); } });
+  ok(safeDraw === 'mid', 'probeTier 在 draw 抛错时 fail-safe 退回 mid');
+  const nan = await probeTier({ draw: () => {}, now: () => Number.NaN, yieldFrame: () => Promise.resolve(), frames: 30, dpr: 3 });
+  ok(nan === 'mid', 'probeTier 时钟不可用（NaN）时退回 mid');
+}
+
+// 4. 地图尺寸夹紧（§4.2 maxMapSize 的落地）
+{
+  ok(JSON.stringify(allowedMapSizes(32)) === JSON.stringify(['small', 'medium']), '低端可选尺寸只剩 small/medium');
+  ok(allowedMapSizes(40).includes('large') && !allowedMapSizes(40).includes('huge'), '中端到 large、不含 huge');
+  ok(allowedMapSizes(48).length === 4, '高端四档全开');
+  ok(clampMapSize('huge', 32) === 'medium', '低端把 huge 夹到 medium');
+  ok(clampMapSize('huge', 40) === 'large', '中端把 huge 夹到 large');
+  ok(clampMapSize('huge', 48) === 'huge', '高端 huge 保持 huge');
+  ok(clampMapSize('small', 32) === 'small', '小图不受上限影响');
+}
+
+// 5. M-01 边缘滚屏守卫（纯谓词）
+{
+  const base = { lastPointerType: 'mouse', hoverActive: true, activePointers: 0, modalOpen: false, battleOpen: false };
+  ok(shouldEdgeScroll(base) === true, '鼠标悬停且无按下 → 允许边缘滚屏');
+  ok(shouldEdgeScroll({ ...base, lastPointerType: 'touch' }) === false, '触屏 → 禁止边缘滚屏（M-01 核心）');
+  ok(shouldEdgeScroll({ ...base, lastPointerType: 'pen' }) === false, '手写笔 → 禁止');
+  ok(shouldEdgeScroll({ ...base, lastPointerType: null }) === false, '未识别指针类型 → 禁止');
+  ok(shouldEdgeScroll({ ...base, hoverActive: false }) === false, '指针不在画布内 → 禁止');
+  ok(shouldEdgeScroll({ ...base, activePointers: 1 }) === false, '正按下指针（拖拽/捏合）→ 禁止');
+  ok(shouldEdgeScroll({ ...base, modalOpen: true }) === false, '弹窗打开 → 禁止');
+  ok(shouldEdgeScroll({ ...base, battleOpen: true }) === false, '战斗界面 → 禁止');
+  ok(normalizePointerType('mouse') === 'mouse' && normalizePointerType('touch') === 'touch' && normalizePointerType('pen') === 'pen', 'pointerType 归一化');
+  ok(normalizePointerType('') === null && normalizePointerType(undefined) === null, '空/未知 pointerType → null');
+}
+
+// 6. M-02 地形烘焙字节预算
+{
+  const mib = (n) => n / 1048576;
+  ok(bakeBytes(32, 32) === 32 * 32 * 32 * 32 * 4, 'bakeBytes 公式正确');
+  ok(mib(bakeBytes(32, 32)) === 4, `低端 32×32 烘焙 4 MiB（实际 ${mib(bakeBytes(32, 32))}）`);
+  ok(mib(bakeBytes(40, 40)) === 6.25, `中端 40×40 烘焙 6.25 MiB（实际 ${mib(bakeBytes(40, 40))}）`);
+  ok(mib(bakeBytes(48, 48)) === 9, `高端 48×48 烘焙 9 MiB（实际 ${mib(bakeBytes(48, 48))}）`);
+  ok(mib(bakeBytes(settingsForTier('low').maxMapSize, settingsForTier('low').maxMapSize)) <= 4, '低端上限能把烘焙面压到 ≤4 MiB');
 }
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);

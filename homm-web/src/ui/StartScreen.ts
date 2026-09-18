@@ -13,6 +13,7 @@ import { TERRAIN } from '../core/data/terrains.js';
 import { LAYOUTS, LAYOUT_ORDER } from '../core/data/layouts.js';
 import { createGame } from '../core/map/generator.js';
 import { idx } from '../core/map/grid.js';
+import { quality, clampMapSize, allowedMapSizes } from '../render/quality.js';
 
 /**
  * 开局设置页。
@@ -79,9 +80,11 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   });
   form.appendChild(field('领主名字', nameInput, '会同时作为你第一位英雄的名字'));
 
-  /* 地图尺寸 */
+  /* 地图尺寸：按当前画质上限过滤（低端只到中型）——上限来自 quality.maxMapSize */
+  const allowedSizes = allowedMapSizes(quality.maxMapSize);
+  cfg.size = clampMapSize(cfg.size, quality.maxMapSize);
   const sizeRow = segment<MapSize>(
-    SIZE_ORDER.map((id) => {
+    SIZE_ORDER.filter((id) => allowedSizes.includes(id)).map((id) => {
       const s = MAP_SIZES[id];
       return {
         value: id,

@@ -4,6 +4,7 @@ import { idx } from '../core/map/grid.js';
 import { TILE } from './ortho.js';
 import { getAtlas } from './atlas.js';
 import { hash2 } from './pixel.js';
+import { quality } from './quality.js';
 
 /**
  * 地形过渡优先级：序号高的地形会向序号低的"漫"过去。
@@ -24,6 +25,25 @@ const BAYER4 = [
 
 /** 过渡带深度（像素）：从邻接边向低优先级地形内部渗入的距离。 */
 const FRINGE_DEPTH = 6;
+
+/**
+ * 单次 `fill()` 允许积累的矩形数上限（§M-02）。
+ * 一条边的过渡像素最多 FRINGE_DEPTH×TILE 个；攒到上限就先提交再开新路径，
+ * 保证瞬时路径内存有界、不随 TILE / FRINGE_DEPTH 常数放大。
+ */
+const FRINGE_CHUNK = 128;
+
+/**
+ * 地形烘焙画布字节数：W格 × H格 × TILE² × 每像素 4B。
+ * 纯函数，供分档预算核算与单测：
+ * 低端 32×32 → 4 MiB；中端 40×40 → 6.25 MiB；高端 48×48 → 9 MiB。
+ */
+export function bakeBytes(widthTiles: number, heightTiles: number, tile: number = TILE): number {
+  return widthTiles * tile * heightTiles * tile * 4;
+}
+
+/** 越界告警只记一次，避免每帧刷屏。 */
+let warnedOversize = false;
 
 /**
  * 地形层：把"永远不会动"的部分一次性烘进一张整图大小的离屏画布。
@@ -62,6 +82,13 @@ export class TerrainLayer {
   private bake(map: GameMap): void {
     const w = map.width * TILE;
     const h = map.height * TILE;
+    // §M-02：烘焙面 = 地图格数 × TILE² × 4B。真正的上限由 quality.maxMapSize
+    // 在开局处夹紧（低端 ≤32 格 → ≤4 MiB）；这里只在越界时记一次警告，便于定位回归。
+    if ((map.width > quality.maxMapSize || map.height > quality.maxMapSize) && !warnedOversize) {
+      warnedOversize = true;
+      const mib = (bakeBytes(map.width, map.height) / 1048576).toFixed(1);
+      console.warn(`[terrain] 烘焙面 ${map.width}×${map.height}（${mib} MiB）超出画质上限 ${quality.maxMapSize} 格`);
+    }
     if (!this.canvas || this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas = document.createElement('canvas');
       this.canvas.width = w;
@@ -151,9 +178,12 @@ export class TerrainLayer {
           if (TERRAIN_SPREAD[n] <= selfPrio) continue;
 
           ctx.fillStyle = TERRAIN[n].top;
-          // 一条边的像素先攒进同一个 Path 再一次性 fill：
-          // 巨型图过渡像素上百万级，逐像素 fillRect 会让开局烘焙多花几百 ms
-          const path = new Path2D();
+          // 一条边的过渡像素攒进当前路径、每 FRINGE_CHUNK 个矩形提交一次：
+          // 逐像素 fillRect 会让开局烘焙多花几百 ms；而把整条边（乃至整张图）
+          // 攒成一个大路径，又会让瞬时路径内存随地图尺寸膨胀。折中是
+          // **按边、分块**提交，峰值矩形数恒定，与地图大小无关。
+          let pending = 0;
+          ctx.beginPath();
           for (let d = 0; d < FRINGE_DEPTH; d++) {
             // 越深越稀：阈值从 0 升到 1，Bayer 值小于阈值的像素不画
             const threshold = d / FRINGE_DEPTH;
@@ -170,10 +200,15 @@ export class TerrainLayer {
               // 坐标哈希打散规则纹理，让边缘"咬"出不规则小齿
               const jitter = hash2(x * TILE + px, y * TILE + py, 997) * 0.3;
               if (bayer + jitter < threshold) continue;
-              path.rect(x * TILE + px, y * TILE + py, 1, 1);
+              ctx.rect(x * TILE + px, y * TILE + py, 1, 1);
+              if (++pending >= FRINGE_CHUNK) {
+                ctx.fill();
+                ctx.beginPath();
+                pending = 0;
+              }
             }
           }
-          ctx.fill(path);
+          if (pending) ctx.fill();
         }
       }
     }

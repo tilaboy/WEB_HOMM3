@@ -29,7 +29,11 @@ import { endDay } from './core/game/turn.js';
 import { evaluateOutcome, outcomeSummary } from './core/game/victory.js';
 import { Camera } from './render/camera.js';
 import { MapRenderer } from './render/MapRenderer.js';
+import type { ViewModel } from './render/MapRenderer.js';
 import { setLightPhaseOverride } from './render/lightLayer.js';
+import { quality, initQuality, onTierChange, clampMapSize, hoverCapable } from './render/quality.js';
+import { shouldEdgeScroll, normalizePointerType } from './render/pointerIntent.js';
+import type { PointerKind } from './render/pointerIntent.js';
 import { HUD } from './ui/HUD.js';
 import { HeroPanel } from './ui/HeroPanel.js';
 import { openStartScreen } from './ui/StartScreen.js';
@@ -676,7 +680,9 @@ function openStart(): void {
 function startNewGame(config: GameConfig): void {
   clearSave();
   saveConfig(config);
-  state = createGame(config);
+  // §M-02：地图尺寸按当前画质上限夹紧（低端 32 / 中端 40 / 高端 48），
+  // 从源头掐掉超预算的地形烘焙面。原始偏好照常保存，切到高档后即可恢复。
+  state = createGame({ ...config, size: clampMapSize(config.size, quality.maxMapSize) });
   selected = state.heroOrder[0] ?? null;
   camera.mapW = state.map.width;
   camera.mapH = state.map.height;
@@ -774,6 +780,8 @@ let longPress = 0;
 let mouseIn = false;
 let mouseX = 0;
 let mouseY = 0;
+/** 最近一次指针事件的类型：边缘滚屏只在真实鼠标下生效（M-01）。 */
+let lastPointerType: PointerKind | null = null;
 
 function twoPointerDist(): number {
   const pts = [...pointers.values()];
@@ -787,6 +795,8 @@ function localPos(e: PointerEvent | WheelEvent | MouseEvent): { x: number; y: nu
 }
 
 canvas.addEventListener('pointerdown', (e) => {
+  const kind = normalizePointerType(e.pointerType);
+  if (kind) lastPointerType = kind;
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   hideInfoPopup();
@@ -810,6 +820,8 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 
 canvas.addEventListener('pointermove', (e) => {
+  const kind = normalizePointerType(e.pointerType);
+  if (kind) lastPointerType = kind;
   const prev = pointers.get(e.pointerId);
   if (prev) {
     prev.x = e.clientX;
@@ -1057,17 +1069,10 @@ window.addEventListener('resize', () => {
 /* ---------------- loop ---------------- */
 
 let last = performance.now();
-function frame(now: number): void {
-  const dt = Math.min(60, now - last);
-  last = now;
-  camera.update(dt);
-  // 边缘滚屏：鼠标贴边且没在拖拽/捏合/弹窗/战斗时生效
-  if (mouseIn && pointers.size === 0 && !isModalOpen() && !isBattleOpen()) {
-    camera.edgeScroll(mouseX, mouseY, dt);
-  }
-  if (anim) tickAnim(dt);
-  updateHeroRender();
-  renderer.draw({
+
+/** 组装当前视图模型（帧循环与启动探测共用，保证探测测的是真实渲染路径）。 */
+function buildViewModel(): ViewModel {
+  return {
     state,
     player: 'p1',
     sight: HERO_SIGHT,
@@ -1077,7 +1082,34 @@ function frame(now: number): void {
     dest: pendingDest && state.heroes[pendingDest.heroId] ? pendingDest.dest : null,
     selectedHeroId: selected,
     heroRender,
-  });
+  };
+}
+
+/** 画一帧冒险地图。 */
+function drawScene(): void {
+  renderer.draw(buildViewModel());
+}
+
+function frame(now: number): void {
+  const dt = Math.min(60, now - last);
+  last = now;
+  camera.update(dt);
+  // 边缘滚屏：仅真实鼠标贴边、且没在拖拽/捏合/弹窗/战斗时生效（M-01）。
+  // 触屏无"悬停"，抬手后 mouseIn 可能残留，靠 lastPointerType 直接 gate 掉。
+  if (
+    shouldEdgeScroll({
+      lastPointerType,
+      hoverActive: mouseIn,
+      activePointers: pointers.size,
+      modalOpen: isModalOpen(),
+      battleOpen: isBattleOpen(),
+    })
+  ) {
+    camera.edgeScroll(mouseX, mouseY, dt);
+  }
+  if (anim) tickAnim(dt);
+  updateHeroRender();
+  drawScene();
   requestAnimationFrame(frame);
 }
 
@@ -1104,6 +1136,20 @@ const ro = new ResizeObserver(() => {
   }
 });
 ro.observe(stage);
+
+// 画质档位变化（探测完成 / 用户手动切档）后 DPR 上限可能变 → 重建画布分辨率
+onTierChange(() => {
+  renderer.resize();
+  camera.clamp();
+});
+
+// 启动期微基准（§4.3）：默认档已是 mid，先让首帧画出来，再异步探测、探测完切档。
+// sync 用 getImageData 强制 GPU 同步，否则测到的是"提交时间"而非"渲染时间"；
+// 无头环境不支持时 probeTier 内部 fail-safe 退回 mid，绝不抛。
+const probeSync = (): void => {
+  canvas.getContext('2d')?.getImageData(0, 0, 1, 1);
+};
+void initQuality({ draw: drawScene, sync: probeSync, hoverCapable: hoverCapable() }).catch(() => undefined);
 
 recomputeField();
 refresh();

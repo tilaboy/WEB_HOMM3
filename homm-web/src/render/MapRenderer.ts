@@ -9,6 +9,7 @@ import { getAtlas } from './atlas.js';
 import { hash2 } from './pixel.js';
 import { TerrainLayer } from './terrainLayer.js';
 import { currentLightTint, lightingOn } from './lightLayer.js';
+import { quality } from './quality.js';
 
 export interface ViewModel {
   state: GameState;
@@ -80,6 +81,13 @@ export class MapRenderer {
   private dpr = 1;
   private atlas = getAtlas();
   private terrain = new TerrainLayer();
+  /** 光照梯度按视口尺寸缓存：尺寸不变就复用，消除每帧 createXxxGradient 的 GC 压力。 */
+  private warmGrad: CanvasGradient | null = null;
+  private warmGradW = -1;
+  private warmGradH = -1;
+  private vigGrad: CanvasGradient | null = null;
+  private vigGradW = -1;
+  private vigGradH = -1;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -92,7 +100,10 @@ export class MapRenderer {
   }
 
   resize(): void {
-    const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+    const raw = window.devicePixelRatio || 1;
+    // §5.3：只做上限钳制，**保留小数**——1.5 是合法档位，旧的 Math.round 会把它吞成 2。
+    // backing 尺寸取整，setTransform 用原始小数，逻辑坐标（camera.viewW/H）不变。
+    const dpr = Math.min(Math.max(raw, 1), quality.dprCap);
     const host = this.canvas.parentElement;
     const w = this.canvas.clientWidth || host?.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || host?.clientHeight || window.innerHeight;
@@ -153,7 +164,8 @@ export class MapRenderer {
     const now = performance.now();
     // 水面翻页动画：4 帧一循环。260ms/帧比原来的 520ms 顺滑，
     // 再叠加下面连续移动的高光带，肉眼基本感觉不到跳帧
-    const waterFrame = Math.floor(now / 260) % 4;
+    // 低端档（waterGlint=false）水面冻结成静态帧，省掉逐格重建
+    const waterFrame = quality.waterGlint ? Math.floor(now / 260) % 4 : 0;
     // 夜深程度 0~1：决定城镇灯火光晕的强度（深夜≈0.4，正午=0）
     const lightTint = lightingOn() ? currentLightTint(now) : { r: 255, g: 255, b: 255, warm: 0 };
     const nightDepth = Math.max(0, 1 - (lightTint.r + lightTint.g + lightTint.b) / 765);
@@ -189,6 +201,7 @@ export class MapRenderer {
         const h = hash2(x, y, 17);
         this.blit(`g_water_${h < 0.5 ? 0 : 1}_${waterFrame}`, x, y);
 
+        if (!quality.waterGlint) continue; // 低端：不做水面高光
         for (const [ox, oy] of GLINT_SPOTS) {
           const wx = x * TILE + ox;
           const wy = y * TILE + oy;
@@ -214,19 +227,21 @@ export class MapRenderer {
       }
     }
 
-    /* --- 网格线（很淡，仅为可读性） --- */
-    ctx.strokeStyle = 'rgba(0,0,0,0.07)';
-    ctx.lineWidth = 1 / cam.zoom;
-    ctx.beginPath();
-    for (let x = x0; x <= x1 + 1; x++) {
-      ctx.moveTo(x * TILE, y0 * TILE);
-      ctx.lineTo(x * TILE, (y1 + 1) * TILE);
+    /* --- 网格线（很淡，仅为可读性；低端关闭） --- */
+    if (quality.gridLines) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.07)';
+      ctx.lineWidth = 1 / cam.zoom;
+      ctx.beginPath();
+      for (let x = x0; x <= x1 + 1; x++) {
+        ctx.moveTo(x * TILE, y0 * TILE);
+        ctx.lineTo(x * TILE, (y1 + 1) * TILE);
+      }
+      for (let y = y0; y <= y1 + 1; y++) {
+        ctx.moveTo(x0 * TILE, y * TILE);
+        ctx.lineTo((x1 + 1) * TILE, y * TILE);
+      }
+      ctx.stroke();
     }
-    for (let y = y0; y <= y1 + 1; y++) {
-      ctx.moveTo(x0 * TILE, y * TILE);
-      ctx.lineTo((x1 + 1) * TILE, y * TILE);
-    }
-    ctx.stroke();
 
     /* --- 迷雾 --- */
     for (let y = y0; y <= y1; y++) {
@@ -318,11 +333,13 @@ export class MapRenderer {
       if (d.t === 'obj') {
         // 夜晚的城镇会亮灯：暖色光晕垫在精灵底下，像从窗户里透出来的光。
         // 只加深夜才看得见的那点火气——夜色越深灯越亮，正午完全不开。
-        if (d.obj.kind === 'town' && nightDepth > 0.08) {
+        // 低端关灯火；中端半径 ×0.7（§4.2）。
+        if (d.obj.kind === 'town' && quality.townGlow && nightDepth > 0.08) {
           const fp = d.obj.footprint ? 1 : 0.5;
           const cx = d.x * TILE + TILE * fp;
           const cy = d.y * TILE + TILE * fp;
-          const radius = TILE * (d.obj.footprint ? 2.4 : 1.8);
+          const rMul = quality.tier === 'mid' ? 0.7 : 1;
+          const radius = TILE * (d.obj.footprint ? 2.4 : 1.8) * rMul;
           const alpha = Math.min(0.5, nightDepth * 1.15);
           const glow = ctx.createRadialGradient(cx, cy, TILE * 0.3, cx, cy, radius);
           glow.addColorStop(0, `rgba(255,186,92,${alpha.toFixed(3)})`);
@@ -347,7 +364,9 @@ export class MapRenderer {
       } else {
         const sel = d.id === vm.selectedHeroId;
         if (sel) {
-          const pulse = 0.35 + 0.25 * Math.sin(now / 260);
+          // 低端把选中脉冲降到慢呼吸（selectionPulseHz=2），中/高端维持原手感
+          const pulseDiv = quality.selectionPulseHz >= 4 ? 260 : 500;
+          const pulse = 0.35 + 0.25 * Math.sin(now / pulseDiv);
           ctx.fillStyle = `rgba(240,205,110,${pulse.toFixed(3)})`;
           ctx.beginPath();
           ctx.ellipse(d.fx * TILE + TILE / 2, d.fy * TILE + TILE - 4, 11, 4.5, 0, 0, Math.PI * 2);
@@ -373,13 +392,21 @@ export class MapRenderer {
   }
 
   /**
-   * 屏幕空间光照：一次 multiply 全屏叠色（深夜压蓝、清晨黄昏带暖），
-   * 再加一个很轻的暗角把视线往画面中心收。
-   * 全在主画布上原地合成，不开离屏——multiply 覆盖全屏一次的开销可以忽略。
+   * 屏幕空间光照（§4.2 分档，§M-03）：
+   * - quality.lighting === 'off' → 整段跳过（也受既有 lightingOn() 总开关约束）；
+   * - multiply 单次叠色：深夜压蓝、清晨黄昏带暖（低/中端都有）；
+   * - warm overlay 暖光：仅 full 档且 warmOverlay 打开；
+   * - 暗角：仅 vignette 打开（低端关）。
+   *
+   * 性能：两个 gradient 都按视口尺寸缓存，尺寸不变时不重建；暖光强度改用
+   * globalAlpha 承载，这样梯度对象可以复用（CanvasGradient 的 colorStop 不能清空，
+   * 之前每帧新建正是 GC 压力的来源）。
    */
   private applyLighting(now: number): void {
+    if (quality.lighting === 'off') return;
     const ctx = this.ctx;
     const { viewW: w, viewH: h } = this.camera;
+    if (!w || !h) return;
     const tint = currentLightTint(now);
 
     if (tint.r < 255 || tint.g < 255 || tint.b < 255) {
@@ -391,28 +418,51 @@ export class MapRenderer {
     }
 
     // 清晨/黄昏的暖光：从右上斜进来的正橘色，强度随时间起伏
-    if (tint.warm > 0.01) {
+    if (quality.lighting === 'full' && quality.warmOverlay && tint.warm > 0.01) {
       ctx.save();
       ctx.globalCompositeOperation = 'overlay';
-      const g = ctx.createLinearGradient(w, 0, 0, h);
-      g.addColorStop(0, `rgba(255,196,120,${(tint.warm * 0.9).toFixed(3)})`);
-      g.addColorStop(0.55, `rgba(255,170,100,${(tint.warm * 0.35).toFixed(3)})`);
-      g.addColorStop(1, 'rgba(255,150,90,0)');
-      ctx.fillStyle = g;
+      ctx.globalAlpha = tint.warm; // 强度走 globalAlpha，梯度按 warm=1 复用
+      ctx.fillStyle = this.warmGradient(w, h);
       ctx.fillRect(0, 0, w, h);
       ctx.restore();
     }
 
     // 暗角：很轻，只为把视线收向中心（SoC 截图里几乎张张都有）
-    ctx.save();
-    const v = ctx.createRadialGradient(
-      w / 2, h / 2, Math.min(w, h) * 0.42,
-      w / 2, h / 2, Math.hypot(w, h) / 1.6,
-    );
-    v.addColorStop(0, 'rgba(8,10,16,0)');
-    v.addColorStop(1, 'rgba(8,10,16,0.22)');
-    ctx.fillStyle = v;
-    ctx.fillRect(0, 0, w, h);
-    ctx.restore();
+    if (quality.vignette) {
+      ctx.save();
+      ctx.fillStyle = this.vignetteGradient(w, h);
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+    }
+  }
+
+  /** 暖光梯度（固定 warm=1，强度由 globalAlpha 施加），按尺寸缓存。 */
+  private warmGradient(w: number, h: number): CanvasGradient {
+    if (!this.warmGrad || this.warmGradW !== w || this.warmGradH !== h) {
+      const g = this.ctx.createLinearGradient(w, 0, 0, h);
+      g.addColorStop(0, 'rgba(255,196,120,0.9)');
+      g.addColorStop(0.55, 'rgba(255,170,100,0.35)');
+      g.addColorStop(1, 'rgba(255,150,90,0)');
+      this.warmGrad = g;
+      this.warmGradW = w;
+      this.warmGradH = h;
+    }
+    return this.warmGrad;
+  }
+
+  /** 暗角径向梯度（静态），按尺寸缓存。 */
+  private vignetteGradient(w: number, h: number): CanvasGradient {
+    if (!this.vigGrad || this.vigGradW !== w || this.vigGradH !== h) {
+      const v = this.ctx.createRadialGradient(
+        w / 2, h / 2, Math.min(w, h) * 0.42,
+        w / 2, h / 2, Math.hypot(w, h) / 1.6,
+      );
+      v.addColorStop(0, 'rgba(8,10,16,0)');
+      v.addColorStop(1, 'rgba(8,10,16,0.22)');
+      this.vigGrad = v;
+      this.vigGradW = w;
+      this.vigGradH = h;
+    }
+    return this.vigGrad;
   }
 }

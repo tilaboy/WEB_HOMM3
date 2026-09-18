@@ -11,6 +11,7 @@ import { MOAT_COL } from '../core/combat/siege.js';
 import { hash2 } from './pixel.js';
 import { getCombatAtlas } from './combatAtlas.js';
 import type { CombatAtlas } from './combatAtlas.js';
+import { quality } from './quality.js';
 
 const PAD = 6;
 export { PAD };
@@ -73,7 +74,8 @@ export class BattleRenderer {
    * 同时乘上 devicePixelRatio，让逻辑像素对齐物理像素。
    */
   fit(availW: number, availH: number): void {
-    const dpr = window.devicePixelRatio || 1;
+    // §5.3：套上画质 DPR 上限；本渲染器已支持小数倍缩放，只需钳制即可
+    const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), quality.dprCap);
     const raw = Math.min(availW / BASE_W, availH / BASE_H);
     let s = Math.min(4, Math.max(0.6, raw));
     const fl = Math.floor(s);
