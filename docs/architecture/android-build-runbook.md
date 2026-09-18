@@ -1,6 +1,11 @@
 # Android 内测 APK 构建 Runbook
 
 > 目标：在**用户本机**上，从当前仓库产出一个可安装的 Android 内测 APK。
+> **状态更新（2026-09-18 17:04）：APK 已成功产出。**
+> 用户机器已装齐工具链（Temurin JDK 21.0.12.1 + brew cask `android-commandlinetools`，
+> SDK 根目录 `/opt/homebrew/share/android-commandlinetools`），`./gradlew assembleDebug`
+> **BUILD SUCCESSFUL**。产物见 §3 的「实测产物」。
+> 下文「本机（AI 工作环境）无工具链」的描述是**撰写时**的事实，现已不适用 —— 保留作历史说明。
 > 作者：程基岩（技术方向 / 打包） | 配套规格：`docs/architecture/mobile-platform.md` §2、ADR：`adr-mobile-first.md`
 >
 > **本机（AI 工作环境）无法产出 APK**：无 Java 运行时、无 `gradle`、`ANDROID_HOME` / `ANDROID_SDK_ROOT` 为空、
@@ -20,8 +25,8 @@
 | M-08 横屏锁（`sensorLandscape`）写入 manifest | ✅ 已验证 | `android/app/src/main/AndroidManifest.xml:16` |
 | 图标 / 启动页生成（74 个资产） | ✅ 已验证 | `resources/` 与 `android/.../res/`，见 §4 |
 | 前端 `npm run build` / `typecheck` / `smoke` | ✅ 已验证 | smoke **550 PASS / 0 FAIL** |
-| **`./gradlew assembleDebug`（真正编译 APK）** | ❌ **未验证** | 本机无 JDK / 无 Android SDK，命令根本跑不起来 |
-| **`adb install` 装到真机** | ❌ **未验证** | 本机无 `adb`、无设备 |
+| **`./gradlew assembleDebug`（真正编译 APK）** | ✅ **已验证（2026-09-18，用户机）** | BUILD SUCCESSFUL；产物 `app-debug.apk` **4.8 MB**（582 项 / 未压缩 11.3 MB），详见 §3 |
+| **`adb install` 装到真机** | ⏳ **待做** | `adb` 已就位（1.0.41 / 37.0.1）；`adb devices` 当前**无设备** —— 需插真机或起模拟器 |
 | **签名 Release / AAB 上架** | ❌ **未验证** | 需 keystore（尚未生成，见 §6） |
 
 ---
@@ -150,6 +155,32 @@ cd android
   ```
   android/app/build/outputs/apk/debug/app-debug.apk
   ```
+
+#### 实测产物（2026-09-18 17:04，用户机）
+
+| 项 | 值 |
+|---|---|
+| 路径 | `homm-web/android/app/build/outputs/apk/debug/app-debug.apk` |
+| 大小 | **4.8 MB**（582 项 / 未压缩 11.3 MB）——落在 §2.7 预估的 4–7 MB 区间内 |
+| SHA-256 | `ce461689677b98ac7e72d3cf3766b12b9372e21e41079c9642523c561d1c2ee4` |
+| 包名 | `com.lichao.heroesong`（**占位，待用户拍板**，见 §7） |
+| versionCode / versionName | `1` / `1.0` |
+| minSdk / targetSdk / compileSdk | **24 / 36 / 36** |
+| application-label | `英雄之歌` |
+| 启动 Activity | `com.lichao.heroesong.MainActivity` |
+| 方向锁 | `screenOrientation=6`（`sensorLandscape`）✅ |
+| 签名 | `CN=Android Debug`（debug key，可直接侧载）|
+| 权限 | `INTERNET`、`VIBRATE`（后者来自 `@capacitor/haptics`）|
+| 图标密度 | 7 档（120→640 dpi）|
+
+**已验证打包进 APK 的 web 资源**：119 个文件在 `assets/public/`；
+APK 内 `capacitor.config.json` 的 `webContentsDebuggingEnabled` = **`false`** ✅
+（未设 `CAP_WEBVIEW_DEBUG`，生产安全默认值保持住了）。
+
+**两条构建卫生提示（不阻塞内测，发布前应收）**：
+- **54 个 `.map` 源映射共 589 KB** 被打进 APK —— 比自研 JS 本体（≈493 KB）还大。
+  内测留着反而便于 `chrome://inspect` 调试；**发布版必须剥离**。
+- 4 个开发用测试页（`_battle/_hoverprobe/_map/_siege.html`，共 ≈5.6 KB）同样在包内，发布前剔除。
 
 > 若报 `SDK location not found`，在 `android/local.properties` 写一行（此文件已被 gitignore，**不要提交**）：
 > ```

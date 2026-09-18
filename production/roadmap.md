@@ -173,10 +173,18 @@ M-03 光照三态 + gradient 按尺寸缓存、M-02 分块提交 + 地图尺寸�
 正解：密集区抬高**真实**盒子（32px）+ 拉开间距（6/8px）；余量处才用 `::after` 只撑纵轴到 ~43px。
 已由 `tools/tinytargetaudit.mjs` 固化为回归守卫（**做过负向测试**：临时改 21px → 23 项不合格、退出码 1）。
 
-#### ⚠️ G-11：本机装不出 APK（实测）
-无 Java Runtime、无 `gradle`、`ANDROID_HOME` 为空、无 `~/Library/Android/sdk`、Xcode 仅 CommandLineTools。
-**交付边界止于 `npx cap sync android`；`gradlew assembleDebug` 必须在用户机器上跑**
-（`docs/architecture/android-build-runbook.md` 已写清步骤与未验证项）。**本轮未产出 APK，也不得声称产出。**
+#### ✅ G-11：APK 已在用户机产出（原「本机装不出 APK」已闭环）
+
+**原始发现（2026-09-18 第四轮）**：AI 工作环境无 Java Runtime、无 `gradle`、`ANDROID_HOME` 为空、
+无 `~/Library/Android/sdk`、Xcode 仅 CommandLineTools。**交付边界止于 `npx cap sync android`。**
+
+**闭环（2026-09-18 17:04）**：用户在**自己的机器**上装齐工具链后，`./gradlew assembleDebug`
+**BUILD SUCCESSFUL**，产出 `app-debug.apk`（**4.8 MB**，SHA-256 `ce461689…c2ee4`）。
+已核对：包名 `com.lichao.heroesong`、versionCode 1 / versionName 1.0、
+**minSdk 24 / targetSdk 36 / compileSdk 36**、启动 Activity 就位、方向锁 `screenOrientation=6`、
+debug key 签名、7 档图标、`webContentsDebuggingEnabled=false`。
+**G-11 的处置结论成立**：「环境自检 + 步骤文档交给用户机执行」这条路线走通了 ——
+下次同类打包不必再重新摸索。剩余未验证项收窄为**真机侧**（见 G-12）。
 
 ### 🟡 P1 —— 文档同步（本文档 + `DESIGN.md`）
 `DESIGN.md` §三 只到 M5、§九 只勾到 M4、P0/P1 完全未记录。上一轮已补（`c1c2acf`）。
@@ -199,7 +207,8 @@ M-03 光照三态 + gradient 按尺寸缓存、M-02 分块提交 + 地图尺寸�
 | **G-8** | **文档漂移 + 验收标准不可度量** | ✅ 本轮修复 `DESIGN.md`；DoD 见 §6 |
 | **G-9** | **难度系统是纯 AI 侧设计**（**本轮试玩新发现**） | 见下 |
 | **G-10** | **性能分档只有文档、没有代码**（`quality` / `dprCap` / `maxMapSize` 在 `src/` 中不存在） | ✅ 已补 `9aba485`；文档前提已更正 `36efdcd` |
-| **G-11** | **开发机没有移动端构建工具链**（无 Java / Gradle / Android SDK；Xcode 仅 CommandLineTools） | 🔴 本轮主理人实测；**APK 的最后编译必须在用户机器上完成**，本仓只能交付到 `cap sync` |
+| **G-11** | **开发机没有移动端构建工具链**（无 Java / Gradle / Android SDK；Xcode 仅 CommandLineTools） | ✅ **已闭环（2026-09-18）**：用户机装齐工具链后 `gradlew assembleDebug` **BUILD SUCCESSFUL**，APK 4.8 MB 已产出（见 P0 段 G-11）；环境自检与 SDK 根目录陷阱已固化进 runbook §1 |
+| **G-12** | **真机验证整块未做**（原先挂在 G-11 下，G-11 闭环后独立建档） | ⏳ **待做**：Android `--safe-area-inset-*` 注入路径、44px 真实误触率、`multiply` 是否掉 GPU 快路径、探测阈值 20/12ms 校准 —— **全部只能真机确认**，模拟器不足以覆盖 |
 
 ### G-9 详解：没有真正的「简单模式」
 `DIFFICULTIES` 的三个参数**全部只作用于电脑对手**：
@@ -224,8 +233,8 @@ M-03 光照三态 + gradient 按尺寸缓存、M-02 分块提交 + 地图尺寸�
 | B/E2-b AI 收尾 | ✅ **已达成**（`de6ad7c`）：无城满 7 天出局（含第 7 天边界单测、玩家豁免单测）；矿场按缺口动态加权；`smoke` **538/538** 全绿 |
 | B/M-01～04 | ✅ **已达成**（`9aba485`）：`QualitySettings` 三档落地（§4.2–4.4）；触屏抬手镜头不自爬；地图尺寸按档夹紧（低端 32×32 = 4 MiB）；光照三态；DPR 有上限且保留小数；`smoke` 含新增 48 项 |
 | B/移动端收尾 | ✅ **已达成**：画质设置可切档并显示当前档；主操作 ≥44/48px、密集区 ≥32px（**故意不到 44**，见 §4 分级方案）；安全区 `var()+env()` 双路；横屏锁定 + 竖屏提示；双击可居中；`smoke` **550/0** |
-| B/打包 | ✅ **已达成（止于 `cap sync`）**：依赖装齐、`capacitor.config.ts` 就位、`android/` 生成正确（appId / sensorLandscape 已核对）；runbook 已交付。**G-11：本仓不产出 APK，末步由用户本机执行** |
-| B/真机验证 | ⬜ **未做（阻塞在 G-11）**：Android `--safe-area-inset-*` 注入路径、iOS 刘海留白、44px 真实误触率、`multiply` 是否掉 GPU 快路径、探测阈值 20/12ms 校准 —— **全部只能真机确认** |
+| B/打包 | ✅ **完全达成（含 APK）**：依赖装齐、`capacitor.config.ts` 就位、`android/` 生成正确（appId / sensorLandscape 已核对）；**`gradlew assembleDebug` BUILD SUCCESSFUL，`app-debug.apk` 4.8 MB 已产出**（G-11 闭环）；runbook 已交付并补全环境自检 |
+| B/真机验证 | ⬜ **未做（G-12）**：Android `--safe-area-inset-*` 注入路径、iOS 刘海留白、44px 真实误触率、`multiply` 是否掉 GPU 快路径、探测阈值 20/12ms 校准 —— **全部只能真机确认**。前置条件已满足：APK 可侧载，`adb` 就位（当前 `adb devices` 无设备，需插真机） |
 | B/P1.4 | **先交付 B0 验证批（6 程序化帧 + 1 AI = 7 资产）并通过 7 条断言**，再据实决定动画帧数（D-13）；4 族 × 5 兵种按 `asset-spec.md` 尺寸网格，缩小到 32px 仍能分辨种族 |
 | B/P1.4 | 4 族 × 5 兵种精灵**独立设计**（D-9）× 按 `asset-spec.md` 尺寸网格产出；缩小到 32px 仍能分辨种族 |
 | B/P1.4 | 4 族 × 4–5 兵种精灵按 `asset-spec.md` 尺寸网格产出；缩小到 32px 仍能分辨种族 |
@@ -276,3 +285,4 @@ M-03 光照三态 + gradient 按尺寸缓存、M-02 分块提交 + 地图尺寸�
 | 2026-09-18（第四轮） | 拍板 D-12～D-15（收尾移动端 + 打包 / B0 再定动画 / 接受回退闸门 / 先 Android）；新发现 G-11（开发机无移动构建工具链，APK 末步只能用户本机执行） |
 | 2026-09-18（第五轮） | 移动端收尾 + Capacitor 打包落地（`a668e63`…`e664b88`）；主理人接线 M-05/13（`be7d9c9`）；抓到「安全区 var() vs 裸 env()」跨 worker 接缝；新增 `audit:touch` 回归守卫；`smoke` 550/0 |
 | 2026-09-18（第五轮·收口） | `mobile-platform.md` 实现状态整改（`6903bb5`）：14 条 M-xx 逐条标「已实现 / 部分 / 设计」，终态 **11 已实现 / 1 部分（M-10 仅 web）/ 2 设计（M-12、M-14）**；文档不再冒充现状（G-10 同类整改闭环） |
+| 2026-09-18（**第六轮 · APK 产出**） | 用户提问连带修 runbook 两处缺陷（`4a04bc9` 环境自检与 SDK 根目录陷阱、`e7b505e` §3 一致化）；用户机装齐 JDK 21 + cmdline-tools 后 **`gradlew assembleDebug` BUILD SUCCESSFUL → `app-debug.apk` 4.8 MB**，**G-11 闭环**；新增 **G-12**（真机验证整块未做，需插真机）；发现构建卫生项：**589 KB sourcemap + 4 个测试页被打进 APK**，发布前须剥离 |
