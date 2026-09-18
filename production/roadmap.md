@@ -134,20 +134,49 @@ D-8 的「翻盘窗口」目前是名义上的。留着观察，不必现在动�
 M-03 光照三态 + gradient 按尺寸缓存、M-02 分块提交 + 地图尺寸按档夹紧（低端 32×32 = 4 MiB）。
 `smoke` **538/538**（E2 基线 471 + 本项 48 + E3 19）。
 
-### 🔴 P0 —— 移动端收尾 + Android 内测包（**当前主线**，D-12 / D-15）
-| 工作 | 负责 | 说明 |
-|---|---|---|
-| 画质设置 UI（Q-10）+ hover gate（Q-11） | eng-mobile | `setMode()` 已有 API，未挂前端 |
-| M-09 触控热区 30–32px → **≥44px** | eng-mobile | **APK 可用性的头号阻塞**（低于触控下限） |
-| M-07 安全区 / M-08 横屏（web 侧）/ M-10 长按阈值 8px / M-11 双击居中 | eng-mobile | 全为 web 侧，可在本机验证 |
-| Capacitor 壳 + `capacitor.config.ts` + `android/` 平台 + 图标启动页 | eng-package | 见 §2.3 / §2.6 |
-| M-05 生命周期 / M-06 音频挂起 / M-13 Preferences 双写 | eng-package | 防丢档（§7 风险③） |
-| `docs/architecture/android-build-runbook.md` | eng-package | **因为 G-11，出包的最后一步只能由用户在本机执行** |
+### ✅ 已落地 —— 移动端收尾 + Android 内测包（D-12 / D-15）
+| 提交 | 内容 |
+|---|---|
+| `a668e63` | 画质设置 UI（Q-10）+ hover gate（Q-11）+ 双击居中 + 安全区 + 触控热区 44px |
+| `17e1b29` | M-09 残余：`.btn.tiny` **分级**补齐 |
+| `49c2678` | Capacitor 壳 + `android/` + 图标 + M-05/06/13 + runbook（92 文件 / +4623） |
+| `be7d9c9` | **主理人**：把 M-05/13 接线进 `main.ts`（否则模块是死代码） |
+| `321834a` `d5f94d1` | `tools/tinytargetaudit.mjs` + `npm run audit:touch` |
+| `e664b88` | 安全区改 `var(--safe-area-inset-*, env())` + `hoveraudit` 端口硬化 |
 
-> ⚠️ **G-11：本机装不出 APK。** 已实测：无 Java Runtime、无 `gradle`、`ANDROID_HOME` 为空、
-> 无 `~/Library/Android/sdk`、Xcode 仅 CommandLineTools。所以本轮交付到 `npx cap sync android` 为止，
-> `gradlew assembleDebug` 必须在用户机器上跑（runbook 会写清步骤与未验证项）。
-> **不要声称本轮产出了 APK。**
+**实测**：`smoke` **550/0** · typecheck 0 · build 通过 · `audit:touch` 通过 · `audit:hover` 4/4。
+原生配置已核对：`applicationId com.lichao.heroesong`（`build.gradle:7`）、
+`android:screenOrientation="sensorLandscape"`（`AndroidManifest.xml:16`）、
+**minSdk 24 / compileSdk 36 / targetSdk 36**（`variables.gradle`）。依赖 Capacitor **8.5.2**。
+
+#### ⚠️ 推翻规格数字的三条（规格是按 Capacitor 6 写的）
+1. **Capacitor 8 ≠ 6**：规格写 `34/23 + JDK 17`，实际 **`36/36/24` + JDK 21**。
+2. **零打包器 ⇒ 不能 `import '@capacitor/x'` 裸模块名**（WebView 解析不到）。正解是原生注入的
+   **`window.Capacitor` 全局**；Web 下不存在 → 自动退回 Web API。
+3. **Android 15+ 强制 edge-to-edge** → 旧 `@capacitor/status-bar` 在 API 35+ 失效，
+   inset 只能走 core 内建 `SystemBars { insetsHandling:'css' }`（注入 `--safe-area-inset-*`）。
+
+#### 🕳️ 本轮抓到的两个「各自都对、拼起来错」接缝
+- **安全区**：eng-package 配 `SystemBars` 注入 `--safe-area-inset-*`，eng-mobile 却用**裸 `env()`**
+  → Android 上安全区会**静默失效**（那正是首发平台）。已改 `var(..., env(..., 0px))`。
+- **M-08 横屏**：web 侧（`orientationchange`+竖屏提示）与原生侧（manifest `sensorLandscape`）
+  分属两人，需两半都在才算完成。
+**教训：跨模块接缝（原生注入 ↔ CSS 消费）无人负责，必须由主理人对接口做交叉核对。**
+
+#### 🕳️ 主理人自己的流程失误
+我看只剩三行就**自己改了 `style.css`** —— 那是 eng-mobile 正在写的文件。三次 Edit 均报成功，
+**改动被并发写入静默覆盖，一字未留**。**这正是本轮亲自定的「一文件一写入者」规则要防的事。**
+规则有效，代价是白做一轮。**不要为省一次往返去碰别人在写的文件。**
+
+#### M-09 分级方案（可复用）
+密集区（邻距 3px）**不能**用伪元素扩命中区 —— 相邻热区重叠比按钮小更糟。
+正解：密集区抬高**真实**盒子（32px）+ 拉开间距（6/8px）；余量处才用 `::after` 只撑纵轴到 ~43px。
+已由 `tools/tinytargetaudit.mjs` 固化为回归守卫（**做过负向测试**：临时改 21px → 23 项不合格、退出码 1）。
+
+#### ⚠️ G-11：本机装不出 APK（实测）
+无 Java Runtime、无 `gradle`、`ANDROID_HOME` 为空、无 `~/Library/Android/sdk`、Xcode 仅 CommandLineTools。
+**交付边界止于 `npx cap sync android`；`gradlew assembleDebug` 必须在用户机器上跑**
+（`docs/architecture/android-build-runbook.md` 已写清步骤与未验证项）。**本轮未产出 APK，也不得声称产出。**
 
 ### 🟡 P1 —— 文档同步（本文档 + `DESIGN.md`）
 `DESIGN.md` §三 只到 M5、§九 只勾到 M4、P0/P1 完全未记录。上一轮已补（`c1c2acf`）。
@@ -194,8 +223,9 @@ M-03 光照三态 + gradient 按尺寸缓存、M-02 分块提交 + 地图尺寸�
 | B/E2 AI | ✅ **已达成**（`1943d05`）：建筑 17.5→22.9、英雄兵峰值 38.8→63.1、`smoke` 471/471 全绿 |
 | B/E2-b AI 收尾 | ✅ **已达成**（`de6ad7c`）：无城满 7 天出局（含第 7 天边界单测、玩家豁免单测）；矿场按缺口动态加权；`smoke` **538/538** 全绿 |
 | B/M-01～04 | ✅ **已达成**（`9aba485`）：`QualitySettings` 三档落地（§4.2–4.4）；触屏抬手镜头不自爬；地图尺寸按档夹紧（低端 32×32 = 4 MiB）；光照三态；DPR 有上限且保留小数；`smoke` 含新增 48 项 |
-| B/移动端收尾 | 画质设置 UI 可切档并显示当前档；触控热区全部 ≥44px；安全区不遮 HUD；横屏锁定 + 竖屏提示；双击可居中；`smoke` 不退化 |
-| B/打包 | 依赖装齐、`capacitor.config.ts` 就位、`npx cap sync android` 通过、`android/` 工程生成正确（appId / landscape 生效）；**runbook 可让用户在本机一次跑出 APK**（G-11：本仓不产出 APK） |
+| B/移动端收尾 | ✅ **已达成**：画质设置可切档并显示当前档；主操作 ≥44/48px、密集区 ≥32px（**故意不到 44**，见 §4 分级方案）；安全区 `var()+env()` 双路；横屏锁定 + 竖屏提示；双击可居中；`smoke` **550/0** |
+| B/打包 | ✅ **已达成（止于 `cap sync`）**：依赖装齐、`capacitor.config.ts` 就位、`android/` 生成正确（appId / sensorLandscape 已核对）；runbook 已交付。**G-11：本仓不产出 APK，末步由用户本机执行** |
+| B/真机验证 | ⬜ **未做（阻塞在 G-11）**：Android `--safe-area-inset-*` 注入路径、iOS 刘海留白、44px 真实误触率、`multiply` 是否掉 GPU 快路径、探测阈值 20/12ms 校准 —— **全部只能真机确认** |
 | B/P1.4 | **先交付 B0 验证批（6 程序化帧 + 1 AI = 7 资产）并通过 7 条断言**，再据实决定动画帧数（D-13）；4 族 × 5 兵种按 `asset-spec.md` 尺寸网格，缩小到 32px 仍能分辨种族 |
 | B/P1.4 | 4 族 × 5 兵种精灵**独立设计**（D-9）× 按 `asset-spec.md` 尺寸网格产出；缩小到 32px 仍能分辨种族 |
 | B/P1.4 | 4 族 × 4–5 兵种精灵按 `asset-spec.md` 尺寸网格产出；缩小到 32px 仍能分辨种族 |
@@ -244,3 +274,4 @@ M-03 光照三态 + gradient 按尺寸缓存、M-02 分块提交 + 地图尺寸�
 | 2026-09-18（第二轮） | 三条定稿线交付（`c1c2acf`）；E2 AI 发育修复落地并验收（`1943d05`）；拍板 D-8～D-11；新发现 G-10（性能分档只有文档没有代码） |
 | 2026-09-18（第三轮） | A1 v2 按 ×4 重算（`1c7d26e`）；M-01～M-04 + QualitySettings 落地（`9aba485`）并更正文档被证伪前提（`36efdcd`）；E3 无城出局 + 矿权重落地并双样本验收（`de6ad7c`）；`smoke` 538/538 |
 | 2026-09-18（第四轮） | 拍板 D-12～D-15（收尾移动端 + 打包 / B0 再定动画 / 接受回退闸门 / 先 Android）；新发现 G-11（开发机无移动构建工具链，APK 末步只能用户本机执行） |
+| 2026-09-18（第五轮） | 移动端收尾 + Capacitor 打包落地（`a668e63`…`e664b88`）；主理人接线 M-05/13（`be7d9c9`）；抓到「安全区 var() vs 裸 env()」跨 worker 接缝；新增 `audit:touch` 回归守卫；`smoke` 550/0 |
