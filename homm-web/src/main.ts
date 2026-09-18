@@ -52,7 +52,8 @@ import { openTownDialog } from './ui/TownDialog.js';
 import { closeModal, hideInfoPopup, isModalOpen, lossTable, showInfoPopup, showModal } from './ui/Dialogs.js';
 import type { ModalAction } from './ui/Dialogs.js';
 import { sfx } from './ui/sfx.js';
-import { clearSave, hasSave, loadConfig, loadGame, saveConfig, saveGame } from './save/persistence.js';
+import { clearSave, hasSave, hydratePersistence, loadConfig, loadGame, saveConfig, saveGame } from './save/persistence.js';
+import { installLifecycle } from './app/lifecycle.js';
 
 /* ---------------- shell ---------------- */
 
@@ -98,6 +99,14 @@ hintEl.textContent = '点击地图移动英雄，右键（或长按）查看信�
 stage.appendChild(hintEl);
 
 /* ---------------- state ---------------- */
+
+/**
+ * 原生壳里（iOS WKWebView）系统会回收 localStorage 导致丢档，所以权威存档在
+ * Capacitor Preferences 里。这里必须**先**把 Preferences 灌回 localStorage，
+ * 否则紧接着的 `loadGame()` 会读到空 localStorage 并误判"无存档"。
+ * 用顶层 await 保证它先于任何存档读取完成（tsconfig 为 ES2022 + NodeNext，支持 TLA）。
+ */
+await hydratePersistence();
 
 /** 先把存档读出来：有存档就先进游戏（设置页盖在上面提供"继续/新开"两条路）。 */
 const savedGame = loadGame();
@@ -1117,6 +1126,13 @@ window.addEventListener('orientationchange', () => {
 
 let last = performance.now();
 
+/**
+ * rAF 句柄必须**每帧重绑**（见 frame() 末尾）。`frame()` 自己递归排下一帧，
+ * 如果只在启动时存一次句柄，`cancelAnimationFrame(raf)` 拿到的永远是已经触发过的
+ * 旧句柄 → 取消不掉 → 切到后台后循环继续空转，同时白白耗电。
+ */
+let raf = 0;
+
 /** 组装当前视图模型（帧循环与启动探测共用，保证探测测的是真实渲染路径）。 */
 function buildViewModel(): ViewModel {
   return {
@@ -1157,7 +1173,7 @@ function frame(now: number): void {
   if (anim) tickAnim(dt);
   updateHeroRender();
   drawScene();
-  requestAnimationFrame(frame);
+  raf = requestAnimationFrame(frame);
 }
 
 /* ---------------- boot ---------------- */
@@ -1251,7 +1267,23 @@ recomputeField();
 refresh();
 renderLog();
 
-requestAnimationFrame(frame);
+raf = requestAnimationFrame(frame);
+
+/**
+ * 接后台生命周期（M-05）：切后台立刻停 rAF + 立即存档，回前台先重置时间戳再续帧。
+ * 若不重置 `last`，恢复后的第一帧 `now - last` 等于整个后台时长，虽有 60ms 上限兜着，
+ * 但会白白推进一帧逻辑。停 rAF 用 cancelAnimationFrame 而不是让 loop 空转。
+ */
+installLifecycle({
+  onPause: () => {
+    cancelAnimationFrame(raf);
+    saveGame(state);
+  },
+  onResume: () => {
+    last = performance.now();
+    raf = requestAnimationFrame(frame);
+  },
+});
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   window.addEventListener('load', () => {
