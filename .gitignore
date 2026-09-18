@@ -5,3 +5,10 @@ dist/
 .workbuddy/
 # aidiagnose 探针的生成数据（可随时重跑）
 homm-web/tools/_aidiagnose.json
+# 签名密钥：永远不要提交（Android keystore / iOS 描述文件）
+*.jks
+*.keystore
+*.p12
+*.p8
+*.mobileprovision
+homm-web/android/local.properties

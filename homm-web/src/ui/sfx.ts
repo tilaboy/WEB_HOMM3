@@ -12,6 +12,8 @@
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let muted = localStorage.getItem('homm.mute') === '1';
+/** 是否已完成「首次手势解锁」——只做一次，见 ac() 注释。 */
+let unlocked = false;
 
 const MASTER_VOL = 0.18;
 
@@ -25,6 +27,23 @@ export function setMuted(v: boolean): void {
   if (master) master.gain.value = v ? 0 : MASTER_VOL;
 }
 
+/**
+ * 显式挂起音频（M-06，规格 §5.4）。切后台时由生命周期钩子调用，
+ * 释放被系统中断前占用的音频硬件；只有确知在 running 时才 suspend，避免无谓调用。
+ */
+export function suspendAudio(): void {
+  if (ctx?.state === 'running') void ctx.suspend();
+}
+
+/**
+ * 显式恢复音频（M-06，规格 §5.4）。回到前台时由生命周期钩子调用。
+ * **不要**再依赖发声时的自动 resume：后台被系统中断后，下一次发声若立刻把上下文
+ * 猛地拉起，部分设备会爆音——所以恢复只能由生命周期在正确的时机显式驱动。
+ */
+export function resumeAudio(): void {
+  if (ctx?.state === 'suspended') void ctx.resume();
+}
+
 function ac(): AudioContext | null {
   if (typeof AudioContext === 'undefined') return null;
   if (!ctx) {
@@ -33,7 +52,13 @@ function ac(): AudioContext | null {
     master.gain.value = muted ? 0 : MASTER_VOL;
     master.connect(ctx.destination);
   }
-  if (ctx.state === 'suspended') void ctx.resume();
+  // 自动播放策略：上下文在首次发声时可能仍是 suspended，而首次发声必然发生在某次
+  // 用户手势里，此时 resume() 是允许的。所以**只在第一次**推一把（unlocked 标记），
+  // 之后一概不自动 resume——后台被系统中断后的恢复交给 lifecycle 显式调用（M-06）。
+  if (!unlocked) {
+    unlocked = true;
+    if (ctx.state === 'suspended') void ctx.resume();
+  }
   return ctx;
 }
 

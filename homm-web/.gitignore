@@ -1,0 +1,41 @@
+# ---- Node / 构建产物 ----
+node_modules/
+dist/
+
+# ---- Capacitor 原生工程（Android）构建产物 ----
+# （android/.gitignore 已含大部分；这里补一层，防止误提交到仓库根路径下）
+android/.gradle/
+android/build/
+android/app/build/
+android/build/intermediates/
+android/app/release/
+android/app/debug/
+android/local.properties
+android/captures/
+android/.idea/
+*.iml
+
+# 拷贝进原生工程的 Web 产物与生成的配置（由 cap sync 每次重写）
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+
+# 原生依赖 libs
+android/capacitor-cordova-android-plugins/
+
+# ---- 签名密钥：永远不要提交！ ----
+# Android
+*.jks
+*.keystore
+key.properties
+# iOS（日后）
+*.p12
+*.p8
+*.mobileprovision
+*.cer
+
+# ---- 本地环境 ----
+.env
+.env.*
+.DS_Store
+*.log
