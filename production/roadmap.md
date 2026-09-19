@@ -78,6 +78,31 @@
 
 ---
 
+### ⚠️ 写者归属表（2026-09-19 定，防止双写者互撞）
+
+**背景**：本轮发生过两次「同一文件/同一输出路径有两个写者」—— 一次是音频规格（两个 agent 写同一路径，
+所幸后者读到前稿并显式合并），一次是美术文档（art-director 与 art-director-2 同署名）。
+**根因是主理人派工时未指定唯一写者，不在成员。** 故明确如下：
+
+| 文件 / 路径 | 唯一写者 | 备注 |
+|---|---|---|
+| `design/art-bible/cartoon-style.md`、`asset-spec.md` | **art-director** | art-director-2 已 idle，不再派入这两个文件 |
+| `design/art-bible/` 下**新增**文件 | art-director-2 | 若再唤起，只给新文件，绝不与上面两个路径重叠 |
+| `homm-web/tools/b0audit.mjs` | **engineering-lead**（原作者） | 他人仅在主理人**明确要求**时改动 |
+| `design/audio-direction.md` | **audio-lead** | audio-director 已 idle；同一事实不再派第二个写者 |
+| `design/difficulty-spec.md` | **design-strategist** | — |
+| `homm-web/src/core/**` | 当轮被派的工程 agent | 与 `src/render/**` 分离，可并行 |
+| `homm-web/src/render/**` | 当轮被派的工程 agent | 与 `src/core/**` 分离，可并行 |
+| `production/roadmap.md`、`docs/architecture/**` | **主理人** | 成员不直接改，结论经主理人汇编 |
+
+**硬规则**：
+1. **一个任务 = 一个输出路径 = 一个写者。** 派工前先查该路径是否已被占用。
+2. **成员怀疑自己不是唯一写者时，先停下问主理人**，不要「我也写一份」。
+3. **指控成员违反约束前，必须先跑 `git show --stat <commit>` / `git log --name-only` 确认归属** ——
+   本轮主理人曾在无证据时下指控并写进 commit message，是一个已记录的错误（见版本记录「更正」条）。
+
+---
+
 ## 3. 阶段路线（修订版）
 
 原 P0–P3 编号无法容纳新增工作，改为**按依赖关系排序**。
