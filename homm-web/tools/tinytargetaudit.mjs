@@ -26,11 +26,14 @@
  *   移动（792×360 @3x）：
  *   - #side.collapsed 的 #panel-toggle 有效命中高 ≥ 44px（不被 34px 容器裁掉）
  *   - 各 .btn.tiny 同上阈值（防将来加移动规则把靶子改小）
- *   - C3 横向滚动 = 0（document / #topbar）—— 默认「信息」级；STRICT=1 升格为硬断言
+ *   - 顶栏三项（默认「信息」级；STRICT=1 升格为硬断言）：
+ *       C3 横向滚动 = 0 · C4 顶栏可点元素 = 0（R7）· 按钮不得高过顶栏（换行）
+ *   - 外加 no-shrink 极限溢出「诊断」（非断言，只量化余量）
  *
- * 用法：npm run build && node tools/serve.mjs（另开一个终端）&& node tools/tinytargetaudit.mjs
- *       STRICT=1 node tools/tinytargetaudit.mjs   # 把「已知待办」(C3 横向滚动) 也当硬断言
- * 退出码：0 = 全部达标；1 = 有不达标；2 = 环境没准备好（dist / dev server / Chrome 连不上）。
+ * 用法：npm run build && node tools/tinytargetaudit.mjs
+ *       （dev server 没在 127.0.0.1:5173 上跑就**自起** node tools/serve.mjs，结束时关掉）
+ *       STRICT=1 node tools/tinytargetaudit.mjs   # 把「已知待办」(顶栏 C3/C4/换行) 也当硬断言
+ * 退出码：0 = 全部达标；1 = 有不达标；2 = 环境没准备好（dist / Chrome 连不上）。
  */
 import { writeFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -88,8 +91,8 @@ writeFileSync(
     <div class="who"><i></i><span>晨曦</span></div>
     <button class="btn primary">结束一天</button>
     <button class="btn">存档</button>
-    <button class="btn">音效</button>
-    <button class="btn">光照</button>
+    <button class="btn">🔊</button>
+    <button class="btn">🌗</button>
     <button class="btn">画质</button>
     <button class="btn danger">新游戏</button>
   </div>
@@ -134,15 +137,35 @@ writeFileSync(
   'utf8',
 );
 
-/* ---------------- 前置：dev server 必须在跑 ---------------- */
+/* ---------------- 前置：dev server 必须在跑（没跑就自起） ---------------- */
 
-try {
-  const res = await fetch(`http://127.0.0.1:${APP_PORT}/${PROBE_NAME}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-} catch (e) {
-  console.error(
-    `dev server 没在 127.0.0.1:${APP_PORT} 上跑（${e.message}）；先另开一个终端 node tools/serve.mjs`,
-  );
+// 这道守卫值得"顺手能跑" —— 起不来的话没人会跑它，等于没有守卫。
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const reachable = async () => {
+  try {
+    const r = await fetch(`http://127.0.0.1:${APP_PORT}/${PROBE_NAME}`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+};
+
+let serverProc = null;
+if (!(await reachable())) {
+  console.error(`[tiny] dev server 未响应 → 自起 node tools/serve.mjs（:${APP_PORT}）…`);
+  serverProc = spawn('node', ['tools/serve.mjs'], {
+    cwd: root,
+    env: { ...process.env, PORT: String(APP_PORT) },
+    stdio: ['ignore', 'ignore', 'ignore'],
+  });
+  for (let i = 0; i < 40 && !(await reachable()); i++) await wait(150);
+}
+
+if (!(await reachable())) {
+  console.error(`[tiny] dev server 起不来（127.0.0.1:${APP_PORT}）—— 手工跑 node tools/serve.mjs 再看`);
+  serverProc?.kill('SIGKILL');
   rmSync(PROBE, { force: true });
   process.exit(2);
 }
@@ -170,6 +193,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** 收尾：等 chrome 真的退出再删临时 profile（直接 kill 完就删会撞 ENOTEMPTY）。 */
 async function cleanup() {
+  if (serverProc && !serverProc.killed) serverProc.kill('SIGKILL');
   if (!chrome.killed) chrome.kill('SIGKILL');
   await new Promise((resolve) => {
     if (chrome.exitCode !== null || chrome.signalCode !== null) return resolve();
@@ -289,11 +313,35 @@ const MOBILE_MEASURE = `(async () => {
   // #side.collapsed 的开关常驻视口底部（bottom:0），直接量「有效命中高」以识破裁切。
   const toggle = all('#panel-toggle').map(effectiveHit);
 
-  // C3：横向滚动（由宽度决定，与高度无关）。
+  // 顶栏三项：C3 横向滚动 / C4 可点元素 / 换行（按钮高过条）；外加 no-shrink 极限诊断。
   const de = document.scrollingElement || document.documentElement;
   const tb = document.querySelector('#topbar');
+  const topbar = (() => {
+    if (!tb) return null;
+    const tbr = tb.getBoundingClientRect();
+    const btns = all('#topbar .btn');
+    const taller = btns.filter((b) => rect(b).height > tbr.height + 0.5)
+      .map((b) => ({ t: label(b), h: +rect(b).height.toFixed(1) }));
+    // 极限诊断：把顶栏内**所有** flex 子项设为不压缩，看溢出多少（**非当前事实**，仅供量化余量）。
+    const s = document.createElement('style');
+    s.textContent = '#topbar > *{flex-shrink:0}';
+    document.head.appendChild(s);
+    void tb.offsetWidth;
+    const worst = Math.round(tb.scrollWidth - tb.clientWidth);
+    s.remove();
+    void tb.offsetWidth;
+    return {
+      overflow: Math.round(tb.scrollWidth - tb.clientWidth), // C3（当前，flex-shrink 生效）
+      clickable: btns.length,                                // C4：应为 0
+      barH: +tbr.height.toFixed(1),
+      maxBtnH: btns.length ? +Math.max(...btns.map((b) => rect(b).height)).toFixed(1) : 0,
+      taller,                                                // 换行：应为空
+      worstOverflow: worst,                                  // 诊断（非当前事实）
+    };
+  })();
   return {
     toggle,
+    topbar,
     overflow: {
       doc: Math.round(de.scrollWidth - de.clientWidth),
       topbar: tb ? Math.round(tb.scrollWidth - tb.clientWidth) : null,
@@ -479,16 +527,35 @@ reportGroup('m.hp-tbtns', mobileTall.groups.hpTbtns, (m) => m.h >= 40, '移动 �
 reportGroup('m.hp-nav', mobileTall.groups.hpNav, (m) => m.h >= 40, '移动 · 密集区 .hp-nav 视觉高 ≥ 40px');
 reportGroup('m.魔法书 .tap', mobileTall.groups.magicTap, (m) => m.hit >= 43, '移动 · 孤立 .btn.tiny.tap 有效命中高 ≥ 43px');
 
-// ③ C3：禁止任何常驻元素引发横向滚动（现顶栏 overflow-x:auto）。
-//    已知待办 → 默认只报不卡；顶栏重构批落地后设 STRICT=1 升格为硬断言。
+/* ---- 顶栏（≤860px）：C3 横向滚动 / C4 可点元素 / 换行 —— 三项「已知待办」级（STRICT=1 才卡） ---- */
+const tb = mobile.topbar;
+const T = (ok) => (ok ? 'PASS' : STRICT ? 'FAIL' : '信息');
+const Tbump = (ok) => { if (!ok && STRICT) bad++; };
+console.log('\n── 顶栏（≤860px，与真机 792 视口同口径） ──');
+
+// C3：禁止任何常驻元素引发横向滚动。
 const docOver = mobile.overflow.doc;
-const tbOver = mobile.overflow.topbar;
-const overflowOK = docOver <= 0 && (tbOver === null || tbOver <= 0);
-if (!overflowOK && STRICT) bad++;
-console.log(
-  `\n[${overflowOK ? 'PASS' : STRICT ? 'FAIL' : '信息'}] C3 横向滚动：document ${docOver}px / #topbar ${tbOver}px（应为 0）` +
-    (overflowOK || STRICT ? '' : ' —— 已知待办（顶栏重构批移除 #topbar overflow-x:auto）；STRICT=1 可升格为硬断言'),
-);
+const c3ok = docOver <= 0 && tb.overflow <= 0;
+Tbump(c3ok);
+console.log(`[${T(c3ok)}] C3 横向滚动：document ${docOver}px / #topbar ${tb.overflow}px（应为 0）`);
+
+// C4：顶栏内不得有任何可点元素（R7）。★ 这条**不可能被 flex 压缩掩盖**，是这批里最硬的守卫。
+const c4ok = tb.clickable === 0;
+Tbump(c4ok);
+console.log(`[${T(c4ok)}] C4 顶栏可点元素 = ${tb.clickable} 个（应为 0 —— R7 顶栏只读）`);
+
+// 换行：按钮不得高过顶栏。真实缺陷：按钮被压窄 → 文字换行 → 高 75 > 条高 52。
+const wrapOk = tb.taller.length === 0;
+Tbump(wrapOk);
+console.log(`[${T(wrapOk)}] 顶栏按钮不得高过条（${tb.barH}px）：最高 ${tb.maxBtnH}px` +
+  (wrapOk ? '' : ` —— 换行：${tb.taller.map((x) => x.t + '=' + x.h + 'px').join(', ')}`));
+
+// 诊断（非断言）：no-shrink 极限溢出，量化余量。真机实测 225px。
+console.log(`[诊断] 顶栏 no-shrink 极限溢出 ${tb.worstOverflow}px（非当前事实，只是量化余量）`);
+
+if ((!c3ok || !c4ok || !wrapOk) && !STRICT) {
+  console.log('  ↑ 以上非 PASS 项均为**已知待办**（顶栏重构批 R7）；STRICT=1 升格为硬断言时应 RED。');
+}
 
 // 信息（非断言）：移动端 #side 应是**整宽底部抽屉**（≤860 规则写的是 width:auto）。
 // 实测若远小于视口宽 → 说明有更高优先级的 `#side{width:252px}` 把它盖掉了。见报告。
