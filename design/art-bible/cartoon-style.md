@@ -586,7 +586,7 @@ quality.setDressing: 'off' | 'static' | 'full'
 
 ## 7. 可访问性约束（影响色板，属本文档范围）
 
-> 完整的分级与特性矩阵（Basic/Standard/Comprehensive/Exemplary）是**独立交付物** `design/accessibility-requirements.md`，等待主理人排期。此处只列**色板必须满足的硬约束**。
+> 完整的分级与特性矩阵（Basic/Standard/Comprehensive/Exemplary）已落地为**独立交付物** `design/accessibility-requirements.md`（**V1 · D-39**）。**本项目目标档 = `Standard`（L2）+ 2 项 AAA**（焦点外观 / 触控目标）。此处只列**色板必须满足的硬约束**；其余 a11y 规则**一律引用该档**，不再各自重申。
 
 | 约束 | 值 | 理由 |
 |---|---|---|
