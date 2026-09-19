@@ -11,6 +11,13 @@ export interface ModalOptions {
   actions: ModalAction[];
   /** 宽版面板（城镇管理用） */
   wide?: boolean;
+  /**
+   * 出口固定在左上角（R3「出口不滚动」）。
+   * 提供时标题行变成**不随内容滚动**的头部，含一个「返回」按钮；内容区自行滚动。
+   * 起因：城镇面板的「关闭」原本在底部 `.actions` 里，而 `.modal{overflow-y:auto}`
+   * ⇒ 出口随内容滚走，长内容要滚到底才能关（用户反馈 F4）。
+   */
+  headClose?: boolean;
 }
 
 let root: HTMLElement | null = null;
@@ -31,9 +38,23 @@ export function showModal(parent: HTMLElement, opts: ModalOptions): void {
   const box = document.createElement('div');
   box.className = 'modal' + (opts.wide ? ' wide' : '');
 
-  const h = document.createElement('h2');
-  h.textContent = opts.title;
-  box.appendChild(h);
+  if (opts.headClose) {
+    const bar = document.createElement('div');
+    bar.className = 'modal-head';
+    const back = document.createElement('button');
+    back.className = 'btn tiny';
+    back.textContent = '返回';
+    back.setAttribute('aria-label', '关闭面板');
+    back.addEventListener('click', () => closeModal());
+    const title = document.createElement('h2');
+    title.textContent = opts.title;
+    bar.append(back, title);
+    box.appendChild(bar);
+  } else {
+    const h = document.createElement('h2');
+    h.textContent = opts.title;
+    box.appendChild(h);
+  }
 
   for (const node of opts.body) {
     if (typeof node === 'string') {
@@ -45,17 +66,21 @@ export function showModal(parent: HTMLElement, opts: ModalOptions): void {
     }
   }
 
-  const actions = document.createElement('div');
-  actions.className = 'actions';
-  const close = () => closeModal();
-  for (const a of opts.actions) {
-    const b = document.createElement('button');
-    b.className = 'btn' + (a.primary ? ' primary' : '') + (a.danger ? ' danger' : '');
-    b.textContent = a.label;
-    b.addEventListener('click', () => a.onClick(close));
-    actions.appendChild(b);
+  // 只有在真的给了底部动作时才建 `.actions`（headClose 形态下出口在头部，底部留空）。
+  if (opts.actions.length) {
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const close = () => closeModal();
+    for (const a of opts.actions) {
+      const b = document.createElement('button');
+      b.className = 'btn' + (a.primary ? ' primary' : '') + (a.danger ? ' danger' : '');
+      b.textContent = a.label;
+      b.addEventListener('click', () => a.onClick(close));
+      actions.appendChild(b);
+    }
+    box.appendChild(actions);
   }
-  box.appendChild(actions);
+
   host.appendChild(box);
 }
 

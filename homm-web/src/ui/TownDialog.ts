@@ -1,5 +1,5 @@
-import type { GameState, ResourceBag, ResourceKind } from '../core/types.js';
-import { BUILDINGS, BUILDING_ORDER, HERO_HIRE_COST } from '../core/data/buildings.js';
+import type { GameState, Hero, ResourceBag, ResourceKind } from '../core/types.js';
+import { BUILDINGS, HERO_HIRE_COST } from '../core/data/buildings.js';
 import { WAR_MACHINES, WAR_MACHINE_IDS } from '../core/data/warmachines.js';
 import { getUnit } from '../core/data/units.js';
 
@@ -44,89 +44,158 @@ export interface TownDialogOptions {
   onHire: (heroId: string) => void;
 }
 
-export function openTownDialog(parent: HTMLElement, opts: TownDialogOptions): void {
-  const body = document.createElement('div');
-  body.className = 'town';
-  let note = '';
-  const heroHere = opts.heroId ? opts.state.heroes[opts.heroId] : null;
+/** 城镇管理的 5 个标签页（§5.4：标签页 ≤5 个，每页纵向可点行 ≤5）。 */
+type TownTab = 'build' | 'dwell' | 'recruit' | 'army' | 'market';
 
-  const render = (): void => {
-    body.innerHTML = '';
-    paint(body, opts, note, (m) => {
+/**
+ * 建筑拆成两页 —— 不是为了分类好看，而是为了满足 **R4/§5.4「每页纵向可点行 ≤5」**：
+ * 16 张建筑卡放在一页，3 列网格也有 6 行 > 5，只能靠滚动，而滚动正是"拉到底"摩擦的来源。
+ * 拆成 7 + 8 张（各 3 行）后两页都不必滚动。
+ */
+const BUILD_TABS: Record<'build' | 'dwell', readonly string[]> = {
+  build: ['tavern', 'market', 'townhall', 'workshop', 'wall1', 'wall2', 'wall3'],
+  dwell: ['dwell1', 'dwell2', 'dwell3', 'dwell4', 'dwell5', 'guild1', 'guild2', 'guild3'],
+};
+
+/**
+ * 经营主面（城镇管理）。
+ *
+ * 三个来自用户反馈 F4 的硬约束：
+ * ① **出口不滚动**（R3）：关闭/返回固定在头部（`headClose`），不再躺在滚动流末端；
+ * ② **内容分段**（R4）：5 个标签页，每页纵向可点行 ≤5；
+ * ③ **决策处可见**：建筑页每张卡的造价行"还差"逐项列出；市场页补一行「我的资源」（#50）。
+ */
+export function openTownDialog(parent: HTMLElement, opts: TownDialogOptions): void {
+  const heroHere = opts.heroId ? opts.state.heroes[opts.heroId] : null;
+  let note = '';
+  let tab: TownTab = 'build';
+
+  const meta = document.createElement('div');
+  meta.className = 'town-meta';
+  const noteEl = document.createElement('div');
+  noteEl.className = 'town-note';
+  const tabs = document.createElement('div');
+  tabs.className = 'town-tabs';
+  const pane = document.createElement('div');
+  pane.className = 'town-pane';
+
+  const renderAll = (): void => {
+    const { state, townId } = opts;
+    const town = state.towns[townId];
+    if (!town) return;
+    const res = state.players.p1?.resources ?? {};
+
+    // 常驻只读读数（IA §3.4 #36）：每日税收 / 城防 / 周增长 —— 顶栏没有，是经营的核心读数。
+    // 建筑页顶部那排**堆叠式资源 chip 行已删除**（#35）：改由每张卡造价行承担（决策处可见），
+    // 把经营首屏的行额度留给建筑卡本身。
+    meta.innerHTML = '';
+    meta.append(
+      chip(`每日税收 ${townDailyIncome(town)}`),
+      chip(`城防 +${townDefenseBonus(town)}`),
+      chip(`周增长 ×${townGrowthMultiplier(town).toFixed(2)}`),
+      chip(heroHere ? `${heroHere.name} 在城中` : '远程管理（只能补驻军）'),
+    );
+
+    noteEl.textContent = note;
+    noteEl.hidden = !note;
+
+    tabs.innerHTML = '';
+    const defs: [TownTab, string][] = [
+      ['build', '建筑'],
+      ['dwell', '兵营·行会'],
+      ['recruit', '招募'],
+      ['army', '驻军'],
+      ['market', '市场·工坊'],
+    ];
+    for (const [id, label] of defs) {
+      const b = document.createElement('button');
+      b.className = 'btn tiny' + (tab === id ? ' on' : '');
+      b.textContent = label;
+      b.setAttribute('aria-pressed', String(tab === id));
+      b.addEventListener('click', () => {
+        tab = id;
+        renderAll();
+      });
+      tabs.appendChild(b);
+    }
+
+    pane.innerHTML = '';
+    const say: Say = (m) => {
       note = m;
-      render();
+      renderAll();
       opts.onChange();
-    });
-    opts.onChange();
+    };
+    paintPane(pane, opts, tab, res, say);
   };
 
-  render();
+  renderAll();
 
-  const subtitle = heroHere
-    ? `${heroHere.name} 在城中`
-    : '远程管理：英雄不在城中，只能补充驻军';
   const wrap = document.createElement('div');
-  const sub = document.createElement('div');
-  sub.className = 'town-sub';
-  sub.textContent = subtitle;
-  wrap.appendChild(sub);
-  wrap.appendChild(body);
+  wrap.className = 'town';
+  wrap.append(meta, noteEl, tabs, pane);
 
   showModal(parent, {
     title: opts.state.towns[opts.townId]?.name ?? '城镇',
     body: [wrap],
     wide: true,
-    actions: [{ label: '关闭', primary: true, onClick: (c) => c() }],
+    headClose: true,
+    actions: [],
   });
 }
 
 type Say = (msg: string) => void;
 
-function paint(root: HTMLElement, opts: TownDialogOptions, note: string, say: Say): void {
+function paintPane(
+  root: HTMLElement,
+  opts: TownDialogOptions,
+  tab: TownTab,
+  res: ResourceBag,
+  say: Say,
+): void {
   const { state, townId } = opts;
   const town = state.towns[townId];
   if (!town) return;
   const hero = opts.heroId ? state.heroes[opts.heroId] : null;
-  const res = state.players.p1?.resources ?? {};
   const act = (fn: () => string | void): void => {
     const r = fn();
     say(typeof r === 'string' ? r : '');
   };
 
-  /* 概览 */
-  const head = document.createElement('div');
-  head.className = 'town-head';
-  head.appendChild(
-    chip(`金币 ${res.gold ?? 0}`),
-  );
-  head.appendChild(chip(`木材 ${res.wood ?? 0}`));
-  head.appendChild(chip(`矿石 ${res.ore ?? 0}`));
-  // 稀有资源也摆出来：大法师塔要水晶、天使要宝石，界面上不给看就很难推理
-  for (const k of ['gem', 'crystal', 'sulfur', 'mercury'] as const) {
-    const v = res[k] ?? 0;
-    head.appendChild(chip(`${RESOURCE_LABEL[k]} ${v}`, v > 0 ? 'rare' : 'rare zero'));
+  if (tab === 'build' || tab === 'dwell') {
+    paintBuildings(root, opts, BUILD_TABS[tab], act);
+    return;
   }
-  head.appendChild(chip(`每日税收 ${townDailyIncome(town)}`));
-  if (townDefenseBonus(town)) head.appendChild(chip(`城防 +${townDefenseBonus(town)}`));
-  if (townGrowthMultiplier(town) > 1) {
-    head.appendChild(chip(`周增长 ×${townGrowthMultiplier(town).toFixed(2)}`));
+  if (tab === 'recruit') {
+    paintRecruit(root, opts, hero, act);
+    return;
   }
-  root.appendChild(head);
+  if (tab === 'army') {
+    paintArmy(root, opts, hero, act);
+    return;
+  }
+  paintMarket(root, opts, res, hero, act);
+}
 
-  if (note) {
-    const n = document.createElement('div');
-    n.className = 'town-note';
-    n.textContent = note;
-    root.appendChild(n);
-  }
+/* ---------------- 页 1 / 2：建筑 ---------------- */
 
-  /* 建筑 */
-  const anySpent = BUILDING_ORDER.some((b) => buildStatus(state, town, b).spentToday);
-  root.appendChild(sectionTitle(`建筑${anySpent ? '（今日已建造，明日可再建）' : ''}`));
+function paintBuildings(
+  root: HTMLElement,
+  opts: TownDialogOptions,
+  ids: readonly string[],
+  act: (fn: () => string | void) => void,
+): void {
+  const { state, townId } = opts;
+  const town = state.towns[townId];
+  if (!town) return;
+
+  const anySpent = ids.some((b) => buildStatus(state, town, b).spentToday);
+  if (anySpent) root.appendChild(note2('今日已建造，明日可再建'));
+
   const grid = document.createElement('div');
   grid.className = 'bgrid';
-  for (const id of BUILDING_ORDER) {
+  for (const id of ids) {
     const def = BUILDINGS[id];
+    if (!def) continue;
     const st = buildStatus(state, town, id);
     const card = document.createElement('div');
     card.className = 'bcard' + (st.built ? ' built' : '') + (st.unlocked && !st.built ? ' open' : '');
@@ -136,100 +205,150 @@ function paint(root: HTMLElement, opts: TownDialogOptions, note: string, say: Sa
     const ds = document.createElement('div');
     ds.className = 'bd';
     ds.textContent = def.desc;
-    const stt = buildStateLine(st);
-    card.appendChild(nm);
-    card.appendChild(ds);
-    card.appendChild(stt);
+    card.append(nm, ds, buildStateLine(st));
     if (st.unlocked && !st.built) {
       const ready = st.affordable && !st.spentToday;
-      card.appendChild(actionBtn('建造', ready, () => {
-        act(() => {
-          if (!build(state, town, id)) {
-            sfx.error();
-            return st.spentToday ? '今日已建造过建筑' : '资源不足';
-          }
-          sfx.build();
-          return `${def.name} 建成`;
-        });
-      }));
+      card.appendChild(
+        actionBtn('建造', ready, () => {
+          act(() => {
+            if (!build(state, town, id)) {
+              sfx.error();
+              return st.spentToday ? '今日已建造过建筑' : '资源不足';
+            }
+            sfx.build();
+            return `${def.name} 建成`;
+          });
+        }),
+      );
     }
     grid.appendChild(card);
   }
   root.appendChild(grid);
+}
 
-  /* 可招募 */
+/* ---------------- 页 3：招募 ---------------- */
+
+function paintRecruit(
+  root: HTMLElement,
+  opts: TownDialogOptions,
+  hero: Hero | null,
+  act: (fn: () => string | void) => void,
+): void {
+  const { state, townId } = opts;
+  const town = state.towns[townId];
+  if (!town) return;
+
   const rows = recruitRows(state, town);
-  root.appendChild(sectionTitle('招募（花费金币从本周增长中征召）'));
   if (!rows.length) {
     root.appendChild(empty('尚未建成任何兵营'));
-  } else {
-    const list = document.createElement('div');
-    list.className = 'rlist';
-    for (const r of rows) {
-      const u = getUnit(r.unitTypeId);
-      const row = document.createElement('div');
-      row.className = 'rrow';
-      const nm = document.createElement('span');
-      nm.className = 'un';
-      nm.textContent = `${u.name} ×${r.available}`;
-      const cs = document.createElement('span');
-      cs.className = 'uc';
-      cs.textContent = costText(r.cost);
-      row.appendChild(nm);
-      row.appendChild(cs);
-      row.appendChild(
-        actionBtn('招 1', r.affordable >= 1 && !!hero, () =>
-          act(() => doRecruit(opts, r.unitTypeId, 1, 'hero'))),
-      );
-      row.appendChild(
-        actionBtn('招 5', r.affordable >= 5 && !!hero, () =>
-          act(() => doRecruit(opts, r.unitTypeId, 5, 'hero'))),
-      );
-      row.appendChild(
-        actionBtn('全招', r.affordable >= 1 && !!hero, () =>
-          act(() => doRecruit(opts, r.unitTypeId, r.available, 'hero'))),
-      );
-      row.appendChild(
-        actionBtn('驻军', r.affordable >= 1, () =>
-          act(() => doRecruit(opts, r.unitTypeId, r.available, 'garrison'))),
-      );
-      list.appendChild(row);
-    }
-    root.appendChild(list);
-    if (!hero) root.appendChild(empty('城里没有英雄，「招募」只会进入驻军'));
+    return;
   }
+  const list = document.createElement('div');
+  list.className = 'rlist';
+  for (const r of rows) {
+    const u = getUnit(r.unitTypeId);
+    const row = document.createElement('div');
+    row.className = 'rrow';
+    const nm = document.createElement('span');
+    nm.className = 'un';
+    nm.textContent = `${u.name} ×${r.available}`;
+    const cs = document.createElement('span');
+    cs.className = 'uc';
+    cs.textContent = costText(r.cost);
+    row.append(nm, cs);
+    row.appendChild(actionBtn('招 1', r.affordable >= 1 && !!hero, () => act(() => doRecruit(opts, r.unitTypeId, 1, 'hero'))));
+    row.appendChild(actionBtn('招 5', r.affordable >= 5 && !!hero, () => act(() => doRecruit(opts, r.unitTypeId, 5, 'hero'))));
+    row.appendChild(actionBtn('全招', r.affordable >= 1 && !!hero, () => act(() => doRecruit(opts, r.unitTypeId, r.available, 'hero'))));
+    row.appendChild(actionBtn('驻军', r.affordable >= 1, () => act(() => doRecruit(opts, r.unitTypeId, r.available, 'garrison'))));
+    list.appendChild(row);
+  }
+  root.appendChild(list);
+  if (!hero) root.appendChild(empty('城里没有英雄，「招募」只会进入驻军'));
+}
 
-  /* 驻军 */
+/* ---------------- 页 4：驻军 / 部队调拨 ---------------- */
+
+function paintArmy(
+  root: HTMLElement,
+  opts: TownDialogOptions,
+  hero: Hero | null,
+  act: (fn: () => string | void) => void,
+): void {
+  const { state, townId } = opts;
+  const town = state.towns[townId];
+  if (!town) return;
+
   root.appendChild(sectionTitle('驻军'));
   root.appendChild(
-    armyList(town.garrison, hero ? (uid) => {
-      act(() => {
-        const h = opts.heroId ? state.heroes[opts.heroId] : null;
-        if (!h) return '没有英雄';
-        const n = garrisonToHero(h, town, uid, 9999);
-        return n ? `${getUnit(uid).name} ×${n} 已编入队伍` : '英雄部队兵种已满';
-      });
-    } : null, '带走'),
+    armyList(
+      town.garrison,
+      hero
+        ? (uid) => {
+            act(() => {
+              const h = opts.heroId ? state.heroes[opts.heroId] : null;
+              if (!h) return '没有英雄';
+              const n = garrisonToHero(h, town, uid, 9999);
+              return n ? `${getUnit(uid).name} ×${n} 已编入队伍` : '英雄部队兵种已满';
+            });
+          }
+        : null,
+      '带走',
+    ),
   );
 
-  /* 英雄部队 */
   if (hero) {
     root.appendChild(sectionTitle(`${hero.name} 的部队`));
     root.appendChild(
-      armyList(hero.army, (uid) => {
-        act(() => {
-          const h = opts.heroId ? state.heroes[opts.heroId] : null;
-          if (!h) return '没有英雄';
-          const n = heroToGarrison(h, town, uid, 9999);
-          return n ? `${getUnit(uid).name} ×${n} 留守城中` : '驻军兵种已满';
-        });
-      }, '留下'),
+      armyList(
+        hero.army,
+        (uid) => {
+          act(() => {
+            const h = opts.heroId ? state.heroes[opts.heroId] : null;
+            if (!h) return '没有英雄';
+            const n = heroToGarrison(h, town, uid, 9999);
+            return n ? `${getUnit(uid).name} ×${n} 留守城中` : '驻军兵种已满';
+          });
+        },
+        '留下',
+      ),
     );
   }
+}
 
-  /* 酒馆 & 市场 */
+/* ---------------- 页 5：市场 · 工坊（含 #50 我的资源行） ---------------- */
+
+function paintMarket(
+  root: HTMLElement,
+  opts: TownDialogOptions,
+  res: ResourceBag,
+  hero: Hero | null,
+  act: (fn: () => string | void) => void,
+): void {
+  const { state, townId } = opts;
+  const town = state.towns[townId];
+  if (!town) return;
+
+  // ★ #50：市场页的**全部决策变量就是"我现在有什么"**。
+  // 现状是"点了才知道"——`金币不足` / `水晶不足` 都是**操作后**文案，事先不可见；
+  // 而困难档起始资源只有普通档的 70% ⇒ 试错成本高。故必须在**决策处可见**。
+  // 与建筑页不同：市场页没有建筑卡列，不占 R4 的 ≤5 行额度。
+  const mine = document.createElement('div');
+  mine.className = 'my-res';
+  const mk = document.createElement('span');
+  mk.className = 'my-res-k';
+  mk.textContent = '我的资源';
+  mine.appendChild(mk);
+  mine.appendChild(chip(`金 ${res.gold ?? 0}`));
+  mine.appendChild(chip(`木 ${res.wood ?? 0}`));
+  mine.appendChild(chip(`矿 ${res.ore ?? 0}`));
+  for (const k of ['gem', 'crystal', 'sulfur', 'mercury'] as const) {
+    mine.appendChild(chip(`${RESOURCE_LABEL[k]} ${res[k] ?? 0}`));
+  }
+  root.appendChild(mine);
+
   const extra = document.createElement('div');
   extra.className = 'town-extra';
+
   if (town.buildings.includes('tavern')) {
     const hb = canHireHero(state, town);
     const wrap = document.createElement('div');
@@ -238,18 +357,22 @@ function paint(root: HTMLElement, opts: TownDialogOptions, note: string, say: Sa
     t.textContent = `酒馆 · 招募英雄（${HERO_HIRE_COST} 金，每周一位）`;
     wrap.appendChild(t);
     wrap.appendChild(
-      actionBtn('招募', hb.ok, () =>
-        act(() => {
-          const h = hireHero(state, town);
-          if (!h) return '无法招募';
-          opts.onHire(h.id);
-          return `${h.name} 加入了你的麾下`;
-        }),
+      actionBtn(
+        '招募',
+        hb.ok,
+        () =>
+          act(() => {
+            const h = hireHero(state, town);
+            if (!h) return '无法招募';
+            opts.onHire(h.id);
+            return `${h.name} 加入了你的麾下`;
+          }),
         hb.ok ? '' : hb.reason,
       ),
     );
     extra.appendChild(wrap);
   }
+
   if (town.buildings.includes('market')) {
     const wrap = document.createElement('div');
     wrap.className = 'ex-row';
@@ -295,6 +418,7 @@ function paint(root: HTMLElement, opts: TownDialogOptions, note: string, say: Sa
     }
     extra.appendChild(wrap);
   }
+
   // 工坊：攻城器械只有在英雄站在城里时才能装到他身上
   if (town.buildings.includes('workshop')) {
     const wrap = document.createElement('div');
@@ -309,23 +433,25 @@ function paint(root: HTMLElement, opts: TownDialogOptions, note: string, say: Sa
       const def = WAR_MACHINES[id];
       const chk = canAssemble(state, town, hero, id);
       wrap.appendChild(
-        actionBtn(`${def.name}（${costText(def.cost)}）`, chk.ok, () =>
-          act(() => {
-            const h = opts.heroId ? state.heroes[opts.heroId] : null;
-            if (!h) return '需要一位英雄站在城中';
-            const r = assembleWarMachine(state, town, h, id);
-            return r.ok ? `工坊装配了「${def.name}」` : r.reason;
-          }),
+        actionBtn(
+          `${def.name}（${costText(def.cost)}）`,
+          chk.ok,
+          () =>
+            act(() => {
+              const h = opts.heroId ? state.heroes[opts.heroId] : null;
+              if (!h) return '需要一位英雄站在城中';
+              const r = assembleWarMachine(state, town, h, id);
+              return r.ok ? `工坊装配了「${def.name}」` : r.reason;
+            }),
           chk.ok ? def.desc : chk.reason,
         ),
       );
     }
     extra.appendChild(wrap);
   }
-  if (extra.childElementCount) {
-    root.appendChild(sectionTitle('城镇功能'));
-    root.appendChild(extra);
-  }
+
+  if (extra.childElementCount) root.appendChild(extra);
+  else root.appendChild(empty('尚未建成 酒馆 / 市场 / 工坊'));
 }
 
 function doRecruit(opts: TownDialogOptions, unitTypeId: string, count: number, to: 'hero' | 'garrison'): string {
@@ -393,6 +519,13 @@ function buildStateLine(st: BuildStatus): HTMLElement {
 function sectionTitle(text: string): HTMLElement {
   const e = document.createElement('h3');
   e.className = 'th';
+  e.textContent = text;
+  return e;
+}
+
+function note2(text: string): HTMLElement {
+  const e = document.createElement('div');
+  e.className = 'town-note';
   e.textContent = text;
   return e;
 }
