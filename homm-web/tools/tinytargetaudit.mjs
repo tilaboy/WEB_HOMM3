@@ -27,7 +27,7 @@
  *   - #side.collapsed 的 #panel-toggle 有效命中高 ≥ 44px（不被 34px 容器裁掉）
  *   - 各 .btn.tiny 同上阈值（防将来加移动规则把靶子改小）
  *   - 顶栏三项（默认「信息」级；STRICT=1 升格为硬断言）：
- *       C3 横向滚动 = 0 · C4 顶栏可点元素 = 0（R7）· 按钮不得高过顶栏（换行）
+ *       C4 顶栏可点元素 = 0（R7）· C3 多宽度(720/792/860)横向溢出 = 0 · 按钮不得高过顶栏（换行）
  *   - 外加 no-shrink 极限溢出「诊断」（非断言，只量化余量）
  *
  * 用法：npm run build && node tools/tinytargetaudit.mjs
@@ -395,11 +395,36 @@ const MOBILE_TARGETS = `(() => {
   };
 })()`;
 
+/**
+ * 单档宽度下的顶栏体检（供 C3 多宽度扫描用：720 / 792 / 860）。
+ * C3 的口径是「**任何目标宽度**都不得横向溢出」—— 只在 792 测等于守卫闲置。
+ * 同时量换行（子项高 ≤ 条高）：它也是宽度相关的（越窄越容易换行）。
+ */
+const TOPBAR_AT_WIDTH = `(() => {
+  const tb = document.querySelector('#topbar');
+  if (!tb) return null;
+  const rect = (el) => el.getBoundingClientRect();
+  const btns = [...tb.querySelectorAll('.btn')];
+  const tbr = rect(tb);
+  const taller = btns.filter((b) => rect(b).height > tbr.height + 0.5)
+    .map((b) => (b.textContent || '').trim().slice(0, 6));
+  const de = document.scrollingElement || document.documentElement;
+  return {
+    vw: de.clientWidth,
+    topbarOverflow: Math.round(tb.scrollWidth - tb.clientWidth),
+    docOverflow: Math.round(de.scrollWidth - de.clientWidth),
+    barH: +tbr.height.toFixed(1),
+    maxBtnH: btns.length ? +Math.max(...btns.map((b) => rect(b).height)).toFixed(1) : 0,
+    taller,
+  };
+})()`;
+
 /* ---------------- 跑 ---------------- */
 
 let res;
 let mobile;
 let mobileTall;
+const widthScan = [];
 try {
   const wsUrl = await findTarget();
   ws = new WebSocket(wsUrl);
@@ -444,6 +469,18 @@ try {
   });
   await sleep(300);
   mobileTall = await evaluate(MOBILE_TARGETS);
+
+  // Phase D：C3 多宽度扫描（720 / 792 / 860）—— 只在 792 测等于守卫闲置，任何目标宽度都不得横向溢出。
+  for (const w of [720, 792, 860]) {
+    await send('Emulation.setDeviceMetricsOverride', {
+      width: w,
+      height: MOBILE.h,
+      deviceScaleFactor: MOBILE.dpr,
+      mobile: true,
+    });
+    await sleep(250);
+    widthScan.push({ w, ...(await evaluate(TOPBAR_AT_WIDTH)) });
+  }
 } catch (e) {
   console.error(`跑审计失败：${e.message}`);
   await cleanup();
@@ -527,28 +564,32 @@ reportGroup('m.hp-tbtns', mobileTall.groups.hpTbtns, (m) => m.h >= 40, '移动 �
 reportGroup('m.hp-nav', mobileTall.groups.hpNav, (m) => m.h >= 40, '移动 · 密集区 .hp-nav 视觉高 ≥ 40px');
 reportGroup('m.魔法书 .tap', mobileTall.groups.magicTap, (m) => m.hit >= 43, '移动 · 孤立 .btn.tiny.tap 有效命中高 ≥ 43px');
 
-/* ---- 顶栏（≤860px）：C3 横向滚动 / C4 可点元素 / 换行 —— 三项「已知待办」级（STRICT=1 才卡） ---- */
+/* ---- 顶栏（≤860px）：C4 可点元素 / C3 多宽度溢出 / 换行 —— 「已知待办」级（STRICT=1 才卡） ---- */
 const tb = mobile.topbar;
 const T = (ok) => (ok ? 'PASS' : STRICT ? 'FAIL' : '信息');
 const Tbump = (ok) => { if (!ok && STRICT) bad++; };
-console.log('\n── 顶栏（≤860px，与真机 792 视口同口径） ──');
+console.log('\n── 顶栏（≤860px） ──');
 
-// C3：禁止任何常驻元素引发横向滚动。
-const docOver = mobile.overflow.doc;
-const c3ok = docOver <= 0 && tb.overflow <= 0;
-Tbump(c3ok);
-console.log(`[${T(c3ok)}] C3 横向滚动：document ${docOver}px / #topbar ${tb.overflow}px（应为 0）`);
-
-// C4：顶栏内不得有任何可点元素（R7）。★ 这条**不可能被 flex 压缩掩盖**，是这批里最硬的守卫。
+// C4：顶栏内不得有任何可点元素（R7）。★ 不可能被 flex 压缩掩盖，这批最硬的守卫。
 const c4ok = tb.clickable === 0;
 Tbump(c4ok);
 console.log(`[${T(c4ok)}] C4 顶栏可点元素 = ${tb.clickable} 个（应为 0 —— R7 顶栏只读）`);
 
-// 换行：按钮不得高过顶栏。真实缺陷：按钮被压窄 → 文字换行 → 高 75 > 条高 52。
-const wrapOk = tb.taller.length === 0;
+// C3：**任何目标宽度**都不得横向溢出（720/792/860）—— 只在 792 测等于守卫闲置。
+// 换行（子项高 ≤ 条高）也随宽度扫，因为越窄越容易换行。
+console.log('── C3 多宽度扫描（720/792/860；横向溢出应为 0） ──');
+let c3ok = true;
+let wrapOk = true;
+for (const s of widthScan) {
+  const o = s.topbarOverflow <= 0 && s.docOverflow <= 0;
+  if (!o) c3ok = false;
+  if (s.taller.length) wrapOk = false;
+  Tbump(o);
+  const wrapNote = s.taller.length ? ` · 换行：${s.taller.join(', ')}` : '';
+  console.log(`[${T(o)}] ${s.w}px → 顶栏溢出 ${s.topbarOverflow}px · document ${s.docOverflow}px · 最高按钮 ${s.maxBtnH}px / 条 ${s.barH}px${wrapNote}`);
+}
 Tbump(wrapOk);
-console.log(`[${T(wrapOk)}] 顶栏按钮不得高过条（${tb.barH}px）：最高 ${tb.maxBtnH}px` +
-  (wrapOk ? '' : ` —— 换行：${tb.taller.map((x) => x.t + '=' + x.h + 'px').join(', ')}`));
+console.log(`[${T(wrapOk)}] 换行（任一宽度下子项高 ≤ 条高）`);
 
 // 诊断（非断言）：no-shrink 极限溢出，量化余量。真机实测 225px。
 console.log(`[诊断] 顶栏 no-shrink 极限溢出 ${tb.worstOverflow}px（非当前事实，只是量化余量）`);
