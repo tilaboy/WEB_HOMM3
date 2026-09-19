@@ -12,7 +12,8 @@
  *     1 抠底无粉边   → 自动
  *     2 块众数降采样无糊 → 自动（色板归属 + 同族相邻台阶差）
  *     8 相邻材质明度差 → 自动（美术 2026-09-19 拍板：ΔL*≥8；色相差<30° 时 ≥12）
- *     3 钳色后同色域 → **人工**（依赖 AI 资产 crestL_p1，本轮未产出）
+ *     3 钳色后同色域 → **半自动**：色板级不变量自动（3a 色板归属 / 3b ΔL*(ink0,ink1)≥12）；
+ *                      AI 资产 crestL_p1 钳色后是否同色域 → 人工
  *     4 描边重跑干净 → 自动
  *     5 基线对齐     → 自动
  *     6 去色 32px 盲测 → **人工**（需要 3 个没看过文档的人各 3 次）
@@ -31,6 +32,7 @@ import {
   B0_PENDING_AI_FRAME,
   buildB0Frame,
 } from '../dist/render/unitArt.js';
+import { shade } from '../dist/render/pixel.js';
 
 /* ---------------------------------------------------------------- 参数 */
 
@@ -230,6 +232,11 @@ function assertMaterialContrast(name, d) {
         if (qhex === hex) continue;
         const f = PAL.get(qhex);
         if (!f || f.family === e.family) continue; // 同材质归断言 2 的台阶规则
+        // ink0↔ink1 的 ΔL* 是**常量**（13.0，由 §3.2 两个字面值决定），不是某个精灵的
+        // 布局风险。让它参与逐精灵扫描等于在每只靴子底下重复检查同一个常量，只制造余量-1
+        // 噪声 → 移交给断言 3 的色板级不变量查一次（美术 2026-09-19 拍板）。
+        const pair = [e.family, f.family].sort().join('|');
+        if (pair === 'ink0|ink1') continue;
         const h1 = hueOf(p[0], p[1], p[2]);
         const h2 = hueOf(q[0], q[1], q[2]);
         const need = requiredDl(h1, h2);
@@ -252,6 +259,53 @@ function assertMaterialContrast(name, d) {
     worstPair: worst.text,
   });
   return pass;
+}
+
+/**
+ * 断言 3（自动部分）：色板级不变量 —— 「钳色后同色域」里能自动化的那一半。
+ * 同一断言的**AI 资产那一半**（crestL_p1 钳色后是否 100% 落色板）仍列人工项。
+ *
+ * 3a 声明色板 100% 属于 §3.2/§3.3 字面值，或 §3.4 五档台阶的派生色；
+ * 3b ΔL*(ink0, ink1) ≥ 12 —— §1.1 原文「ink1 比外描边浅一档，形成主次」的可执行化。
+ *    这是**调色板属性**，查一次即可；放在逐精灵扫描里只会持续制造余量 1 的噪声。
+ */
+function assertPaletteInvariants() {
+  const literalList = [...SPEC_LITERALS];
+  const offSpec = [];
+  for (const e of B0_PALETTE) {
+    if (SPEC_LITERALS.has(e.hex)) continue;
+    const derived = literalList.some((b) => B0_SHADE_STEPS.some((st) => shade(b, st) === e.hex));
+    if (!derived) offSpec.push(e.hex);
+  }
+  const idxBad = B0_PALETTE.filter(
+    (e) => !Number.isInteger(e.idx) || e.idx < 0 || e.idx > 4,
+  ).map((e) => `${e.hex}#${e.idx}`);
+
+  const ink0 = B0_PALETTE.find((e) => e.family === 'ink0');
+  const ink1 = B0_PALETTE.find((e) => e.family === 'ink1');
+  let inkGap = NaN;
+  if (ink0 && ink1) {
+    const a = lstar(...rgb(ink0.hex));
+    const b = lstar(...rgb(ink1.hex));
+    inkGap = Math.abs(a - b);
+  }
+  const pass = offSpec.length === 0 && idxBad.length === 0 && inkGap >= 12;
+  record(3, '钳色后同色域（色板级；AI 部分人工）', pass, {
+    paletteSize: B0_PALETTE.length,
+    offSpecColors: offSpec,
+    badStepIdx: idxBad,
+    ink0VsInk1Luma: Number.isNaN(inkGap) ? 'n/a' : `${inkGap.toFixed(1)} L*（需 ≥12）`,
+  });
+  return pass;
+}
+
+/** '#rrggbb' → [r, g, b]。 */
+function rgb(hex) {
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
 }
 
 /** 断言 4：描边重跑干净 —— 轮廓 1px 单线，无 2px 断点、无灰边。
@@ -578,7 +632,9 @@ const frames = B0_FRAMES.map((spec) => ({
   body: readBuf(buildB0Frame(spec.name, false)), // 描边前本体（断言 4 还原膨胀圈用）
 }));
 
-// 断言 1 / 2 / 4：逐帧
+assertPaletteInvariants(); // 色板级，查一次，不逐帧
+
+// 断言 1 / 2 / 4 / 8：逐帧
 for (const f of frames) {
   assertNoFringe(f.spec.name, f.d);
   assertNoSmear(f.spec.name, f.d);
@@ -605,9 +661,9 @@ for (const r of results) {
   byId.get(r.id).push(r);
 }
 
-console.log('\n── 自动断言（逐帧） ──');
+console.log('\n── 自动断言（逐帧 1/2/4/8 + 色板级 3 + 基线 5） ──');
 const verdict = new Map();
-for (const id of [1, 2, 4, 5, 8]) {
+for (const id of [1, 2, 3, 4, 5, 8]) {
   const rs = byId.get(id) ?? [];
   const pass = rs.every((r) => r.pass);
   verdict.set(id, pass);
@@ -621,11 +677,18 @@ for (const id of [1, 2, 4, 5, 8]) {
   }
   for (const r of rs) {
     const mark = r.pass ? 'PASS' : 'FAIL';
+    // detail 有两种形态，**不要假设 name 一定存在**：
+    //   · 逐帧断言（1 / 2 / 4 / 8）→ detail.name = 帧名，用它当标签；
+    //   · 一次性 / 色板级断言（3）→ 无 name（它的 detail 描述的是整块色板，不是某一帧），
+    //     退回用 title 当标签。
+    // 旧版直接 `name.padEnd` 会在遇到非逐帧记录时抛
+    // `TypeError: Cannot read properties of undefined (reading 'padEnd')`。
     const { name, ...rest } = r.detail;
+    const label = typeof name === 'string' ? name : r.title;
     const bits = Object.entries(rest)
       .map(([k, v]) => `${k}=${Array.isArray(v) ? (v.length ? v.join(', ') : '0') : v}`)
       .join('  ');
-    console.log(`    ${mark}  ${name.padEnd(24)} ${bits}`);
+    console.log(`    ${mark}  ${label.padEnd(24)} ${bits}`);
   }
 }
 
@@ -642,8 +705,11 @@ for (const f of frames) {
 /* ---------------------------------------------------------------- 人工项 */
 
 console.log('\n── 人工验收项（脚本不代为判定，禁止伪造成通过） ──');
-console.log(`  [3] 钳色后同色域        MANUAL  依赖 AI 资产 ${B0_PENDING_AI_FRAME}（256×384），本轮未产出`);
+// 断言 3 已拆两半：色板级不变量（3a 色板归属 / 3b ΔL*(ink0,ink1)≥12）= 自动，见上方 [3]；
+// 这里只剩**依赖 AI 资产的那一半**（crestL_p1 钳色后是否 100% 落色板）。
+console.log(`  [3] 钳色后同色域（仅 AI 那一半）MANUAL  依赖 AI 资产 ${B0_PENDING_AI_FRAME}（256×384），本轮未产出`);
 console.log('                                 判据：AI 资产的颜色 100% 属于 cartoon-style §3 色板');
+console.log('                                 （色板级 3a / 3b 已自动判定，见上方「自动断言」的 [3]）');
 console.log('  [6] 去色 32px 可辨（核心）MANUAL  3 个盲测者 × 各 3 次，晨曦 T1 与赤焰 T1 去色缩到 32px');
 console.log('                                 判据：全部答对（§5.6.5 的 20 格版本阈值 = 命中率 ≥90%）');
 console.log('  [7] 手机上表情可读      MANUAL  44×56 帧在 zoom 2 × dpr 3 下截图，眼与嘴线可辨');
@@ -697,7 +763,7 @@ console.log(
     .map(([id, p]) => `[${id}] ${p ? 'PASS' : 'FAIL'}`)
     .join('  ')}`,
 );
-console.log(`人工项： [3] MANUAL  [6] MANUAL  [7] MANUAL  [+${B0_PENDING_AI_FRAME}] MANUAL`);
+console.log(`人工项： [3 的 AI 半] MANUAL  [6] MANUAL  [7] MANUAL  [+${B0_PENDING_AI_FRAME}] MANUAL`);
 console.log(`结论：自动部分 ${allPass ? '全过 —— 可以提交人工盲测' : '未全过 —— 不要进 B1'}`);
 console.log('='.repeat(64));
 
