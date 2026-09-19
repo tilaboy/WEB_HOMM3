@@ -407,7 +407,8 @@ function empty(text: string): HTMLElement {
 function actionBtn(label: string, enabled: boolean, onClick: () => void, title = ''): HTMLElement {
   const b = document.createElement('button');
   // M-09：actionBtn 的纵向最近邻至少隔 14px（.rrow 行距 4px + 行内边距 5×2、
-  // .ex-row 6px + 6×2、.bgrid ≥8px），可安全用 .tap 把命中区纵向扩到 ~44px。
+  // .ex-row 6px + 6×2、.bgrid ≥8px），可安全用 .tap 把命中区纵向扩到 ~48px
+  //（.btn.tiny 底 40px + 纵轴 ±4px）。
   b.className = 'btn tiny tap' + (enabled ? '' : ' off');
   b.textContent = label;
   b.disabled = !enabled;
