@@ -91,6 +91,7 @@
 | **D-53** | **在飞文件会卡住同伴的 build —— 用 `git worktree` 旁路验证**（2026-09-19 主理人立） | ① 要求成员**小步提交**（做多少提多少），把「在飞窗口」压到最小；② 被卡住者**不要去动别人的在飞文件**，改用 **`git worktree add --detach /tmp/<name> HEAD`** 在 HEAD 建干净工作树，再 `ln -s` 复用 `node_modules`，即可跑完整门控；③ 用完 `git worktree remove` | ★ 触发：`eng-sprites` 在 B1 中途把 `unitArt.ts` 的 dispatcher **注册了 8 个单位、只定义了 2 个** ⇒ `tsc` 6 处 `TS2304`、`build` 挂 ⇒ **`engineering-lead` 无法重建 `dist/`，P2+ 的门控全跑不了**。⚠️ **这不是谁违规**：一文件一写者成立（两者域不重叠），但**未提交的在飞状态是全局可见的**。⇒ 主理人用 worktree 在 HEAD 上验完 P1（`typecheck 0` / `smoke 556-0` / **`audit:touch STRICT=1` exit 0**），**未触碰任何人的在飞文件**。**教训：提交粒度不只是版本管理习惯，它是同伴能否继续工作的前提** |
 | **D-54** | **D-49 的适用边界：只适用于「被决策过的值」**（2026-09-19 主理人立） | 决策记录（D-xx）里**夹带的估算、转抄、粗数不算决策**，不得据此压过专业文档的核算费率；只有**明确拍板的取值**才享有 D-49 的优先级 | ★ 触发：D-50 里「4 个被动图标 ≈0.75 人日」被当成决策值，与美术费率冲突 0.55。**而那个 0.75 是主理人转抄设计线的粗估**，从未按费率算过 ⇒ 若机械套用 D-49，就会用一句估算推翻一份自洽的费率表。⇒ **规则：D-49 只保护「被决策过的值」；费用与工程量这类专业核算以专业文档为准。** ⚠️ 根因同 D-52：**把「当时听来的数」写成了「记录」，之后它就有了权威的假象** |
 | **D-55** | **核实一律用 Grep 工具，不用 shell `grep`**（2026-09-19 主理人立） | 在本环境里 **shell `grep` 会静默返回空**（`\|` 交替是一种触发，与是否中文无关）⇒ **凡「声明已核实」，必须用 Grep 工具复跑**；shell 得到空结果时**只能记作「未知」，不能记作「零」** | ★ **同一陷阱今日被三方独立踩到**：主理人（`grep "A\|B"` 搜不到 `suspendAudio`，差点误判成员编造引用）、design-strategist（用纯 ASCII 模式复现空结果，推翻了自己「与中文有关」的初版解释）、art-director（`grep -c "31\.6\|67\.2"` 得 **0**，而 Grep 工具在 changelog 行明明命中）。⇒ **这不是个人疏忽，是环境陷阱** —— 故立为规则，不靠记性 |
+| **D-56** | **#24 归属裁决 + render 写者细分**（2026-09-19 主理人） | **#24「把 B1 帧接进 atlas/combatAtlas + 扩 b0audit」归工程线**；精灵线保留 `unitArt.ts`（绘制 + `UNIT_FRAMES` 导出）与 `tools/b0audit.mjs`（**它靠它自检**）；**`atlas.ts` / `combatAtlas.ts` 归工程线单写者** | ★ **根因是我分工时的疏漏**：我先前只说「`src/render/**` 归精灵线」，**没发现 `atlas.ts` 同时服务两条线**（B1 兵种帧 + P1 的 `ic_*` 图标帧）⇒ 两条线都要改同一文件。**这是本会话第三次双写者**（前两次：音频规格同路径、美术文档同文件）。⇒ 已把 `src/render/` 细分为三类：精灵线文件 / 工程线共享注册表 / 其余按任务指派。**迁移需排序**：`eng-sprites` 正在做 `B0_FRAMES → UNIT_FRAMES` 重命名（横跨 4 文件）⇒ **让它先把这次重命名做完**，再交接 `atlas.ts`/`combatAtlas.ts` |
 | 2026-09-19（**暂停点**） | 用户要求暂停当日开发。**今日 60 个提交**；**HEAD = `0f0b91c`**。✅ **主理人已在 `git worktree` 干净树上验证 HEAD 全绿**：typecheck 0 · build OK · smoke **556-0** · **`audit:b0` 六条自动断言全 PASS** · **`audit:touch STRICT=1` exit 0**。✅ **UI 重构批 P1（`7dbc567`）+ P3（`3c5b34c` 城镇面板 sticky 出口 + 5 标签页 + 市场「我的资源」）已完成**。⚠️ **未提交的在飞工作**（关掉应用会丢）：`eng-sprites` 的 B1（`unitArt.ts` 等）与 `engineering-lead` 的 P4；**当前工作树上 `audit:b0 [8]` 与 `audit:touch` 因这些在飞改动而红，但 HEAD 是绿的**。**明日恢复第一条命令**：`npm run typecheck` → **先 `build` 再 `smoke`**（顺序反了会得 0/0 假空）。细节见 `.workbuddy/memory/2026-09-19.md` 的「⏸ 暂停交接」节 |
 
 #### ⚠️ D-30 的 IP 边界（必须遵守，与 D-16 不内嵌 Ubisoft 商标是同一原则）
@@ -147,7 +148,9 @@
 | `homm-web/src/core/**` | 当轮被派的工程 agent | 与 `src/render/**` 分离，可并行 |
 | `homm-web/src/main.ts`、`homm-web/src/style.css` | **当轮唯一被派的写者** | ⚠️ **跨域共享文件**：两者既被 `core/**` 改也被 `ui/**`/`render/**` 改，**不能按域分给不同 agent**；同轮只能一个写者 |
 | `homm-web/src/ui/**` | 当轮被派的工程 agent | 与 `core/**` 分离，可并行 |
-| `homm-web/src/render/**` | 当轮被派的工程 agent | 与 `src/core/**` 分离，可并行 |
+| `homm-web/src/render/unitArt.ts`、`tools/b0audit.mjs` | **精灵线**（本轮 `eng-sprites`） | 它的产出物与自检工具 |
+| `homm-web/src/render/atlas.ts`、`combatAtlas.ts` | **工程线**（本轮 `engineering-lead`） | ⚠️ **共享注册表**：同时装 B1 兵种帧与 `ic_*` 图标帧，**两条线都要改** ⇒ 必须单写者 |
+| `homm-web/src/render/` 其余（`MapRenderer` / `BattleRenderer` / `pixel` / `terrainLayer` 等） | 按当轮任务指派 | — |
 | `production/roadmap.md`、`docs/architecture/**` | **主理人** | 成员不直接改，结论经主理人汇编 |
 
 **硬规则**：
