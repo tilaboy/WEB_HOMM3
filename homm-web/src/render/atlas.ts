@@ -689,7 +689,8 @@ function rareBagIcon(pb: PixBuf): void {
 
 /**
  * setup **音效**开关两态：`ic_sound_on` = 喇叭 + 声波弧；`ic_sound_off` = 同一喇叭 + 对角斜杠。
- * 替掉原顶栏的 emoji 🔊/🔇（G-17：emoji 全彩 / 抗锯齿 / 尺寸随 OS 变，违反色板与整数缩放）。
+ * 替掉原顶栏的两个音效 emoji（G-17：emoji 全彩 / 抗锯齿 / 尺寸随 OS 变，违反色板与整数缩放）。
+ * （基线 §5 的可机检项「src/ 里不得出现 emoji 当图标」要求这里也不再写字面 emoji。）
  */
 function soundIcon(pb: PixBuf, on: boolean): void {
   const metal = '#c7d0d8';
@@ -709,7 +710,7 @@ function soundIcon(pb: PixBuf, on: boolean): void {
 /**
  * setup **光照**开关两态（形状语言依 `asset-spec.md §2.3.1`）：
  * `ic_light_on` = 月牙（昼夜光照启用）；`ic_light_off` = 圆盘太阳 + 短射线（恒定正午）。
- * 替掉原顶栏 emoji 🌗/☀️（同上 G-17 理由）。
+ * 替掉原顶栏的两个光照 emoji（同上 G-17 理由）。
  */
 function lightIcon(pb: PixBuf, on: boolean): void {
   if (on) {

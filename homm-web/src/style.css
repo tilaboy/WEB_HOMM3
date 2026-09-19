@@ -32,6 +32,30 @@ textarea {
   user-select: text;
 }
 
+/* ---------- a11y 基线落地（D-39 / design/accessibility-requirements.md） ---------- */
+
+/* §4.1 焦点可见（2.4.7 AA + 额外拉入的 2.4.11 AAA「焦点外观 ≥2px 且 ≥3:1」）。
+   现状全项目只有一条 :focus 规则（输入框把 1px 边框换成金色）→ "对比达标、厚度不足"。
+   这里给**全项目统一**的焦点环：2px 金色描边 + 2px 偏移（金 #f0d488 对棕 ≈3.5:1 ✅）。
+   用 :focus-visible 而非 :focus —— 鼠标点击不该留环，键盘/TalkBack 才需要。 */
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* §4.5 减少动效（2.3.3 交互动效）。现状 src/ 里 `prefers-reduced-motion` 零处。
+   关掉过渡/动画时长；**不改整数位移本身** —— 那是可读性手段，不是装饰。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 html,
 body {
   margin: 0;
@@ -1754,7 +1778,8 @@ body.in-battle #thumb {
 }
 
 .ss-field input[type='text']:focus {
-  outline: none;
+  /* 焦点外观交给上面的全局 :focus-visible（a11y 基线 §4.1：2.4.11 要求 ≥2px）。
+     原规则 `outline:none` + 只把 1px 边框换成金色 = "对比达标、厚度不足" —— 故不再清除 outline。 */
   border-color: var(--gold);
 }
 

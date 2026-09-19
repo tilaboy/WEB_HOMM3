@@ -403,6 +403,41 @@ const APP_THUMB = `(() => {
   };
 })()`;
 
+/** a11y 可机检项（`accessibility-requirements.md` §5 第 2/3/4/5 条）。 */
+const A11Y = `(() => {
+  const out = { focusVisible: { found: false, width: 0 }, reducedMotion: false, labels: {}, mediaTexts: [] };
+  for (const sheet of document.styleSheets) {
+    let rules; try { rules = sheet.cssRules; } catch { continue; }
+    const walk = (list) => {
+      for (const r of list) {
+        if (r.media) {
+          const cond = r.conditionText || r.media.mediaText || '';
+          out.mediaTexts.push(cond);
+          if (/prefers-reduced-motion/.test(cond)) out.reducedMotion = true;
+          if (r.cssRules) walk(r.cssRules);
+          continue;
+        }
+        if (r.cssRules && !r.selectorText) { walk(r.cssRules); continue; }
+        if (!r.selectorText) continue;
+        if (/:focus-visible/.test(r.selectorText)) {
+          const m = /outline:\\s*([\\d.]+)px/.exec(r.cssText || '');
+          if (m) { out.focusVisible.found = true; out.focusVisible.width = Math.max(out.focusVisible.width, parseFloat(m[1])); }
+        }
+      }
+    };
+    walk(rules);
+  }
+  // §4.3：「图标 + 数字」项必须有可访问名（否则读屏只念一个孤零零的数字）
+  const res = [...document.querySelectorAll('#topbar .res')];
+  out.labels.topbarItems = res.length;
+  out.labels.topbarNamed = res.filter((e) => !!((e.getAttribute('aria-label') || '').trim())).length;
+  // 拇指带 = 纯文字标签（§2 #9「标签即名称」）
+  const thumbs = [...document.querySelectorAll('#thumb .btn')];
+  out.labels.thumbBtns = thumbs.length;
+  out.labels.thumbWithText = thumbs.filter((b) => (b.textContent || '').trim().length > 0).length;
+  return out;
+})()`;
+
 /* ---------------- 跑 ---------------- */
 
 let res;
@@ -410,6 +445,7 @@ let mobile;
 let mobileTall;
 let appTopbar = [];
 let appThumb = null;
+let a11y = null;
 try {
   const wsUrl = await findTarget();
   ws = new WebSocket(wsUrl);
@@ -491,6 +527,24 @@ try {
   });
   await sleep(280);
   appThumb = await evaluate(APP_THUMB);
+
+  // Phase E：a11y —— ① 扫 CSSOM 找 `:focus-visible` 与 `prefers-reduced-motion` 块；
+  // ② **行为验证**：用 CDP 模拟 reduce，看**计算样式**是否真的缩短（只看源码字符串会被"改了注释也算过"骗到）。
+  a11y = await evaluate(A11Y);
+  // 注意：Chrome 会把 0.001ms 归一成 `1e-06s`（科学计数法）—— 别用 `([\d.]+)(ms|s)` 去抓，
+  // 那会把 "1e-06s" 里的 "06s" 当成 6 秒，断言恰好反着走。parseFloat 认得科学计数法。
+  const durSec = (s) => {
+    const v = parseFloat(s);
+    if (!Number.isFinite(v)) return 0;
+    return /ms\s*$/.test(String(s)) ? v / 1000 : v;
+  };
+  a11y.reducedBefore = await evaluate(`getComputedStyle(document.querySelector('#hint')).transitionDuration`);
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await sleep(220);
+  a11y.reducedAfter = await evaluate(`getComputedStyle(document.querySelector('#hint')).transitionDuration`);
+  await send('Emulation.setEmulatedMedia', { features: [] });
+  a11y.reducedWorks =
+    durSec(a11y.reducedAfter) < durSec(a11y.reducedBefore) && durSec(a11y.reducedAfter) <= 1e-3 + 1e-9;
 } catch (e) {
   console.error(`跑审计失败：${e.message}`);
   await cleanup();
@@ -623,6 +677,24 @@ if (!appThumb) {
     `        共 ${appThumb.count} 个按钮：${appThumb.btns.map((b) => `${b.t || '?'}(${Math.round(b.w)}×${Math.round(b.h)}${b.primary ? '*' : ''})`).join(' · ')}`,
   );
 }
+
+/* ---- a11y 可机检项（基线 §5）—— **始终硬断言**（不是"已知待办"） ---- */
+console.log('── a11y 可机检项（accessibility-requirements.md §5） ──');
+const fvOk = !!a11y && a11y.focusVisible.found && a11y.focusVisible.width >= 2;
+const rmOk = !!a11y && a11y.reducedMotion && a11y.reducedWorks;
+const lblOk = !!a11y && a11y.labels.topbarItems > 0 && a11y.labels.topbarNamed === a11y.labels.topbarItems;
+const tagOk = !!a11y && a11y.labels.thumbBtns > 0 && a11y.labels.thumbWithText === a11y.labels.thumbBtns;
+for (const ok of [fvOk, rmOk, lblOk, tagOk]) if (!ok) bad++;
+console.log(`[${fvOk ? 'PASS' : 'FAIL'}] :focus-visible 且 outline ≥2px（实测 ${a11y?.focusVisible.width ?? '?'}px）`);
+console.log(
+  `[${rmOk ? 'PASS' : 'FAIL'}] prefers-reduced-motion 生效（#hint transition ${a11y?.reducedBefore} → ${a11y?.reducedAfter}）`,
+);
+console.log(
+  `[${lblOk ? 'PASS' : 'FAIL'}] 顶栏「图标+数字」可访问名 ${a11y?.labels.topbarNamed}/${a11y?.labels.topbarItems}`,
+);
+console.log(
+  `[${tagOk ? 'PASS' : 'FAIL'}] 拇指带「标签即名称」 ${a11y?.labels.thumbWithText}/${a11y?.labels.thumbBtns}`,
+);
 
 if ((!c3ok || !c4ok || !wrapOk || !peOk || !thOk || !thOv || !thHit || !thMain) && !STRICT) {
   console.log('  ↑ 以上非 PASS 项均为**已知待办**（顶栏重构批 R7）；STRICT=1 升格为硬断言时应 RED。');
