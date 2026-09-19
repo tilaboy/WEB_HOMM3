@@ -13,8 +13,8 @@
  * 断言的不变量（与 M-09 的结论一致）：
  *   - .btn.primary          视觉高 ≥ 48px
  *   - .btn（普通）          视觉高 ≥ 44px
- *   - 密集区 .hp-nav        视觉高 ≥ 32px，相邻纵向间距 ≥ 6px
- *   - 密集区 .hp-tbtns      视觉高 ≥ 32px，相邻横向间距 ≥ 8px
+ *   - 密集区 .hp-nav        视觉高 ≥ 40px，相邻纵向间距 ≥ 8px（§5.2 中心距 ≥48）
+ *   - 密集区 .hp-tbtns      视觉高 ≥ 40px，相邻横向间距 ≥ 8px
  *   - .btn.tiny.tap         有效命中高 ≥ 43px（::after 纵向扩张）
  *   - .spellbook .btn.tiny  视觉高 ≥ 44px
  *
@@ -278,11 +278,11 @@ reportGroup('primary', res.groups.primary, (m) => m.h >= 48, '.btn.primary 视�
 reportGroup('normal', res.groups.normal, (m) => m.h >= 44, '.btn 普通 视觉高 ≥ 44px');
 reportGroup('spellbook', res.groups.spellbook, (m) => m.h >= 44, '.spellbook .btn.tiny 视觉高 ≥ 44px');
 reportGroup('rrow .tap', res.groups.rrowTap, (m) => m.hit >= 43, '.btn.tiny.tap 有效命中高 ≥ 43px');
-reportGroup('hp-tbtns', res.groups.hpTbtns, (m) => m.h >= 32, '密集区 .hp-tbtns 视觉高 ≥ 32px');
-reportGroup('hp-nav', res.groups.hpNav, (m) => m.h >= 32, '密集区 .hp-nav 视觉高 ≥ 32px');
+reportGroup('hp-tbtns', res.groups.hpTbtns, (m) => m.h >= 40, '密集区 .hp-tbtns 视觉高 ≥ 40px（§5.2 密集区 ≥40×40）');
+reportGroup('hp-nav', res.groups.hpNav, (m) => m.h >= 40, '密集区 .hp-nav 视觉高 ≥ 40px（§5.2 密集区 ≥40×40）');
 reportGroup('魔法书 .tap', res.groups.magicTap, (m) => m.hit >= 43, '孤立 .btn.tiny.tap 有效命中高 ≥ 43px');
 
-// 所有 .btn.tiny 的绝对底线：真实盒子 ≥ 32px
+// 所有 .btn.tiny 的绝对底线：真实盒子 ≥ 40px（ux-ia §5.2：密集区元素 ≥40×40）
 const allTiny = [].concat(
   res.groups.spellbook,
   res.groups.rrowTap,
@@ -290,19 +290,20 @@ const allTiny = [].concat(
   res.groups.hpNav,
   res.groups.magicTap,
 );
-const tinyFloor = allTiny.every((m) => m.h >= 32);
+const tinyFloor = allTiny.every((m) => m.h >= 40);
 if (!tinyFloor) bad++;
-console.log(`\n[底线] 所有 .btn.tiny 真实盒子 ≥ 32px —— ${tinyFloor ? 'PASS' : 'FAIL'}`);
+console.log(`\n[底线] 所有 .btn.tiny 真实盒子 ≥ 40px —— ${tinyFloor ? 'PASS' : 'FAIL'}`);
 
 // 密集区间距
 const gapT = res.gaps.hpTbtns;
 const gapN = res.gaps.hpNav;
 const okGapT = typeof gapT === 'number' && gapT >= 8;
-const okGapN = typeof gapN === 'number' && gapN >= 6;
+// §5.2 密集区「中心距 ≥ 48px」：40px 盒 + gap ≥ 8 = 48。
+const okGapN = typeof gapN === 'number' && gapN >= 8;
 if (!okGapT) bad++;
 if (!okGapN) bad++;
 console.log(`[间距] .hp-tbtns 横向间距 ${gapT}px ≥ 8 —— ${okGapT ? 'PASS' : 'FAIL'}`);
-console.log(`[间距] .hp-nav 纵向间距 ${gapN}px ≥ 6 —— ${okGapN ? 'PASS' : 'FAIL'}`);
+console.log(`[间距] .hp-nav 纵向间距 ${gapN}px ≥ 8（§5.2 中心距 ≥48）—— ${okGapN ? 'PASS' : 'FAIL'}`);
 
 console.log(bad === 0 ? '\n全部通过：触摸目标达标' : `\n${bad} 项不合格`);
 process.exit(bad === 0 ? 0 : 1);

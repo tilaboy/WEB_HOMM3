@@ -642,17 +642,22 @@ table.est td:last-child {
 }
 
 /* M-09 残余：小按钮（.btn.tiny）的真机触摸目标。
-   .btn.tiny 视觉仍紧凑，但真实可点高度从 24px 抬到 32px——24px 低于所有移动端规范
-   (iOS 44pt / Android 48dp) 的下限，而 32px 是"密集布局里仍放得下"的折中底线。
-   需要 ~44px 的目标再叠加 .tap（见下）。 */
+   .btn.tiny 视觉仍紧凑，但最小高度抬到 40px：iOS 44pt / Android 48dp 是触摸下限，
+   32px 按实测 p90=23px 落点散布判为违规，40px 是"密集布局里仍放得下"的合规底线。
+   需要 ~48px 命中高度的目标再叠加 .tap（只纵轴扩，见下）。 */
 .btn.tiny {
   position: relative;
   padding: 3px 9px;
   font-size: 12px;
-  min-height: 32px;
+  /* 40px：依 ux-ia《in-game IA》§5.2/§5.3 —— 密集区元素 ≥40×40、相邻中心距 ≥48px；
+     32px 按实测 p90=23px 落点散布判为违规。
+     特异性说明：本条是"两个类"(0,2,0)，按**特异性**稳压 .btn(0,1,0, min-height:44px)，
+     与书写顺序无关（曾误判为 order 依赖 —— 实测 0,2,0 > 0,1,0，确定性生效）。
+     禁止改成 :where(.btn.tiny)：那会把特异性清零到 0,0,0，反而输给 .btn。 */
+  min-height: 40px;
 }
 
-/* M-09 残余：给"纵向有余量"的小按钮把可点区上下各撑 6px（32 → ~44px 命中高度），
+/* M-09 残余：给"纵向有余量"的小按钮把可点区上下各撑 4px（40 → 48px 命中高度），
    视觉盒子不变。**只撑纵轴**：这些按钮横向本就 ≥40px，且同排邻钮常只隔 8px，
    横向一扩就会与邻钮的命中区重叠（点了哪个说不清，比按钮小更糟）。
    适用站点：城镇弹窗各 actionBtn、侧栏「魔法书」按钮——它们的纵向最近邻至少隔 14px。 */
@@ -661,8 +666,10 @@ table.est td:last-child {
   position: absolute;
   left: 0;
   right: 0;
-  top: -6px;
-  bottom: -6px;
+  /* 40 → 48 命中高度（§5.3 修法：只纵轴扩 4px）。原先 ±6 是按 32px 底算的，
+     底数抬到 40 后若仍 ±6 会到 52px，可能越过纵向最近邻。 */
+  top: -4px;
+  bottom: -4px;
 }
 
 .btn.tiny.off {
@@ -739,9 +746,16 @@ table.est td:last-child {
     border-top: 1px solid var(--line);
   }
 
+  /* 修 §5.3 / §8-B：原先 max-height:34px + overflow:hidden 会连 44px 的
+     #panel-toggle 一起裁掉（可点区只剩 34px，违 §5.2）。
+     改为不裁容器、只隐藏内容体 —— #side 的唯一直子 div 就是 sideBody，
+     故 `> div` 精确命中它；toggle 是 button，不受影响，保持完整 44px。 */
   #side.collapsed {
-    max-height: 34px;
-    overflow: hidden;
+    overflow: visible;
+  }
+
+  #side.collapsed > div {
+    display: none;
   }
 
   #panel-toggle {
@@ -1142,12 +1156,14 @@ body.in-battle #topbar {
 }
 
 /* 密集上下文：相邻按钮只有 3px 间距（纵列），这里**不能**用 ::after 扩命中区——
-   一扩就与上下的按钮重叠。改为抬高真实 min-height（继承 .btn.tiny 的 32px），
-   并把列间距从 3px 放到 6px，降低误触。侧栏可滚动，多出来的高度可滚，不会挤爆。 */
+   一扩就与上下的按钮重叠。改为抬高真实 min-height（继承 .btn.tiny 的 40px），
+   并把列间距放到 8px（§5.2 中心距 ≥48px），降低误触。侧栏可滚动，多出来的高度可滚，不会挤爆。 */
 .hp-nav {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  /* gap 8：§5.2 密集区「中心距 ≥48px」—— 40px 高（<btn.tiny>）+ 8 = 48。
+     原 gap 6 → 中心距 46 仍不足，故一并抬到 8。 */
+  gap: 8px;
 }
 
 .hp-nav .btn.tiny {
@@ -1304,7 +1320,7 @@ body.in-battle #topbar {
 }
 
 /* 密集上下文：同排 2~3 个按钮，横向只隔 3px。同样不走 ::after（横向扩会重叠），
-   改为抬高真实高度（继承 32px）+ 把横向间距放到 8px（满足"相邻 ≥8px"）+ 放宽左右内边距。 */
+   改为抬高真实高度（继承 40px）+ 把横向间距放到 8px（满足"相邻 ≥8px"）+ 放宽左右内边距。 */
 .hp-tbtns {
   display: flex;
   gap: 8px;
