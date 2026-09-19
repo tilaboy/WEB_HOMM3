@@ -458,19 +458,42 @@ body {
   cursor: pointer;
 }
 
-/* ---------- side panel ---------- */
+/* ---------- side panel（右侧英雄栏，IA §4.2 / §9 F3） ---------- */
 #side {
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
-  width: 264px;
+  width: 200px;
   background: linear-gradient(180deg, #4a3620, #33240f);
   border-left: 2px solid var(--frame);
   box-shadow: inset 1px 0 0 rgba(255, 232, 170, 0.12);
   overflow-y: auto;
   z-index: 10;
-  padding: 10px;
+  padding: 8px;
+}
+
+/* 收起态（默认）：48px 竖条，只把地图留给探索主面。
+   ⚠️ 不再用 max-height + overflow:hidden 裁容器 —— 那正是"44px 按钮被裁到 34px"的旧病根
+   （§5.2 违规 / §8-B 额外硬伤）。这里改宽度，高度始终是满高。 */
+#side.collapsed {
+  width: 48px;
+  padding: 6px 4px;
+  overflow: hidden;
+}
+
+#side.collapsed > div {
+  display: none;
+}
+
+#panel-toggle {
+  display: block;
+  width: 100%;
+  min-width: 40px;
+  margin-bottom: 8px;
+  padding: 0 2px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 #side h3 {
@@ -574,49 +597,28 @@ body {
   color: var(--gold);
 }
 
-/* ---------- bottom hint ---------- */
+/* ---------- 底部瞬时 toast（IA §3.2 #22 / §9 F2） ---------- */
+/* 原形态是"永久显示的常驻块"，与地图争底角，且每次 hover/点击都改写 → 闪烁噪音。
+   改为 2s 自动淡出的 toast，位置在拇指带正上方（main.ts 的 hint() 控制 .show）。 */
 #hint {
   position: absolute;
-  left: 10px;
-  bottom: 10px;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
   padding: 6px 12px;
-  background: rgba(30, 21, 9, 0.88);
+  background: rgba(30, 21, 9, 0.92);
   border: 1px solid var(--frame);
   border-radius: 3px;
   color: var(--text-dim);
   z-index: 10;
   pointer-events: none;
-  max-width: 60%;
+  max-width: 72%;
+  opacity: 0;
+  transition: opacity 0.18s ease;
 }
 
-#logbox {
-  position: absolute;
-  left: 10px;
-  top: 10px;
-  width: 300px;
-  max-height: 30%;
-  overflow: hidden;
-  z-index: 10;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-#logbox div {
-  background: rgba(30, 21, 9, 0.84);
-  border-left: 2px solid var(--gold-dim);
-  padding: 3px 8px;
-  color: var(--text);
-  font-size: 12px;
-  animation: fadein 0.2s ease;
-}
-
-@keyframes fadein {
-  from {
-    opacity: 0;
-    transform: translateX(-6px);
-  }
+#hint.show {
+  opacity: 1;
 }
 
 /* ---------- modal ---------- */
@@ -973,10 +975,6 @@ table.est td:last-child {
 }
 
 /* ---------- mobile ---------- */
-#panel-toggle {
-  display: none;
-}
-
 @media (max-width: 860px) {
   /* C3：顶栏只读、**不再横向滑动** —— 原 `overflow-x:auto` 已删除。
      它把"装不下就横滑"设成默认，掩盖布局问题，且与 R5「位置稳定」冲突。
@@ -990,42 +988,13 @@ table.est td:last-child {
     font-size: 12px;
   }
 
-  #side {
-    top: auto;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: auto;
-    max-height: 46%;
-    border-left: none;
-    border-top: 1px solid var(--line);
-  }
-
-  /* 修 §5.3 / §8-B：原先 max-height:34px + overflow:hidden 会连 44px 的
-     #panel-toggle 一起裁掉（可点区只剩 34px，违 §5.2）。
-     改为不裁容器、只隐藏内容体 —— #side 的唯一直子 div 就是 sideBody，
-     故 `> div` 精确命中它；toggle 是 button，不受影响，保持完整 44px。 */
-  #side.collapsed {
-    overflow: visible;
-  }
-
-  #side.collapsed > div {
-    display: none;
-  }
-
-  #panel-toggle {
-    display: block;
-    width: 100%;
-    margin-bottom: 8px;
-  }
-
+  /* §9 F3 的**根因修正**：原规则把 #side 变成 `bottom:0; left:0; right:0; max-height:46%` 的
+     **底部抽屉** —— 它用的是最稀缺的竖轴（46%×304 ≈ 140px），而横向有 752px 富余。
+     这正是用户「面板在左下角、要一直下拉」的直接根因。**整条删除**：右侧竖栏与收起态
+     已在基础样式里定义，移动端**不再改变方向**（§10：位置稳定优先）。
+     ⚠️ 顺带解掉 `#side.collapsed` 的 `overflow:visible` 补丁 —— 那是给抽屉形态打的补丁。 */
   #hint {
-    bottom: 48%;
     font-size: 12px;
-  }
-
-  #logbox {
-    width: 220px;
   }
 }
 
@@ -1352,11 +1321,6 @@ body.in-battle #thumb {
 
 .bar.mana > i {
   background: linear-gradient(90deg, #4a7fc1, #8fb8e8);
-}
-
-#side {
-  width: 252px;
-  padding: 8px;
 }
 
 .hp-head {

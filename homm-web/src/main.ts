@@ -72,30 +72,35 @@ const canvas = document.createElement('canvas');
 canvas.id = 'map';
 stage.appendChild(canvas);
 
-const logbox = document.createElement('div');
-logbox.id = 'logbox';
-stage.appendChild(logbox);
-
 const side = document.createElement('aside');
 side.id = 'side';
+// IA §4.2 / §9 F3：右侧**竖栏**，宽 ≤200px，**默认收起为 48px**（把地图留给探索主面）。
+// 入口/出口同一处（R2）：拇指带「英雄」展开，栏内「收起」关闭 —— 两步都常驻、都在顶/底。
+side.classList.add('collapsed');
 stage.appendChild(side);
 
 const toggle = document.createElement('button');
 toggle.id = 'panel-toggle';
 toggle.className = 'btn';
-toggle.textContent = '收起面板';
+function syncToggle(): void {
+  const collapsed = side.classList.contains('collapsed');
+  toggle.textContent = collapsed ? '英雄' : '收起';
+  toggle.setAttribute('aria-label', collapsed ? '展开英雄面板' : '收起英雄面板');
+  toggle.setAttribute('aria-expanded', String(!collapsed));
+}
 toggle.addEventListener('click', () => {
   side.classList.toggle('collapsed');
-  toggle.textContent = side.classList.contains('collapsed') ? '展开面板' : '收起面板';
+  syncToggle();
+  if (!side.classList.contains('collapsed')) side.scrollTop = 0;
 });
 side.appendChild(toggle);
+syncToggle();
 
 const sideBody = document.createElement('div');
 side.appendChild(sideBody);
 
 const hintEl = document.createElement('div');
 hintEl.id = 'hint';
-hintEl.textContent = '点击地图移动英雄，右键（或长按）查看信息';
 stage.appendChild(hintEl);
 
 /* ---------------- 底部拇指带（UX IA §4.2 / R5） ---------------- */
@@ -177,11 +182,11 @@ function updateThumb(): void {
   logBtn.setAttribute('aria-label', unread > 0 ? `事件日志，${unread} 条未读` : '事件日志');
 }
 
-/** 「英雄」= 展开右侧英雄面板（探索侧信息面）。 */
+/** 「英雄」= 展开右侧英雄栏（探索侧信息面）。与栏内「收起」同一开关（R2 入口=出口）。 */
 function openHeroPanel(): void {
   if (isModalOpen() || isBattleOpen()) return;
   side.classList.remove('collapsed');
-  toggle.textContent = '收起面板';
+  syncToggle();
   side.scrollTop = 0;
 }
 
@@ -529,8 +534,16 @@ const hud = new HUD(topbar);
 
 const STEP_MS = 165;
 
+/**
+ * 底部提示条改成**瞬时 toast**（IA §3.2 #22 / §9 F2）：原形态是常驻文本、与地图争底角，
+ * 且每次 hover/点击都改写它 → 闪烁噪音。现在 2s 自动淡出，位置移到拇指带正上方。
+ */
+let hintTimer = 0;
 function hint(text: string): void {
   hintEl.textContent = text;
+  hintEl.classList.add('show');
+  window.clearTimeout(hintTimer);
+  hintTimer = window.setTimeout(() => hintEl.classList.remove('show'), 2000);
 }
 
 function recomputeField(): void {
@@ -555,13 +568,13 @@ function refresh(): void {
   updateThumb();
 }
 
+/**
+ * 日志不再常驻在地图上（IA §9 F2：那是地图左上最贵的位置）。
+ * 收起态 = 拇指带「日志 N」的未读角标；展开态 = 点开后的右侧滑出面板（见 openLogPanel）。
+ * 所以这里只需刷新角标。
+ */
 function renderLog(): void {
-  logbox.innerHTML = '';
-  for (const e of state.log.slice(-5)) {
-    const d = document.createElement('div');
-    d.textContent = `D${e.day} · ${e.text}`;
-    logbox.appendChild(d);
-  }
+  updateThumb();
 }
 
 /* ---------------- movement ---------------- */

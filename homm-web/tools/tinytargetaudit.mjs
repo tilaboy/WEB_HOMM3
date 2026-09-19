@@ -122,10 +122,11 @@ writeFileSync(
       <div class="sec hp-bars"><button class="btn tiny tap" style="margin-top:6px">魔法书</button></div>
     </div>
 
-    <!-- #side.collapsed：≤860px 的收起态。旧缺陷是 max-height:34px + overflow:hidden 会把
-         44px 的 #panel-toggle 一起裁掉 —— 这里放同构 DOM，供移动视口量「有效命中高」。 -->
+    <!-- #side.collapsed：**默认收起态**（48px 竖条，IA §4.2 / §9 F3）。
+         旧缺陷是 max-height:34px + overflow:hidden 会把 44px 的 #panel-toggle 一起裁掉 ——
+         这里放同构 DOM，供移动视口量「有效命中高」。 -->
     <aside id="side" class="collapsed">
-      <button id="panel-toggle" class="btn">展开面板</button>
+      <button id="panel-toggle" class="btn">英雄</button>
       <div><div class="sec">面板内容（收起时应整体隐藏）</div></div>
     </aside>
   </div>
