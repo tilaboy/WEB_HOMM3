@@ -668,6 +668,64 @@ function resIcon(pb: PixBuf, kind: string): void {
   pb.outline('#3a2a18', 0.9);
 }
 
+/**
+ * 稀有资源**聚合槽**图标 `ic_rare`（D-38② / UX Q8）。
+ * 形状语言 = **钱袋剪影**，必须与 `ic_gem` 的实心粉菱形（`#d05fa0`）明显区分，
+ * 否则两图互相冒充（gem 已是实心菱形，这里改用上窄下宽的口袋 + 绳结）。
+ * 基色走暖木棕，不撞任何稀有色（粉/青/黄/银）。
+ */
+function rareBagIcon(pb: PixBuf): void {
+  const bag = '#b0813f';
+  // 袋身：上窄下宽
+  pb.poly([[5, 7], [13, 7], [16, 15], [2, 15]], bag);
+  // 收口
+  pb.rect(6, 4, 6, 3, shade(bag, -0.18));
+  // 绳结
+  pb.rect(7, 2, 4, 2, '#7d5a24');
+  // 左上高光，读出"鼓"的体积
+  pb.poly([[6, 9], [9, 9], [7, 14], [4, 14]], shade(bag, 0.3), 0.8);
+  pb.outline('#3a2a18', 0.9);
+}
+
+/**
+ * setup **音效**开关两态：`ic_sound_on` = 喇叭 + 声波弧；`ic_sound_off` = 同一喇叭 + 对角斜杠。
+ * 替掉原顶栏的 emoji 🔊/🔇（G-17：emoji 全彩 / 抗锯齿 / 尺寸随 OS 变，违反色板与整数缩放）。
+ */
+function soundIcon(pb: PixBuf, on: boolean): void {
+  const metal = '#c7d0d8';
+  // 喇叭：矩形号角 + 外张的喇叭口
+  pb.poly([[2, 7], [6, 7], [10, 3], [10, 15], [6, 11], [2, 11]], metal);
+  pb.rect(2, 7, 2, 4, shade(metal, -0.2));
+  if (on) {
+    pb.line(12, 6, 12, 12, shade(metal, 0.15));
+    pb.line(14, 4, 14, 14, shade(metal, 0.25), 0.85);
+  } else {
+    pb.line(11, 5, 16, 13, '#d0553f');
+    pb.line(16, 5, 11, 13, '#d0553f');
+  }
+  pb.outline('#3a2a18', 0.85);
+}
+
+/**
+ * setup **光照**开关两态（形状语言依 `asset-spec.md §2.3.1`）：
+ * `ic_light_on` = 月牙（昼夜光照启用）；`ic_light_off` = 圆盘太阳 + 短射线（恒定正午）。
+ * 替掉原顶栏 emoji 🌗/☀️（同上 G-17 理由）。
+ */
+function lightIcon(pb: PixBuf, on: boolean): void {
+  if (on) {
+    // 月牙：外弧（左）+ 内弧（右）围出一弯
+    pb.poly([[9, 2], [5, 4], [3, 7], [3, 11], [5, 14], [9, 16], [12, 13], [13, 9], [12, 5]], '#e6edf5');
+    pb.set(6, 7, '#ffffff', 0.7);
+  } else {
+    pb.ellipse(9, 9, 4, 4, '#f2c94a');
+    pb.ellipse(8, 8, 2, 2, '#fff0a0', 0.9);
+    for (const [dx, dy] of [[0, -6], [0, 6], [-6, 0], [6, 0], [4, 4], [4, -4], [-4, 4], [-4, -4]]) {
+      pb.set(9 + dx, 9 + dy, '#e8b23a');
+    }
+  }
+  pb.outline('#3a2a18', 0.85);
+}
+
 /* ---------------- 打包 ---------------- */
 
 class Packer {
@@ -867,6 +925,22 @@ export class Atlas {
       b = p(18, 18);
       resIcon(b, k);
       put(`ic_${k}`, b);
+    }
+
+    // UI 状态图标（D-38③ / UX Q8）：稀有聚合槽 + 音效两态 + 光照两态。
+    // 帧名以 asset-spec.md §2.3.1 为准（引区块、不引散行）。18×18 与既有 ic_* 同尺度。
+    b = p(18, 18);
+    rareBagIcon(b);
+    put('ic_rare', b);
+    for (const [name, on] of [['ic_sound_on', true], ['ic_sound_off', false]] as [string, boolean][]) {
+      b = p(18, 18);
+      soundIcon(b, on);
+      put(name, b);
+    }
+    for (const [name, on] of [['ic_light_on', true], ['ic_light_off', false]] as [string, boolean][]) {
+      b = p(18, 18);
+      lightIcon(b, on);
+      put(name, b);
     }
 
     for (let k = 0; k < 6; k++) {

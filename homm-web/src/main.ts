@@ -30,7 +30,8 @@ import { evaluateOutcome, outcomeSummary } from './core/game/victory.js';
 import { Camera } from './render/camera.js';
 import { MapRenderer } from './render/MapRenderer.js';
 import type { ViewModel } from './render/MapRenderer.js';
-import { setLightPhaseOverride } from './render/lightLayer.js';
+import { lightingOn, setLightingOn, setLightPhaseOverride } from './render/lightLayer.js';
+import { getAtlas } from './render/atlas.js';
 import {
   quality,
   initQuality,
@@ -50,8 +51,7 @@ import { HeroPanel } from './ui/HeroPanel.js';
 import { openStartScreen } from './ui/StartScreen.js';
 import { openTownDialog } from './ui/TownDialog.js';
 import { closeModal, hideInfoPopup, isModalOpen, lossTable, showInfoPopup, showModal } from './ui/Dialogs.js';
-import type { ModalAction } from './ui/Dialogs.js';
-import { sfx } from './ui/sfx.js';
+import { isMuted, setMuted, sfx } from './ui/sfx.js';
 import { clearSave, hasSave, hydratePersistence, loadConfig, loadGame, saveConfig, saveGame } from './save/persistence.js';
 import { installLifecycle } from './app/lifecycle.js';
 
@@ -97,6 +97,348 @@ const hintEl = document.createElement('div');
 hintEl.id = 'hint';
 hintEl.textContent = '点击地图移动英雄，右键（或长按）查看信息';
 stage.appendChild(hintEl);
+
+/* ---------------- 底部拇指带（UX IA §4.2 / R5） ---------------- */
+
+/**
+ * 全部高频交互集中在下缘一条 48px 带内，且**位置固定**（肌肉记忆）。
+ * 6 件：移动力细条(只读) + 菜单 + 英雄 + 城 + 日志 + 结束一天 —— 全为**纯文字标签**、
+ * ≤2 字、**零图标**（D-40 / Q10：文字天然是语义载体，44px 放得下一两个汉字，省 4 份绘制）。
+ * 「城」= 经营主面的一等常驻入口（D-32 / R9：探索与经营并列，城不得从属于英雄面板）。
+ * 顶栏整条只读（R7），故"顶栏矮"与"按钮大"不再冲突。
+ */
+const thumb = document.createElement('div');
+thumb.id = 'thumb';
+app.appendChild(thumb);
+
+const moveWrap = document.createElement('div');
+moveWrap.className = 'tb-move';
+moveWrap.setAttribute('role', 'img');
+const moveK = document.createElement('span');
+moveK.className = 'tb-move-k';
+moveK.textContent = '移动力';
+const moveBar = document.createElement('i');
+moveBar.className = 'bar';
+const moveFill = document.createElement('i');
+moveBar.appendChild(moveFill);
+const moveV = document.createElement('span');
+moveV.className = 'tb-move-v';
+moveV.textContent = '—';
+moveWrap.append(moveK, moveBar, moveV);
+thumb.appendChild(moveWrap);
+
+function tbButton(label: string, cls: string, onClick: () => void): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.className = `btn tb-btn ${cls}`.trim();
+  b.textContent = label;
+  b.addEventListener('click', onClick);
+  thumb.appendChild(b);
+  return b;
+}
+
+tbButton('菜单', '', () => openMenu());
+tbButton('英雄', '', () => openHeroPanel());
+tbButton('城', '', () => openHomeTown());
+
+const logBtn = document.createElement('button');
+logBtn.className = 'btn tb-btn tb-log';
+logBtn.setAttribute('aria-label', '事件日志');
+const logLabel = document.createElement('span');
+logLabel.textContent = '日志';
+const logBadge = document.createElement('span');
+logBadge.className = 'tb-badge';
+logBadge.hidden = true;
+logBtn.append(logLabel, logBadge);
+logBtn.addEventListener('click', () => openLogPanel());
+thumb.appendChild(logBtn);
+
+const endDayBtn = tbButton('结束一天', 'primary tb-end', () => doEndDay());
+
+/** 日志未读游标：打开日志面板即清零（IA §3.2 #23：未读指示常驻，明细按需）。 */
+let seenLog = 0;
+
+/** 刷新拇指带（移动力细条 / 结束一天可用性 / 日志未读角标）。 */
+function updateThumb(): void {
+  const over = state.status !== 'playing';
+  const hasHero = state.heroOrder.some((id) => state.heroes[id]?.owner === 'p1');
+  endDayBtn.disabled = over || !hasHero;
+  endDayBtn.textContent = over ? '对局结束' : '结束一天';
+
+  const h = selected ? state.heroes[selected] : null;
+  const maxMp = h ? maxMovePoints(h, state) : 0;
+  const mp = h ? Math.max(0, h.movePoints) : 0;
+  moveFill.style.width = maxMp > 0 ? `${Math.max(0, Math.min(100, Math.round((mp / maxMp) * 100)))}%` : '0%';
+  moveV.textContent = h ? `${Math.round(mp)}/${Math.round(maxMp)}` : '—';
+  moveWrap.setAttribute('aria-label', h ? `移动力 ${Math.round(mp)}/${Math.round(maxMp)}` : '移动力（无选中英雄）');
+
+  const unread = Math.max(0, state.log.length - seenLog);
+  logBadge.hidden = unread === 0;
+  logBadge.textContent = String(unread);
+  logBtn.setAttribute('aria-label', unread > 0 ? `事件日志，${unread} 条未读` : '事件日志');
+}
+
+/** 「英雄」= 展开右侧英雄面板（探索侧信息面）。 */
+function openHeroPanel(): void {
+  if (isModalOpen() || isBattleOpen()) return;
+  side.classList.remove('collapsed');
+  toggle.textContent = '收起面板';
+  side.scrollTop = 0;
+}
+
+/** 「城」= 经营主面直达（D-32 一等入口）：开最近/选中英雄所在的己方城镇。 */
+function openHomeTown(): void {
+  if (isModalOpen() || anim || isBattleOpen()) return;
+  const hero = selected ? state.heroes[selected] : null;
+  let town = hero
+    ? Object.values(state.towns).find((t) => t.owner === 'p1' && t.pos.x === hero.pos.x && t.pos.y === hero.pos.y)
+    : undefined;
+  if (!town) town = Object.values(state.towns).find((t) => t.owner === 'p1');
+  if (!town) {
+    hint('你还没有属于你的城镇');
+    return;
+  }
+  openTownById(town.id);
+}
+
+/** 「日志 N」= 从右侧滑出的日志面板（IA §3.2 #23 / §9 F2）。 */
+function openLogPanel(): void {
+  if (isModalOpen() || isBattleOpen()) return;
+  if (document.getElementById('logpanel')) return;
+  const root = document.createElement('div');
+  root.id = 'logpanel';
+  root.className = 'logpanel';
+
+  const panel = document.createElement('div');
+  panel.className = 'lp-panel';
+  const head = document.createElement('div');
+  head.className = 'lp-head';
+  const h = document.createElement('h3');
+  h.textContent = '事件日志';
+  const close = document.createElement('button');
+  close.className = 'btn tb-btn';
+  close.textContent = '关闭';
+  close.addEventListener('click', () => root.remove());
+  head.append(h, close);
+  const body = document.createElement('div');
+  body.className = 'lp-body';
+  const entries = state.log.slice(-60).reverse();
+  if (!entries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'lp-empty';
+    empty.textContent = '暂无事件';
+    body.appendChild(empty);
+  } else {
+    for (const e of entries) {
+      const d = document.createElement('div');
+      d.textContent = `D${e.day} · ${e.text}`;
+      body.appendChild(d);
+    }
+  }
+  panel.append(head, body);
+  root.appendChild(panel);
+  root.addEventListener('click', (ev) => {
+    if (ev.target === root) root.remove();
+  });
+  stage.appendChild(root);
+
+  seenLog = state.log.length;
+  updateThumb();
+}
+
+/** 菜单（IA §7 / R6）：全部低频项的唯一入口，一级 ≤6 项、危险项入底并二次确认。 */
+function openMenu(): void {
+  if (isModalOpen() || isBattleOpen()) return;
+  const root = document.createElement('div');
+  root.id = 'menu';
+  root.className = 'menu';
+  const panel = document.createElement('div');
+  panel.className = 'menu-panel';
+  const h = document.createElement('h3');
+  h.textContent = '菜单';
+  panel.appendChild(h);
+
+  const closer = (): void => root.remove();
+  const items: [string, string, () => void][] = [
+    ['', '继续', () => closer()],
+    ['', '立即存档', () => { saveGame(state); closer(); hint('已存档'); }],
+    ['', '读取最近存档', () => { closer(); loadLatest(); }],
+    ['', '设置', () => { closer(); openSetup(); }],
+    ['', '回到开始页', () => { closer(); openStart(); }],
+    ['danger', '新游戏', () => { closer(); confirmNewGame(); }],
+  ];
+  for (const [cls, label, act] of items) {
+    const b = document.createElement('button');
+    b.className = `btn menu-item${cls ? ' ' + cls : ''}`;
+    b.textContent = label;
+    b.addEventListener('click', act);
+    panel.appendChild(b);
+  }
+  root.appendChild(panel);
+  root.addEventListener('click', (ev) => {
+    if (ev.target === root) root.remove();
+  });
+  app.appendChild(root);
+}
+
+/** 读档：把最近存档灌回 state 并重建全部派生状态（R1：回到地图，镜头与选中英雄复位到存档值）。 */
+function loadLatest(): void {
+  const g = loadGame();
+  if (!g) {
+    hint('没有找到存档');
+    return;
+  }
+  state = g;
+  selected = state.heroOrder.find((id) => state.heroes[id]?.owner === 'p1') ?? null;
+  camera.mapW = state.map.width;
+  camera.mapH = state.map.height;
+  anim = null;
+  pickSpell = null;
+  pendingDest = null;
+  hover = null;
+  previewPath = null;
+  lastStepFrom = null;
+  centered = false;
+  const hero = selected ? state.heroes[selected] : null;
+  if (hero) {
+    camera.centerOn(hero.pos.x, hero.pos.y);
+    centered = true;
+  }
+  renderer.resize();
+  camera.clamp();
+  closeModal();
+  recomputeField();
+  refresh();
+  renderLog();
+  seenLog = state.log.length;
+  hint('已读取最近存档');
+}
+
+/** 新游戏：会话级操作，绝不能在日常 UI 里误触 → 二次确认（IA §3.1 #16 / §9 E）。 */
+function confirmNewGame(): void {
+  showModal(app, {
+    title: '开新对局？',
+    body: ['当前进度会被自动存档覆盖，确定要开始新的一局吗？'],
+    actions: [
+      { label: '取消', onClick: (c) => c() },
+      {
+        label: '新游戏',
+        danger: true,
+        onClick: (c) => {
+          c();
+          openStart();
+        },
+      },
+    ],
+  });
+}
+
+/**
+ * 设置面板（IA §7 二级 / a11y 基线 §4.2）。
+ * 音效 / 光照是**开关**，必须 `aria-label` + `role="switch" aria-checked`：
+ * 只给图标的话读屏要么念错、要么直接跳过（基线 §4.2）。
+ * 图标用图集精灵 `ic_sound_on/off`、`ic_light_on/off`，替掉原顶栏的 4 个 emoji（G-17）。
+ */
+function setupToggle(
+  label: string,
+  frameOn: string,
+  frameOff: string,
+  getOn: () => boolean,
+  onToggle: () => void,
+): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'setup-row';
+  const k = document.createElement('span');
+  k.className = 'setup-k';
+  k.textContent = label;
+  const sw = document.createElement('button');
+  sw.className = 'setup-sw';
+  sw.setAttribute('role', 'switch');
+  sw.setAttribute('aria-label', label);
+  const img = document.createElement('img');
+  img.draggable = false;
+  const st = document.createElement('span');
+  st.className = 'setup-state';
+  sw.append(img, st);
+  const sync = (): void => {
+    const on = getOn();
+    img.src = getAtlas().url(on ? frameOn : frameOff);
+    st.textContent = on ? '开' : '关';
+    sw.setAttribute('aria-checked', String(on));
+    sw.classList.toggle('on', on);
+  };
+  sw.addEventListener('click', () => {
+    onToggle();
+    sync();
+  });
+  sync();
+  row.append(k, sw);
+  return row;
+}
+
+function openSetup(): void {
+  if (isModalOpen()) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'setup';
+
+  wrap.appendChild(
+    setupToggle(
+      '音效',
+      'ic_sound_on',
+      'ic_sound_off',
+      () => !isMuted(),
+      () => {
+        setMuted(!isMuted());
+        if (!isMuted()) sfx.click();
+      },
+    ),
+  );
+  wrap.appendChild(
+    setupToggle(
+      '昼夜光照',
+      'ic_light_on',
+      'ic_light_off',
+      () => lightingOn(),
+      () => setLightingOn(!lightingOn()),
+    ),
+  );
+
+  // 画质：自动 / 低 / 中 / 高（Q-10）。当前模式高亮为 primary。
+  const qrow = document.createElement('div');
+  qrow.className = 'setup-row setup-row-col';
+  const qk = document.createElement('span');
+  qk.className = 'setup-k';
+  qk.textContent = '画质';
+  const seg = document.createElement('div');
+  seg.className = 'setup-seg';
+  const mode = readMode();
+  const modeLabel: Record<QualityMode, string> = { auto: '自动', low: '低', mid: '中', high: '高' };
+  for (const m of ['auto', 'low', 'mid', 'high'] as QualityMode[]) {
+    const b = document.createElement('button');
+    b.className = 'btn tiny' + (mode === m ? ' on' : '');
+    b.textContent = modeLabel[m];
+    b.setAttribute('aria-pressed', String(mode === m));
+    b.addEventListener('click', () => {
+      if (m === 'auto') void reProbe();
+      else setMode(m);
+      closeModal();
+      openSetup();
+    });
+    seg.appendChild(b);
+  }
+  qrow.append(qk, seg);
+  wrap.appendChild(qrow);
+
+  const note = document.createElement('p');
+  note.className = 'setup-note';
+  note.textContent = `当前档位：${TIER_LABEL[quality.tier]} · 模式：${modeLabel[mode]}`;
+  wrap.appendChild(note);
+
+  showModal(app, {
+    title: '设置',
+    body: [wrap],
+    actions: [{ label: '关闭', onClick: (c) => c() }],
+  });
+}
 
 /* ---------------- state ---------------- */
 
@@ -183,16 +525,7 @@ const panel = new HeroPanel(
   (id) => openSpellBook(id),
 );
 
-const hud = new HUD(
-  topbar,
-  () => doEndDay(),
-  () => {
-    saveGame(state);
-    hint('已存档');
-  },
-  () => openStart(),
-  () => openQualitySettings(),
-);
+const hud = new HUD(topbar);
 
 const STEP_MS = 165;
 
@@ -219,6 +552,7 @@ function recomputeField(): void {
 function refresh(): void {
   hud.update(state);
   panel.update(state, selected);
+  updateThumb();
 }
 
 function renderLog(): void {
@@ -1229,39 +1563,7 @@ async function reProbe(): Promise<void> {
   hint(`画质已设为「${TIER_LABEL[tier]}」`);
 }
 
-/** 画质设置弹窗：自动 / 低 / 中 / 高 四选一 + 重新检测；当前模式以 primary 高亮。 */
-function openQualitySettings(): void {
-  const mode = readMode();
-  const modeLabel: Record<QualityMode, string> = { auto: '自动', low: '低', mid: '中', high: '高' };
-
-  const actions: ModalAction[] = (['auto', 'low', 'mid', 'high'] as QualityMode[]).map((m) => ({
-    label: modeLabel[m],
-    primary: mode === m,
-    onClick: (close) => {
-      if (m === 'auto') void reProbe(); // 选自动＝清缓存重测
-      else setMode(m); // 手动档：立即生效（onTierChange 会重建画布分辨率）
-      close();
-    },
-  }));
-  actions.push({
-    label: '重新检测',
-    onClick: (close) => {
-      void reProbe();
-      close();
-    },
-  });
-  actions.push({ label: '关闭', onClick: (close) => close() });
-
-  showModal(app, {
-    title: '画质设置',
-    body: [
-      `当前档位：${TIER_LABEL[quality.tier]} · 模式：${modeLabel[mode]}`,
-      '自动：启动时用一次微基准（约 0.5 秒）判定设备，之后复用缓存；换设备后可重测。',
-      '手动：固定档位、不再探测。低＝省电/老机，中＝默认，高＝桌面全效。',
-    ],
-    actions,
-  });
-}
+/** 画质设置已并入「设置」面板（IA §7 二级；原顶栏「画质」按钮已删除，Q7）。 */
 
 recomputeField();
 refresh();

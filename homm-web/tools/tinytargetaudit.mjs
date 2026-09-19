@@ -1,5 +1,5 @@
 /**
- * 触摸目标回归守卫（触摸靶尺寸的布局审计）。
+ * 触摸目标回归守卫（触摸靶尺寸 + 顶栏/拇指带结构性约束）。
  *
  * 为什么需要它：有一类缺陷是"按钮太小、真机上点不中"——.btn.tiny 曾经只有 24px，
  * 低于 iOS 44pt / Android 48dp 的下限，而且它落在城镇招募弹窗这类核心交互上。
@@ -10,30 +10,32 @@
  * 关键：用 `document.elementFromPoint` 量**真实命中区**，不是 `getBoundingClientRect`。
  * 盒子看着 32px、靠 ::after 撑到 44px 命中区的情况，只有 elementFromPoint 才量得出来。
  *
- * 两轮视口：
- *   桌面 1000×1600 + 移动 792×360 @3x。**≤860px 的移动规则只有移动轮才被激活** ——
- *   在只有桌面轮之前，整份 IA 规格（都在改 ≤860px）改完都无人守护。
- *   移动轮用 `effectiveHit`（逐像素命中）能识破"被容器 overflow 裁掉"的缺陷。
+ * 三段视口 + 一个真实 app 阶段：
+ *   ① 桌面 1000×1600（合成探针）—— 微观靶子（.btn/.btn.tiny/.hp-*），要确定性 DOM。
+ *   ② 移动 792×360 @3x（合成探针）—— ≤860px 才激活的移动规则；`effectiveHit`（逐像素命中）
+ *      能识破"被容器 overflow 裁掉"的缺陷（`getBoundingClientRect` 量不出裁切）。
+ *   ③ **真实 app**（`index.html?devquick=1`）—— 顶栏只读（C4）与拇指带尺寸这类**结构性约束**
+ *      必须量真实 DOM，否则就是"我自己写的 fixture 自证"，等于没测。
  *
  * 断言的不变量：
- *   桌面（1000×1600）：
+ *   桌面（1000×1600，合成探针）：
  *   - .btn.primary          视觉高 ≥ 48px
  *   - .btn（普通）          视觉高 ≥ 44px
- *   - 密集区 .hp-nav        视觉高 ≥ 40px，相邻纵向间距 ≥ 8px（§5.2 中心距 ≥48）
- *   - 密集区 .hp-tbtns      视觉高 ≥ 40px，相邻横向间距 ≥ 8px
- *   - .btn.tiny.tap         有效命中高 ≥ 43px（::after 纵向扩张）
  *   - .spellbook .btn.tiny  视觉高 ≥ 44px
- *   移动（792×360 @3x）：
- *   - #side.collapsed 的 #panel-toggle 有效命中高 ≥ 44px（不被 34px 容器裁掉）
- *   - 各 .btn.tiny 同上阈值（防将来加移动规则把靶子改小）
- *   - 顶栏三项（默认「信息」级；STRICT=1 升格为硬断言）：
- *       C4 顶栏可点元素 = 0（R7）· C3 多宽度(720/792/860)横向溢出 = 0 · 按钮不得高过顶栏（换行）
- *   - 外加 no-shrink 极限溢出「诊断」（非断言，只量化余量）
+ *   - .btn.tiny.tap         有效命中高 ≥ 43px（::after 纵向扩张）
+ *   - 密集区 .hp-nav / .hp-tbtns  视觉高 ≥ 40px，间距满足 §5.2
+ *   移动（792×360 @3x，合成探针）：
+ *   - #side.collapsed 的 #panel-toggle 有效命中高 ≥ 44px（不被容器裁掉）
+ *   - 各 .btn.tiny 同桌面阈值（防将来加移动规则把靶子改小）
+ *   真实 app（顶栏 / 拇指带 —— 默认「信息」级；STRICT=1 升格为硬断言）：
+ *   - C4 顶栏可点元素 = 0 且 `pointer-events:none`（R7 顶栏只读）
+ *   - C3 多宽度(720/792/860)横向溢出 = 0，且子项不得高过顶栏（换行）
+ *   - 拇指带高 ≤ 48px、无横向溢出、每个 .btn 视觉高 ≥ 44px（主操作 48）
  *
  * 用法：npm run build && node tools/tinytargetaudit.mjs
  *       （dev server 没在 127.0.0.1:5173 上跑就**自起** node tools/serve.mjs，结束时关掉）
  *       STRICT=1 node tools/tinytargetaudit.mjs   # 把「已知待办」(顶栏 C3/C4/换行) 也当硬断言
- * 退出码：0 = 全部达标；1 = 有不达标；2 = 环境没准备好（dist / Chrome 连不上）。
+ * 退出码：0 = 全部达标；1 = 有不达标；2 = 环境没准备好（dist / Chrome 连不上 / app 起不来）。
  */
 import { writeFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -51,7 +53,7 @@ const PROBE_NAME = '_tinytargetprobe.html';
 const PROBE = path.join(dist, PROBE_NAME);
 // 移动视口：与真机横屏目标一致（ux-ia《in-game IA》§4 按 792×360 算屏预算）。
 const MOBILE = { w: 792, h: 360, dpr: 3 };
-// C3 等"已知待办"项默认只报不卡；STRICT=1 时升格为硬断言（顶栏重构批落地后可开）。
+// C3 等"已知待办"项默认只报不卡；STRICT=1 时升格为硬断言（顶栏重构批落地后已开）。
 const STRICT = process.env.STRICT === '1';
 
 if (!existsSync(path.join(dist, 'style.css'))) {
@@ -59,7 +61,9 @@ if (!existsSync(path.join(dist, 'style.css'))) {
   process.exit(2);
 }
 
-/* ---------------- 探针页：摆出与真实站点同构的 DOM，交 CDP 量 ---------------- */
+/* ---------------- 探针页：摆出与真实站点同构的微观靶子 DOM，交 CDP 量 ----------------
+   注意：顶栏做成**只读**（与 2026-09-19 UI 重构批一致）—— 顶栏本身的可点性由「真实 app」
+   阶段断言，这里只保留一个 read-only 顶栏，以免合成 fixture 制造假 C4 失败。 */
 
 const rep = (n, s) => Array.from({ length: n }, () => s).join('');
 
@@ -82,19 +86,13 @@ writeFileSync(
   .rlist{position:relative;z-index:30}
 </style>
 <div id="app">
-  <!-- 顶栏做成**与真实同构**（7 资源 chip + 日期 + 阵营 + 6 按钮）：C3 的横向滚动
-       只有同构才量得出来 —— 真实顶栏在 ≤860px 下 overflow-x:auto，这正是被测对象。 -->
+  <!-- 顶栏做成**只读**（与重构批一致）：3 资源 + 稀有聚合槽 + 日期 + 色点，零按钮。 -->
   <div id="topbar">
-    ${rep(7, '<div class="res"><img alt="r"><span class="val">999</span></div>')}
+    ${rep(3, '<div class="res"><img alt=""><span class="val">999</span></div>')}
+    <div class="res rare"><img alt=""><span class="val">7</span></div>
     <div class="spacer"></div>
     <div class="date">3周2日</div>
-    <div class="who"><i></i><span>晨曦</span></div>
-    <button class="btn primary">结束一天</button>
-    <button class="btn">存档</button>
-    <button class="btn">🔊</button>
-    <button class="btn">🌗</button>
-    <button class="btn">画质</button>
-    <button class="btn danger">新游戏</button>
+    <i class="who-dot"></i>
   </div>
   <div id="stage">
     <div class="modal"><div class="actions">
@@ -277,15 +275,14 @@ const MEASURE = `(() => {
 })()`;
 
 /**
- * 移动视口（≤860px，792×360 @3x）量测 —— 只量这里才有意义的两个东西：
- *   ① #side.collapsed 的开关。用 `effectiveHit` 沿纵轴**逐像素**求"真正命中"的连续区间，
- *      能识破「视觉高 44、却被容器 overflow 裁到 34」这类缺陷
- *      （`getBoundingClientRect` 量不出裁切：被裁的部分 rect 仍在，只是点不到了）。
- *   ② C3 横向滚动：doc + #topbar 的 `scrollWidth − clientWidth`（由宽度决定，与高度无关）。
- * #panel-toggle 常驻 #side 底部（bottom:0），无需滚动即在视口内。
+ * 移动视口（≤860px，792×360 @3x）量测 —— 只量这里才有意义的 #side.collapsed 开关。
+ * 用 `effectiveHit` 沿纵轴**逐像素**求"真正命中"的连续区间，
+ * 能识破「视觉高 44、却被容器 overflow 裁到 34」这类缺陷
+ * （`getBoundingClientRect` 量不出裁切：被裁的部分 rect 仍在，只是点不到了）。
  */
 const MOBILE_MEASURE = `(async () => {
   const raf = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await raf();
   const rect = (el) => el.getBoundingClientRect();
   const hitIs = (el, x, y) => { const e = document.elementFromPoint(x, y); return !!e && (e === el || el.contains(e)); };
   const all = (s) => [...document.querySelectorAll(s)];
@@ -303,66 +300,23 @@ const MOBILE_MEASURE = `(async () => {
     return { label: label(el), w: +r.width.toFixed(1), h: +r.height.toFixed(1), up, down,
              hit: first === null ? 0 : (last - first + 1) };
   };
-  const measure = (el) => {
-    const r = rect(el); const cx = r.left + r.width / 2;
-    let up = 0; for (let d = 1; d <= 24; d++) { if (hitIs(el, cx, r.top - d + 0.5)) up = d; else break; }
-    let down = 0; for (let d = 1; d <= 24; d++) { if (hitIs(el, cx, r.bottom + d - 0.5)) down = d; else break; }
-    return { label: label(el), w: +r.width.toFixed(1), h: +r.height.toFixed(1), up, down, hit: +(r.height + up + down).toFixed(1) };
-  };
 
-  // #side.collapsed 的开关常驻视口底部（bottom:0），直接量「有效命中高」以识破裁切。
   const toggle = all('#panel-toggle').map(effectiveHit);
-
-  // 顶栏三项：C3 横向滚动 / C4 可点元素 / 换行（按钮高过条）；外加 no-shrink 极限诊断。
   const de = document.scrollingElement || document.documentElement;
-  const tb = document.querySelector('#topbar');
-  const topbar = (() => {
-    if (!tb) return null;
-    const tbr = tb.getBoundingClientRect();
-    const btns = all('#topbar .btn');
-    const taller = btns.filter((b) => rect(b).height > tbr.height + 0.5)
-      .map((b) => ({ t: label(b), h: +rect(b).height.toFixed(1) }));
-    // 极限诊断：把顶栏内**所有** flex 子项设为不压缩，看溢出多少（**非当前事实**，仅供量化余量）。
-    const s = document.createElement('style');
-    s.textContent = '#topbar > *{flex-shrink:0}';
-    document.head.appendChild(s);
-    void tb.offsetWidth;
-    const worst = Math.round(tb.scrollWidth - tb.clientWidth);
-    s.remove();
-    void tb.offsetWidth;
-    return {
-      overflow: Math.round(tb.scrollWidth - tb.clientWidth), // C3（当前，flex-shrink 生效）
-      clickable: btns.length,                                // C4：应为 0
-      barH: +tbr.height.toFixed(1),
-      maxBtnH: btns.length ? +Math.max(...btns.map((b) => rect(b).height)).toFixed(1) : 0,
-      taller,                                                // 换行：应为空
-      worstOverflow: worst,                                  // 诊断（非当前事实）
-    };
-  })();
   return {
     toggle,
-    topbar,
-    overflow: {
-      doc: Math.round(de.scrollWidth - de.clientWidth),
-      topbar: tb ? Math.round(tb.scrollWidth - tb.clientWidth) : null,
-    },
-    viewport: { w: de.clientWidth, h: window.innerHeight, dpr: window.devicePixelRatio },
     debug: (() => {
       const s = document.querySelector('#side');
       const t = document.querySelector('#panel-toggle');
       const r = (el) => { const b = el.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) }; };
-      const tr = r(t); const cx = tr.x + tr.w / 2, cy = tr.y + tr.h / 2;
-      const at = document.elementFromPoint(cx, cy);
       return {
         mq860: matchMedia('(max-width:860px)').matches,
         innerW: window.innerWidth, innerH: window.innerHeight,
-        app: r(document.querySelector('#app')), stage: r(document.querySelector('#stage')),
-        side: r(s), toggle: tr,
-        sideDisplay: getComputedStyle(s).display, toggleDisplay: getComputedStyle(t).display,
-        sideW: getComputedStyle(s).width,
-        atCenter: at ? (at.id || at.className || at.tagName) : null,
+        side: s ? r(s) : null, toggle: t ? r(t) : null,
+        sideW: s ? getComputedStyle(s).width : null,
       };
     })(),
+    viewport: { w: de.clientWidth, h: window.innerHeight, dpr: window.devicePixelRatio },
   };
 })()`;
 
@@ -396,26 +350,55 @@ const MOBILE_TARGETS = `(() => {
 })()`;
 
 /**
- * 单档宽度下的顶栏体检（供 C3 多宽度扫描用：720 / 792 / 860）。
+ * **真实 app** 顶栏体检（供多宽度扫描 720 / 792 / 860）。
  * C3 的口径是「**任何目标宽度**都不得横向溢出」—— 只在 792 测等于守卫闲置。
- * 同时量换行（子项高 ≤ 条高）：它也是宽度相关的（越窄越容易换行）。
+ * 同时量 C4（可点元素 = 0）与换行（子项高 ≤ 条高，越窄越容易换行）。
  */
-const TOPBAR_AT_WIDTH = `(() => {
+const APP_TOPBAR = `(() => {
   const tb = document.querySelector('#topbar');
   if (!tb) return null;
   const rect = (el) => el.getBoundingClientRect();
-  const btns = [...tb.querySelectorAll('.btn')];
   const tbr = rect(tb);
-  const taller = btns.filter((b) => rect(b).height > tbr.height + 0.5)
-    .map((b) => (b.textContent || '').trim().slice(0, 6));
+  const kids = [...tb.children];
+  const clickable = tb.querySelectorAll('button, a[href], input, select, textarea, [tabindex]').length;
+  const taller = kids
+    .filter((c) => rect(c).height > tbr.height + 0.5)
+    .map((c) => (String(c.className || c.tagName)) + '=' + rect(c).height.toFixed(0));
   const de = document.scrollingElement || document.documentElement;
   return {
     vw: de.clientWidth,
     topbarOverflow: Math.round(tb.scrollWidth - tb.clientWidth),
     docOverflow: Math.round(de.scrollWidth - de.clientWidth),
     barH: +tbr.height.toFixed(1),
-    maxBtnH: btns.length ? +Math.max(...btns.map((b) => rect(b).height)).toFixed(1) : 0,
+    maxChildH: kids.length ? +Math.max(...kids.map((c) => rect(c).height)).toFixed(1) : 0,
+    clickable,
+    pe: getComputedStyle(tb).pointerEvents,
     taller,
+  };
+})()`;
+
+/** **真实 app** 拇指带体检：高 ≤48、无横向溢出、每个 .btn 视觉高 ≥44。 */
+const APP_THUMB = `(() => {
+  const th = document.querySelector('#thumb');
+  if (!th) return null;
+  const rect = (el) => el.getBoundingClientRect();
+  const btns = [...th.querySelectorAll('.btn')].map((b) => ({
+    t: (b.textContent || '').trim().replace(/\\s+/g, ' '),
+    h: +rect(b).height.toFixed(1),
+    w: +rect(b).width.toFixed(1),
+    primary: b.classList.contains('primary'),
+  }));
+  const de = document.scrollingElement || document.documentElement;
+  return {
+    barH: +rect(th).height.toFixed(1),
+    overflow: Math.round(th.scrollWidth - th.clientWidth),
+    docOverflow: Math.round(de.scrollWidth - de.clientWidth),
+    count: btns.length,
+    btns,
+    minBtnH: btns.length ? +Math.min(...btns.map((b) => b.h)).toFixed(1) : 0,
+    minPrimaryH: btns.filter((b) => b.primary).length
+      ? +Math.min(...btns.filter((b) => b.primary).map((b) => b.h)).toFixed(1)
+      : 0,
   };
 })()`;
 
@@ -424,7 +407,8 @@ const TOPBAR_AT_WIDTH = `(() => {
 let res;
 let mobile;
 let mobileTall;
-const widthScan = [];
+let appTopbar = [];
+let appThumb = null;
 try {
   const wsUrl = await findTarget();
   ws = new WebSocket(wsUrl);
@@ -470,7 +454,24 @@ try {
   await sleep(300);
   mobileTall = await evaluate(MOBILE_TARGETS);
 
-  // Phase D：C3 多宽度扫描（720 / 792 / 860）—— 只在 792 测等于守卫闲置，任何目标宽度都不得横向溢出。
+  // Phase D：切到**真实 app**。顶栏只读（C4）与拇指带尺寸这类结构性约束必须在真实 DOM 上断言 ——
+  // 合成探针只负责量微观靶子；用自己写的 fixture 去证明自己的布局，等于没测。
+  await send('Page.enable');
+  await send('Page.navigate', { url: `http://127.0.0.1:${APP_PORT}/index.html?devquick=1` });
+  let appReady = false;
+  for (let i = 0; i < 140; i++) {
+    try {
+      appReady = await evaluate(`!!document.querySelector('#thumb') && !!document.querySelector('#topbar')`);
+      if (appReady) break;
+    } catch {
+      /* 导航中执行上下文未就绪，继续等 */
+    }
+    await sleep(120);
+  }
+  if (!appReady) throw new Error('真实 app 未挂载出 #topbar / #thumb（?devquick=1 没进对局？）');
+  await sleep(450); // 等首帧 + refresh() 写入
+
+  // C3 多宽度扫描（720 / 792 / 860）：只在 792 测等于守卫闲置，任何目标宽度都不得横向溢出。
   for (const w of [720, 792, 860]) {
     await send('Emulation.setDeviceMetricsOverride', {
       width: w,
@@ -478,9 +479,17 @@ try {
       deviceScaleFactor: MOBILE.dpr,
       mobile: true,
     });
-    await sleep(250);
-    widthScan.push({ w, ...(await evaluate(TOPBAR_AT_WIDTH)) });
+    await sleep(280);
+    appTopbar.push({ w, ...(await evaluate(APP_TOPBAR)) });
   }
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: MOBILE.w,
+    height: MOBILE.h,
+    deviceScaleFactor: MOBILE.dpr,
+    mobile: true,
+  });
+  await sleep(280);
+  appThumb = await evaluate(APP_THUMB);
 } catch (e) {
   console.error(`跑审计失败：${e.message}`);
   await cleanup();
@@ -545,10 +554,10 @@ if (!okGapN) bad++;
 console.log(`[间距] .hp-tbtns 横向间距 ${gapT}px ≥ 8 —— ${okGapT ? 'PASS' : 'FAIL'}`);
 console.log(`[间距] .hp-nav 纵向间距 ${gapN}px ≥ 8（§5.2 中心距 ≥48）—— ${okGapN ? 'PASS' : 'FAIL'}`);
 
-/* ---------------- 移动视口（≤860px）：只有在此，移动规则才被激活 ---------------- */
+/* ---------------- 移动视口（≤860px，合成探针）：只有在此，移动规则才被激活 ---------------- */
 
 const vp = mobile.viewport;
-console.log(`\n── 移动视口 ${vp.w}×${vp.h} @${vp.dpr}x（≤860px 规则在此激活） ──`);
+console.log(`\n── 合成探针 · 移动视口 ${vp.w}×${vp.h} @${vp.dpr}x（≤860px 规则在此激活） ──`);
 
 // ① #side.collapsed：开关不被容器裁掉（§5.3 / §8-B）。
 //    用 effectiveHit ——「视觉高 44 但被容器裁到 34」这种，只有逐像素命中才看得出来。
@@ -557,55 +566,69 @@ reportGroup('side.collapsed', mobile.toggle, (m) => m.hit >= 44,
 
 // ② .btn.tiny 的移动口径尺寸（792 宽 × 1000 高量；宽≤860 目前无覆盖，量上防将来加移动规则）。
 const mt = mobileTall.viewport;
-console.log(`\n── 移动口径 .btn.tiny（${mt.w} 宽 × ${mt.h} 高） ──`);
+console.log(`\n── 合成探针 · 移动口径 .btn.tiny（${mt.w} 宽 × ${mt.h} 高） ──`);
 reportGroup('m.spellbook', mobileTall.groups.spellbook, (m) => m.h >= 44, '移动 · .spellbook .btn.tiny 视觉高 ≥ 44px');
 reportGroup('m.rrow .tap', mobileTall.groups.rrowTap, (m) => m.hit >= 43, '移动 · .btn.tiny.tap 有效命中高 ≥ 43px');
 reportGroup('m.hp-tbtns', mobileTall.groups.hpTbtns, (m) => m.h >= 40, '移动 · 密集区 .hp-tbtns 视觉高 ≥ 40px');
 reportGroup('m.hp-nav', mobileTall.groups.hpNav, (m) => m.h >= 40, '移动 · 密集区 .hp-nav 视觉高 ≥ 40px');
 reportGroup('m.魔法书 .tap', mobileTall.groups.magicTap, (m) => m.hit >= 43, '移动 · 孤立 .btn.tiny.tap 有效命中高 ≥ 43px');
 
-/* ---- 顶栏（≤860px）：C4 可点元素 / C3 多宽度溢出 / 换行 —— 「已知待办」级（STRICT=1 才卡） ---- */
-const tb = mobile.topbar;
+/* ---- 真实 app：顶栏 C4/C3/换行 + 拇指带 —— 「已知待办」级（STRICT=1 才卡） ---- */
 const T = (ok) => (ok ? 'PASS' : STRICT ? 'FAIL' : '信息');
-const Tbump = (ok) => { if (!ok && STRICT) bad++; };
-console.log('\n── 顶栏（≤860px） ──');
+const bump = (ok) => {
+  if (!ok && STRICT) bad++;
+};
+console.log('\n── 真实 app（index.html?devquick=1）· 顶栏 / 拇指带 ──');
 
-// C4：顶栏内不得有任何可点元素（R7）。★ 不可能被 flex 压缩掩盖，这批最硬的守卫。
-const c4ok = tb.clickable === 0;
-Tbump(c4ok);
-console.log(`[${T(c4ok)}] C4 顶栏可点元素 = ${tb.clickable} 个（应为 0 —— R7 顶栏只读）`);
+const tb0 = appTopbar[0];
+const c4ok = appTopbar.every((s) => s.clickable === 0);
+const peOk = appTopbar.every((s) => s.pe === 'none');
+const c3ok = appTopbar.every((s) => s.topbarOverflow <= 0 && s.docOverflow <= 0);
+const wrapOk = appTopbar.every((s) => s.taller.length === 0);
+bump(c4ok);
+bump(peOk);
+bump(c3ok);
+bump(wrapOk);
 
-// C3：**任何目标宽度**都不得横向溢出（720/792/860）—— 只在 792 测等于守卫闲置。
-// 换行（子项高 ≤ 条高）也随宽度扫，因为越窄越容易换行。
+console.log(`[${T(c4ok)}] C4 顶栏可点元素 = ${tb0.clickable} 个（应为 0 —— R7 顶栏只读）`);
+console.log(`[${T(peOk)}] 顶栏 pointer-events = ${tb0.pe}（应为 none —— 只读展示层）`);
 console.log('── C3 多宽度扫描（720/792/860；横向溢出应为 0） ──');
-let c3ok = true;
-let wrapOk = true;
-for (const s of widthScan) {
+for (const s of appTopbar) {
   const o = s.topbarOverflow <= 0 && s.docOverflow <= 0;
-  if (!o) c3ok = false;
-  if (s.taller.length) wrapOk = false;
-  Tbump(o);
   const wrapNote = s.taller.length ? ` · 换行：${s.taller.join(', ')}` : '';
-  console.log(`[${T(o)}] ${s.w}px → 顶栏溢出 ${s.topbarOverflow}px · document ${s.docOverflow}px · 最高按钮 ${s.maxBtnH}px / 条 ${s.barH}px${wrapNote}`);
+  console.log(
+    `[${T(o)}] ${s.w}px → 顶栏溢出 ${s.topbarOverflow}px · document ${s.docOverflow}px · 最高子项 ${s.maxChildH}px / 条 ${s.barH}px${wrapNote}`,
+  );
 }
-Tbump(wrapOk);
 console.log(`[${T(wrapOk)}] 换行（任一宽度下子项高 ≤ 条高）`);
 
-// 诊断（非断言）：no-shrink 极限溢出，量化余量。真机实测 225px。
-console.log(`[诊断] 顶栏 no-shrink 极限溢出 ${tb.worstOverflow}px（非当前事实，只是量化余量）`);
+const thOk = !!appThumb && appThumb.barH <= 48.5;
+const thOv = !!appThumb && appThumb.overflow <= 0 && appThumb.docOverflow <= 0;
+const thHit = !!appThumb && appThumb.minBtnH >= 44;
+const thMain = !!appThumb && appThumb.minPrimaryH >= 44;
+bump(thOk);
+bump(thOv);
+bump(thHit);
+bump(thMain);
+console.log('── 拇指带（≤48px，全部可交互；纯文字标签） ──');
+if (!appThumb) {
+  console.log('[信息] 没量到 #thumb（app 阶段失败？）');
+} else {
+  console.log(`[${T(thOk)}] 拇指带高 ${appThumb.barH}px ≤ 48`);
+  console.log(`[${T(thOv)}] 拇指带横向溢出 ${appThumb.overflow}px = 0`);
+  console.log(`[${T(thHit)}] 拇指带按钮最低视觉高 ${appThumb.minBtnH}px ≥ 44`);
+  console.log(`[${T(thMain)}] 主操作「结束一天」视觉高 ${appThumb.minPrimaryH}px ≥ 44`);
+  console.log(
+    `        共 ${appThumb.count} 个按钮：${appThumb.btns.map((b) => `${b.t || '?'}(${Math.round(b.w)}×${Math.round(b.h)}${b.primary ? '*' : ''})`).join(' · ')}`,
+  );
+}
 
-if ((!c3ok || !c4ok || !wrapOk) && !STRICT) {
+if ((!c3ok || !c4ok || !wrapOk || !peOk || !thOk || !thOv || !thHit || !thMain) && !STRICT) {
   console.log('  ↑ 以上非 PASS 项均为**已知待办**（顶栏重构批 R7）；STRICT=1 升格为硬断言时应 RED。');
 }
 
-// 信息（非断言）：移动端 #side 应是**整宽底部抽屉**（≤860 规则写的是 width:auto）。
-// 实测若远小于视口宽 → 说明有更高优先级的 `#side{width:252px}` 把它盖掉了。见报告。
-const sideW = mobile.debug.side.w;
-const sideFull = sideW >= vp.w * 0.9;
-console.log(
-  `[${sideFull ? 'PASS' : '信息'}] 移动 · #side 底部抽屉宽度 ${sideW}px / 视口 ${vp.w}px（≤860 期望整宽 auto）` +
-    (sideFull ? '' : ' —— 被更高优先级的 #side{width:252px} 覆盖；见报告'),
-);
+// 信息（非断言）：移动端 #side 宽度，仅记录（P2 已把底部抽屉改为右侧竖栏）。
+console.log(`\n[信息] 合成探针 · 移动端 #side 宽度 ${mobile.debug.sideW}`);
 
-console.log(bad === 0 ? '\n全部通过：触摸目标达标' : `\n${bad} 项不合格`);
+console.log(bad === 0 ? '\n全部通过：触摸目标与顶栏/拇指带达标' : `\n${bad} 项不合格`);
 process.exit(bad === 0 ? 0 : 1);

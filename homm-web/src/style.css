@@ -66,26 +66,31 @@ body {
     var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
 }
 
-/* ---------- top bar ---------- */
+/* ---------- top bar (只读状态条) ---------- */
 #topbar {
-  /* M-09：顶栏要能容下 44px 触摸目标，抬高到 52px；安全区 inset 由 #app 统一承担，
-     这里不再叠加 env()，避免双重留白。 */
-  height: calc(52px);
-  flex: 0 0 calc(52px);
+  /* IA §4.2 决议 R7：顶栏 = **只读状态条**，高 ≤32px、`pointer-events:none`、零可点目标。
+     可点目标全部下移到 #thumb（≥44px）—— 这才是解掉"顶栏矮 vs 按钮大"矛盾的做法。
+     安全区 inset 由 #app 统一承担，这里不再叠加 env()，避免双重留白。 */
+  height: 32px;
+  flex: 0 0 32px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 12px;
+  gap: 12px;
+  padding: 0 10px;
   background: linear-gradient(180deg, #5a4326, #3a2a14);
   border-bottom: 2px solid var(--frame);
   box-shadow: inset 0 1px 0 rgba(255, 232, 170, 0.18);
   z-index: 20;
+  /* 只读：整条不接收指针事件。顶上已无任何按钮，故 32px 不受 §5.2 的 ≥44px 约束。 */
+  pointer-events: none;
+  /* C3：顶栏不得横向滚动 / 溢出（原 @media(max-width:860px) 的 overflow-x:auto 已删除）。 */
+  overflow: hidden;
 }
 
 .res {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -101,10 +106,9 @@ body {
   font-weight: 500;
 }
 
-/* 稀有资源（宝石/水晶/硫磺/水银）为 0 时压暗：它们在界面上"存在"，
-   但不至于在开局就跟金币抢视线 */
-.res.zero {
-  opacity: 0.45;
+/* 稀有聚合槽：一个 ic_rare 图标 + 合计值，替掉 4 个并列稀有格（IA §3.1 #4–7） */
+.res.rare .val {
+  color: #cbb6e0;
 }
 
 .spacer {
@@ -115,24 +119,21 @@ body {
   color: var(--gold);
   font-weight: 500;
   letter-spacing: 0.5px;
+  /* 短日期 `3周2日`：比例字体下每周/日数字一变整条顶栏会左右抖（B.14）。
+     tabular-nums 固定数字宽 + 定宽右对齐槽固定右缘 → 日期变长只向左吃 spacer，不动右边。 */
+  font-variant-numeric: tabular-nums;
+  min-width: 58px;
+  text-align: right;
+  white-space: nowrap;
 }
 
-.who {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: 12px;
-  padding-left: 12px;
-  border-left: 1px solid var(--line);
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.who i {
+/* 阵营徽记降级为 9px 色点（IA §3.1 #10） */
+.who-dot {
   width: 9px;
   height: 9px;
   border-radius: 2px;
   display: inline-block;
+  flex: 0 0 9px;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5) inset;
 }
 
@@ -171,6 +172,271 @@ body {
 .btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* ---------- bottom thumb band（IA §4.2 / R5） ---------- */
+#thumb {
+  /* 全部高频交互集中在下缘一条 48px 带内，位置固定（肌肉记忆）。
+     只读的移动力细条 + 5 个文字按钮（菜单 / 英雄 / 城 / 日志 / 结束一天）。 */
+  flex: 0 0 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  background: linear-gradient(0deg, #5a4326, #3a2a14);
+  /* 用 inset box-shadow 画分隔线而不是 border-top：border 会吃掉 2px 内容高，
+     而主操作「结束一天」需要真实 48px 命中高（§5.2 主操作 ≥48）。 */
+  box-shadow: inset 0 2px 0 var(--frame), inset 0 3px 0 rgba(255, 232, 170, 0.12);
+  z-index: 20;
+  /* C3：拇指带同样不得横向溢出 */
+  overflow: hidden;
+}
+
+.tb-btn {
+  min-height: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 12px;
+  font-size: 13px;
+  flex: 0 0 auto;
+}
+
+/* 主操作「结束一天」= 48px（§5.2 主操作档），其余 44px（常规档） */
+.tb-btn.primary {
+  min-height: 48px;
+  height: 48px;
+  min-width: 92px;
+}
+
+.tb-log {
+  position: relative;
+}
+
+.tb-badge {
+  display: inline-block;
+  margin-left: 4px;
+  min-width: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+/* `display:inline-block`（0,1,0）会盖过 UA 的 `[hidden]{display:none}`（0,1,0 但更早），
+   于是"未读为 0"时角标会照常显示一个 0。显式补回，角标只在有未读时出现。 */
+.tb-badge[hidden] {
+  display: none;
+}
+
+/* 移动力细条：只读展示（IA §3.3 #25「每回合看几眼」→ 提到拇指带） */
+.tb-move {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.tb-move-k {
+  white-space: nowrap;
+}
+
+.tb-move .bar {
+  flex: 1 1 auto;
+  min-width: 40px;
+  margin-top: 0;
+}
+
+.tb-move-v {
+  color: var(--parchment);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- 菜单 / 日志 / 设置（低频项，IA §7 / §3.2 #23 / a11y §4.2） ---------- */
+.menu,
+.logpanel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  padding: 16px;
+}
+
+.menu {
+  z-index: 120;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 8, 3, 0.62);
+}
+
+.menu-panel {
+  width: min(320px, 92vw);
+  max-height: 86%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: linear-gradient(180deg, #55401f, #35250f);
+  border: 2px solid var(--gold);
+  border-radius: 4px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+}
+
+.menu-panel h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--gold);
+  letter-spacing: 2px;
+}
+
+.menu-item {
+  min-height: 48px;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.menu-item.danger {
+  border-color: rgba(208, 85, 63, 0.6);
+  color: #f0b6a8;
+}
+
+.logpanel {
+  z-index: 110;
+  padding: 0;
+  justify-content: flex-end;
+  background: rgba(12, 8, 3, 0.28);
+}
+
+.lp-panel {
+  width: min(320px, 74vw);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #4a3620, #33240f);
+  border-left: 2px solid var(--frame);
+  box-shadow: -8px 0 26px rgba(0, 0, 0, 0.5);
+}
+
+.lp-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.lp-head h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--gold);
+  letter-spacing: 2px;
+}
+
+.lp-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lp-body > div {
+  background: rgba(30, 21, 9, 0.6);
+  border-left: 2px solid var(--gold-dim);
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.lp-empty {
+  background: none !important;
+  border-left: none !important;
+  color: var(--text-dim);
+}
+
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 300px;
+}
+
+.setup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.setup-row-col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.setup-k {
+  color: var(--text-dim);
+}
+
+.setup-sw {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  min-width: 88px;
+  padding: 0 12px;
+  background: linear-gradient(180deg, #6b5230, #46331c);
+  color: var(--parchment);
+  border: 1px solid var(--frame);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.setup-sw.on {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.setup-sw img {
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+  display: block;
+}
+
+.setup-state {
+  font-variant-numeric: tabular-nums;
+}
+
+.setup-seg {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.setup-note {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  font-size: 12px;
 }
 
 /* ---------- stage ---------- */
@@ -712,27 +978,16 @@ table.est td:last-child {
 }
 
 @media (max-width: 860px) {
-  /* M-09：窄屏顶栏压缩——缩小资源图标与间距，整条支持横向滑动，
-     否则 7 种资源 + 6 个按钮会把「结束一天」挤出屏幕。 */
+  /* C3：顶栏只读、**不再横向滑动** —— 原 `overflow-x:auto` 已删除。
+     它把"装不下就横滑"设成默认，掩盖布局问题，且与 R5「位置稳定」冲突。
+     现在顶栏只剩 3 资源 + 聚合槽 + 日期 + 色点，窄屏只需略收间距。 */
   #topbar {
     gap: 8px;
     padding: 0 8px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-
-  #topbar::-webkit-scrollbar {
-    display: none;
   }
 
   .res {
     font-size: 12px;
-  }
-
-  .res img {
-    width: 15px;
-    height: 15px;
   }
 
   #side {
@@ -867,8 +1122,9 @@ table.est td:last-child {
   padding: 10px;
 }
 
-/* 战斗中隐藏主界面顶栏（资源 / 结束一天 / 存档 / 新游戏） */
-body.in-battle #topbar {
+/* 战斗中隐藏主界面顶栏与拇指带（资源 / 菜单 / 英雄 / 城 / 日志 / 结束一天） */
+body.in-battle #topbar,
+body.in-battle #thumb {
   display: none;
 }
 
