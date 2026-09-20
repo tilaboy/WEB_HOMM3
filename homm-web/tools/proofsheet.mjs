@@ -33,6 +33,15 @@ const NAME = {
   vineguard: '藤蔓卫士', treant: '树人大叔', hopgolem: '蹦跳魔偶', librarian: '亡灵图书管理员',
 };
 const FAM_OF = (u) => u.slice(0, 2);
+/** ★ 从 UNIT_FRAMES 派生帧尺寸 —— **绝不在本文件里硬编码槽位尺寸**。
+ *  硬编码过一次（48/60），槽位一改就与本文件生成的卡片自相矛盾。 */
+const sizeOf = (kind) => {
+  const s = UNIT_FRAMES.find((f) => f.kind === kind);
+  if (!s) throw new Error('UNIT_FRAMES 里找不到 kind=' + kind + ' 的帧');
+  return { w: s.w, h: s.h };
+};
+const MAP_NOW = sizeOf('map');
+const CU_NOW = sizeOf('idle');
 const SHORT_OF = (u) => u.split('_').slice(2).join('_');
 
 // 16 个单位一行一个
@@ -92,8 +101,8 @@ const zoomCells = ZOOM.map((u) => {
   const mA = tryUri(join(afterDir, `${mapN}.png`)), cA = tryUri(join(afterDir, `${cuN}.png`));
   return `<div class="cell"><div class="cap">${FACTION[FAM_OF(u)]} T${TIER_OF[u]} · ${NAME[SHORT_OF(u)]}</div>
     <div class="row">
-      <div class="col"><div class="tag">地图帧 ×4</div><div class="zoom">${mA ? `<img src="${mA}" style="width:${48 * 4}px;height:${44 * 4}px">` : ''}</div></div>
-      <div class="col"><div class="tag">战斗帧 ×4</div><div class="zoom">${cA ? `<img src="${cA}" style="width:${60 * 4}px;height:${56 * 4}px">` : ''}</div></div>
+      <div class="col"><div class="tag">地图帧 ×4（${MAP_NOW.w}×${MAP_NOW.h}）</div><div class="zoom">${mA ? `<img src="${mA}" style="width:${MAP_NOW.w * 4}px;height:${MAP_NOW.h * 4}px">` : ''}</div></div>
+      <div class="col"><div class="tag">战斗帧 ×4（${CU_NOW.w}×${CU_NOW.h}）</div><div class="zoom">${cA ? `<img src="${cA}" style="width:${CU_NOW.w * 4}px;height:${CU_NOW.h * 4}px">` : ''}</div></div>
     </div></div>`;
 }).join('');
 
@@ -138,8 +147,8 @@ const html = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
 <div class="nums">
   <table>
     <tr><th>项</th><th>改前</th><th>改后</th><th>说明</th></tr>
-    <tr><td>地图帧槽位</td><td>32 × 44</td><td class="ok">48 × 44</td><td>最宽的地图单位（翠林 T4 树人）在目标高下需 41px 宽</td></tr>
-    <tr><td>战斗帧槽位</td><td>44 × 56</td><td class="ok">60 × 56</td><td>最宽的战斗帧（赤焰 T3 狼骑攻击）在目标高下需 58px 宽</td></tr>
+    <tr><td>地图帧槽位</td><td>32 × 44</td><td class="ok">${MAP_NOW.w} × ${MAP_NOW.h}</td><td>最宽的地图单位（翠林 T4 树人）在目标高下需 41px 宽</td></tr>
+    <tr><td>战斗帧槽位</td><td>44 × 56</td><td class="ok">${CU_NOW.w} × ${CU_NOW.h}</td><td>最宽的战斗帧（赤焰 T3 狼骑攻击）在目标高下需 58px 宽</td></tr>
     <tr><td>横向溢出帧数</td><td class="bad">8 / 48</td><td class="ok">0 / 48</td><td>溢出 = 精灵被画到自己槽位外面、两侧硬裁</td></tr>
     <tr><td>地图极限阶梯</td><td class="bad">68.2 / 84.1 / 86.4 / 79.5<br><span class="dim">（非单调）</span></td><td class="ok">61.4 / 68.2 / 77.3 / 86.4<br><span class="dim">（四族一致，步长 +6.8/+9.1/+9.1）</span></td><td>剪影高 ÷ 画布高</td></tr>
     <tr><td>战斗阶梯</td><td class="bad">四族各不相同、两族非单调</td><td class="ok">60.7 / 69.6 / 76.8 / 87.5<br><span class="dim">（四族一致）</span></td><td>同上</td></tr>
