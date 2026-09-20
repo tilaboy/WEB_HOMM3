@@ -26,7 +26,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import {
-  B0_FRAMES,
+  UNIT_FRAMES,
   B0_PALETTE,
   B0_SHADE_STEPS,
   B0_PENDING_AI_FRAME,
@@ -43,7 +43,7 @@ const pngDir = pngIdx >= 0 ? argv[pngIdx + 1] : null;
 
 /* ------------------------------------------------- 色板（美术圣经 §3.2/§3.3 字面值） */
 
-/** cartoon-style.md §3.2 基底色板 + §3.3 每族主题色的**字面** hex 全集。 */
+/** cartoon-style.md §3.2 基底色板 + §3.3 每族主题色的**字面** hex 全集（含 B1 的 p3 / p4）。 */
 const SPEC_LITERALS = new Set([
   '#2a1a12', '#4a3524', '#ffffff', '#fff3c8',
   '#a8703c', '#8a5f34', '#5f4022',
@@ -55,6 +55,10 @@ const SPEC_LITERALS = new Set([
   '#3f8fe8', '#8ecdf8', '#22559e', '#eae3d2', '#b3a894', '#ffb020',
   '#e04a34', '#f79a7a', '#9a2519', '#c98a4e', '#8a5a30', '#2fbfa0', '#ffd06a',
   '#a08a72', '#6b5b48', '#d0d0d8', '#cfc6b4',
+  // §3.3 p3 翠林守望（B1）
+  '#1f7a45', '#3fbe6e', '#93e8a8', '#7a7a48', '#4f5130', '#e0538f', '#d6ff9a',
+  // §3.3 p4 紫晶密会（B1）
+  '#6232a8', '#a165e8', '#d4aefc', '#58526e', '#38334a', '#3fe0d0', '#8ffff0',
 ]);
 
 const INK0 = '#2a1a12';
@@ -623,10 +627,11 @@ function grid(rows, gap, bg) {
 
 /* ---------------------------------------------------------------- 主流程 */
 
-console.log('B0 最小验证批 · 验收（asset-spec §9.1）');
+console.log('B0+B1 程序化兵种批 · 验收（asset-spec §9.1 / §9.2）');
+console.log('扫描范围：unitArt.ts 内全部帧（B0 6 + B1 18 = 24），阈值未放宽');
 console.log('='.repeat(64));
 
-const frames = B0_FRAMES.map((spec) => ({
+const frames = UNIT_FRAMES.map((spec) => ({
   spec,
   d: readBuf(buildB0Frame(spec.name, true)), // 成品（含 1px ink0 描边）
   body: readBuf(buildB0Frame(spec.name, false)), // 描边前本体（断言 4 还原膨胀圈用）
@@ -764,7 +769,7 @@ console.log(
     .join('  ')}`,
 );
 console.log(`人工项： [3 的 AI 半] MANUAL  [6] MANUAL  [7] MANUAL  [+${B0_PENDING_AI_FRAME}] MANUAL`);
-console.log(`结论：自动部分 ${allPass ? '全过 —— 可以提交人工盲测' : '未全过 —— 不要进 B1'}`);
+console.log(`结论：自动部分 ${allPass ? '全过（B0 的 6 帧仍 PASS，B1 的 18 帧亦 PASS）' : '未全过 —— 不要提交'}`);
 console.log('='.repeat(64));
 
 process.exit(allPass ? 0 : 1);

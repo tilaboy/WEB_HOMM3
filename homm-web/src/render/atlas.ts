@@ -6,7 +6,7 @@
  * ③ core/ 完全不知道美术的存在，跟之前程序化绘制一样保持零耦合。
  */
 import { PixBuf, fbm, hash2, mix, pnoise, shade } from './pixel.js';
-import { B0_FRAMES, buildB0Frame } from './unitArt.js';
+import { UNIT_FRAMES, buildB0Frame } from './unitArt.js';
 import { FACTIONS, NEUTRAL_COLOR, NEUTRAL_DARK } from '../core/data/factions.js';
 
 export const TILE = 32;
@@ -909,9 +909,9 @@ export class Atlas {
   ogre(b);
   put('mon_ogre', b);
 
-  // B0 最小验证批（asset-spec §9.1）：地图兵种槽位 `u_<faction>_<unit>_map` 32×44，
+  // B0 + B1 批（asset-spec §9.1 / §9.2）：地图兵种槽位 `u_<faction>_<unit>_map` 32×44，
   // 锚点走 Packer 默认（ax=(TILE-w)/2、ay=TILE-h 贴地），与 §1.2 网格表一致。
-  for (const spec of B0_FRAMES) {
+  for (const spec of UNIT_FRAMES) {
     if (spec.kind !== 'map') continue;
     put(spec.name, buildB0Frame(spec.name));
   }
