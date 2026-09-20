@@ -16,6 +16,7 @@
     "audit:hover": "node tools/hoveraudit.mjs",
     "audit:touch": "node tools/tinytargetaudit.mjs",
     "audit:b0": "node tools/b0audit.mjs",
+    "audit:atlas": "node tools/atlasaudit.mjs",
     "audit:ai-diag": "node tools/aidiagnose.mjs",
     "assets:mobile": "node tools/mobile-assets.mjs && capacitor-assets generate --android --assetPath resources --iconBackgroundColor \"#3a2a14\" --splashBackgroundColor \"#1b1f24\"",
     "mobile:sync": "npm run build && cap sync android"
