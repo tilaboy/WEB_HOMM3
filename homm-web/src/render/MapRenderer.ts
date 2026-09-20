@@ -10,6 +10,13 @@ import { hash2 } from './pixel.js';
 import { TerrainLayer } from './terrainLayer.js';
 import { currentLightTint, lightingOn } from './lightLayer.js';
 import { quality } from './quality.js';
+import {
+  chooseBadgeSide,
+  pickRepresentativeUnit,
+  sideCell,
+  type BadgeFrame,
+  type BBox,
+} from './mapBadge.js';
 
 export interface ViewModel {
   state: GameState;
@@ -88,6 +95,14 @@ export class MapRenderer {
   private vigGrad: CanvasGradient | null = null;
   private vigGradW = -1;
   private vigGradH = -1;
+  /**
+   * §13.4 队伍徽标：帧的**可见剪影**几何（含 1px 描边）按帧名缓存。
+   * 为什么缓存：`getImageData` 每帧都跑太贵；而剪影是静态资产属性，只算一次。
+   * 为什么要剪影而不是画布框：必须与审计探针 `tools/mapbadgeaudit.mjs` **同源** ——
+   * 探针用 `buildB0Frame` 的真实剪影 bbox 判"压格 / 不遮物"，运行时若用 52 宽画布框
+   * 会判出不同的落点 ⇒ 探针绿 ≠ 接线对。透明留白不算遮挡，剪影才算。
+   */
+  private silCache = new Map<string, { w: number; h: number; ax: number; ay: number; sil: BBox } | null>();
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -154,6 +169,130 @@ export class MapRenderer {
     ctx.strokeStyle = 'rgba(20,16,10,0.55)';
     ctx.lineWidth = 0.6;
     ctx.stroke();
+  }
+
+  /** 帧的可见剪影几何（懒算 + 缓存）。无此帧或无实心像素 ⇒ null。 */
+  private silOf(name: string): { w: number; h: number; ax: number; ay: number; sil: BBox } | null {
+    if (this.silCache.has(name)) return this.silCache.get(name)!;
+    let geo: { w: number; h: number; ax: number; ay: number; sil: BBox } | null = null;
+    const f = this.atlas.get(name);
+    // 读图集画布：图集由本工程的 PixBuf 绘制（同源），getImageData 不会被污染拦截。
+    const actx = this.atlas.canvas.getContext('2d');
+    if (f && actx) {
+      const d = actx.getImageData(f.x, f.y, f.w, f.h).data;
+      let x0 = Infinity;
+      let x1 = -Infinity;
+      let y0 = Infinity;
+      let y1 = -Infinity;
+      for (let y = 0; y < f.h; y++) {
+        for (let x = 0; x < f.w; x++) {
+          if (d[(y * f.w + x) * 4 + 3] <= 8) continue; // alpha ≤ 8 视为透明（与 audit:b0 同口径）
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+      if (x1 >= x0) geo = { w: f.w, h: f.h, ax: f.ax, ay: f.ay, sil: { x0, y0, x1, y1 } };
+    }
+    this.silCache.set(name, geo);
+    return geo;
+  }
+
+  /** blit(name,gx,gy) 语义下（含帧自带锚点 ax/ay）该帧可见剪影的世界包围盒。 */
+  private silBBoxAt(name: string, gx: number, gy: number): BBox | null {
+    const g = this.silOf(name);
+    if (!g) return null;
+    const px = gx * TILE + g.ax;
+    const py = gy * TILE + g.ay;
+    return { x0: px + g.sil.x0, y0: py + g.sil.y0, x1: px + g.sil.x1, y1: py + g.sil.y1 };
+  }
+
+  /** blitAt(name,px,py) 语义下（画布左上角显式落点）该帧可见剪影的世界包围盒。 */
+  private silBBoxPx(name: string, px: number, py: number): BBox | null {
+    const g = this.silOf(name);
+    if (!g) return null;
+    return { x0: px + g.sil.x0, y0: py + g.sil.y0, x1: px + g.sil.x1, y1: py + g.sil.y1 };
+  }
+
+  /**
+   * §13.4 规则 1 的"已揭示实体"：英雄周围 r 格内已揭示物件的**精灵 + guard 标记**剪影包围盒。
+   * 半径 2 足够 —— 徽标是 52×44（剪影 ≤43），即使落在邻格、再外扩 ~10px 也只够到 2 格外。
+   */
+  private collectObstacles(vm: ViewModel, hx: number, hy: number, r: number): BBox[] {
+    const { state, player } = vm;
+    const map = state.map;
+    const out: BBox[] = [];
+    const seen = new Set<string>();
+    for (let y = hy - r; y <= hy + r; y++) {
+      for (let x = hx - r; x <= hx + r; x++) {
+        if (x < 0 || y < 0 || x >= map.width || y >= map.height) continue;
+        if (!isRevealed(state, player, x, y)) continue; // 未揭示的物件不参与（记忆里的也算信息）
+        const id = map.tiles[idx(map, x, y)].objectId;
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        const obj = map.objects[id];
+        if (!obj) continue;
+        const a = drawAnchor(obj);
+        const sprite = objSprite(state, obj, hash2(a.x, a.y, 91));
+        if (sprite) {
+          const bb = this.silBBoxAt(sprite, a.x, a.y);
+          if (bb) out.push(bb);
+        }
+        const mk = guardMarker(obj);
+        if (mk) {
+          // 与 draw() 中 `blitAt(mk, x*TILE+17, y*TILE+17)` 同源。
+          const bb = this.silBBoxPx(mk, a.x * TILE + 17, a.y * TILE + 17);
+          if (bb) out.push(bb);
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 画出英雄棋子旁的**队伍徽标**（§13.4 · D-64「地图单位接地图」）。
+   *
+   * 与审计探针 `tools/mapbadgeaudit.mjs` **同源**：落点算法取自 `./mapBadge.js`
+   * （`chooseBadgeSide` / `pickRepresentativeUnit`），剪影几何与探针同口径。
+   * 四条硬条件（team-lead）：
+   *   ① 并入 y 排序 pass —— 本函数只在英雄那一趟里、`blit(hero_*)` 之后调用，
+   *      徽标与英雄共享同一个 (y,x) 序，遮挡关系与英雄/怪物一致；
+   *   ② 只横向压格、不纵向压 —— 直接用帧自带锚点落位，**不缩放**（缩放会伪造高度、破 y 排序）；
+   *   ③ 可见性沿用英雄 —— 只在英雄会被画出的那一支里调；敌方英雄本就只在当前视野内出现
+   *      ⇒ 不会在记忆/迷雾里泄漏敌队编成；
+   *   ④ T5 取不到帧 ⇒ 跳过不画（`pickRepresentativeUnit` 未登记 + `silOf` 无帧双重兜底）。
+   * 代表兵种 = `max(tier↓, count↓, canonicalId↑)`（§13.4，与探针同一个函数）。
+   * 不随画质档：low/mid/high 一致（信息不能因档位缺失）。
+   */
+  private drawTeamBadge(vm: ViewModel, hid: string, owner: PlayerId, fx: number, fy: number): void {
+    const hero = vm.state.heroes[hid];
+    if (!hero) return;
+    const cid = pickRepresentativeUnit(hero.army);
+    if (!cid) return; // 空队 / 野怪 / T5 未登记
+    const frameName = `u_${cid}_map`; // ⑤ 帧名只用 canonical id，owner 不参与
+    const g = this.silOf(frameName);
+    if (!g) return; // T5 等无帧 ⇒ 跳过不画（TODO：T5 精灵到位后自然生效）
+    const hx = Math.round(fx);
+    const hy = Math.round(fy);
+    const heroName = `hero_${owner === 'neutral' ? 'neutral' : owner}`;
+    // 障碍按"整枚棋子剪影（含旗）"取 —— 旗也是"这队是谁的"的信息载体，遮住即丢信息。
+    const heroBody = this.silBBoxAt(heroName, hx, hy);
+    if (!heroBody) return;
+    const obstacles = this.collectObstacles(vm, hx, hy, 2);
+    for (const oid of vm.state.heroOrder) {
+      if (oid === hid) continue;
+      const oh = vm.state.heroes[oid];
+      if (!oh) continue;
+      const rp = vm.heroRender[oid] ?? { x: oh.pos.x, y: oh.pos.y };
+      const ob = this.silBBoxAt(`hero_${oh.owner === 'neutral' ? 'neutral' : oh.owner}`, Math.round(rp.x), Math.round(rp.y));
+      if (ob) obstacles.push(ob);
+    }
+    const frame: BadgeFrame = { w: g.w, h: g.h, ax: g.ax, ay: g.ay, sil: g.sil };
+    const side = chooseBadgeSide(hx, hy, frame, obstacles, heroBody);
+    if (!side) return; // 四侧皆不满足 ⇒ 不画（不做降级）
+    const c = sideCell(hx, hy, side);
+    this.blit(frameName, c.x, c.y);
   }
 
   draw(vm: ViewModel): void {
@@ -382,6 +521,8 @@ export class MapRenderer {
           ctx.globalAlpha = 1;
         }
         this.blit(`hero_${d.owner === 'neutral' ? 'neutral' : d.owner}`, Math.round(d.fx), Math.round(d.fy));
+        // §13.4 队伍徽标：紧跟在英雄之后、同一趟 y 排序里画（硬条件 ①「并入 y 排序」）。
+        this.drawTeamBadge(vm, d.id, d.owner, d.fx, d.fy);
       }
     }
 
