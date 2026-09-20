@@ -265,6 +265,14 @@ export const B2_FRAMES: B0FrameSpec[] = [
   { name: 'u_p2_firebrand_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p2_firebrand', kind: 'map' },
   { name: 'cu_p2_firebrand', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_firebrand', kind: 'idle' },
   { name: 'cu_p2_firebrand_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_firebrand', kind: 'atk' },
+  // 翠林 T3 藤蔓卫士（p3 圆形母题：圆形藤甲覆盖躯干，无可见直角）
+  { name: 'u_p3_vineguard_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p3_vineguard', kind: 'map' },
+  { name: 'cu_p3_vineguard', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_vineguard', kind: 'idle' },
+  { name: 'cu_p3_vineguard_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_vineguard', kind: 'atk' },
+  // 翠林 T4 树人大叔（p3 圆形母题：最宽的圆，树干圆柱，头顶 2 丛树冠）
+  { name: 'u_p3_treant_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p3_treant', kind: 'map' },
+  { name: 'cu_p3_treant', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_treant', kind: 'idle' },
+  { name: 'cu_p3_treant_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_treant', kind: 'atk' },
 ];
 
 /** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 + B2 24 = 48），供 `tools/b0audit.mjs` 全扫描，
@@ -327,6 +335,12 @@ export function buildB0Frame(name: string, outline = true): PixBuf {
       break;
     case 'p2_firebrand':
       drawFirebrand(pb, spec.kind);
+      break;
+    case 'p3_vineguard':
+      drawVineguard(pb, spec.kind);
+      break;
+    case 'p3_treant':
+      drawTreant(pb, spec.kind);
       break;
   }
   // 描边重建（asset-spec §5.4）：最后一步、只跑一次、1px、满不透明。
@@ -1794,4 +1808,174 @@ function drawFirebrandCombat(pb: PixBuf, atk: boolean): void {
   pb.set(43, 36, C.p2emissive);
   pb.set(43, 40, C.p2emissive);
   pb.set(41, 42, C.p2emissive);
+}
+
+/* ==========================================================================
+ * 16. p3 翠林 T3 · 藤蔓卫士
+ *
+ * §5.6.3 形状家族：圆形有机 / 顶部 1 丛凸出枝叶
+ * §5.6.4 T3 格：圆形藤甲覆盖躯干，无可见直角
+ * §1.3 唯一失调：藤甲比躯干还大（圆形满铺胸，占剪影 ≥40%）
+ * §5.4 p3 兵种剪影：圆形主轮廓 + 顶部不对称凸起
+ * 配色断言 8 预检（翠林同族相邻最易翻车）：
+ *   - leaf2（暗藤）↔ p3a2（绿身）色相差 ~40°、ΔL*≈18 ≥8 → 安全（藤纹直接铺绿身）
+ *   - leaf4（亮藤）↔ p3a2 同绿系 ΔL*≈2 → 禁用；leaf4 只用在 wood0 头丛 / 悬空
+ *   - skin2（脸）↔ p3a2 同色系 ΔL*≈0 → 必须用 p3w0 颈/前襟隔开（skin↔p3w0 ΔL*≈24）
+ *   - 藤结用 p3a0（暗绿），p3a0↔leaf2 / p3a0↔p3a2 均安全
+ *   - 藤甲 leaf2 不得落草（草亦 leaf2，同族 step=0 触发断言 2）→ 用 p3w0 基座压在中间
+ * ========================================================================== */
+
+function drawVineguard(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  if (kind === 'map') drawVineguardMap(pb);
+  else if (kind === 'idle') drawVineguardCombat(pb, false);
+  else drawVineguardCombat(pb, true);
+}
+
+/** 32×44 冒险地图帧：草 42，头顶叶 ~15，剪影高 ~30（圆形）。 */
+function drawVineguardMap(pb: PixBuf): void {
+  grassBase(pb, 6, 24, 42);
+  pb.ellipse(15, 36, 11, 9, C.p3a2);            // 圆身（绿）
+  // 藤甲（圆形满铺胸，leaf2 藤纹；leaf2↔p3a2 ΔL*≈18 安全）
+  pb.ellipse(15, 33, 9, 6, C.leaf2);            // 藤甲圆板
+  pb.ellipse(15, 33, 8, 2, C.p3a2);             // 横向藤缝（透绿底）
+  pb.ellipse(15, 33, 2, 6, C.p3a2);             // 纵向藤缝
+  pb.set(9, 31, C.p3w0); pb.set(21, 31, C.p3w0); // 藤结（p3w0，leaf2/p3a2 均安全）
+  pb.set(15, 28, C.p3w0); pb.set(15, 38, C.p3w0);
+  // 底暗褐基座（草叶压住：leaf2↔p3w0 ΔL*≈11；且隔在藤甲与草之间避同族 step 失败）
+  pb.ellipse(15, 42, 11, 4, C.p3w0);
+  // 颈/前襟：隔开脸与绿身（skin↔p3w0 ΔL*≈24）
+  pb.ellipse(15, 29, 7, 4, C.p3w0);
+  // 头
+  pb.ellipse(15, 24, 4.5, 4, C.skin2);
+  leafTuft(pb, 15, 20);
+  face(pb, 13, 17, 26, 28, 3, false);
+}
+
+/** 44×56 战斗帧：草 54，头顶叶 ~26，剪影高 ~34（圆形）。 */
+function drawVineguardCombat(pb: PixBuf, atk: boolean): void {
+  if (!atk) {
+    grassBase(pb, 10, 32, 54);
+    pb.ellipse(22, 46, 13, 11, C.p3a2);          // 圆身
+    pb.ellipse(22, 43, 11, 8, C.leaf2);          // 藤甲圆板
+    pb.ellipse(22, 43, 10, 3, C.p3a2);          // 横藤缝
+    pb.ellipse(22, 43, 3, 8, C.p3a2);           // 纵藤缝
+    pb.set(15, 40, C.p3w0); pb.set(29, 40, C.p3w0);
+    pb.set(22, 36, C.p3w0); pb.set(22, 50, C.p3w0);
+    pb.ellipse(22, 53, 13, 5, C.p3w0);           // 底基座（压在藤甲与草之间）
+    pb.ellipse(22, 38, 8, 5, C.p3w0);            // 颈
+    pb.ellipse(22, 33, 5, 4.5, C.skin2);         // 头
+    leafTuft(pb, 22, 29);
+    face(pb, 19, 24, 34, 37, 3, false);
+    // 手臂（p3a0 袖，手埋袖内；袖底在基座之上，不碰 p3w0）
+    pb.rect(13, 40, 4, 8, C.p3w0);
+    pb.rect(14, 43, 2, 2, C.skin2);
+    pb.rect(29, 40, 4, 8, C.p3w0);
+    pb.rect(30, 43, 2, 2, C.skin2);
+    return;
+  }
+  // 攻击帧：挥藤鞭（p3a0 藤鞭甩出，悬空右侧，不碰绿身）
+  grassBase(pb, 10, 32, 54);
+  pb.ellipse(22, 46, 13, 11, C.p3a2);
+  pb.ellipse(22, 43, 11, 8, C.leaf2);
+  pb.ellipse(22, 43, 10, 3, C.p3a2);
+  pb.ellipse(22, 43, 3, 8, C.p3a2);
+  pb.set(15, 40, C.p3w0); pb.set(29, 40, C.p3w0);
+  pb.set(22, 36, C.p3w0); pb.set(22, 50, C.p3w0);
+  pb.ellipse(22, 53, 13, 5, C.p3w0);
+  pb.ellipse(22, 38, 8, 5, C.p3w0);
+  pb.ellipse(22, 33, 5, 4.5, C.skin2);
+  leafTuft(pb, 22, 29);
+  face(pb, 19, 24, 34, 37, 3, false);
+  pb.rect(13, 40, 4, 8, C.p3w0);
+  pb.rect(14, 43, 2, 2, C.skin2);
+  pb.rect(29, 40, 4, 8, C.p3w0);
+  pb.rect(30, 43, 2, 2, C.skin2);
+  pb.line(34, 44, 40, 38, C.p3w0);              // 藤鞭
+  pb.line(40, 38, 42, 33, C.p3w0);
+  pb.set(42, 31, C.leaf4);                       // 鞭梢叶（悬空，不碰绿身）
+}
+
+/* ==========================================================================
+ * 17. p3 翠林 T4 · 树人大叔
+ *
+ * §5.6.3 形状家族：圆形有机 / 顶部 2 丛凸出树冠
+ * §5.6.4 T4 格：最宽的圆（≤1.1），树干圆柱，头顶 2 丛树冠
+ * §1.3 唯一失调：树干比寻常兵种粗（圆柱占剪影 ≥35%）+ 头顶 2 丛树冠
+ * §5.4 p3 兵种剪影：最宽圆轮廓 + 顶部双凸起
+ * 配色断言 8 预检：
+ *   - 树冠 leaf4↔leaf2 同叶系 ΔL*≈20 ≥12 → 安全（双丛暗部）
+ *   - 树冠 leaf4↔p3w0（树皮）ΔL*≈31 ≥8 → 安全（冠坐树干顶）
+ *   - 脸 skin2↔p3w0（树皮）ΔL*≈24 → 安全
+ *   - 树皮纹 p3w2↔p3w0 同橄榄系 ΔL*≈18 ≥12 → 安全；但 p3w2 止於草上方，避 p3w2↔leaf2(草) ΔL*≈7
+ *   - leaf4 不碰 skin2（同绿系 ΔL*≈2）→ 树冠与脸留 ≥1px 空气
+ * ========================================================================== */
+
+function drawTreant(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  if (kind === 'map') drawTreantMap(pb);
+  else if (kind === 'idle') drawTreantCombat(pb, false);
+  else drawTreantCombat(pb, true);
+}
+
+/** 32×44 冒险地图帧：草 42，树冠顶 ~16，剪影高 ~26、宽 ~30（最宽圆）。 */
+function drawTreantMap(pb: PixBuf): void {
+  grassBase(pb, 6, 24, 42);
+  // 树干（圆柱，p3w0 树皮，圆角——有机物免切角）
+  pb.ellipse(15, 38, 8, 9, C.p3w0);             // 树干底圆
+  pb.rect(8, 30, 14, 12, C.p3w0);              // 树干身
+  pb.ellipse(15, 30, 7, 4, C.p3w0);            // 树干顶圆角（无直角）
+  // 树皮纹（p3w2 暗纹，止於草上方）
+  pb.vline(12, 32, 38, C.p3w2);
+  pb.vline(18, 32, 38, C.p3w2);
+  // 脸（皮，嵌树干；skin↔p3w0 ΔL*≈24）
+  pb.ellipse(15, 35, 5, 5, C.skin2);
+  face(pb, 12, 18, 36, 38, 3, false);
+  // 2 丛树冠（头顶，leaf4 + leaf2，最宽圆）
+  pb.ellipse(7, 22, 7, 6, C.leaf4);             // 左冠
+  pb.ellipse(23, 22, 7, 6, C.leaf4);            // 右冠
+  pb.ellipse(7, 22, 7, 5, C.leaf2);             // 左冠暗部
+  pb.ellipse(23, 22, 7, 5, C.leaf2);            // 右冠暗部
+  pb.set(15, 18, C.leaf4);
+  pb.set(15, 16, C.leaf2);
+}
+
+/** 44×56 战斗帧：草 54，树冠顶 ~22，剪影高 ~32、宽 ~40（最宽圆）。 */
+function drawTreantCombat(pb: PixBuf, atk: boolean): void {
+  if (!atk) {
+    grassBase(pb, 10, 32, 54);
+    // 树干
+    pb.ellipse(22, 49, 10, 12, C.p3w0);
+    pb.rect(13, 38, 18, 16, C.p3w0);
+    pb.ellipse(22, 38, 9, 5, C.p3w0);
+    // 树皮纹
+    pb.vline(18, 42, 50, C.p3w2);
+    pb.vline(26, 42, 50, C.p3w2);
+    // 脸
+    pb.ellipse(22, 45, 6, 6, C.skin2);
+    face(pb, 18, 24, 46, 48, 3, false);
+    // 2 丛树冠
+    pb.ellipse(11, 30, 9, 8, C.leaf4);
+    pb.ellipse(33, 30, 9, 8, C.leaf4);
+    pb.ellipse(11, 30, 9, 7, C.leaf2);
+    pb.ellipse(33, 30, 9, 7, C.leaf2);
+    pb.set(22, 24, C.leaf4);
+    pb.set(22, 21, C.leaf2);
+    return;
+  }
+  // 攻击帧：根须拍地（p3w0，悬空左下，不碰草）
+  grassBase(pb, 10, 32, 54);
+  pb.ellipse(22, 49, 10, 12, C.p3w0);
+  pb.rect(13, 38, 18, 16, C.p3w0);
+  pb.ellipse(22, 38, 9, 5, C.p3w0);
+  pb.vline(18, 42, 50, C.p3w2);
+  pb.vline(26, 42, 50, C.p3w2);
+  pb.ellipse(22, 45, 6, 6, C.skin2);
+  face(pb, 18, 24, 46, 48, 3, false);
+  pb.ellipse(11, 30, 9, 8, C.leaf4);
+  pb.ellipse(33, 30, 9, 8, C.leaf4);
+  pb.ellipse(11, 30, 9, 7, C.leaf2);
+  pb.ellipse(33, 30, 9, 7, C.leaf2);
+  pb.set(22, 24, C.leaf4);
+  pb.set(22, 21, C.leaf2);
+  pb.line(13, 52, 9, 50, C.p3w0);
+  pb.line(9, 50, 7, 47, C.p3w0);
 }
