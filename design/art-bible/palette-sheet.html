@@ -95,7 +95,7 @@
 
   <footer>
     林绘澄（美术定稿）· A1 · 待拍板项见 <code>cartoon-style.md</code> §9 与 <code>asset-spec.md</code> §8<br>
-    关键质疑：图集实际是 <b>2048×2048</b>（<code>atlas.ts:751</code>），文档写的 1024 是旧值，利用率仅约 9.6% —— 可缩到 1024²，省 12MB 显存。
+    关键质疑：图集实际是 <b>2048×2048</b>（<code>atlas.ts</code> 的图集构建 <code>new Packer(2048, 2048)</code>），文档写的 1024 是旧值，利用率仅约 9.6% —— 可缩到 1024²，省 12MB 显存。
   </footer>
 </div>
 
