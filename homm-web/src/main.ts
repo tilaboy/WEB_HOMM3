@@ -479,6 +479,9 @@ const camera = new Camera();
 camera.mapW = state.map.width;
 camera.mapH = state.map.height;
 const renderer = new MapRenderer(canvas, camera);
+// 调试：?devnobadge=1 隐藏地图队伍徽标（真机 A/B 验证 D-64 接线用：同帧开/关只差徽标）。
+// 与 ?devquick / ?devtown 同一套惯例 —— 查询参数驱动；无人传即不影响生产路径。
+if (bootParams.has('devnobadge')) renderer.badgesVisible = false;
 
 /** 打开城镇面板：城里有英雄就带上他，没有就远程管理（只能补驻军）。 */
 function openTownById(townId: string): void {

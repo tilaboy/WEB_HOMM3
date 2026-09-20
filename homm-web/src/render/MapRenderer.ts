@@ -104,6 +104,13 @@ export class MapRenderer {
    */
   private silCache = new Map<string, { w: number; h: number; ax: number; ay: number; sil: BBox } | null>();
 
+  /**
+   * 队伍徽标可见性（D-64 接线的 dev 开关）。默认 `true`。
+   * `?devnobadge` 置 `false` —— 供真机 A/B 验证：同一次会话、同一帧，开/关只差徽标，
+   * 从而把"看起来对"证成"除了徽标没有别的变了"。**不影响生产路径**（无人传该参数 ⇒ 恒 true）。
+   */
+  badgesVisible = true;
+
   constructor(
     private canvas: HTMLCanvasElement,
     private camera: Camera,
@@ -266,6 +273,7 @@ export class MapRenderer {
    * 不随画质档：low/mid/high 一致（信息不能因档位缺失）。
    */
   private drawTeamBadge(vm: ViewModel, hid: string, owner: PlayerId, fx: number, fy: number): void {
+    if (!this.badgesVisible) return; // ?devnobadge：因果 A/B 用（默认 true ⇒ 非生产路径）
     const hero = vm.state.heroes[hid];
     if (!hero) return;
     const cid = pickRepresentativeUnit(hero.army);
