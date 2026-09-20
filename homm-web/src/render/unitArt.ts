@@ -145,6 +145,7 @@ const C = {
   p2w2: '#c98a4e',
   p2w0: '#8a5a30',
   p2clash: '#2fbfa0',
+  p2emissive: '#ffd06a',
   // §3.3 p3 翠林守望
   p3a0: '#1f7a45',
   p3a2: '#3fbe6e',
@@ -256,6 +257,14 @@ export const B2_FRAMES: B0FrameSpec[] = [
   { name: 'u_p1_templar_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p1_templar', kind: 'map' },
   { name: 'cu_p1_templar', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_templar', kind: 'idle' },
   { name: 'cu_p1_templar_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_templar', kind: 'atk' },
+  // 赤焰 T3 暴走狼骑（p2 楔形母题：人+狼双头剪影，狼头前伸，人后仰）
+  { name: 'u_p2_wolfrider_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p2_wolfrider', kind: 'map' },
+  { name: 'cu_p2_wolfrider', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_wolfrider', kind: 'idle' },
+  { name: 'cu_p2_wolfrider_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_wolfrider', kind: 'atk' },
+  // 赤焰 T4 火油狂徒（p2 楔形母题：横抱火油桶，桶盖锯齿，身后拖火舌）
+  { name: 'u_p2_firebrand_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p2_firebrand', kind: 'map' },
+  { name: 'cu_p2_firebrand', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_firebrand', kind: 'idle' },
+  { name: 'cu_p2_firebrand_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_firebrand', kind: 'atk' },
 ];
 
 /** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 + B2 24 = 48），供 `tools/b0audit.mjs` 全扫描，
@@ -312,6 +321,12 @@ export function buildB0Frame(name: string, outline = true): PixBuf {
       break;
     case 'p1_templar':
       drawTemplar(pb, spec.kind);
+      break;
+    case 'p2_wolfrider':
+      drawWolfrider(pb, spec.kind);
+      break;
+    case 'p2_firebrand':
+      drawFirebrand(pb, spec.kind);
       break;
   }
   // 描边重建（asset-spec §5.4）：最后一步、只跑一次、1px、满不透明。
@@ -1511,4 +1526,272 @@ function drawTemplarCombat(pb: PixBuf, atk: boolean): void {
   thickLine(pb, 26, 30, 34, 38, C.metal4, C.metal4);
   pb.rect(32, 37, 6, 2, C.metal4);
   pb.rect(31, 36, 2, 6, C.wood4);
+}
+
+/* ==========================================================================
+ * 14. p2 赤焰 T3 · 暴走狼骑
+ *
+ * §5.6.3 形状家族：楔形前倾 / 锯齿缺口 / 顶部 1–3 根刺 / 重心偏前 / 高宽比 ≈ 1.0
+ * §5.6.4 T3 格：人+狼双头剪影，狼头前伸，人后仰
+ * §1.3 唯一失调：狼吻异常长（远超真实狼比例，读作"暴走"）
+ * §5.3 p2 兵种剪影：前倾 + 宽肩、矮胖、装备不合身
+ * 配色断言 8 预检：狼身用 stone（灰）与红衣 p2a2 色相差 >150°；骑手红衣与 p2clash(青) 色相差 ~150°；
+ *   灰狼 stone2(#a9a093) 与红衣 p2a2(#e04a34) 不同色系，安全。绝不用 p2w2(陶土) 贴红衣（ΔL*≈3 失败）。
+ * ========================================================================== */
+
+function drawWolfrider(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  if (kind === 'map') drawWolfriderMap(pb);
+  else if (kind === 'idle') drawWolfriderCombat(pb, false);
+  else drawWolfriderCombat(pb, true);
+}
+
+/** 32×44 冒险地图帧：狼爪 42，骑手头顶 ~15，剪影高 ~27（T3 ≈78% → 坐骑使整体更高）。 */
+function drawWolfriderMap(pb: PixBuf): void {
+  // 狼身（灰 stone，与红衣区隔；陶土 p2w2 贴红衣会失败，故用 stone）
+  pb.ellipse(17, 38, 12, 6, C.stone2);
+  pb.ellipse(17, 42, 12, 3, C.stone0); // 腹暗面（同族 stone）
+  // 狼头（前伸，左）+ 异常长吻（唯一失调）
+  pb.ellipse(6, 35, 4, 4, C.stone2);
+  pb.rect(1, 34, 6, 3, C.stone2); // 长吻伸到 x=1
+  pb.rect(1, 34, 2, 2, C.stone0); // 鼻头
+  pb.tri([7, 31], [10, 31], [8, 28], C.stone0); // 耳
+  pb.set(5, 34, C.ink0);
+  pb.set(6, 34, C.ink0); // 眼
+  // 尾（右，暗红尖）
+  pb.rect(28, 33, 4, 2, C.stone2);
+  pb.rect(31, 32, 2, 2, C.p2a0);
+  // 四腿（细）
+  pb.rect(9, 41, 2, 3, C.stone0);
+  pb.rect(15, 42, 2, 3, C.stone0);
+  pb.rect(20, 42, 2, 3, C.stone0);
+  pb.rect(25, 41, 2, 3, C.stone0);
+  aoContact(pb, 9, 26, 44);
+  // 骑手（人+狼双头之上头）：红衣、后仰
+  pb.poly([[14, 35], [22, 30], [23, 39], [15, 42]], C.p2a2); // 后仰躯干
+  pb.line(14, 35, 22, 30, C.p2a0);
+  pb.hline(15, 23, 39, C.p2a0); // 腰带/下摆
+  // 头（后仰，偏右上）
+  pb.ellipse(20, 26, 4, 4, C.skin2);
+  pb.ellipse(20, 24, 5, 2, C.wood0);
+  brokenNails(pb, 17, 18, 22, 19, 6); // 头顶刺
+  pb.line(16, 25, 18, 26, C.ink0); // 凶眉
+  pb.line(25, 25, 23, 26, C.ink0);
+  face(pb, 17, 22, 27, 29, 4, true);
+  // 手臂拽缰绳到狼头（臂上撞色破布，p2 唯一 clash 使用点）
+  pb.hline(15, 18, 33, C.p2clash);
+  thickLine(pb, 17, 33, 8, 35, C.p2a0, C.p2a0);
+  pb.rect(15, 37, 5, 4, C.p2a0); // 袖（加宽到 x19 罩住手右侧；袖↔红衣 p2a0↔p2a2 同色系 ΔL*≈16 ≥12）
+  pb.rect(16, 38, 3, 2, C.skin0); // 手（坐袖内，skin0↔p2a0 ΔL*≈22 ≥12，绝不碰红衣）
+}
+
+/** 44×56 战斗帧：狼爪 54，骑手头顶 ~19，剪影高 ~35（T3 ≈78% → 坐骑高）。 */
+function drawWolfriderCombat(pb: PixBuf, atk: boolean): void {
+  if (!atk) {
+    // 狼身（灰 stone）
+    pb.ellipse(24, 48, 16, 8, C.stone2);
+    pb.ellipse(24, 53, 16, 4, C.stone0);
+    // 狼头（前伸，左）+ 长吻
+    pb.ellipse(7, 44, 5, 5, C.stone2);
+    pb.rect(1, 43, 7, 4, C.stone2); // 长吻到 x=1
+    pb.rect(1, 43, 2, 3, C.stone0);
+    pb.tri([8, 39], [12, 39], [10, 35], C.stone0); // 耳
+    pb.set(6, 43, C.ink0);
+    pb.set(7, 43, C.ink0);
+    // 尾
+    pb.rect(39, 41, 5, 3, C.stone2);
+    pb.rect(43, 40, 2, 2, C.p2a0);
+    // 四腿
+    pb.rect(11, 53, 3, 3, C.stone0);
+    pb.rect(19, 54, 3, 3, C.stone0);
+    pb.rect(28, 54, 3, 3, C.stone0);
+    pb.rect(36, 53, 3, 3, C.stone0);
+    aoContact(pb, 11, 38, 56);
+    // 骑手：红衣、后仰
+    pb.poly([[18, 45], [28, 38], [30, 50], [19, 53]], C.p2a2);
+    pb.line(18, 45, 28, 38, C.p2a0);
+    pb.hline(19, 30, 52, C.p2a0);
+    // 头（后仰）
+    pb.ellipse(26, 34, 5, 4.5, C.skin2);
+    pb.ellipse(26, 31, 6, 2.5, C.wood0);
+    brokenNails(pb, 22, 24, 28, 25, 7);
+    pb.line(21, 33, 24, 34, C.ink0);
+    pb.line(31, 33, 28, 34, C.ink0);
+    face(pb, 22, 28, 34, 37, 5, true);
+    // 手臂拽缰绳 + 臂上撞色
+    pb.hline(20, 23, 45, C.p2clash);
+    thickLine(pb, 23, 41, 9, 44, C.p2a0, C.p2a0);
+    pb.rect(21, 46, 5, 4, C.p2a0); // 袖（加宽到 x25 罩住手右侧；袖↔红衣 ΔL*≈16 ≥12）
+    pb.rect(22, 47, 3, 2, C.skin0); // 手（坐袖内，skin0↔p2a0 ΔL*≈22 ≥12）
+    return;
+  }
+  // 攻击帧：0.85× 高（35→30）狼前扑、骑手扬斧下劈
+  pb.ellipse(24, 48, 16, 8, C.stone2);
+  pb.ellipse(24, 53, 16, 4, C.stone0);
+  pb.ellipse(7, 44, 5, 5, C.stone2);
+  pb.rect(1, 43, 7, 4, C.stone2);
+  pb.rect(1, 43, 2, 3, C.stone0);
+  pb.tri([8, 39], [12, 39], [10, 35], C.stone0);
+  pb.set(6, 43, C.ink0);
+  pb.set(7, 43, C.ink0);
+  pb.rect(39, 41, 5, 3, C.stone2);
+  pb.rect(43, 40, 2, 2, C.p2a0);
+  pb.rect(11, 52, 3, 4, C.stone0);
+  pb.rect(19, 53, 3, 4, C.stone0);
+  pb.rect(28, 53, 3, 4, C.stone0);
+  pb.rect(36, 51, 3, 4, C.stone0);
+  aoContact(pb, 11, 38, 56);
+  pb.poly([[18, 46], [28, 40], [30, 51], [19, 53]], C.p2a2);
+  pb.line(18, 46, 28, 40, C.p2a0);
+  pb.hline(19, 30, 52, C.p2a0);
+  pb.ellipse(26, 35, 5, 4, C.skin2);
+  pb.ellipse(26, 32, 6, 2, C.wood0);
+  brokenNails(pb, 22, 26, 28, 27, 5);
+  pb.line(21, 34, 24, 35, C.ink0);
+  pb.line(31, 34, 28, 35, C.ink0);
+  face(pb, 22, 28, 34, 37, 5, true);
+  pb.hline(20, 23, 45, C.p2clash);
+  thickLine(pb, 23, 42, 10, 45, C.p2a0, C.p2a0);
+  pb.rect(21, 46, 5, 4, C.p2a0); // 袖（加宽到 x25 罩住手右侧；袖↔红衣 ΔL*≈16 ≥12）
+  pb.rect(22, 47, 3, 2, C.skin0); // 手（坐袖内，skin0↔p2a0 ΔL*≈22 ≥12）
+  // 飞出的斧（金属，刃带缺口；避免木↔红 同色系失败）
+  chamfer(pb, 34, 28, 6, 12, C.metal4, 1);
+  pb.rect(34, 28, 6, 12, C.metal2);
+  pb.frame(34, 28, 6, 12, C.metal4);
+  pb.tri([39, 33], [40, 35], [39, 36], C.ink1); // 缺口
+}
+
+/* ==========================================================================
+ * 15. p2 赤焰 T4 · 火油狂徒
+ *
+ * §5.6.3 形状家族：楔形前倾 / 锯齿缺口 / 顶部 1–3 根刺 / 重心偏前 / 高宽比 ≈ 1.0
+ * §5.6.4 T4 格：横抱火油桶，桶盖锯齿，身后拖火舌
+ * §1.3 唯一失调：火油桶比躯干还大（横抱，占剪影 ≥40%）
+ * §5.3 p2 兵种剪影：前倾 + 宽肩、矮胖、装备不合身
+ * 配色断言 8 预检：桶身 metal4(#dfe6f0) 贴红衣 p2a2(#e04a34) 色相差 ~170°；桶箍 metal2(#aab6c2)
+ *   贴红衣色相差 ~8° 但 ΔL*≈15 ≥12；火舌 p2emissive(#ffd06a) 贴红衣 ΔL*≈23 ≥8；桶盖缺口用 ink1 而非 metal0
+ *   （metal0 贴红衣色差仅 ~7 失败）。绝不用木桶（木↔红近明度近色相失败）。
+ * ========================================================================== */
+
+function drawFirebrand(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  if (kind === 'map') drawFirebrandMap(pb);
+  else if (kind === 'idle') drawFirebrandCombat(pb, false);
+  else drawFirebrandCombat(pb, true);
+}
+
+/** 32×44 冒险地图帧：脚底 42，桶+火舌横向铺到 x=33，剪影宽 ~30、高 ~27（T4，横阔）。
+ *  高宽比 ~0.9（明显宽于 T2 投斧蛮子 1.36，避免同族 T4↔T2 撞车）。 */
+function drawFirebrandMap(pb: PixBuf): void {
+  // 脚（贴地，基线 43）
+  pb.rect(12, 39, 7, 3, C.canv2);
+  pb.rect(20, 39, 7, 3, C.canv2);
+  aoContact(pb, 12, 26, 42);
+  // 躯干：红衣（赤焰标识），桶在身前（下）
+  pb.rect(12, 20, 11, 14, C.p2a2);            // x12-22 y20-33 红胸/肩
+  // 火油桶（横抱，金属，大 = 唯一比例失调），盖住红衣下半
+  chamfer(pb, 4, 26, 22, 13, C.metal4, 1);   // x4-26 y26-39
+  pb.rect(5, 27, 20, 11, C.metal2);
+  pb.frame(4, 26, 22, 13, C.metal4);
+  pb.vline(12, 27, 38, C.metal2);
+  pb.vline(19, 27, 38, C.metal2);
+  // 红腿（接桶与脚；p2a2↔metal2 / p2a2↔canv2 均安全，避免 metal2↔canv2 失败）
+  pb.rect(12, 37, 15, 3, C.p2a2);            // x12-26 y37-39
+  // 撞色破布（p2clash 在红衣上，桶上方 y26 之上可见；p2clash↔p2a2 ΔL*≈17）
+  pb.rect(14, 22, 5, 2, C.p2clash);
+  // 桶盖锯齿 ink1（桶盖上沿 y26，头在 y12-19，远隔 → wood0 不碰 ink1）
+  pb.tri([6, 26], [7, 24], [8, 26], C.ink1);
+  pb.tri([13, 26], [14, 24], [15, 26], C.ink1);
+  pb.tri([21, 26], [22, 24], [23, 26], C.ink1);
+  // 手臂横抱（p2a0 袖罩住手，袖↔桶安全；手只在袖内不碰 metal）
+  pb.rect(10, 28, 5, 8, C.p2a0);              // x10-14 y28-35 左袖
+  pb.rect(11, 32, 3, 2, C.skin0);             // 手在袖内
+  pb.rect(21, 28, 5, 8, C.p2a0);              // x21-25 y28-35 右袖
+  pb.rect(23, 32, 3, 2, C.skin0);
+  // 头（红衣之上，skin2/wood0 不贴 metal/ink1）
+  pb.ellipse(17, 16, 5, 3.5, C.skin2);        // x12-22 y12.5-19.5
+  pb.ellipse(17, 14, 6, 2, C.wood0);          // 发 x11-23 y12-16
+  brokenNails(pb, 13, 9, 19, 10, 6);
+  pb.line(13, 15, 15, 16, C.ink0);
+  pb.line(21, 15, 19, 16, C.ink0);
+  face(pb, 14, 20, 17, 19, 4, true);
+  // 身后拖火舌（p2emissive，悬空在桶右，与 metal4 隔 ≥1px）
+  pb.ellipse(30, 30, 3, 2, C.p2emissive);     // x27-33 y28-32
+  pb.set(33, 29, C.p2emissive);
+  pb.set(34, 31, C.p2emissive);
+  pb.set(32, 33, C.p2emissive);
+}
+
+/** 44×56 战斗帧：脚底 54，桶+火舌横向铺到 x=39，剪影宽 ~36、高 ~35（T4 ≈88%，横阔）。 */
+function drawFirebrandCombat(pb: PixBuf, atk: boolean): void {
+  if (!atk) {
+    pb.rect(19, 50, 7, 4, C.canv2);
+    pb.rect(27, 50, 8, 4, C.canv2);
+    aoContact(pb, 19, 35, 54);
+    // 红衣胸/肩
+    pb.rect(17, 26, 15, 18, C.p2a2);           // x17-31 y26-43
+    // 火油桶（横抱，金属，大）
+    chamfer(pb, 6, 34, 30, 16, C.metal4, 1);   // x6-36 y34-49
+    pb.rect(7, 35, 28, 14, C.metal2);
+    pb.frame(6, 34, 30, 16, C.metal4);
+    pb.vline(16, 35, 48, C.metal2);
+    pb.vline(26, 35, 48, C.metal2);
+    // 撞色破布（p2clash 在红衣上，桶上方可见）
+    pb.rect(20, 28, 6, 2, C.p2clash);           // y28-29
+    // 桶盖锯齿 ink1（桶盖上沿 y34，头在 y18-26 之上）
+    pb.tri([9, 34], [10, 31], [11, 34], C.ink1);
+    pb.tri([18, 34], [19, 31], [20, 34], C.ink1);
+    pb.tri([27, 34], [28, 31], [29, 34], C.ink1);
+    pb.tri([34, 34], [35, 31], [36, 34], C.ink1);
+    // 手臂横抱（p2a0 袖，手在袖内不碰 metal）
+    pb.rect(15, 37, 5, 9, C.p2a0);              // x15-19 y37-45 左袖
+    pb.rect(16, 42, 3, 2, C.skin0);
+    pb.rect(32, 37, 5, 9, C.p2a0);              // x32-36 y37-45 右袖
+    pb.rect(33, 42, 3, 2, C.skin0);
+    // 头（红衣之上）
+    pb.ellipse(26, 22, 5, 4, C.skin2);          // x21-31 y18-26
+    pb.ellipse(26, 19, 6, 2.5, C.wood0);
+    brokenNails(pb, 22, 13, 28, 14, 7);
+    pb.line(22, 21, 24, 22, C.ink0);
+    pb.line(31, 21, 29, 22, C.ink0);
+    face(pb, 22, 30, 23, 26, 5, true);
+    // 身后拖火舌（悬空，桶右，与 metal4 隔 ≥1px）
+    pb.ellipse(41, 38, 4, 3, C.p2emissive);     // x37-45 y35-41
+    pb.set(44, 36, C.p2emissive);
+    pb.set(44, 40, C.p2emissive);
+    pb.set(42, 42, C.p2emissive);
+    return;
+  }
+  // 攻击帧：桶甩向左前方，火舌喷大飞出（朝右，脱离桶）
+  pb.rect(19, 50, 7, 4, C.canv2);
+  pb.rect(27, 50, 8, 4, C.canv2);
+  aoContact(pb, 19, 35, 54);
+  pb.rect(17, 27, 15, 17, C.p2a2);             // 红衣 x17-31 y27-43
+  // 桶甩向左前方
+  chamfer(pb, 4, 35, 27, 15, C.metal4, 1);     // x4-31 y35-49
+  pb.rect(5, 36, 25, 13, C.metal2);
+  pb.frame(4, 35, 27, 15, C.metal4);
+  pb.vline(14, 36, 48, C.metal2);
+  pb.vline(23, 36, 48, C.metal2);
+  // 撞色破布（p2clash 在红衣上，桶上方可见）
+  pb.rect(20, 29, 6, 2, C.p2clash);            // y29-30
+  // 桶盖锯齿 ink1（桶盖上沿 y35，头在 y19-27 之上）
+  pb.tri([8, 35], [9, 32], [10, 35], C.ink1);
+  pb.tri([16, 35], [17, 32], [18, 35], C.ink1);
+  pb.tri([24, 35], [25, 32], [26, 35], C.ink1);
+  // 手臂横抱（p2a0 袖，手在袖内不碰 metal）
+  pb.rect(14, 38, 5, 9, C.p2a0);               // x14-18 y38-46 左袖
+  pb.rect(15, 43, 3, 2, C.skin0);
+  pb.rect(30, 38, 5, 9, C.p2a0);               // x30-34 y38-46 右袖
+  pb.rect(31, 43, 3, 2, C.skin0);
+  // 头
+  pb.ellipse(27, 23, 5, 4, C.skin2);           // x22-32 y19-27
+  pb.ellipse(27, 20, 6, 2.5, C.wood0);
+  brokenNails(pb, 23, 14, 29, 15, 5);
+  pb.line(23, 22, 25, 23, C.ink0);
+  pb.line(32, 22, 30, 23, C.ink0);
+  face(pb, 23, 31, 24, 27, 5, true);
+  // 喷出的大火舌（悬空，朝右，不碰 metal）
+  pb.ellipse(39, 38, 4, 3, C.p2emissive);      // x35-43 y35-41
+  pb.set(43, 36, C.p2emissive);
+  pb.set(43, 40, C.p2emissive);
+  pb.set(41, 42, C.p2emissive);
 }
