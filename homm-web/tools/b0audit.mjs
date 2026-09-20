@@ -33,7 +33,9 @@ import {
   buildB0Frame,
   TIER_OF,
   TIER_TARGET_PCT,
+  TIER_TARGET_PCT_MAP,
   setTierNormalizeEnabled,
+  isTierNormalizeEnabled,
 } from '../dist/render/unitArt.js';
 import { shade } from '../dist/render/pixel.js';
 
@@ -134,6 +136,22 @@ function readBuf(pb) {
     d.push(row);
   }
   return d;
+}
+
+/** 剪影 bbox（含宽高），供横向适配断言用。 */
+function bodyBox(name) {
+  const pb = buildB0Frame(name, false);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let y = 0; y < pb.h; y++) {
+    for (let x = 0; x < pb.w; x++) {
+      if (pb.px(x, y)[3] <= 8) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  return { w: x1 - x0 + 1, h: y1 - y0 + 1 };
 }
 
 const A = (d, x, y) => (y >= 0 && y < d.length && x >= 0 && x < d[0].length ? d[y][x] : [0, 0, 0, 0]);
@@ -664,82 +682,128 @@ record(5, '基线对齐（两族 map 帧）', bA === bB && bA >= 0, {
   delta: Math.abs(bA - bB),
 });
 
-/* ---------------------------------------------------------------- 剪影矩阵断言（§5.6.1 / §5.6.2）
-
- * 体量 = 剪影高 ÷ 画布高（cu 帧 = 56），与 silhouette() 诊断同口径（含 1px 描边）。
- * 范围：只覆盖 cu 帧（44×56）；map 帧（32×44）目标值待 art-director 裁定，不纳入。
- * H1/H2 硬（不依赖容差），S1 软（自设 ±8pt，非规格，见 silhouette-audit.md §1）。
- */
-// 只取 idle 帧作 tier 体量代表（与 silhouette-audit.md 的 16 单位 / 120 对口径一致；
-// 每单位 2 张 cu 帧，atk 是 idle 的攻击变体，不计入矩阵）。
-const cuFrames = frames.filter((f) => f.spec.w === 44 && f.spec.kind === 'idle');
-// 体量 = 剪影高 ÷ 画布高（cu 帧 = 56）。silhouette() 的 bbox 形如 "W×H"，取 H。
-const volPct = (f) => {
-  const m = silhouette(f.d).bbox.match(/^(\d+)×(\d+)$/);
-  const sh = m ? +m[2] : 0;
-  return (sh / 56) * 100;
-};
-
-// 按族分组（p1/p2/p3/p4）
-const byFaction = new Map();
-for (const f of cuFrames) {
-  const fac = f.spec.unit.slice(0, 2);
-  if (!byFaction.has(fac)) byFaction.set(fac, []);
-  byFaction.get(fac).push(f);
-}
-
-// H1：四族各自的 T1→T4 体量严格递增，且最小步长 ≥6pt
+// 断言 12：等比缩放**不得横向溢出画布**。
+//
+// 机制是等比（两轴同 scale），宽度由目标高决定：destW = round(srcW × 目标体高 ÷ srcH)。
+// 若 destW > 画布宽，精灵两侧会被硬裁 —— 画布是精灵槽位，裁掉的部分在游戏里就是没了。
+// 这里按同一算式复算而不是「检测是否触边」：被裁掉的那一列**可能本来就是透明的**，
+// 触边法会漏报；复算精确。代价是机制改几何时要同步改这里 —— 但那只会**误报（红）**，
+// 不会漏报，方向是安全的。
 {
-  const detail = {};
-  let allOk = true;
-  for (const [fac, fs] of byFaction) {
-    const order = [1, 2, 3, 4].map((t) => fs.find((f) => TIER_OF[f.spec.unit] === t));
-    const vals = order.map((f) => (f ? +volPct(f).toFixed(1) : NaN));
-    let ok = true;
-    for (let t = 0; t < 4; t++) {
-      if (!order[t] || !isFinite(vals[t])) { ok = false; break; }
-      if (t > 0 && vals[t] - vals[t - 1] < 6 - 1e-9) ok = false; // 严格递增 + 步长 ≥6pt
-    }
-    if (!ok) allOk = false;
-    detail[`${fac} T1→T4`] = vals.map((v) => (isFinite(v) ? v.toFixed(1) : '—')).join(' / ');
-  }
-  record(9, 'H1 体量阶梯严格递增(步长≥6pt)', allOk, { ...detail, name: 'H1' });
-}
+  const wasOn = isTierNormalizeEnabled();
+  setTierNormalizeEnabled(false);
+  const raw = new Map();
+  for (const f of frames) raw.set(f.spec.name, bodyBox(f.spec.name));
+  setTierNormalizeEnabled(wasOn); // ★ 恢复原状态（--no-tier-norm 下不要把它打开）
 
-// H2：跨族 tier 倒挂对 = 0（tier 低却比 tier 高的大，即矩阵纵轴塌掉）
-{
-  const list = cuFrames.map((f) => ({ unit: f.spec.unit, tier: TIER_OF[f.spec.unit], v: volPct(f) }));
-  let inv = 0;
-  const samples = [];
-  for (let i = 0; i < list.length; i++) {
-    for (let j = 0; j < list.length; j++) {
-      if (i === j) continue;
-      const a = list[i];
-      const b = list[j];
-      if (a.tier < b.tier && a.v > b.v + 1e-9) {
-        inv++;
-        if (samples.length < 10) samples.push(`${a.unit}(T${a.tier},${a.v.toFixed(1)}%)>${b.unit}(T${b.tier},${b.v.toFixed(1)}%)`);
+  const bad = [];
+  if (wasOn) {
+    for (const f of frames) {
+      const b = raw.get(f.spec.name);
+      const t = TIER_OF[f.spec.unit];
+      const pct = f.spec.kind === 'map' ? TIER_TARGET_PCT_MAP[t] : TIER_TARGET_PCT[t];
+      const targetBody = Math.floor((pct / 100) * f.spec.h) - 1;
+      const destW = Math.max(1, Math.round(b.w * (targetBody / b.h)));
+      if (destW > f.spec.w) {
+        bad.push(`${f.spec.name} destW=${destW} > 画布宽 ${f.spec.w}（两侧共溢出 ${destW - f.spec.w}px）`);
       }
     }
   }
-  record(10, 'H2 跨族 tier 倒挂对 = 0', inv === 0, { 倒挂对: inv, 示例: samples.join('  '), name: 'H2' });
+  record(12, '等比缩放不横向溢出画布', bad.length === 0, {
+    name: '横向适配',
+    说明: wasOn ? '机制开启' : '机制关闭（不缩放 ⇒ 无溢出，本条不适用）',
+    溢出帧数: bad.length,
+    明细: bad,
+  });
 }
 
-// S1：每族每 tier 落在 §5.6.2 目标 ±8pt（软，自设容差，非规格）
-{
-  let bad = 0;
-  const detail = {};
-  for (const f of cuFrames) {
-    const t = TIER_OF[f.spec.unit];
-    const v = volPct(f);
-    const off = v - TIER_TARGET_PCT[t];
-    if (Math.abs(off) > 8 + 1e-9) {
-      bad++;
-      detail[f.spec.unit] = `${v.toFixed(1)}%(靶${TIER_TARGET_PCT[t]},偏${off >= 0 ? '+' : ''}${off.toFixed(1)})`;
-    }
+/* ---------------------------------------------------------------- 剪影矩阵断言（§5.6.1 / §5.6.2）
+
+ * 体量 = 剪影高 ÷ **该画布高** × 100，与 silhouette() 诊断同口径（含 1px 描边）。
+ * 范围：**两个画布都覆盖** ——
+ *   · cu（44×56）：目标 = TIER_TARGET_PCT（§5.6.2 的原文定义画布）
+ *   · map（32×44）：目标 = TIER_TARGET_PCT_MAP（§5.6.2 只写了 44×56，map 目标由主理人代裁，选项 a）
+ * ⚠️ 为什么必须覆盖 map：本 P0 之所以能潜伏到 B2 之后，正是**「实现的通道没有断言」**。
+ *    只断言 cu 等于把同一个坑在 map 上再挖一次。
+ * H1/H2 硬（不依赖容差）；S1 软（自设 ±8pt，非规格，见 silhouette-audit.md §1）。
+ *
+ * 只取 idle 帧作 tier 体量代表（与 silhouette-audit.md 的 16 单位 / 120 对口径一致；
+ * 每个单位 2 张帧，atk 是该单位的攻击变体，不计入矩阵）。
+ */
+function checkTierMatrix({ label, frameW, kind, targets }) {
+  const list = frames.filter((f) => f.spec.w === frameW && f.spec.kind === kind);
+  const canvasH = list.length ? list[0].spec.h : 0;
+  // ★ 真空守卫：过滤器写错（比如拿 'idle' 去筛 map 帧）会得到空列表 ⇒ 三条断言全部
+  //   「无记录可判」而 PASS。**一条什么都没测的绿断言比红的更危险** ——
+  //   本次就真踩了：map 帧的 kind 是 'map' 不是 'idle'，H1·map 一度是真空 PASS。
+  const nonEmpty = list.length > 0;
+  const volOf = (f) => {
+    const m = silhouette(f.d).bbox.match(/^(\d+)×(\d+)$/);
+    return ((m ? +m[2] : 0) / canvasH) * 100;
+  };
+  const byFaction = new Map();
+  for (const f of list) {
+    const fac = f.spec.unit.slice(0, 2);
+    if (!byFaction.has(fac)) byFaction.set(fac, []);
+    byFaction.get(fac).push(f);
   }
-  record(11, 'S1 每族每 tier 落在目标 ±8pt(非规格容差)', bad === 0, { 越界帧数: bad, ...detail, name: 'S1' });
+
+  // H1：四族各自的 T1→T4 体量严格递增，且最小步长 ≥6pt
+  {
+    const detail = {};
+    let allOk = true;
+    for (const [fac, fs] of byFaction) {
+      const order = [1, 2, 3, 4].map((t) => fs.find((f) => TIER_OF[f.spec.unit] === t));
+      const vals = order.map((f) => (f ? +volOf(f).toFixed(1) : NaN));
+      let ok = true;
+      for (let t = 0; t < 4; t++) {
+        if (!order[t] || !isFinite(vals[t])) { ok = false; break; }
+        if (t > 0 && vals[t] - vals[t - 1] < 6 - 1e-9) ok = false; // 严格递增 + 步长 ≥6pt
+      }
+      if (!ok) allOk = false;
+      detail[`${fac} T1→T4`] = vals.map((v) => (isFinite(v) ? v.toFixed(1) : '—')).join(' / ');
+    }
+    record(9, `H1 体量阶梯严格递增(步长≥6pt) · ${label}`, allOk && nonEmpty, { 画布: label, 帧数: list.length, ...detail, name: `H1·${label}` });
+  }
+
+  // H2：跨族 tier 倒挂对 = 0（tier 低却比 tier 高的大，即矩阵纵轴塌掉）
+  {
+    const l = list.map((f) => ({ unit: f.spec.unit, tier: TIER_OF[f.spec.unit], v: volOf(f) }));
+    let inv = 0;
+    const samples = [];
+    for (let i = 0; i < l.length; i++) {
+      for (let j = 0; j < l.length; j++) {
+        if (i === j) continue;
+        const a = l[i];
+        const b = l[j];
+        if (a.tier < b.tier && a.v > b.v + 1e-9) {
+          inv++;
+          if (samples.length < 10) samples.push(`${a.unit}(T${a.tier},${a.v.toFixed(1)}%)>${b.unit}(T${b.tier},${b.v.toFixed(1)}%)`);
+        }
+      }
+    }
+    record(10, `H2 跨族 tier 倒挂对 = 0 · ${label}`, inv === 0 && nonEmpty, { 画布: label, 帧数: list.length, 倒挂对: inv, 示例: samples.join('  '), name: `H2·${label}` });
+  }
+
+  // S1：每族每 tier 落在该画布目标 ±8pt（软，自设容差，非规格）
+  {
+    let bad = 0;
+    const detail = {};
+    for (const f of list) {
+      const t = TIER_OF[f.spec.unit];
+      const v = volOf(f);
+      const off = v - targets[t];
+      if (Math.abs(off) > 8 + 1e-9) {
+        bad++;
+        detail[f.spec.unit] = `${v.toFixed(1)}%(靶${targets[t].toFixed(1)},偏${off >= 0 ? '+' : ''}${off.toFixed(1)})`;
+      }
+    }
+    record(11, `S1 每族每 tier 落在目标 ±8pt(非规格容差) · ${label}`, bad === 0 && nonEmpty, { 画布: label, 帧数: list.length, 越界帧数: bad, ...detail, name: `S1·${label}` });
+  }
 }
+
+checkTierMatrix({ label: 'cu 44×56', frameW: 44, kind: 'idle', targets: TIER_TARGET_PCT });
+checkTierMatrix({ label: 'map 32×44', frameW: 32, kind: 'map', targets: TIER_TARGET_PCT_MAP });
 
 /* ---------------------------------------------------------------- 报告 */
 
@@ -751,7 +815,7 @@ for (const r of results) {
 
 console.log('\n── 自动断言（逐帧 1/2/4/8 + 色板级 3 + 基线 5） ──');
 const verdict = new Map();
-for (const id of [1, 2, 3, 4, 5, 8, 9, 10, 11]) {
+for (const id of [1, 2, 3, 4, 5, 8, 9, 10, 11, 12]) {
   const rs = byId.get(id) ?? [];
   const pass = rs.every((r) => r.pass);
   verdict.set(id, pass);

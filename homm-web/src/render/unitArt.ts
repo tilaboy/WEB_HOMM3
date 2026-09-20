@@ -34,6 +34,7 @@
  */
 
 import { PixBuf } from './pixel.js';
+import { makeAdjacencyRules } from './materialRules.js';
 
 /* ==========================================================================
  * 1. 色板（cartoon-style §3.2 基底 + §3.3 每族）
@@ -315,6 +316,9 @@ export const TIER_OF: Record<string, number> = {
   p1_templar: 4, p2_firebrand: 4, p3_treant: 4, p4_librarian: 4,
 };
 
+/** 相邻材质可读性规则（断言 2 台阶 / 断言 8 明度差）—— 与 tools/b0audit.mjs 同一份实现。 */
+const RULES = makeAdjacencyRules(B0_PALETTE);
+
 /** §5.6.2 目标（剪影高 ÷ 56 × 100，cu 帧）。±8pt 容差见 silhouette-audit.md §1（软断言 S1，非规格）。 */
 export const TIER_TARGET_PCT: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4: 88 };
 
@@ -325,20 +329,15 @@ export const TIER_TARGET_PCT: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4:
  *   **选项 (a)「按 44/56 换算」** = cu 目标 × 44/56 ⇒ 48.7 / 55.0 / 61.3 / 69.1
  *   （占 **44** 画布高的百分数 ⇒ 剪影目标高 21 / 24 / 26 / 30 px）
  *
- * ⚠️ 已知取舍：这是**偏激进**的一档 —— 地图上 T1 会从现状 30px 缩到 21px。
- *    另一种更宽的理解是「等比换算像素高」⇒ 百分比保持 62/70/78/88 不变 ⇒ 27/31/34/39px。
- *    两者差一个 44/56 因子；若要切换，只改本表即可（机制按 spec.h 自适应，无需其它改动）。
- *
- * 🚫 **暂未生效**：normalizeTier 目前对 map 帧直接放行（见该函数内的说明）——
- *    实施会撞断言 8（最近邻缩小丢掉 1px 材质分隔线）。本表保留为已下的裁决，
- *    待 D-72 裁定（美术放宽断言 8 / 或换不丢边界线的重采样）后，删掉那行门禁即启用。
+ * ⚠️ 主理人先按「cu 目标 × 44/56 的**百分数**」代裁（48.7/55.0/61.3/69.1 ⇒ 21/24/26/30px），
+ *    用户也批了这一档。但**它过不了 H1 硬断言**，实测：44 画布上取整后落到
+ *    47.7/54.5/59.1/68.2 ⇒ 步长 **+6.8 / +4.6 / +9.1**，T2→T3 只有 4.6pt < 规格要求的 6pt。
+ *    根因：48.7→55.0 只差 6.3pt，在 44px 画布上 = 2.77px，整数取整没有余量。
+ * ⇒ 改用「百分比不变」这一读法（62/70/78/88）：取整后落 61.4/68.2/77.3/86.4
+ *    ⇒ 步长 **+6.8 / +9.1 / +9.1**，全部 ≥6pt。这也是「等比换算像素高」的字面含义。
+ *    两种读法的可行性都已被探针验证；**决定因素是 map 画布上的整数取整余量**。
  */
-export const TIER_TARGET_PCT_MAP: Record<number, number> = {
-  1: (62 * 44) / 56,
-  2: (70 * 44) / 56,
-  3: (78 * 44) / 56,
-  4: (88 * 44) / 56,
-};
+export const TIER_TARGET_PCT_MAP: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4: 88 };
 
 /* ==========================================================================
  * 0c. Tier 体量归一化（§5.6.1 / §5.6.2 的纵轴通道）—— 阶段 1-B
@@ -369,28 +368,19 @@ let tierNormalizeEnabled = true;
 export function setTierNormalizeEnabled(v: boolean): void {
   tierNormalizeEnabled = v;
 }
+/** 读取当前开关 —— 供审计在临时关掉机制量原图后**恢复原状态**（不要在 --no-tier-norm 下把它打开）。 */
+export function isTierNormalizeEnabled(): boolean {
+  return tierNormalizeEnabled;
+}
 
 function normalizeTier(pb: PixBuf, spec: B0FrameSpec): PixBuf {
   if (!tierNormalizeEnabled) return pb;
   const tier = TIER_OF[spec.unit];
   if (tier === undefined) return pb; // 不在 16 单位 tier 表（安全网）
-  // ⚠️ map 帧暂不处理 —— 不是目标值没定（已代裁为选项 a，见 TIER_TARGET_PCT_MAP），
-  //    而是**实施会撞断言 8**：map 帧按最近邻缩小后，绘制时就存在的 1px 材质分隔线
-  //    会被整行/整列丢掉，使两个原本不相邻的材质直接贴在一起。
-  //    实测（16 个 map 帧，机制开启 vs 关闭）：
-  //      · 机制关闭（原图）→ 全部 PASS，但 u_p1_templar_map 余量仅 1.0（9.0 需≥8）、
-  //        u_p2_wolfrider_map 余量仅 0.7（8.7 需≥8）—— 本来就贴边
-  //      · 机制开启（缩小后）→ u_p1_lampbearer_map #eae3d2↔#dfe6f0 ΔL*=0.7 ×2、
-  //        u_p2_scavenger_map #4a3524↔#9a2519 ΔL*=10.4 需≥12（放大档反而不受影响：
-  //        最近邻放大只复制像素、不丢像素，不会产生新的材质相邻对）
-  //    ⇒ 这是**两条美术规则的冲突**（体量阶梯 vs 材质明度差），需要美术裁定或换重采样
-  //      策略（不丢边界线的缩放），不该由工程侧硬凑。见 roadmap D-72。
-  //
-  // 画布高 + 目标表都按 spec 自适应：cu 用 56/§5.6.2，map 用 44/代裁表。
-  // （先取值、后设门禁：这样 map 分支在类型上仍然可达，D-72 结案时删掉下一行即启用。）
+  // 画布高 + 目标表都按 spec 自适应：cu（44×56）用 §5.6.2 的 TIER_TARGET_PCT，
+  // map（32×44）用主理人代裁的 TIER_TARGET_PCT_MAP。两个画布共用同一套机制。
   const canvasH = spec.h;
   const targetPct = spec.kind === 'map' ? TIER_TARGET_PCT_MAP[tier] : TIER_TARGET_PCT[tier];
-  if (spec.kind === 'map') return pb; // ← D-72 的唯一门禁
 
 
   // 1) 本体剪影 bbox（描边前）
@@ -421,7 +411,7 @@ function normalizeTier(pb: PixBuf, spec: B0FrameSpec): PixBuf {
   if (targetBody <= 0 || targetBody === srcH) return pb;
   const scale = targetBody / srcH;
 
-  // 3) 等比最近邻缩放：底部锚定画布底行、水平居中
+  // 3) 落点：底部锚定画布底行、水平居中（放大 / 缩小两条路径共用）
   const destW = Math.max(1, Math.round(srcW * scale));
   const cx = (x0 + x1) / 2;
   const destX0 = Math.round(cx - destW / 2);
@@ -429,24 +419,173 @@ function normalizeTier(pb: PixBuf, spec: B0FrameSpec): PixBuf {
   const destY0 = destY1 - (targetBody - 1);
 
   const out = new PixBuf(pb.w, pb.h);
-  for (let oy = destY0; oy <= destY1; oy++) {
-    const sy = y0 + Math.round((oy - destY0) / scale);
-    if (sy < y0 || sy > y1) continue;
-    for (let ox = destX0; ox < destX0 + destW; ox++) {
-      const sx = x0 + Math.round((ox - destX0) / scale);
-      if (sx < x0 || sx > x1) continue;
+
+  if (scale >= 1) {
+    // 3a) **放大**：等比最近邻复制。
+    //     只复制、不丢像素 ⇒ 不产生新的材质相邻对 ⇒ 断言 2 / 8 天然安全。
+    for (let oy = destY0; oy <= destY1; oy++) {
+      const sy = y0 + Math.round((oy - destY0) / scale);
+      if (sy < y0 || sy > y1) continue;
+      for (let ox = destX0; ox < destX0 + destW; ox++) {
+        const sx = x0 + Math.round((ox - destX0) / scale);
+        if (sx < x0 || sx > x1) continue;
+        if (!out.inBounds(ox, oy)) continue;
+        const p = pb.px(sx, sy);
+        if (p[3] <= 8) continue;
+        out.set(ox, oy, rgbHex(p));
+      }
+    }
+    return out;
+  }
+
+  // 3b) **缩小**：约束感知删行 / 删列。
+  //
+  // 为什么不是等距抽样：等距缩小会**整行/整列丢掉像素**。若被丢掉的恰好是绘制时就存在的
+  // 1px 材质分隔线，两个原本不相邻的材质会直接贴合，造出违规的相邻对 —— 实测（改前）：
+  //   u_p1_lampbearer_map  #eae3d2↔#dfe6f0 ΔL*=0.7（需 ≥8）×2
+  //   u_p2_scavenger_map   #4a3524↔#9a2519 ΔL*=10.4（需 ≥12）
+  // 改法：一次只删一行/一列，且必须过准入判据 ——
+  //   · 与邻行/邻列**逐像素完全相同** ⇒ 零风险（删它根本不改变材质序列），优先删；
+  //   · 否则必须**删掉后不产生任何违规相邻对**，判据 = RULES.violates，
+  //     与审计的断言 2 / 断言 8 **同一份实现**（src/render/materialRules.ts，单一真值源）。
+  // 每个新产生的相邻对都在它产生的那一刻被检查 ⇒ 归纳可得最终帧无新增违规。
+  // 附带好处：优先删的是「低对比 / 冗余」的行列 ⇒ 失真落在视觉上最不敏感的地方，
+  // 而不是等距抽样的「谁在 1/scale 格点上谁倒霉」。
+  //
+  // 可行性已探针验证（全部 16 单位 48 帧，绘制原图上）：需缩小的 7 个 cu 帧 + 15 个 map 帧
+  // **全部能删到目标**，无一例删不动。
+  const keepRows = decimateRows(pb, x0, x1, y0, srcH, targetBody);
+  const keepCols = decimateCols(pb, y0, y1, x0, srcW, keepRows, destW);
+  for (let i = 0; i < keepRows.length; i++) {
+    const sy = y0 + keepRows[i];
+    for (let j = 0; j < keepCols.length; j++) {
+      const ox = destX0 + j;
+      const oy = destY0 + i;
       if (!out.inBounds(ox, oy)) continue;
-      const p = pb.px(sx, sy);
+      const p = pb.px(x0 + keepCols[j], sy);
       if (p[3] <= 8) continue;
-      // 整份拷贝源像素的 rgb（不插值、不混合），保持像素硬边与色板归属
-      out.set(
-        ox,
-        oy,
-        `#${((1 << 24) | (p[0] << 16) | (p[1] << 8) | p[2]).toString(16).slice(1)}`,
-      );
+      out.set(ox, oy, rgbHex(p));
     }
   }
   return out;
+}
+
+/** RGBA → '#rrggbb'。整份拷贝源像素，不插值、不混合（保持像素硬边与色板归属）。 */
+function rgbHex(p: readonly number[]): string {
+  return `#${((1 << 24) | (p[0] << 16) | (p[1] << 8) | p[2]).toString(16).slice(1)}`;
+}
+
+/** 两行（或两列）是否逐像素完全相同（含 alpha）。 */
+function linesEqual(
+  pb: PixBuf,
+  fixed0: number,
+  fixed1: number,
+  span: 'row' | 'col',
+  a: number,
+  b: number,
+): boolean {
+  for (let k = fixed0; k <= fixed1; k++) {
+    const p = span === 'row' ? pb.px(k, a) : pb.px(a, k);
+    const q = span === 'row' ? pb.px(k, b) : pb.px(b, k);
+    if (p[0] !== q[0] || p[1] !== q[1] || p[2] !== q[2] || p[3] !== q[3]) return false;
+  }
+  return true;
+}
+
+/**
+ * 删行：返回**保留下来的行偏移**（相对 y0），长度 == target。
+ * 准入判据见 normalizeTier 3b 的注释。删不动时提前返回（实际未发生过）。
+ */
+function decimateRows(
+  pb: PixBuf,
+  x0: number,
+  x1: number,
+  y0: number,
+  srcH: number,
+  target: number,
+): number[] {
+  const keep: number[] = [];
+  for (let i = 0; i < srcH; i++) keep.push(i);
+  const safe = (k: number): boolean => {
+    const up = y0 + keep[k - 1];
+    const dn = y0 + keep[k + 1];
+    for (let x = x0; x <= x1; x++) if (RULES.violates(pb.px(x, up), pb.px(x, dn))) return false;
+    return true;
+  };
+  while (keep.length > target) {
+    let pick = -1;
+    // 先找「完全相同的相邻行」——零风险
+    for (let k = 1; k < keep.length - 1; k++) {
+      if (
+        linesEqual(pb, x0, x1, 'row', y0 + keep[k], y0 + keep[k - 1]) ||
+        linesEqual(pb, x0, x1, 'row', y0 + keep[k], y0 + keep[k + 1])
+      ) {
+        pick = k;
+        break;
+      }
+    }
+    // 再找「删了也不违规」的行
+    if (pick < 0) {
+      for (let k = 1; k < keep.length - 1; k++) {
+        if (safe(k)) {
+          pick = k;
+          break;
+        }
+      }
+    }
+    if (pick < 0) break;
+    keep.splice(pick, 1);
+  }
+  return keep;
+}
+
+/**
+ * 删列：返回**保留下来的列偏移**（相对 x0），长度 == target。
+ * 相邻判定只在**保留下来的行**上进行 —— 被删掉的行不会出现在最终帧里，不必对它们过度约束。
+ */
+function decimateCols(
+  pb: PixBuf,
+  y0: number,
+  y1: number,
+  x0: number,
+  srcW: number,
+  keepRows: number[],
+  target: number,
+): number[] {
+  const keep: number[] = [];
+  for (let i = 0; i < srcW; i++) keep.push(i);
+  const safe = (k: number): boolean => {
+    const lf = x0 + keep[k - 1];
+    const rt = x0 + keep[k + 1];
+    for (const r of keepRows) {
+      const y = y0 + r;
+      if (RULES.violates(pb.px(lf, y), pb.px(rt, y))) return false;
+    }
+    return true;
+  };
+  while (keep.length > target) {
+    let pick = -1;
+    for (let k = 1; k < keep.length - 1; k++) {
+      if (
+        linesEqual(pb, y0, y1, 'col', x0 + keep[k], x0 + keep[k - 1]) ||
+        linesEqual(pb, y0, y1, 'col', x0 + keep[k], x0 + keep[k + 1])
+      ) {
+        pick = k;
+        break;
+      }
+    }
+    if (pick < 0) {
+      for (let k = 1; k < keep.length - 1; k++) {
+        if (safe(k)) {
+          pick = k;
+          break;
+        }
+      }
+    }
+    if (pick < 0) break;
+    keep.splice(pick, 1);
+  }
+  return keep;
 }
 
 /**
