@@ -303,8 +303,10 @@ export function b0FrameSpec(name: string): B0FrameSpec {
  * tier / 体量参数 ⇒ Tier 通道（纵轴）从未被实现。下面的元数据让审计（b0audit.mjs
  * 的 H1/H2/S1）与归一化机制（normalizeTier）共用同一份 tier→目标 的真值源。
  *
- * 阶段 1-B 只把 normalizeTier 铺到 p1 一族；TIER_OF / TIER_TARGET_PCT 是全量真值，
- * 供审计在 16 单位上全量扫剪影矩阵（map 帧不在 H1/H2/S1 范围，见 silhouette-audit.md §1）。
+ * P0 收口后 normalizeTier 覆盖全部 16 单位的 **cu 帧**（44×56）；map 帧（32×44）暂缓 ——
+ * 目标值已代裁（TIER_TARGET_PCT_MAP）但实施会撞断言 8，见 D-72。
+ * TIER_OF / TIER_TARGET_PCT(_MAP) 是全量真值，供审计（b0audit.mjs 的 H1/H2/S1）
+ * 与归一化机制共用同一份 tier→目标 的真值源。
  */
 export const TIER_OF: Record<string, number> = {
   p1_lampbearer: 1, p2_scavenger: 1, p3_dwarf: 1, p4_stoneimp: 1,
@@ -315,6 +317,28 @@ export const TIER_OF: Record<string, number> = {
 
 /** §5.6.2 目标（剪影高 ÷ 56 × 100，cu 帧）。±8pt 容差见 silhouette-audit.md §1（软断言 S1，非规格）。 */
 export const TIER_TARGET_PCT: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4: 88 };
+
+/**
+ * map 画布（32×44）的 tier 目标 —— §5.6.2 只写了「占 **44×56** 战斗画布高」这一句，
+ * map 画布的目标值规格里没有，由主理人代裁（art-director 两轮均未能产出）：
+ *
+ *   **选项 (a)「按 44/56 换算」** = cu 目标 × 44/56 ⇒ 48.7 / 55.0 / 61.3 / 69.1
+ *   （占 **44** 画布高的百分数 ⇒ 剪影目标高 21 / 24 / 26 / 30 px）
+ *
+ * ⚠️ 已知取舍：这是**偏激进**的一档 —— 地图上 T1 会从现状 30px 缩到 21px。
+ *    另一种更宽的理解是「等比换算像素高」⇒ 百分比保持 62/70/78/88 不变 ⇒ 27/31/34/39px。
+ *    两者差一个 44/56 因子；若要切换，只改本表即可（机制按 spec.h 自适应，无需其它改动）。
+ *
+ * 🚫 **暂未生效**：normalizeTier 目前对 map 帧直接放行（见该函数内的说明）——
+ *    实施会撞断言 8（最近邻缩小丢掉 1px 材质分隔线）。本表保留为已下的裁决，
+ *    待 D-72 裁定（美术放宽断言 8 / 或换不丢边界线的重采样）后，删掉那行门禁即启用。
+ */
+export const TIER_TARGET_PCT_MAP: Record<number, number> = {
+  1: (62 * 44) / 56,
+  2: (70 * 44) / 56,
+  3: (78 * 44) / 56,
+  4: (88 * 44) / 56,
+};
 
 /* ==========================================================================
  * 0c. Tier 体量归一化（§5.6.1 / §5.6.2 的纵轴通道）—— 阶段 1-B
@@ -333,8 +357,9 @@ export const TIER_TARGET_PCT: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4:
  *   4. 最近邻整数采样：每个输出像素 = 某个整数源像素的整份拷贝，alpha 只可能是 0/255
  *      ⇒ 断言 1（无粉边）恒成立；不引入任何新颜色 ⇒ 调色板不变量（断言 3）恒成立。
  *
- * 门禁（阶段 1-B 只铺 p1）：spec.unit 以 'p1' 开头 且 是 44×56 的 cu 帧。map 帧（32×44）
- * 目标值待 art-director 裁定，本函数直接放行不处理。
+ * 门禁（P0 收口后 = 全量）：只要求 spec.unit 在 16 单位 tier 表内。
+ * cu（h=56）用 §5.6.2 的 TIER_TARGET_PCT；map（h=44）用主理人代裁的 TIER_TARGET_PCT_MAP
+ * （选项 a）。画布高一律取 spec.h，百分比对各自的包含画布解析 ⇒ 两个画布共用同一套机制。
  *
  * 插入位置：buildB0Frame 内 switch 之后、pb.outline() 之前。描边是最后一步的 1px 膨胀，
  * 放它之后会把 1px 描边插值成灰边 / 断点 ⇒ 断言 4 红。
@@ -349,8 +374,24 @@ function normalizeTier(pb: PixBuf, spec: B0FrameSpec): PixBuf {
   if (!tierNormalizeEnabled) return pb;
   const tier = TIER_OF[spec.unit];
   if (tier === undefined) return pb; // 不在 16 单位 tier 表（安全网）
-  if (spec.unit.slice(0, 2) !== 'p1') return pb; // 阶段 1-B：只铺 p1
-  if (spec.w !== 44) return pb; // 只处理 cu 帧；map 帧目标待 art-director 裁定
+  // ⚠️ map 帧暂不处理 —— 不是目标值没定（已代裁为选项 a，见 TIER_TARGET_PCT_MAP），
+  //    而是**实施会撞断言 8**：map 帧按最近邻缩小后，绘制时就存在的 1px 材质分隔线
+  //    会被整行/整列丢掉，使两个原本不相邻的材质直接贴在一起。
+  //    实测（16 个 map 帧，机制开启 vs 关闭）：
+  //      · 机制关闭（原图）→ 全部 PASS，但 u_p1_templar_map 余量仅 1.0（9.0 需≥8）、
+  //        u_p2_wolfrider_map 余量仅 0.7（8.7 需≥8）—— 本来就贴边
+  //      · 机制开启（缩小后）→ u_p1_lampbearer_map #eae3d2↔#dfe6f0 ΔL*=0.7 ×2、
+  //        u_p2_scavenger_map #4a3524↔#9a2519 ΔL*=10.4 需≥12（放大档反而不受影响：
+  //        最近邻放大只复制像素、不丢像素，不会产生新的材质相邻对）
+  //    ⇒ 这是**两条美术规则的冲突**（体量阶梯 vs 材质明度差），需要美术裁定或换重采样
+  //      策略（不丢边界线的缩放），不该由工程侧硬凑。见 roadmap D-72。
+  //
+  // 画布高 + 目标表都按 spec 自适应：cu 用 56/§5.6.2，map 用 44/代裁表。
+  // （先取值、后设门禁：这样 map 分支在类型上仍然可达，D-72 结案时删掉下一行即启用。）
+  const canvasH = spec.h;
+  const targetPct = spec.kind === 'map' ? TIER_TARGET_PCT_MAP[tier] : TIER_TARGET_PCT[tier];
+  if (spec.kind === 'map') return pb; // ← D-72 的唯一门禁
+
 
   // 1) 本体剪影 bbox（描边前）
   let x0 = Infinity;
@@ -371,11 +412,11 @@ function normalizeTier(pb: PixBuf, spec: B0FrameSpec): PixBuf {
   const srcW = x1 - x0 + 1;
   const srcH = y1 - y0 + 1;
 
-  // 2) 目标剪影高（与 audit:b0 同口径：最终含 1px 描边的 bbox 高 ÷ 56 × 100）。
+  // 2) 目标剪影高（与 audit:b0 同口径：最终含 1px 描边的 bbox 高 ÷ 画布高 × 100）。
   //    floor 让 T1/T2 稳稳落在 "≤" 上界以下；T3/T4 的 ±8pt 容差也吃得住。
   //    后置描边在"底部锚定 + 本体未触顶"时恒 +1px（顶上加一圈、底贴画布边无圈），
   //    所以本体目标高 = 目标最终高 − 1。
-  const targetFinal = Math.floor((TIER_TARGET_PCT[tier] / 100) * 56);
+  const targetFinal = Math.floor((targetPct / 100) * canvasH);
   const targetBody = targetFinal - 1;
   if (targetBody <= 0 || targetBody === srcH) return pb;
   const scale = targetBody / srcH;
@@ -469,9 +510,9 @@ export function buildB0Frame(name: string, outline = true): PixBuf {
       drawLibrarian(pb, spec.kind);
       break;
   }
-  // 阶段 1-B：Tier 体量归一化（§5.6.1 / §5.6.2 的纵轴通道）。
+  // P0 收口：Tier 体量归一化（§5.6.1 / §5.6.2 的纵轴通道）—— 全量 16 单位的 cu 帧。
   // 必须在描边之前跑——描边是最后一步的 1px 膨胀，放它之后会把描边插值成灰边 / 断点 ⇒ 断言 4 红。
-  // 这一轮只铺 p1 一族（见 normalizeTier 内的硬门禁）。
+  // cu（h=56）走 §5.6.2 目标；map 帧暂缓（见 normalizeTier 内的说明 + D-72）。
   pb = normalizeTier(pb, spec);
   // 描边重建（asset-spec §5.4）：最后一步、只跑一次、1px、满不透明。
   if (outline) pb.outline(C.ink0, 1);
