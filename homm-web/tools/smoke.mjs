@@ -22,7 +22,7 @@ import {
 import { BASE_TOWN_INCOME } from '../dist/core/data/buildings.js';
 import { HOME_MINE_RING, MINE_NAME, MINE_PER_DAY, RARE_RESOURCES } from '../dist/core/data/mines.js';
 import { MARKET_RATES, costText } from '../dist/core/game/town.js';
-import { getUnit } from '../dist/core/data/units.js';
+import { FACTION_UNITS, LEGACY_UNIT_IDS, UNITS, getUnit, normalizeLegacyUnitIds, unitIdForTier } from '../dist/core/data/units.js';
 import { bfs, distance, hexCenter, hexLine, hexList, inField, neighbors, pickHex, FIELD_H, FIELD_W } from '../dist/core/combat/hex.js';
 import {
   actDefend,
@@ -1999,6 +1999,142 @@ console.log('\n--- E3 无城 7 日出局 ---');
     isDoubleTap({ t: t0 + 200, x: 100, y: 100 }, { t: t0 + 100, x: 100, y: 100 }) === false,
     'M-11：时间倒退（时钟异常）→ 不算',
   );
+}
+
+/* ================= D-58/D-61/D-63：canonical 兵种 id 与旧档迁移（段 1） ================= */
+
+// 9. 20 格 id 表自身的一致性：四族 × 五阶、id 存在、tier 对得上、无重名
+{
+  const fids = ['p1', 'p2', 'p3', 'p4'];
+  ok(Object.keys(FACTION_UNITS).length === 4, 'FACTION_UNITS 有且只有 4 个阵营');
+  const all = [];
+  let tierOk = true;
+  let existOk = true;
+  for (const f of fids) {
+    const row = FACTION_UNITS[f];
+    if (!row || row.length !== 5) { tierOk = false; continue; }
+    row.forEach((id, i) => {
+      all.push(id);
+      const u = UNITS[id];
+      if (!u) { existOk = false; return; }
+      if (u.tier !== i + 1) tierOk = false;
+      if (u.id !== id) existOk = false;
+    });
+  }
+  ok(existOk, 'FACTION_UNITS 的 20 个 id 都在 UNITS 里、且 id 字段与键一致');
+  ok(tierOk, 'FACTION_UNITS 每族的第 i 个 id 的 tier 正好是 i+1');
+  ok(new Set(all).size === 20, '20 格 id 无重复');
+  ok(all.every((id) => /^p[1-4]_[a-z]+$/.test(id)), '20 个 id 全部符合 p{n}_{shortname} 形式');
+}
+
+// 10. unitIdForTier：四族解析正确；中立方 / 未知 owner 返回 null（**不 fallback**）
+{
+  ok(unitIdForTier('p1', 1) === 'p1_lampbearer', 'unitIdForTier(p1,1) = p1_lampbearer');
+  ok(unitIdForTier('p3', 4) === 'p3_treant', 'unitIdForTier(p3,4) = p3_treant');
+  ok(unitIdForTier('p4', 5) === 'p4_colossus', 'unitIdForTier(p4,5) = p4_colossus');
+  ok(unitIdForTier('p2', 3) === 'p2_wolfrider', 'unitIdForTier(p2,3) = p2_wolfrider');
+  ok(unitIdForTier('neutral', 3) === null, 'unitIdForTier(neutral,3) = null（中立方不静默 fallback 到 p1）');
+  ok(unitIdForTier('p9', 1) === null, 'unitIdForTier(未知阵营) = null');
+  ok(unitIdForTier('p1', 6) === null, 'unitIdForTier(tier 越界) = null');
+  // 关键回归：同一座兵营在四族里必须长出**不同**的兵（D-58 §6.4.4 的核心正确性风险）
+  const tier3 = ['p1', 'p2', 'p3', 'p4'].map((f) => unitIdForTier(f, 3));
+  ok(new Set(tier3).size === 4, '同一 tier=3 在四族解析出 4 个不同兵种（四族不再长同一种兵）');
+}
+
+// 11. LEGACY_UNIT_IDS：5 条、目标都存在、且目标不是旧词
+{
+  const pairs = Object.entries(LEGACY_UNIT_IDS);
+  ok(pairs.length === 5, '别名表恰好 5 条（旧通用 5 级树）');
+  ok(pairs.every(([, v]) => !!UNITS[v]), '别名表的每个目标都在 UNITS 里');
+  ok(pairs.every(([, v]) => !LEGACY_UNIT_IDS[v]), '别名表没有链式指向（目标不再是旧 id）');
+  ok(pairs.map(([k]) => k).sort().join(',') === 'angel,archer,knight,peasant,pikeman', '别名表的键正好是旧通用 5 级树');
+  ok(LEGACY_UNIT_IDS['peasant'] === 'p1_lampbearer', 'peasant → p1_lampbearer');
+  ok(LEGACY_UNIT_IDS['angel'] === 'p1_overangel', 'angel → p1_overangel');
+}
+
+// 12. 旧档迁移：4 个容器全部重映射、旧键清零、值不丢、幂等
+{
+  const legacySave = {
+    heroes: {
+      hero1: { army: [{ unitTypeId: 'archer', count: 20 }, { unitTypeId: 'angel', count: 2 }] },
+    },
+    towns: {
+      town_home: {
+        garrison: [{ unitTypeId: 'peasant', count: 10 }, { unitTypeId: 'wolf', count: 4 }],
+        growthPool: { peasant: 12, archer: 5, wolf: 3 },
+        growthRemainder: { archer: 0.75, ogre: 0.25 },
+      },
+    },
+  };
+  const rep = normalizeLegacyUnitIds(legacySave);
+  ok(legacySave.heroes.hero1.army[0].unitTypeId === 'p1_hornxbow', 'army：archer → p1_hornxbow');
+  ok(legacySave.heroes.hero1.army[1].unitTypeId === 'p1_overangel', 'army：angel → p1_overangel');
+  ok(legacySave.towns.town_home.garrison[0].unitTypeId === 'p1_lampbearer', 'garrison：peasant → p1_lampbearer');
+  ok(legacySave.towns.town_home.garrison[1].unitTypeId === 'wolf', 'garrison：野怪 wolf **不动**');
+  ok(rep.stacks === 3, '报告 stacks=3（2 个 army + 1 个 garrison 条目）');
+
+  const gp = legacySave.towns.town_home.growthPool;
+  ok(gp['p1_lampbearer'] === 12 && gp['p1_hornxbow'] === 5, 'growthPool：旧键整体改名为新键、数值保留');
+  ok(gp['peasant'] === undefined && gp['archer'] === undefined, 'growthPool：旧键已删除（无双份）');
+  ok(gp['wolf'] === 3, 'growthPool：野怪键不动');
+
+  const gr = legacySave.towns.town_home.growthRemainder;
+  ok(gr['p1_hornxbow'] === 0.75 && gr['ogre'] === 0.25, 'growthRemainder：小数余数跟着 id 搬迁、不丢进度');
+  ok(gr['archer'] === undefined, 'growthRemainder：旧键已删除');
+  ok(rep.keys === 3, '报告 keys=3（growthPool 2 个 + growthRemainder 1 个；ogre 是野怪、不计）');
+
+  // 幂等：再跑一次不得有任何改动
+  const rep2 = normalizeLegacyUnitIds(legacySave);
+  ok(rep2.stacks === 0 && rep2.keys === 0, '迁移是幂等的（第二次跑 0 改动）');
+
+  // 迁移后每一个 id 都必须能被 getUnit 解析（这就是"不迁移就崩"的那一步）
+  let allResolvable = true;
+  for (const h of Object.values(legacySave.heroes)) for (const st of h.army) { try { getUnit(st.unitTypeId); } catch { allResolvable = false; } }
+  for (const t of Object.values(legacySave.towns)) {
+    for (const st of t.garrison) { try { getUnit(st.unitTypeId); } catch { allResolvable = false; } }
+    for (const k of Object.keys(t.growthPool)) { try { getUnit(k); } catch { allResolvable = false; } }
+  }
+  ok(allResolvable, '迁移后所有 id 都能被 getUnit 解析（不再抛未知兵种）');
+}
+
+// 13. 键碰撞：旧 id 与新 id 同时存在时求和，不能覆盖
+{
+  const s = { towns: { t: { growthPool: { archer: 7, p1_hornxbow: 5 } } } };
+  normalizeLegacyUnitIds(s);
+  ok(s.towns.t.growthPool['p1_hornxbow'] === 12, '键碰撞时合并求和（7+5=12）而不是覆盖');
+  ok(s.towns.t.growthPool['archer'] === undefined, '碰撞后旧键已删除');
+}
+
+// 14. 缺字段 / 空档不炸（更老的存档没有 growthRemainder，也没有 towns）
+{
+  ok(normalizeLegacyUnitIds({}).stacks === 0, '空对象迁移不炸');
+  ok(normalizeLegacyUnitIds({ towns: { t: {} } }).keys === 0, '城镇缺 growthPool / growthRemainder 不炸');
+  ok(normalizeLegacyUnitIds({ heroes: { h: {} } }).stacks === 0, '英雄缺 army 不炸');
+}
+
+// 15. 过渡态守卫：段 1 里旧 5 键必须**仍在** UNITS 里（这就是"零行为变化"的定义）
+//     ⚠️ 段 2 删掉它们之后，本条要**改成反向断言**：旧 id 必须抛错、且报错含 canonical 名。
+{
+  const stillThere = Object.keys(LEGACY_UNIT_IDS).every((id) => !!UNITS[id]);
+  ok(stillThere, '段1 过渡态：5 个旧键仍在 UNITS 里（段2 删除后本断言改为反向）');
+  let threw = false;
+  let msg = '';
+  try { getUnit('__no_such_unit__'); } catch (e) { threw = true; msg = String(e.message); }
+  ok(threw && msg.includes('未知兵种'), 'getUnit(未知 id) 抛错且报文含「未知兵种」');
+}
+
+// 16. 中立方永远不该有兵营建筑（D-58 §6.4.2 规则 5 的守卫）
+//     现在这条路径不可达；将来谁让中立城能产兵，这里会先响。
+{
+  const g = createGame({ size: 'medium', seed: 7, opponents: 3 });
+  const neutralWithDwell = Object.values(g.towns).filter(
+    (t) => t.owner === 'neutral' && t.buildings.some((b) => /^dwell/.test(b)),
+  );
+  ok(neutralWithDwell.length === 0, '没有一座中立城拥有 dwell 建筑（unitIdForTier 的中立路径保持不可达）');
+  const neutralProducing = Object.values(g.towns).filter(
+    (t) => t.owner === 'neutral' && Object.keys(t.growthPool).length > 0,
+  );
+  ok(neutralProducing.length === 0, '没有一座中立城有非空 growthPool');
 }
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);

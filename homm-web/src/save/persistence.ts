@@ -1,4 +1,5 @@
 import type { GameConfig, GameState } from '../core/types.js';
+import { normalizeLegacyUnitIds } from '../core/data/units.js';
 
 const KEY = 'homm-save-v1';
 const CONFIG_KEY = 'homm-config-v1';
@@ -155,6 +156,10 @@ export function loadGame(): GameState | null {
     const obj = JSON.parse(raw) as GameState;
     if (!obj || obj.version !== VERSION) return null;
     if (!obj.map || !obj.heroes || !obj.config) return null;
+    // 旧档兼容（D-58 §6.4.4）：把 4 个容器里的旧通用兵种 id 一次性换成 canonical id。
+    // **只在这里做一次** —— 写档一律写新 id，旧词不会通过「读 → 改 → 存」渗回来。
+    // 不放进 getUnit()：写档用的是调用方传进来的字符串，getUnit 兜底救不了写档。
+    normalizeLegacyUnitIds(obj);
     return obj;
   } catch {
     return null;
