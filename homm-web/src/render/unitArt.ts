@@ -273,6 +273,14 @@ export const B2_FRAMES: B0FrameSpec[] = [
   { name: 'u_p3_treant_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p3_treant', kind: 'map' },
   { name: 'cu_p3_treant', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_treant', kind: 'idle' },
   { name: 'cu_p3_treant_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_treant', kind: 'atk' },
+  // 紫晶 T3 蹦跳魔偶（p4 菱形母题：菱形木偶，四肢细线，双脚离地）
+  { name: 'u_p4_hopgolem_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p4_hopgolem', kind: 'map' },
+  { name: 'cu_p4_hopgolem', w: 44, h: 56, ax: -22, ay: -48, unit: 'p4_hopgolem', kind: 'idle' },
+  { name: 'cu_p4_hopgolem_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p4_hopgolem', kind: 'atk' },
+  // 紫晶 T4 亡灵图书管理员（p4 菱形母题：高耸书堆突破肩线，远程姿态，书浮在手上）
+  { name: 'u_p4_librarian_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p4_librarian', kind: 'map' },
+  { name: 'cu_p4_librarian', w: 44, h: 56, ax: -22, ay: -48, unit: 'p4_librarian', kind: 'idle' },
+  { name: 'cu_p4_librarian_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p4_librarian', kind: 'atk' },
 ];
 
 /** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 + B2 24 = 48），供 `tools/b0audit.mjs` 全扫描，
@@ -341,6 +349,12 @@ export function buildB0Frame(name: string, outline = true): PixBuf {
       break;
     case 'p3_treant':
       drawTreant(pb, spec.kind);
+      break;
+    case 'p4_hopgolem':
+      drawHopgolem(pb, spec.kind);
+      break;
+    case 'p4_librarian':
+      drawLibrarian(pb, spec.kind);
       break;
   }
   // 描边重建（asset-spec §5.4）：最后一步、只跑一次、1px、满不透明。
@@ -1978,4 +1992,162 @@ function drawTreantCombat(pb: PixBuf, atk: boolean): void {
   pb.set(22, 21, C.leaf2);
   pb.line(13, 52, 9, 50, C.p3w0);
   pb.line(9, 50, 7, 47, C.p3w0);
+}
+
+/* ==========================================================================
+ * 18. p4 紫晶 T3 · 蹦跳魔偶
+ *
+ * §5.6.3 形状家族：菱形收尖 / 直线硬几何 / 菱形尖端 / 不落地（底留空气 + 悬浮物）
+ * §5.6.4 T3 格：菱形木偶，四肢细线，双脚离地
+ * §1.3 唯一失调：瘦长菱形身躯 + 细棍四肢（违反"落地"，脚部悬空蹦跳）
+ * §5.5 p4 兵种剪影：菱形晶体 + 发光眼 + 悬浮宝石；四肢用 1px 细线（木偶感）
+ * 配色断言 8 预检：
+ *   - 身躯 p4a2↔p4a0（左暗面）同紫系 ΔL*≈21 ≥12 → 安全
+ *   - 细肢用 p4a0（与暗面同色，避开 p4w0↔p4a0 ΔL*≈10.7 撞车）→ 细肢只贴 p4a2 主面 ΔL*≈21 ≥12
+ *   - 悬浮宝石 p4emissive↔p4a4（芯）ΔL*≈18 ≥8 → 安全；宝石脱离本体（第二轮廓环）
+ * ========================================================================== */
+
+function drawHopgolem(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  if (kind === 'map') drawHopgolemMap(pb);
+  else if (kind === 'idle') drawHopgolemCombat(pb, false);
+  else drawHopgolemCombat(pb, true);
+}
+
+/** 32×44 冒险地图帧：菱形身躯 y6-40（瘦长），细肢收拢，脚底 y43（画布 44 留 1px 空气）。 */
+function drawHopgolemMap(pb: PixBuf): void {
+  // 菱形身躯（p4 母题）：上尖 y6、最宽 y22(x8-24)、下尖 y40（脚离地）
+  pb.poly([[16, 6], [24, 22], [16, 40], [8, 22]], C.p4a2);
+  pb.poly([[16, 6], [16, 40], [8, 22]], C.p4a0); // 左暗面（细肢同色，免撞车）
+  // 发光眼
+  glowEye(pb, 13, 19);
+  glowEye(pb, 19, 19);
+  // 细肢（1px 木偶线，p4a0 同暗面色）：双臂微伸、双腿下垂不触底
+  pb.line(8, 21, 5, 17, C.p4a0); // 左臂
+  pb.line(24, 21, 27, 17, C.p4a0); // 右臂
+  pb.line(14, 38, 11, 43, C.p4a0); // 左腿（脚 y43，悬空）
+  pb.line(18, 38, 21, 43, C.p4a0); // 右腿
+  pb.set(11, 43, C.p4a0); pb.set(21, 43, C.p4a0); // 脚（离画布底 1px）
+  // ≥1 块悬浮物（emissive 菱形，脱离本体 → 第二轮廓环）
+  pb.poly([[28, 30], [31, 33], [28, 36], [25, 33]], C.p4emissive);
+  pb.set(28, 33, C.p4a4);
+}
+
+/** 44×56 战斗帧：菱形身躯 y10-50（瘦长），脚底 y54（画布 56 留 2px 空气）。 */
+function drawHopgolemCombat(pb: PixBuf, atk: boolean): void {
+  if (!atk) {
+    pb.poly([[22, 10], [34, 30], [22, 50], [10, 30]], C.p4a2);
+    pb.poly([[22, 10], [22, 50], [10, 30]], C.p4a0);
+    glowEye(pb, 18, 27);
+    glowEye(pb, 26, 27);
+    pb.line(10, 29, 8, 25, C.p4a0);
+    pb.line(34, 29, 36, 25, C.p4a0);
+    pb.line(19, 48, 15, 54, C.p4a0);
+    pb.line(25, 48, 29, 54, C.p4a0);
+    pb.set(15, 54, C.p4a0); pb.set(29, 54, C.p4a0);
+    pb.poly([[40, 36], [43, 39], [40, 42], [37, 39]], C.p4emissive);
+    pb.set(40, 39, C.p4a4);
+    return;
+  }
+  // 攻击帧：双臂上举（蹦跳踢腿），悬浮宝石甩出更大
+  pb.poly([[22, 10], [34, 30], [22, 50], [10, 30]], C.p4a2);
+  pb.poly([[22, 10], [22, 50], [10, 30]], C.p4a0);
+  glowEye(pb, 18, 27);
+  glowEye(pb, 26, 27);
+  pb.line(10, 29, 8, 19, C.p4a0); // 左臂上举
+  pb.line(34, 29, 36, 19, C.p4a0); // 右臂上举
+  pb.line(19, 48, 16, 53, C.p4a0); // 左腿收
+  pb.line(25, 48, 29, 54, C.p4a0); // 右腿伸
+  pb.set(16, 53, C.p4a0); pb.set(29, 54, C.p4a0);
+  pb.poly([[40, 28], [43, 31], [40, 34], [37, 31]], C.p4emissive); // 宝石飞出
+  pb.set(40, 31, C.p4a4);
+}
+
+/* ==========================================================================
+ * 19. p4 紫晶 T4 · 亡灵图书管理员
+ *
+ * §5.6.3 形状家族：菱形收尖 / 直线硬几何 / 不落地（底留空气 + 悬浮书）
+ * §5.6.4 T4 格：高耸书堆突破肩线，远程姿态，书浮在手上
+ * §1.3 唯一失调：书堆比人高（违反"人头最高"直觉，书塔冲破肩线）
+ * §5.5 p4 兵种剪影：顶沉（书塔宽于下身）、对称书脊、悬浮手书 + 发光眼
+ * ⚠️ 同族 T4↔T2 分离（team-lead 警告）：fireapprentice(T2) 是上细下宽锥袍、不对称（杖+火）、底重；
+ *   本 T4 是顶沉书塔（水平书脊横纹）、近全对称、悬浮手书——剪影家族（书 vs 锥）彻底不同。
+ * 配色断言 8 预检：
+ *   - 书脊 p4a2↔p4a4（相邻书封/书页）同紫系 ΔL*≈22 ≥12 → 安全
+ *   - 书页 p4a4↔p4a0（书脊暗线）ΔL*≈43 → 安全
+ *   - 长袍 p4w2↔p4a2（书底压袍）ΔL*≈18 ≥8 → 安全
+ *   - 悬浮手书 p4emissive↔p4a4（芯）ΔL*≈18 ≥8 → 安全
+ * ========================================================================== */
+
+function drawLibrarian(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  if (kind === 'map') drawLibrarianMap(pb);
+  else if (kind === 'idle') drawLibrarianCombat(pb, false);
+  else drawLibrarianCombat(pb, true);
+}
+
+/** 32×44 冒险地图帧：书塔 y8-23 突破肩线，长袍 y28-41，脚底 y41（留 3px 空气）。 */
+function drawLibrarianMap(pb: PixBuf): void {
+  // 长袍（顶沉书塔之下的 slender 身躯，p4w2）
+  pb.poly([[16, 28], [20, 28], [22, 41], [10, 41]], C.p4w2);
+  pb.poly([[16, 28], [16, 41], [10, 41]], C.p4w0); // 左暗面
+  // 头（p4w0，发光眼——亡灵）
+  pb.ellipse(16, 25, 3.5, 3, C.p4w0);
+  glowEye(pb, 14, 25);
+  glowEye(pb, 18, 25);
+  // 高耸书堆（突破肩线 y28，书塔顶到 y8）：4 本横书，封面/书页交替
+  pb.rect(9, 20, 14, 3, C.p4a2); // 书1 封面
+  pb.rect(10, 21, 12, 1, C.p4a4); // 书页
+  pb.rect(9, 16, 14, 3, C.p4a4); // 书2 书页亮
+  pb.rect(10, 17, 12, 1, C.p4a0); // 书脊暗线
+  pb.rect(10, 12, 13, 3, C.p4a2); // 书3 封面
+  pb.rect(11, 13, 11, 1, C.p4a4);
+  pb.rect(10, 8, 12, 3, C.p4a4); // 书4 顶
+  pb.rect(11, 9, 10, 1, C.p4a0);
+  // 远程姿态：悬浮手书（脱离本体，右侧手前伸）
+  pb.rect(25, 30, 5, 4, C.p4a2); // 手书封面
+  pb.rect(26, 31, 3, 1, C.p4a4); // 书页
+  pb.poly([[31, 28], [33, 30], [31, 32], [29, 30]], C.p4emissive); // 书脊发光菱形
+}
+
+/** 44×56 战斗帧：书塔 y12-31，长袍 y36-52，脚底 y52（留 4px 空气）。 */
+function drawLibrarianCombat(pb: PixBuf, atk: boolean): void {
+  if (!atk) {
+    pb.poly([[22, 36], [28, 36], [31, 52], [13, 52]], C.p4w2);
+    pb.poly([[22, 36], [22, 52], [13, 52]], C.p4w0);
+    pb.ellipse(22, 32, 4.5, 4, C.p4w0);
+    glowEye(pb, 19, 32);
+    glowEye(pb, 25, 32);
+    // 书塔（顶到 y12）
+    pb.rect(13, 28, 18, 4, C.p4a2);
+    pb.rect(14, 29, 16, 1, C.p4a4);
+    pb.rect(13, 23, 18, 4, C.p4a4);
+    pb.rect(14, 24, 16, 1, C.p4a0);
+    pb.rect(14, 18, 17, 4, C.p4a2);
+    pb.rect(15, 19, 15, 1, C.p4a4);
+    pb.rect(14, 13, 16, 4, C.p4a4);
+    pb.rect(15, 14, 14, 1, C.p4a0);
+    // 悬浮手书（右侧前伸）
+    pb.rect(33, 40, 7, 5, C.p4a2);
+    pb.rect(34, 41, 5, 1, C.p4a4);
+    pb.poly([[41, 38], [43, 41], [41, 44], [38, 41]], C.p4emissive);
+    return;
+  }
+  // 攻击帧：手书前抛（更大，飞向右侧），书塔微倾
+  pb.poly([[22, 36], [28, 36], [31, 52], [13, 52]], C.p4w2);
+  pb.poly([[22, 36], [22, 52], [13, 52]], C.p4w0);
+  pb.ellipse(22, 32, 4.5, 4, C.p4w0);
+  glowEye(pb, 19, 32);
+  glowEye(pb, 25, 32);
+  pb.rect(13, 28, 18, 4, C.p4a2);
+  pb.rect(14, 29, 16, 1, C.p4a4);
+  pb.rect(13, 23, 18, 4, C.p4a4);
+  pb.rect(14, 24, 16, 1, C.p4a0);
+  pb.rect(14, 18, 17, 4, C.p4a2);
+  pb.rect(15, 19, 15, 1, C.p4a4);
+  pb.rect(14, 13, 16, 4, C.p4a4);
+  pb.rect(15, 14, 14, 1, C.p4a0);
+  // 抛出的手书（更大，脱离本体）
+  pb.rect(33, 30, 8, 6, C.p4a2);
+  pb.rect(34, 31, 6, 1, C.p4a4);
+  pb.poly([[41, 28], [43, 31], [41, 34], [38, 31]], C.p4emissive);
+  pb.set(41, 31, C.p4a4);
 }
