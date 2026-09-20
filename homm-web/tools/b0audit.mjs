@@ -730,8 +730,10 @@ record(5, '基线对齐（两族 map 帧）', bA === bB && bA >= 0, {
  * 只取 idle 帧作 tier 体量代表（与 silhouette-audit.md 的 16 单位 / 120 对口径一致；
  * 每个单位 2 张帧，atk 是该单位的攻击变体，不计入矩阵）。
  */
-function checkTierMatrix({ label, frameW, kind, targets }) {
-  const list = frames.filter((f) => f.spec.w === frameW && f.spec.kind === kind);
+function checkTierMatrix({ label, kind, targets }) {
+  // ⚠️ 只按 kind 筛，**不要按硬编码的帧宽筛** —— 帧宽是画布尺寸，D-73 把槽位
+  //   从 32/44 加宽到 48/60 时，按宽度筛的写法会瞬间匹配 0 帧。
+  const list = frames.filter((f) => f.spec.kind === kind);
   const canvasH = list.length ? list[0].spec.h : 0;
   // ★ 真空守卫：过滤器写错（比如拿 'idle' 去筛 map 帧）会得到空列表 ⇒ 三条断言全部
   //   「无记录可判」而 PASS。**一条什么都没测的绿断言比红的更危险** ——
@@ -802,8 +804,8 @@ function checkTierMatrix({ label, frameW, kind, targets }) {
   }
 }
 
-checkTierMatrix({ label: 'cu 44×56', frameW: 44, kind: 'idle', targets: TIER_TARGET_PCT });
-checkTierMatrix({ label: 'map 32×44', frameW: 32, kind: 'map', targets: TIER_TARGET_PCT_MAP });
+checkTierMatrix({ label: 'cu 战斗帧', kind: 'idle', targets: TIER_TARGET_PCT });
+checkTierMatrix({ label: 'map 地图帧', kind: 'map', targets: TIER_TARGET_PCT_MAP });
 
 /* ---------------------------------------------------------------- 报告 */
 

@@ -198,12 +198,12 @@ export interface B0FrameSpec {
 }
 
 export const B0_FRAMES: B0FrameSpec[] = [
-  { name: 'u_p1_lampbearer_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p1_lampbearer', kind: 'map' },
-  { name: 'cu_p1_lampbearer', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_lampbearer', kind: 'idle' },
-  { name: 'cu_p1_lampbearer_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_lampbearer', kind: 'atk' },
-  { name: 'u_p2_scavenger_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p2_scavenger', kind: 'map' },
-  { name: 'cu_p2_scavenger', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_scavenger', kind: 'idle' },
-  { name: 'cu_p2_scavenger_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_scavenger', kind: 'atk' },
+  { name: 'u_p1_lampbearer_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p1_lampbearer', kind: 'map' },
+  { name: 'cu_p1_lampbearer', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_lampbearer', kind: 'idle' },
+  { name: 'cu_p1_lampbearer_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_lampbearer', kind: 'atk' },
+  { name: 'u_p2_scavenger_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p2_scavenger', kind: 'map' },
+  { name: 'cu_p2_scavenger', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_scavenger', kind: 'idle' },
+  { name: 'cu_p2_scavenger_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_scavenger', kind: 'atk' },
 ];
 
 /**
@@ -215,29 +215,29 @@ export const B0_FRAMES: B0FrameSpec[] = [
  */
 export const B1_FRAMES: B0FrameSpec[] = [
   // 晨曦 T2 号角弩手（p1 垂直母题：弩竖直举起）
-  { name: 'u_p1_hornxbow_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p1_hornxbow', kind: 'map' },
-  { name: 'cu_p1_hornxbow', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_hornxbow', kind: 'idle' },
-  { name: 'cu_p1_hornxbow_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_hornxbow', kind: 'atk' },
+  { name: 'u_p1_hornxbow_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p1_hornxbow', kind: 'map' },
+  { name: 'cu_p1_hornxbow', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_hornxbow', kind: 'idle' },
+  { name: 'cu_p1_hornxbow_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_hornxbow', kind: 'atk' },
   // 赤焰 T2 投斧蛮子（p2 楔形母题：横持斧，斧刃带缺口）
-  { name: 'u_p2_axethrower_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p2_axethrower', kind: 'map' },
-  { name: 'cu_p2_axethrower', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_axethrower', kind: 'idle' },
-  { name: 'cu_p2_axethrower_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_axethrower', kind: 'atk' },
+  { name: 'u_p2_axethrower_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p2_axethrower', kind: 'map' },
+  { name: 'cu_p2_axethrower', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_axethrower', kind: 'idle' },
+  { name: 'cu_p2_axethrower_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_axethrower', kind: 'atk' },
   // 翠林 T1 浇水矮人（p3 圆形母题：圆滚滚一坨，头顶一丛叶）
-  { name: 'u_p3_dwarf_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p3_dwarf', kind: 'map' },
-  { name: 'cu_p3_dwarf', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_dwarf', kind: 'idle' },
-  { name: 'cu_p3_dwarf_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_dwarf', kind: 'atk' },
+  { name: 'u_p3_dwarf_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p3_dwarf', kind: 'map' },
+  { name: 'cu_p3_dwarf', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_dwarf', kind: 'idle' },
+  { name: 'cu_p3_dwarf_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_dwarf', kind: 'atk' },
   // 翠林 T2 荆棘射手（p3 圆形母题：弓成弧，头顶枝叶绕成环）
-  { name: 'u_p3_thornarcher_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p3_thornarcher', kind: 'map' },
-  { name: 'cu_p3_thornarcher', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_thornarcher', kind: 'idle' },
-  { name: 'cu_p3_thornarcher_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_thornarcher', kind: 'atk' },
+  { name: 'u_p3_thornarcher_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p3_thornarcher', kind: 'map' },
+  { name: 'cu_p3_thornarcher', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_thornarcher', kind: 'idle' },
+  { name: 'cu_p3_thornarcher_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_thornarcher', kind: 'atk' },
   // 紫晶 T1 石雕小怪（p4 菱形母题：菱形石块，底部悬空 1px，身上一道裂纹）
-  { name: 'u_p4_stoneimp_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p4_stoneimp', kind: 'map' },
-  { name: 'cu_p4_stoneimp', w: 44, h: 56, ax: -22, ay: -48, unit: 'p4_stoneimp', kind: 'idle' },
-  { name: 'cu_p4_stoneimp_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p4_stoneimp', kind: 'atk' },
+  { name: 'u_p4_stoneimp_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p4_stoneimp', kind: 'map' },
+  { name: 'cu_p4_stoneimp', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_stoneimp', kind: 'idle' },
+  { name: 'cu_p4_stoneimp_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_stoneimp', kind: 'atk' },
   // 紫晶 T2 喷火学徒（p4 菱形母题：细长锥袍，杖尖菱形，嘴前一小团火）
-  { name: 'u_p4_fireapprentice_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p4_fireapprentice', kind: 'map' },
-  { name: 'cu_p4_fireapprentice', w: 44, h: 56, ax: -22, ay: -48, unit: 'p4_fireapprentice', kind: 'idle' },
-  { name: 'cu_p4_fireapprentice_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p4_fireapprentice', kind: 'atk' },
+  { name: 'u_p4_fireapprentice_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p4_fireapprentice', kind: 'map' },
+  { name: 'cu_p4_fireapprentice', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_fireapprentice', kind: 'idle' },
+  { name: 'cu_p4_fireapprentice_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_fireapprentice', kind: 'atk' },
 ];
 
 /**
@@ -251,37 +251,37 @@ export const B1_FRAMES: B0FrameSpec[] = [
  */
 export const B2_FRAMES: B0FrameSpec[] = [
   // 晨曦 T3 铁誓枪兵（p1 垂直母题：矩形大盾正对镜头，枪竖直）
-  { name: 'u_p1_oathpike_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p1_oathpike', kind: 'map' },
-  { name: 'cu_p1_oathpike', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_oathpike', kind: 'idle' },
-  { name: 'cu_p1_oathpike_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_oathpike', kind: 'atk' },
+  { name: 'u_p1_oathpike_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p1_oathpike', kind: 'map' },
+  { name: 'cu_p1_oathpike', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_oathpike', kind: 'idle' },
+  { name: 'cu_p1_oathpike_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_oathpike', kind: 'atk' },
   // 晨曦 T4 圣殿骑士（p1 垂直母题：高坐骑人+马，竖直甲片，顶上冠羽）
-  { name: 'u_p1_templar_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p1_templar', kind: 'map' },
-  { name: 'cu_p1_templar', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_templar', kind: 'idle' },
-  { name: 'cu_p1_templar_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_templar', kind: 'atk' },
+  { name: 'u_p1_templar_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p1_templar', kind: 'map' },
+  { name: 'cu_p1_templar', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_templar', kind: 'idle' },
+  { name: 'cu_p1_templar_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_templar', kind: 'atk' },
   // 赤焰 T3 暴走狼骑（p2 楔形母题：人+狼双头剪影，狼头前伸，人后仰）
-  { name: 'u_p2_wolfrider_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p2_wolfrider', kind: 'map' },
-  { name: 'cu_p2_wolfrider', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_wolfrider', kind: 'idle' },
-  { name: 'cu_p2_wolfrider_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_wolfrider', kind: 'atk' },
+  { name: 'u_p2_wolfrider_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p2_wolfrider', kind: 'map' },
+  { name: 'cu_p2_wolfrider', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_wolfrider', kind: 'idle' },
+  { name: 'cu_p2_wolfrider_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_wolfrider', kind: 'atk' },
   // 赤焰 T4 火油狂徒（p2 楔形母题：横抱火油桶，桶盖锯齿，身后拖火舌）
-  { name: 'u_p2_firebrand_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p2_firebrand', kind: 'map' },
-  { name: 'cu_p2_firebrand', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_firebrand', kind: 'idle' },
-  { name: 'cu_p2_firebrand_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p2_firebrand', kind: 'atk' },
+  { name: 'u_p2_firebrand_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p2_firebrand', kind: 'map' },
+  { name: 'cu_p2_firebrand', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_firebrand', kind: 'idle' },
+  { name: 'cu_p2_firebrand_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_firebrand', kind: 'atk' },
   // 翠林 T3 藤蔓卫士（p3 圆形母题：圆形藤甲覆盖躯干，无可见直角）
-  { name: 'u_p3_vineguard_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p3_vineguard', kind: 'map' },
-  { name: 'cu_p3_vineguard', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_vineguard', kind: 'idle' },
-  { name: 'cu_p3_vineguard_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_vineguard', kind: 'atk' },
+  { name: 'u_p3_vineguard_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p3_vineguard', kind: 'map' },
+  { name: 'cu_p3_vineguard', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_vineguard', kind: 'idle' },
+  { name: 'cu_p3_vineguard_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_vineguard', kind: 'atk' },
   // 翠林 T4 树人大叔（p3 圆形母题：最宽的圆，树干圆柱，头顶 2 丛树冠）
-  { name: 'u_p3_treant_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p3_treant', kind: 'map' },
-  { name: 'cu_p3_treant', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_treant', kind: 'idle' },
-  { name: 'cu_p3_treant_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p3_treant', kind: 'atk' },
+  { name: 'u_p3_treant_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p3_treant', kind: 'map' },
+  { name: 'cu_p3_treant', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_treant', kind: 'idle' },
+  { name: 'cu_p3_treant_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_treant', kind: 'atk' },
   // 紫晶 T3 蹦跳魔偶（p4 菱形母题：菱形木偶，四肢细线，双脚离地）
-  { name: 'u_p4_hopgolem_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p4_hopgolem', kind: 'map' },
-  { name: 'cu_p4_hopgolem', w: 44, h: 56, ax: -22, ay: -48, unit: 'p4_hopgolem', kind: 'idle' },
-  { name: 'cu_p4_hopgolem_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p4_hopgolem', kind: 'atk' },
+  { name: 'u_p4_hopgolem_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p4_hopgolem', kind: 'map' },
+  { name: 'cu_p4_hopgolem', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_hopgolem', kind: 'idle' },
+  { name: 'cu_p4_hopgolem_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_hopgolem', kind: 'atk' },
   // 紫晶 T4 亡灵图书管理员（p4 菱形母题：高耸书堆突破肩线，远程姿态，书浮在手上）
-  { name: 'u_p4_librarian_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p4_librarian', kind: 'map' },
-  { name: 'cu_p4_librarian', w: 44, h: 56, ax: -22, ay: -48, unit: 'p4_librarian', kind: 'idle' },
-  { name: 'cu_p4_librarian_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p4_librarian', kind: 'atk' },
+  { name: 'u_p4_librarian_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p4_librarian', kind: 'map' },
+  { name: 'cu_p4_librarian', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_librarian', kind: 'idle' },
+  { name: 'cu_p4_librarian_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_librarian', kind: 'atk' },
 ];
 
 /** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 + B2 24 = 48），供 `tools/b0audit.mjs` 全扫描，
