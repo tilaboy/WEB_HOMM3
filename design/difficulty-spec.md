@@ -39,20 +39,24 @@
 
 ## 1. 现状取证（全部来自实际代码，非推测）
 
-| 现象 | 代码位置 | 证据 |
+> ⚠️ **本节是历史快照（取证于 2026-09-19，改动前）** —— 记录的是"**为什么必须改**"，**不是当前代码**。
+> 这些现象**现已全部修复**（见 §0 与 §8）。下面引用的行号若与当前代码不符，属预期：代码已推进，行号已漂移。
+> **引用一律用符号锚点**（D-52），不依赖行号。
+
+| 现象 | 代码位置（符号锚点） | 证据 |
 |---|---|---|
-| 难度只作用于 AI | `core/map/generator.ts:1093` | `const mul = isHuman ? 1 : diff.startMul;` —— 玩家**恒定 1.0** |
-| 周增长只给 AI | `core/game/town.ts:328-331` | `const bonus = state.players[player]?.isHuman ? 0 : aiBonus;` |
-| 出击门槛只改 AI | `core/game/ai.ts:329`、`ai.ts:462` | `commit = BASE_COMMIT * diff.aggression`（`BASE_COMMIT = 200`，`ai.ts:60`） |
-| 开局资源写死 | `core/map/generator.ts:1085` | `const startRes = { gold: 2500, wood: 10, ore: 10 };` |
-| 野怪不随难度缩放 | `core/map/generator.ts:430-441` | `monsterArmy(rng, tier)` 内为硬编码区间，无 difficulty 形参 |
-| 移动力固定 | `core/map/generator.ts:34` | `BASE_MOVE_POINTS = 1800` |
-| 默认零对手 | `core/data/factions.ts:90` | `opponents: 0` → `DIFFICULTIES` 三个参数**全部没有作用对象** |
+| 难度只作用于 AI | `generator.ts · createGame()` 内的起始资源倍率 | `const mul = isHuman ? 1 : diff.startMul;` —— 玩家**恒定 1.0** |
+| 周增长只给 AI | `town.ts · applyWeeklyGrowth()` | `const bonus = state.players[player]?.isHuman ? 0 : aiBonus;` |
+| 出击门槛只改 AI | `ai.ts · pickTarget()` 内的 `commit`，与 `ai.ts` 常量 `BASE_COMMIT`（= 200） | `commit = BASE_COMMIT * diff.aggression` |
+| 开局资源写死 | `generator.ts · createGame()` 的 `startRes` | `const startRes = { gold: 2500, wood: 10, ore: 10 };` |
+| 野怪不随难度缩放 | `generator.ts · monsterArmy()` | 函数内为硬编码区间，当时无 difficulty 形参 |
+| 移动力固定 | `generator.ts` 导出常量 `BASE_MOVE_POINTS`（= 1800） | 全局硬编码 |
+| 默认零对手 | `factions.ts · DEFAULT_CONFIG.opponents` | 当时为 `0` → `DIFFICULTIES` 三个参数**全部没有作用对象** |
 
 ### 1.1 两个此前没人发现的既存缺陷
 
 **（a）`normal` 档的 AI 周增长加成几乎是空转。**
-`town.ts:332-336` 的算法是 `Math.floor(g.count * mult)`。normal 的 AI `growthBonus = 0.1` → `mult = 1.1`：
+`town.ts · applyWeeklyGrowth()` 的算法是 `Math.floor(g.count * mult)`。normal 的 AI `growthBonus = 0.1` → `mult = 1.1`：
 
 | 兵种 | 基础周增长 | ×1.1 后 floor | 实际增量 |
 |---|---|---|---|
@@ -65,7 +69,7 @@
 即"普通档电脑周增长更快"这句描述，除农民外**一个兵都没多给**。
 
 **（b）`aggression` 有隐性上界。**
-`ai.ts:462` 用 `(1.2 - diff.aggression * 0.3)` 作为 outward 权重系数。当 `aggression ≥ 4.0` 时系数转负，AI 的"向外扩张"评分会反向。当前最大值 1.35 安全，但这是必须写进注释的约束。
+`ai.ts · pickTarget()` 里 outward 候选打分用 `(1.2 - diff.aggression * 0.3)` 作为系数。当 `aggression ≥ 4.0` 时系数转负，AI 的"向外扩张"评分会反向。当前最大值 1.35 安全，但这是必须写进注释的约束。
 
 ---
 
@@ -246,12 +250,12 @@ export interface DifficultyDef {
 1. **直接修掉摆设问题**：有对手时，AI 侧三根杠杆才有效。
 2. **节奏合适**：中型图 32×32、2 个阵营，`layoutHomeIdeals` 保证两家距离恒定；按 18 格/日的移动力，探索期约 7–10 天后接触，留足发育窗口。
 3. **不默认 2**：默认局是玩家的第一局。2 家 AI 会在第 2 周形成夹击，第一局体验太陡。2 家应当留作"我玩明白了"之后的主动选择。
-4. **0 仍然保留**在 UI 里（`StartScreen.ts:136`），且此时难度**依然生效**——通过 `playerStartMul` / `playerGrowthBonus` / `playerMoveMul` / `monsterMul` 四根玩家侧杠杆。这正是本次重设计的意义：**对手数量不再是难度的前提**。
+4. **0 仍然保留**在 UI 里（`StartScreen.ts` 的 `oppRow` / `field('电脑对手', oppRow)`），且此时难度**依然生效**——通过 `playerStartMul` / `playerGrowthBonus` / `playerMoveMul` / `monsterMul` 四根玩家侧杠杆。这正是本次重设计的意义：**对手数量不再是难度的前提**。
 
-**必须同步改的 UI 文案**（`StartScreen.ts:165`）：
+**UI 文案**（`StartScreen.ts` 的 `diffRow` / `field('难度', diffRow, diffHint)`）—— ✅ **已改**：
 
-> 现状：`field('难度', diffRow, '只影响电脑对手，不削弱你的部队')` —— **这句话在新方案下是假话**，必须改。
-> 建议：`'同时影响你的起始资源、野怪强度与电脑对手'`
+> ~~`field('难度', diffRow, '只影响电脑对手，不削弱你的部队')`~~ —— 这句在新方案下是假话，**已改**。
+> 现为：`'同时影响你的起始资源、野怪强度与电脑对手'`
 > 且当 `cfg.opponents === 0` 时动态切换为：`'无对手时，难度通过你的起始资源与野怪强度生效'`
 
 **`DIFFICULTIES[].desc` 新文案**：
@@ -272,38 +276,42 @@ export interface DifficultyDef {
 
 ---
 
-## 8. 实现接口（改动点清单，全部为真实字段）
+## 8. 实现接口（改动点清单 —— **✅ 现已全部落地**）
 
-| # | 文件:行 | 改动 |
-|---|---|---|
-| 1 | `core/types.ts:12-22` | `DifficultyDef` 增 4 个字段（§4.1） |
-| 2 | `core/data/factions.ts:50-75` | 三档填新数值 + 新 `desc`；`DEFAULT_CONFIG.opponents` 0→1 |
-| 3 | `core/map/generator.ts:1093` | `const mul = isHuman ? diff.playerStartMul : diff.startMul;` |
-| 4 | `core/game/town.ts:330` | `const bonus = isHuman ? diff.playerGrowthBonus : diff.growthBonus;` |
-| 5 | `core/game/town.ts:332` | 建议加钳制：`const mult = Math.max(0.5, townGrowthMultiplier(town) + bonus);` |
-| 6 | `core/map/generator.ts:430-441` | `monsterArmy(rng, tier, mul = 1)` —— **在 `randInt` 之后**乘，再 `Math.max(1, Math.round(...))` |
-| 7 | `core/map/generator.ts:870` / `1012` | 两处 `monsterArmy` 调用传入 `diff.monsterMul` |
-| 8 | `core/map/generator.ts:1143-1146` | 中立城驻军 `wolf 20 / boar 10` 同乘 `monsterMul` |
-| 9 | `core/map/generator.ts`（VAULTS 生成处） | 宝库守军 `randInt` 后同乘 `monsterMul` |
-| 10 | `core/game/hero.ts:20` | `maxMovePoints(hero, state?)`：`state && hero.owner === 'p1'` 时乘 `diff.playerMoveMul`，缺省 `?? 1` |
-| 11 | `core/game/hero.ts` | 新增 `import { DIFFICULTIES } from '../data/factions.js'`（无循环依赖：`factions.ts` 只 import `types.js`） |
-| 12 | `core/game/town.ts:543` | 雇佣新英雄的 `movePoints` 从 `BASE_MOVE_POINTS` 改为走 `maxMovePoints` —— **否则困难档可反复招新英雄绕过移动力惩罚**（§8.1） |
-| 13 | `ui/StartScreen.ts:165` | 难度行提示文案（§6） |
+> **引用一律用符号锚点**（D-52）：行号会随代码推进漂移，符号不会。
+> 状态栏的 ✅ 为 2026-09-19 复核 `src/` 的结果（逐条对过，非推测）。
 
-`maxMovePoints` 的 5 处调用点必须**一起**确认（否则 UI 与实际不一致）：
+| # | 位置（符号锚点） | 改动 | 状态 |
+|---|---|---|---|
+| 1 | `types.ts · DifficultyDef` | 增 4 个字段（§4.1） | ✅ |
+| 2 | `factions.ts · DIFFICULTIES` / `DEFAULT_CONFIG` | 三档填新数值 + 新 `desc`；`DEFAULT_CONFIG.opponents` 0→1（D-20） | ✅ |
+| 3 | `generator.ts · createGame()` 的起始资源倍率 | `const mul = isHuman ? diff.playerStartMul : diff.startMul;` | ✅ |
+| 4 | `town.ts · applyWeeklyGrowth()` | `const bonus = isHuman ? diff.playerGrowthBonus : diff.growthBonus;` | ✅ |
+| 5 | `town.ts · applyWeeklyGrowth()` 的 `mult` | 钳制：`const mult = Math.max(0.5, townGrowthMultiplier(town) + bonus);` | ✅ |
+| 6 | `generator.ts · monsterArmy(rng, tier, mul = 1)` | **在 `randInt` 之后**乘，再 `Math.max(1, Math.round(...))` | ✅ |
+| 7 | `generator.ts` 的两处 `monsterArmy(...)` 调用 | 传入 `diff.monsterMul` | ✅ |
+| 8 | `generator.ts` 中立据点的 `garrison` | `wolf` / `boar` 同乘 `monsterMul` | ✅ |
+| 9 | `generator.ts` 宝库守军生成处（`VAULTS[tier]` 分支） | `randInt` 后同乘 `monsterMul` | ✅ |
+| 10 | `hero.ts · maxMovePoints(hero, state?)` | `state && hero.owner === 'p1'` 时乘 `diff.playerMoveMul`，缺省 `?? 1` | ✅ |
+| 11 | `hero.ts` 的 import | 新增 `import { DIFFICULTIES } from '../data/factions.js'`（无循环依赖） | ✅ |
+| 12 | `town.ts · hireHero()` 里的 `hero.movePoints` | 从 `BASE_MOVE_POINTS` 改为 `maxMovePoints(hero, state)` —— **否则困难档可反复招新英雄绕过移动力惩罚**（§9.1） | ✅ |
+| 13 | `StartScreen.ts` 的 `diffRow` / `field('难度', …)` | 难度行提示文案（§6） | ✅ |
 
-- `ui/HeroPanel.ts:125`（HUD 显示上限）
-- `core/game/interaction.ts:455`（泉水回复 50%）
-- `core/game/turn.ts:49`（每日刷新 ← **这是真正生效的地方**）
-- `main.ts:1008`（"还需 N 天"估算）
-- `main.ts:1350`（面板数据）
+`maxMovePoints` 的 5 处调用点必须**一起**保持传 `state`（否则 UI 与实际不一致）：
+
+- `HeroPanel.ts`（HUD 显示上限）
+- `interaction.ts` 泉水分支的 `Math.round(maxMovePoints(hero, state) * 0.5)`（泉水回复 50%）
+- `turn.ts · endDay()` 的 `h.movePoints = maxMovePoints(h, state)`（每日刷新 ← **真正生效的地方**）
+- `main.ts` 的"还需 N 天"估算（`Math.ceil((cost - hero.movePoints) / maxMovePoints(hero, state))`）
+- `main.ts` 面板数据里的 `maxMovePoints` 字段
 
 ---
 
 ## 9. 边缘情况
 
-**9.1 招新英雄 = 移动力后门（漏洞级）**
-`town.ts:543` 用 `BASE_MOVE_POINTS` 硬编码给新英雄满移动力。若不同步缩放，困难档玩家可以花 2500 金招一个"满移动力"英雄，把 `playerMoveMul: 0.9` 完全绕过。改动 #12 是**必须项**，不是优化项。
+**9.1 招新英雄 = 移动力后门（漏洞级）** ✅ **已修**
+原状：`town.ts · hireHero()` 用 `BASE_MOVE_POINTS` 硬编码给新英雄满移动力 ⇒ 困难档玩家可以花 2500 金招一个"满移动力"英雄，把 `playerMoveMul: 0.9` 完全绕过。
+现状：该函数已改为 `hero.movePoints = maxMovePoints(hero, state)`（对应改动 #12），**后门已封**。保留本条是因为它属于"改动清单里必须做、不做就出漏洞"的那类，下次动 `maxMovePoints` 时要一起复核。
 
 **9.2 旧存档不会因为周增长而中途变难（决策② 已闭合 · D-21）**
 新增的 4 个字段全在**数据表**里，不在 `GameState` 里 → 存档结构零变化，`VERSION` 保持 7，不需要迁移。
@@ -317,7 +325,7 @@ export interface DifficultyDef {
 附带：默认 `opponents` 0→1 会改变 `layoutHomeIdeals(count)` 的入参，**同种子在新版本生成的图与旧版不同**。跨版本分享种子会失效，属可接受的一次性代价。
 
 **9.4 `aggression` 必须 < 4.0**
-`ai.ts:462` 的 `(1.2 - aggression × 0.3)` 在 `aggression ≥ 4.0` 时转负，AI 的向外扩张评分会反向（越远越不想去）。当前最大 1.50，余量充足，但这条约束要写进 `DifficultyDef.aggression` 的注释。
+`ai.ts · pickTarget()` 里 outward 候选打分用的 `(1.2 - aggression × 0.3)`，在 `aggression ≥ 4.0` 时转负，AI 的向外扩张评分会反向（越远越不想去）。当前最大 1.50，余量充足，但这条约束要写进 `DifficultyDef.aggression` 的注释。
 
 **9.5 `Math.floor` 让小幅增长加成失效**
 见 §1.1(a)。实现时**不要**试图"优化"成 `Math.round`——那会同时改变 AI 的既有行为。保留 floor，靠**把数值选在拐点上**（0.25 / 0.20）来绕开它。
@@ -343,7 +351,7 @@ export interface DifficultyDef {
 
 ### 10.1 E3 矿场权重耦合（本次最需要工程确认的一条）
 
-`ai.ts:315-321` 的矿场权重按"相对资源缺口"计算：`missing = max(0, ref − stock) / ref`，权重 `1 + min(1, missing) × 1.2`（最高 2.2×）。
+`ai.ts · scarcityNeed()` 的矿场权重按"相对资源缺口"计算：`missing = max(0, ref − stock) / ref`，权重 `1 + min(1, missing) × 1.2`（最高 2.2×）。
 把 easy 的 AI `startMul` 从 1.0 降到 0.70 → AI 起始库存变低 → `missing` 变大 → **easy 档的 AI 会更凶地抢矿**。这与"轻松档电脑发育迟缓"的意图**部分对冲**。
 
 两个选择，需与工程对齐：
