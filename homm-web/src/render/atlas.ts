@@ -1019,7 +1019,7 @@ export class Atlas {
   ogre(b);
   put('mon_ogre', b);
 
-  // B0 + B1 批（asset-spec §9.1 / §9.2）：地图兵种槽位 `u_<faction>_<unit>_map` 32×44，
+  // B0 + B1 批（asset-spec §9.1 / §9.2）：地图兵种槽位 `u_<faction>_<unit>_map` 48×44（D-73 加宽），
   // 锚点走 Packer 默认（ax=(TILE-w)/2、ay=TILE-h 贴地），与 §1.2 网格表一致。
   for (const spec of UNIT_FRAMES) {
     if (spec.kind !== 'map') continue;
