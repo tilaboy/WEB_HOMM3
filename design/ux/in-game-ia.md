@@ -718,7 +718,7 @@
 | 事实 | 值 | 来源（**按 D-52 引符号/区块，不引行号**） |
 |---|---|---|
 | 格宽 | `TILE = 32` | `atlas.ts` 的 `TILE` |
-| 地图兵种帧（徽标源） | **画布 52×44**（`ax = −10`、`ay = −12`）；**实测剪影最宽 ≤43（treant）· 41（wolfrider）· 35（firebrand）· 34（thornarcher）· 32（axethrower）· 其余 ≤30 ⇒ 越界 ≤5px/侧（左右对称）** | `unitArt.ts` 的 `UNIT_FRAMES`（`kind:'map'`）· **实测见探针 `tools/mapunitambiguity.mjs`**（S3 居中修复后：修前左 1–10 / 右 0、不对称、14/16 FAIL；**修后左右对称**，最大 5px treant · 4 wolfrider · 1 firebrand/thornarcher · 其余 0）；规范位 = `silhouette-audit.md`「D-73 加宽槽位复核」④ · 画布历史：`acb5d50` 48 → `b43ffa8` **52** |
+| 地图兵种帧（徽标源） | **画布 52×44**（`ax = −10`、`ay = −12`）；**实测剪影最宽 ≤43（treant）· 41（wolfrider）· 35（firebrand）· 34（thornarcher）· 32（axethrower）· 其余 ≤30 ⇒ 越界 ≤5px/侧（左右对称）** | `unitArt.ts` 的 `UNIT_FRAMES`（`kind:'map'`）· **实测见探针 `tools/mapbadgeaudit.mjs`（A 组）**（承已退役的 `mapunitambiguity.mjs`；S3 居中修复后：修前左 1–10 / 右 0、不对称、14/16 FAIL；**修后左右对称**，最大 5px treant · 4 wolfrider · 1 firebrand/thornarcher · 其余 0）；规范位 = `silhouette-audit.md`「D-73 加宽槽位复核」④ · 画布历史：`acb5d50` 48 → `b43ffa8` **52** |
 | 英雄棋子 | **32×44**，`ax = 0`、`ay = −12`（横**恰好占满一格**、不左右越界）⇒ **纵向本体上探自身格约 12px** ⇒ **徽标落"上/下"邻格会压到棋子本体**（这就是规则 1 必须把**英雄自身**计入实体集的原因）。**几何为引文**：`hero_<owner>` 帧实测（`ay=−12` + 帧内 y ∈ [8,43] ⇒ 世界 y ≈ −4…31，2026-09-21），**以帧实际 bbox / 探针派生为准，本规格仅引述** | `atlas.ts` 的 `hero_<owner>` |
 | 落位 | `gx*TILE + f.ax, gy*TILE + f.ay` | `MapRenderer.ts` 的 `blit()` |
 | **命中 = 纯格子** | `floor(wx/TILE), floor(wy/TILE)`（**与画了什么完全无关**） | `camera.ts` 的 `pick()` → `ortho.ts` 的 `worldToGrid()` |
