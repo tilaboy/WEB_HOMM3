@@ -2,7 +2,7 @@
  * 战斗场景专用精灵图集。
  *
  * 与冒险地图的 atlas.ts 分开的原因：战斗里的单位要"看得清"，
- * 尺寸更大（44×56 vs 32×40）、姿势站直、脚下带队伍色圆环，
+ * 尺寸更大（60×56 vs 48×44）、姿势站直、脚下带队伍色圆环，
  * 和地图上那些斜着看的小图标是两套东西，混在一张图里只会互相迁就。
  *
  * 依然全部程序化绘制：零外部素材，启动一次性烘焙，之后只做 drawImage。
@@ -123,7 +123,8 @@ export class CombatAtlas {
     }
 
     // B0 + B1 批（asset-spec §9.1 / §9.2）：战斗兵种槽位 `cu_<faction>_<unit>` 与
-    // 预烘焙攻击帧 `cu_<faction>_<unit>_atk`，44×56，锚点 ax=-22 / ay=-48（§1.2 网格表）。
+    // 预烘焙攻击帧 `cu_<faction>_<unit>_atk`，60×56，锚点 ax=-30 / ay=-48
+    // （真值取自 `UNIT_FRAMES`，D-73 `acb5d50` 加宽；此处注释勿再写死旧值）。
     // ⚠️ R-5：短名 lampbearer / scavenger / hornxbow / axethrower / dwarf / thornarcher /
     //   stoneimp / fireapprentice 是 asset-spec §3.2 + §2.2 的建议值，等 races.ts 定稿后对齐。
     for (const spec of UNIT_FRAMES) {

@@ -22,7 +22,7 @@ import {
 import { BASE_TOWN_INCOME } from '../dist/core/data/buildings.js';
 import { HOME_MINE_RING, MINE_NAME, MINE_PER_DAY, RARE_RESOURCES } from '../dist/core/data/mines.js';
 import { MARKET_RATES, costText } from '../dist/core/game/town.js';
-import { FACTION_UNITS, LEGACY_UNIT_IDS, UNITS, getUnit, normalizeLegacyUnitIds, unitIdForTier } from '../dist/core/data/units.js';
+import { FACTION_UNITS, LEGACY_UNIT_IDS, UNITS, getUnit, meleeStyleOf, normalizeLegacyUnitIds, unitIdForTier } from '../dist/core/data/units.js';
 import { bfs, distance, hexCenter, hexLine, hexList, inField, neighbors, pickHex, FIELD_H, FIELD_W } from '../dist/core/combat/hex.js';
 import {
   actDefend,
@@ -2135,6 +2135,46 @@ console.log('\n--- E3 无城 7 日出局 ---');
     (t) => t.owner === 'neutral' && Object.keys(t.growthPool).length > 0,
   );
   ok(neutralProducing.length === 0, '没有一座中立城有非空 growthPool');
+}
+
+// 17. anim（近战表演风格）改为**数据驱动** —— races.md §6.4.2 规则 4 / §6.4.4 item 2
+//     取值由 art-director 按「攻击肢剪影第一读法」逐兵种复核（D-63 批次）：
+//       thrust = 直线纵深（长杆 / 前冲兽 / 独角）；smash = 垂直下压（重质剪影）；其余 slash。
+{
+  const EXPECT_ANIM = {
+    // thrust
+    p1_oathpike: 'thrust', p2_wolfrider: 'thrust', p3_unicorn: 'thrust',
+    // smash
+    p2_lavatroll: 'smash', p3_treant: 'smash', p4_hopgolem: 'smash', p4_colossus: 'smash',
+    // slash（T1/T2 全部 8 个 + 其余 T3–T5）
+    p1_lampbearer: 'slash', p1_hornxbow: 'slash', p1_templar: 'slash', p1_overangel: 'slash',
+    p2_scavenger: 'slash', p2_axethrower: 'slash', p2_firebrand: 'slash',
+    p3_dwarf: 'slash', p3_thornarcher: 'slash', p3_vineguard: 'slash',
+    p4_stoneimp: 'slash', p4_fireapprentice: 'slash', p4_librarian: 'slash',
+  };
+  const allIds = Object.values(FACTION_UNITS).flat();
+  ok(allIds.length === 20, 'canonical 兵种共 20 个（4 族 × T1–T5）');
+  ok(allIds.every((id) => id in EXPECT_ANIM), '本断言表覆盖全部 20 个 canonical id');
+  const mismatches = allIds
+    .map((id) => [id, meleeStyleOf(id), EXPECT_ANIM[id]])
+    .filter(([, got, want]) => got !== want)
+    .map(([id, got, want]) => `${id}:${got}≠${want}`);
+  ok(mismatches.length === 0,
+    `20 个 canonical 的近战风格全部符合 art-director 复核（${mismatches.join(', ') || '全部一致'}）`);
+  ok(allIds.every((id) => ['thrust', 'slash', 'smash'].includes(meleeStyleOf(id))),
+    '所有 canonical 风格取值都在 {thrust,slash,smash} 内（不新增第 4 类）');
+  // 缺省语义：未知 id → slash（旧 meleeStyle 的兜底）
+  ok(meleeStyleOf('__no_such_unit__') === 'slash', 'meleeStyleOf(未知 id) 缺省 slash');
+  ok(meleeStyleOf('peasant') === 'slash', 'legacy peasant 缺省 slash');
+  // 零行为变化：旧 meleeStyle() 的 3 条显式判定必须原样保留（段 2 删键前）
+  ok(meleeStyleOf('pikeman') === 'thrust', 'legacy pikeman 仍 thrust（旧 meleeStyle 行为保留）');
+  ok(meleeStyleOf('ogre') === 'smash', '野怪 ogre 仍 smash（旧行为保留）');
+  ok(meleeStyleOf('boar') === 'smash', '野怪 boar 仍 smash（旧行为保留）');
+  ok(meleeStyleOf('wolf') === 'slash', '野怪 wolf 为 slash（旧行为保留）');
+  // 契约：anim 挂在 UNITS 数据上（而不是靠 id 字面量 if 链）
+  ok(UNITS.p1_oathpike.anim === 'thrust' && UNITS.p2_lavatroll.anim === 'smash'
+    && UNITS.p3_unicorn.anim === 'thrust' && UNITS.p4_hopgolem.anim === 'smash',
+    'anim 字段确实挂在 UNITS 上（数据驱动，非 id 字面量判断）');
 }
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);

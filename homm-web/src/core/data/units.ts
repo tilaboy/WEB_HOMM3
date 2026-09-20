@@ -49,6 +49,7 @@ export const UNITS: Record<string, UnitType> = {
     id: 'p1_oathpike', name: '铁誓枪兵', tier: 3,
     attack: 4, defense: 7, damageMin: 3, damageMax: 5, hp: 20, speed: 4,
     expValue: EXP_BY_TIER[2], growthPerWeek: 4, cost: { gold: 220, wood: 2 },
+    anim: 'thrust',
     ...theme('p1'),
   },
   p1_templar: {
@@ -82,6 +83,7 @@ export const UNITS: Record<string, UnitType> = {
     id: 'p2_wolfrider', name: '暴走狼骑', tier: 3,
     attack: 7, defense: 3, damageMin: 4, damageMax: 6, hp: 16, speed: 7,
     expValue: EXP_BY_TIER[2], growthPerWeek: 4, cost: { gold: 200, ore: 2 },
+    anim: 'thrust',
     ...theme('p2'),
   },
   p2_firebrand: {
@@ -94,6 +96,7 @@ export const UNITS: Record<string, UnitType> = {
     id: 'p2_lavatroll', name: '熔岩巨魔', tier: 5,
     attack: 11, defense: 7, damageMin: 12, damageMax: 16, hp: 55, speed: 5,
     expValue: EXP_BY_TIER[4], growthPerWeek: 2, cost: { gold: 1200, ore: 5, wood: 5 },
+    anim: 'smash',
     ...theme('p2'),
   },
 
@@ -121,12 +124,14 @@ export const UNITS: Record<string, UnitType> = {
     id: 'p3_treant', name: '树人大叔', tier: 4,
     attack: 6, defense: 10, damageMin: 6, damageMax: 9, hp: 42, speed: 3,
     expValue: EXP_BY_TIER[3], growthPerWeek: 3, cost: { gold: 560, wood: 6, ore: 2 },
+    anim: 'smash',
     ...theme('p3'),
   },
   p3_unicorn: {
     id: 'p3_unicorn', name: '独角兽园丁', tier: 5,
     attack: 8, defense: 11, damageMin: 10, damageMax: 14, hp: 65, speed: 6,
     expValue: EXP_BY_TIER[4], growthPerWeek: 2, cost: { gold: 1250, gem: 2, wood: 5 },
+    anim: 'thrust',
     ...theme('p3'),
   },
 
@@ -148,6 +153,7 @@ export const UNITS: Record<string, UnitType> = {
     id: 'p4_hopgolem', name: '蹦跳魔偶', tier: 3,
     attack: 6, defense: 4, damageMin: 4, damageMax: 6, hp: 15, speed: 6,
     expValue: EXP_BY_TIER[2], growthPerWeek: 4, cost: { gold: 230, ore: 2 },
+    anim: 'smash',
     ...theme('p4'),
   },
   p4_librarian: {
@@ -160,6 +166,7 @@ export const UNITS: Record<string, UnitType> = {
     id: 'p4_colossus', name: '失控大魔像', tier: 5,
     attack: 10, defense: 8, damageMin: 12, damageMax: 16, hp: 58, speed: 7,
     expValue: EXP_BY_TIER[4], growthPerWeek: 2, cost: { gold: 1250, crystal: 4, ore: 3 },
+    anim: 'smash',
     ...theme('p4'),
   },
 
@@ -185,6 +192,7 @@ export const UNITS: Record<string, UnitType> = {
     id: 'pikeman', name: '枪兵', tier: 3,
     attack: 5, defense: 5, damageMin: 3, damageMax: 5, hp: 18, speed: 4,
     expValue: 20, growthPerWeek: 4, cost: { gold: 200, wood: 2 },
+    anim: 'thrust', // 保留旧 meleeStyle() 的行为（段 2 删键前零行为变化）
     body: '#7a8a99', accent: '#c9d3db',
   },
   knight: {
@@ -213,12 +221,14 @@ export const UNITS: Record<string, UnitType> = {
     id: 'boar', name: '野猪', tier: 3,
     attack: 5, defense: 4, damageMin: 3, damageMax: 5, hp: 24, speed: 4,
     expValue: 18, growthPerWeek: 0, cost: {},
+    anim: 'smash', // 保留旧 meleeStyle()（boar 原判 smash）
     body: '#6b4a2f', accent: '#241a10',
   },
   ogre: {
     id: 'ogre', name: '食人魔', tier: 4,
     attack: 8, defense: 5, damageMin: 6, damageMax: 10, hp: 30, speed: 3,
     expValue: 40, growthPerWeek: 0, cost: {},
+    anim: 'smash', // 保留旧 meleeStyle()（ogre 原判 smash）
     body: '#4f6b3a', accent: '#1e2a15',
   },
 };
@@ -350,6 +360,17 @@ export function getUnit(id: string): UnitType {
     throw new Error(`未知兵种: ${id}${hint}`);
   }
   return u;
+}
+
+/**
+ * 近战表演风格（`races.md §6.4.2` 规则 4）：**数据驱动，读 `UnitType.anim`**。
+ *
+ * 为什么不做成 id 字面量判断：四族 T3 是枪兵 / 狼骑 / 藤卫 / 魔偶，**只有枪兵该突刺**；
+ * 按 id 判就得给每个新 id 补一条 `if`，迁移后必然漏（旧 `BattleScreen.meleeStyle()` 的教训）。
+ * 缺省 `'slash'`。用安全查表而非 `getUnit()`：调用点在战斗渲染里，未知 id 不该抛错打断整场战斗。
+ */
+export function meleeStyleOf(unitTypeId: string): 'thrust' | 'slash' | 'smash' {
+  return UNITS[unitTypeId]?.anim ?? 'slash';
 }
 
 /** 玩家可招募的兵种（按兵营等级从低到高）。⚠️ 段 2 改为按阵营取 `FACTION_UNITS`。 */

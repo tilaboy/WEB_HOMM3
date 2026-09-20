@@ -6,7 +6,7 @@
  * 血条/数量会立刻更新，浮字和位移只是"补上那 0.5 秒的表演"。
  */
 import type { GameState } from '../core/types.js';
-import { getUnit } from '../core/data/units.js';
+import { getUnit, meleeStyleOf } from '../core/data/units.js';
 import { sfx } from './sfx.js';
 import { WAR_MACHINES } from '../core/data/warmachines.js';
 import { effectivePrimary } from '../core/game/hero.js';
@@ -722,13 +722,6 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     return u ? u.hex : { col: 0, row: 0 };
   }
 
-  /** 按兵种定近战表演：长杆突刺 / 重型抡砸 / 其余挥砍。 */
-  function meleeStyle(unitTypeId: string): 'thrust' | 'slash' | 'smash' {
-    if (unitTypeId === 'pikeman' || unitTypeId === 'spearman') return 'thrust';
-    if (unitTypeId === 'ogre' || unitTypeId === 'boar') return 'smash';
-    return 'slash';
-  }
-
   /** 命中瞬间：打击特效 + 伤害浮字（浮字跟着命中走，不再提前出现）。 */
   function onMeleeHit(style: 'thrust' | 'slash' | 'smash', to: Hex, damage: number, killed: number): void {
     const c = hexCenter(to);
@@ -747,7 +740,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     const b = hexCenter(to);
     const dx = Math.sign(b.x - a.x);
     const dy = Math.sign(b.y - a.y);
-    const style = meleeStyle(unitById(battle, unitId)?.unitTypeId ?? '');
+    const style = meleeStyleOf(unitById(battle, unitId)?.unitTypeId ?? '');
     let hit = false;
     const push = (k: number): void => {
       lunge = { unitId, dx: dx * 7 * k, dy: dy * 5 * k };

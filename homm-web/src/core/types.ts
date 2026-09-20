@@ -98,6 +98,12 @@ export interface UnitType {
   cost: ResourceBag;
   body: string;
   accent: string;
+  /**
+   * 近战表演风格（`races.md §6.4.2` 规则 4）：**数据驱动，不要用 id 字面量判断**。
+   * 缺省 `'slash'`。取值由 art-director 按「攻击肢剪影的第一读法」逐兵种复核
+   * （直线纵深 → thrust；横向/斜向弧 → slash；垂直下压 → smash），**不按名字里的动词取**。
+   */
+  anim?: 'thrust' | 'slash' | 'smash';
 }
 
 export interface Stack {
