@@ -97,6 +97,7 @@
 | **D-59** | **★ B1 批完成并验收（`73ab4c9`）—— R-1 风险被实测否掉** | 4 族 T1+T2 共 **8 单位 / 24 帧**程序化精灵全部完成；主理人核验：typecheck 0 · build OK · smoke **556-0** · **`audit:b0` [1][2][3][4][5][8] 全 PASS（24 帧全过，且阈值未放宽、B0 那 6 帧仍 PASS）** | ★ **R-1（×4 会退化成四套换色）** 由剪影度量否掉：T1 高宽比 **1.36 / 1.03 / 0.96 / 1.17**，且 **p4 石雕小怪脚底行 40 而其余三族均 43（悬浮）**、占地仅 52%（离地）⇒ **不是换色，是形状家族不同**。T2 远程四种剪影亦各异（hornXbow 1.42 竖直弩 / axeThrower 1.36 横握斧 / thornArcher 0.93 弓成弧 / fireApprentice 1.38 杖尖火）。另：`B0_FRAMES → UNIT_FRAMES` 重命名完成，registry 已可交接给 engineering-lead 认领 **#24** |
 | **D-60** | **★ 图集容量的真悬崖在【纵向】，不在行宽**（2026-09-20，engineering-lead 实测发现） | 新增 **`npm run audit:atlas`**（8 条容量断言 + 2 条分辨力自检）；主理人核验 **exit 0** | ★ **反直觉但关键**：行宽 97~99% 看着吓人，但**行式打包会自动换行，行宽永远不可能超**（除非单帧比画布还宽）。**会静默丢帧的是纵向** —— `Packer/Shelf.place()` **从不检查 `y+h` 是否超画布高**，超了 `drawImage` 就画到画布外，**不报错、不白屏**，只是那些精灵凭空消失（战斗里的表现：「某些兵种只剩队伍圆环」）。实测纵向仅 **14.3% / 22.3%**，离悬崖尚远。⇒ **断言设计要点**：① 换行规则抽成唯一一份 `shelfAdvance()`，冒险 Packer / 战斗 Shelf / 审计复算**三方共用** ⇒ **审计的尺子与运行时同源**；② 每次运行都把同一批帧塞进 256×256 复算，**必须报越界**，否则 FAIL（防「永远绿」的假守卫）；③ 运行时装不下只 `console.warn` 列越界帧名，**不抛**（抛 = 开局白屏，比少几个精灵更糟） |
 | **D-61** | **canonical id 迁移：走两段，段 1 现在做、段 2 等精灵**（2026-09-20 主理人裁决） | **段 1**（零行为变化，可独立提交）：加 12 个 T3–T5 键 + `FACTION_UNITS` + `unitIdForTier()` + `LEGACY_UNIT_IDS` + `loadGame` normalize + 旧档迁移断言。**段 2**（等 T3–T5 的 12 个 `cu_*` 精灵齐了再做）：dwell 改 tier 解析（4 处）+ 删旧 5 键 + 8 文件字面量 | ★ **为什么必须等**：`BattleRenderer` 取帧是 `cu_${u.unitTypeId}`，下一行 `if (!atlas.has(name)) return` ⇒ **缺帧静默不画**。若先把 T3–T5 数据 id 换掉而精灵没跟上，**战斗里 12 个兵种会变成四个空圆环**。工时 ≈**2.5 人日**（不含 20 格数值设计）。**另：工程侧发现 3 条设计文档漏掉的风险** ——① 存档里还有 `towns[].growthRemainder` 也按兵种 id 键（`town.ts:351`），而 `getUnit()` 对未知 id 是 `throw` ⇒ **旧档不 normalize 就是加载即崩**；② `u_*_map` 帧**目前根本没被渲染**（MapRenderer 只画 `hero_${owner}`）⇒ 地图侧迁移零风险，但「地图兵种可视化」是未接线项；③ `meleeStyle()` 靠 id 字面量判断，四族 T3 不同 ⇒ 应给 `UnitType` 加 `anim` 字段而非换字面量 |
+| **D-62** | **★ 固化「提交前必跑」标准门控清单（含 `audit:atlas`）**（2026-09-20，采纳 engineering-lead 建议） | **必跑**：`typecheck` → `build` → `smoke`（**556-0**）→ **`audit:atlas`** → 按改动域加跑 `audit:b0`（改精灵）/ `STRICT=1 audit:touch`（改 UI）/ `audit:layout`+`audit:mines`（改核心数值） | ★ **为什么把 `audit:atlas` 提到必跑**：它防的是**静默丢帧** —— 图集装不下时**不报错、不白屏**，只是那些精灵凭空消失（战斗里表现为「某些兵种只剩队伍圆环」）。**这是唯一一个「看不出问题但已经坏了」的失败模式**，靠人自觉一定会跳过 ⇒ 必须固化。⚠️ **两个执行坑（已一并记入）**：① **`audit:hover` 依赖 dev server**（`tools/serve.mjs` 须在 127.0.0.1:5173 上跑），不启服务会 exit 2 报 `fetch failed`；② **`audit:layout` / `audit:mines` 默认 SEEDS 偏大**（40 / 3），CI 建议显式 `SEEDS=3` |
 | 2026-09-19（**暂停点**） | 用户要求暂停当日开发。**今日 60 个提交**；**HEAD = `0f0b91c`**。✅ **主理人已在 `git worktree` 干净树上验证 HEAD 全绿**：typecheck 0 · build OK · smoke **556-0** · **`audit:b0` 六条自动断言全 PASS** · **`audit:touch STRICT=1` exit 0**。✅ **UI 重构批 P1（`7dbc567`）+ P3（`3c5b34c` 城镇面板 sticky 出口 + 5 标签页 + 市场「我的资源」）已完成**。⚠️ **未提交的在飞工作**（关掉应用会丢）：`eng-sprites` 的 B1（`unitArt.ts` 等）与 `engineering-lead` 的 P4；**当前工作树上 `audit:b0 [8]` 与 `audit:touch` 因这些在飞改动而红，但 HEAD 是绿的**。**明日恢复第一条命令**：`npm run typecheck` → **先 `build` 再 `smoke`**（顺序反了会得 0/0 假空）。细节见 `.workbuddy/memory/2026-09-19.md` 的「⏸ 暂停交接」节 |
 
 #### ⚠️ D-30 的 IP 边界（必须遵守，与 D-16 不内嵌 Ubisoft 商标是同一原则）
@@ -167,6 +168,24 @@
 
 ---
 
+
+### 提交前标准门控清单（D-62，必跑）
+
+```bash
+npm run typecheck            # 必须 0 error
+npm run build                # audit:* 都读 dist/，不 build 会读到旧的
+npm run smoke                # 基线 556 PASS / 0 FAIL
+npm run audit:atlas          # 图集容量（防静默丢帧，必跑）
+# 按改动域加跑：
+npm run audit:b0             # 改了精灵
+STRICT=1 npm run audit:touch # 改了 UI
+SEEDS=3 npm run audit:layout && SEEDS=3 npm run audit:mines  # 改了核心数值
+```
+
+⚠️ **顺序**：`build` 必须在 `smoke` / `audit:*` **之前** —— `dist/` 是 git 忽略的。
+⚠️ `audit:hover` 额外依赖 dev server（`tools/serve.mjs` 需在 127.0.0.1:5173 运行），不启会 exit 2。
+
+---
 ## 3. 阶段路线（修订版）
 
 原 P0–P3 编号无法容纳新增工作，改为**按依赖关系排序**。
