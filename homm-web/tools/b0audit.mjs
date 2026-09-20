@@ -117,6 +117,14 @@ function hueGap(a, b) {
  * 完成"去色 32px 并排认族"，门槛必须高；精灵内相邻材质还有色相 / 形状 / 1px 描边
  * 三条通道兜底，硬套 12 会误杀大量合法配色。
  */
+/**
+ * S1 的容差（**非规格**，软带）。依据 silhouette-audit §7 ①（art-director 2026-09-21 裁定）：
+ *   **2×容差必须 < 最小步长**，否则相邻档的接受带**重叠** ⇒ 判不出某帧属哪一档，
+ *   S1 就退化成一个恒真的摆设。实测最小步长 cu 7.2 / map 6.8 ⇒ 容差上限 3.4/3.6 ⇒ 取 **3**。
+ * ⚠️ 曾经的 ±8 会让 cu 的 T1 带 (52.7–68.7) 与 T2 带 (61.6–77.6) 重叠 —— 那是**无分辨力**的。
+ */
+const S1_TOL = 3;
+
 const MIN_DL = 8;
 const MIN_DL_SAME_HUE = 12;
 const SAME_HUE_DEG = 30;
@@ -795,12 +803,12 @@ function checkTierMatrix({ label, kind, targets }) {
       const t = TIER_OF[f.spec.unit];
       const v = volOf(f);
       const off = v - targets[t];
-      if (Math.abs(off) > 8 + 1e-9) {
+      if (Math.abs(off) > S1_TOL + 1e-9) {
         bad++;
         detail[f.spec.unit] = `${v.toFixed(1)}%(靶${targets[t].toFixed(1)},偏${off >= 0 ? '+' : ''}${off.toFixed(1)})`;
       }
     }
-    record(11, `S1 每族每 tier 落在目标 ±8pt(非规格容差) · ${label}`, bad === 0 && nonEmpty, { 画布: label, 帧数: list.length, 越界帧数: bad, ...detail, name: `S1·${label}` });
+    record(11, `S1 每族每 tier 落在目标 ±${S1_TOL}pt(非规格容差) · ${label}`, bad === 0 && nonEmpty, { 画布: label, 帧数: list.length, 越界帧数: bad, ...detail, name: `S1·${label}` });
   }
 }
 
