@@ -464,4 +464,4 @@
 
 ---
 
-*本文档所有数值以 `src/core/data/units.ts`、`buildings.ts` 现有数据为基线推得；战力公式与金当量换算见 §1。落地时建议新增 `src/core/data/races.ts` 汇总本表，`UNITS` 扩充 20 条。*
+*本文档所有数值以 `src/core/data/units.ts`、`buildings.ts` 现有数据为基线推得；战力公式与金当量换算见 §1。~~落地时建议新增 `src/core/data/races.ts` 汇总本表~~ —— **已决（`roadmap D-67`，主理人裁定）：不新建 `races.ts`**；`FACTION_UNITS` ／ `unitIdForTier` 落在 **`core/data/units.ts`**，`UNITS` 扩充 20 条即在此表。*
