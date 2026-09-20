@@ -174,22 +174,32 @@ const ASYM_CAP = 1;
 line('\n=== A 帧完整性（剪影在槽位内 + 左右越界 ≤8px/侧 + 对称 ≤1px）===');
 {
   let aBad = 0;
+  let minW = Infinity;
+  let maxW = 0;
+  let maxOvh = 0;
   for (const b of badges) {
     const { frame, name } = b;
     const { sil } = frame;
+    const silW = sil.x1 - sil.x0 + 1; // 可见剪影宽（= §13.0 那组「≤43 / ≤41 / ≤35 / ≤34…」）
     const withinSlot = sil.x0 >= 0 && sil.x1 <= frame.w - 1; // 无横向裁切
     const leftOvh = Math.max(0, -(frame.ax + sil.x0));
     const rightOvh = Math.max(0, frame.ax + sil.x1 - TILE);
     const sym = Math.abs(leftOvh - rightOvh);
     const pass = withinSlot && leftOvh <= LEFT_CAP && rightOvh <= RIGHT_CAP && sym <= ASYM_CAP;
-    if (!pass) {
-      aBad++;
-      line(
-        `[FAIL] ${name}  剪影 x[${sil.x0},${sil.x1}] 在槽位内=${withinSlot} 左越 ${leftOvh}(≤${LEFT_CAP}) 右越 ${rightOvh}(≤${RIGHT_CAP}) |Δ| ${sym}(≤${ASYM_CAP})`,
-      );
-    }
+    if (!pass) aBad++;
+    minW = Math.min(minW, silW);
+    maxW = Math.max(maxW, silW);
+    maxOvh = Math.max(maxOvh, leftOvh, rightOvh);
+    // 逐帧打印 silW —— 旧探针（已退役的 mapunitambiguity.mjs）曾打印此列，
+    // §13.0 引用的「≤43/≤41/≤35/≤34…」即取自它；退役后此列消失 ⇒ 出处不可复现，故补回。
+    line(
+      `${pass ? 'PASS' : 'FAIL'}  ${name.padEnd(24)} silW=${String(silW).padStart(2)}  x[${sil.x0},${sil.x1}]` +
+        `  左越 ${leftOvh}/${LEFT_CAP}  右越 ${rightOvh}/${RIGHT_CAP}  对称 ${sym}  在槽位内=${withinSlot}`,
+    );
   }
-  ok(aBad === 0, `A：${badges.length} 帧剪影在槽位内、左右越界 ≤${LEFT_CAP}/${RIGHT_CAP}、对称 ≤${ASYM_CAP}（失败 ${aBad}）`);
+  const n = badges.length;
+  line(`剪影宽 silW：${minW}–${maxW}（格宽 TILE=${TILE}）· 最大单侧越界 ${maxOvh}px（上限 ${LEFT_CAP}）`);
+  ok(aBad === 0, `A：${n} 帧剪影在槽位内、左右越界 ≤${LEFT_CAP}/${RIGHT_CAP}、对称 ≤${ASYM_CAP}（失败 ${aBad}）`);
 }
 
 /* ============ A′ 前提：帧内居中（S3）—— 徽标几何的前提（team-lead #3 判据）============ */
