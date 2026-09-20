@@ -301,7 +301,10 @@
    **`u_{id}_map`（地图兵种帧）全项目零消费者** —— `MapRenderer` 在地图上只 blit `hero_${owner}`（英雄棋子），从不画兵种帧。（此**现状**在接线实现前仍成立；**表面问题已决**，见下。）
    ⇒ 后果两面：**① 好消息**：地图侧迁移**零风险**（没有读它的人）；**② 曾经的账**：这 20 个 `u_*_map` 帧曾属于「**有名字没家**」的资产，B1 已画出的 8 个也没有表面。~~是否接线（地图上看得见兵种）或按 D-50 同一条纪律处理，**属待决项，已上报主理人**~~ —— **该问已决**（见 §7 第 6 条）。
    ✅ **已获用户批准（2026-09-21 00:49 原话：「地图单位接地图: 接地图」）** ⇒ `u_*_map` **有表面**（英雄旁的队伍图标）；**帧尺寸口径见 `asset-spec`（当前 `52×44`）**。**批准类记录必须附原话 + 时间戳，不得只写「已批准」。**
-3. **tier → id 的解析放在 `races.ts`**：新增 `FACTION_UNITS: Record<FactionId, [id, id, id, id, id]>`（按 T1→T5 顺序）。
+3. **tier → id 的解析放在 `units.ts`（不新建 `races.ts`）** —— **已决（`roadmap D-67`，主理人裁定）**。
+   ~~tier → id 的解析放在 `races.ts`~~（该建议源自 `roadmap D-58`，经 **D-67** 改判 —— 引用一律附出处）。
+   **已落地**：`FACTION_UNITS: Record<FactionId, readonly [id×5]>`（按 T1→T5 顺序）与 `unitIdForTier(owner, tier)` **均在 `core/data/units.ts`**；
+   不新建 `races.ts`（它本就是 id 的所有者 —— 分开会让 id 一半在这、一半在那）。
    兵营建筑的 `growth.unitTypeId` 不再写死具体兵种，改为**按 tier 查这张表** ⇒ 同一座 `dwell3` 在四族里长出的兵不同。
 4. **近战表演不得靠 id 字面量判断**（`meleeStyle()` 的教训）：
    现状 `BattleScreen.ts` 的 `meleeStyle()` 用 `unitTypeId === 'pikeman'` 判"突刺"。**四族 T3 是枪兵 / 狼骑 / 藤卫 / 魔偶，只有枪兵该突刺** —— 按 id 判就得给每个新 id 补一条 `if`，且迁移后必然漏。
