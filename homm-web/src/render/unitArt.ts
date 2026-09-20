@@ -8,12 +8,12 @@
  *                                       §4 H1–H6 搞笑规则 / §5.6 逐 tier 剪影矩阵
  *
  * 本批 6 帧（asset-spec §9.1）：
- *   u_p1_lampbearer_map     48×44   晨曦 T1 提灯侍从 · 冒险地图帧
- *   cu_p1_lampbearer        60×56   同上 · 战斗待机帧
- *   cu_p1_lampbearer_atk    60×56   同上 · 战斗攻击帧（预烘焙 squash，§4.1 方案 A）
- *   u_p2_scavenger_map      48×44   赤焰 T1 捡破烂小鬼 · 冒险地图帧
- *   cu_p2_scavenger         60×56   同上 · 战斗待机帧
- *   cu_p2_scavenger_atk     60×56   同上 · 战斗攻击帧
+ *   u_p1_lampbearer_map     52×44   晨曦 T1 提灯侍从 · 冒险地图帧
+ *   cu_p1_lampbearer        64×56   同上 · 战斗待机帧
+ *   cu_p1_lampbearer_atk    64×56   同上 · 战斗攻击帧（预烘焙 squash，§4.1 方案 A）
+ *   u_p2_scavenger_map      52×44   赤焰 T1 捡破烂小鬼 · 冒险地图帧
+ *   cu_p2_scavenger         64×56   同上 · 战斗待机帧
+ *   cu_p2_scavenger_atk     64×56   同上 · 战斗攻击帧
  *
  * 硬性纪律（违反即为 B0 不通过）：
  *   1. 颜色 **100% 取用 §3.2 / §3.3 的字面色板**，本文件不使用 shade()/mix() 现场造色（§3.4）。
@@ -198,52 +198,52 @@ export interface B0FrameSpec {
 }
 
 export const B0_FRAMES: B0FrameSpec[] = [
-  { name: 'u_p1_lampbearer_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p1_lampbearer', kind: 'map' },
-  { name: 'cu_p1_lampbearer', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_lampbearer', kind: 'idle' },
-  { name: 'cu_p1_lampbearer_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_lampbearer', kind: 'atk' },
-  { name: 'u_p2_scavenger_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p2_scavenger', kind: 'map' },
-  { name: 'cu_p2_scavenger', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_scavenger', kind: 'idle' },
-  { name: 'cu_p2_scavenger_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_scavenger', kind: 'atk' },
+  { name: 'u_p1_lampbearer_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_lampbearer', kind: 'map' },
+  { name: 'cu_p1_lampbearer', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_lampbearer', kind: 'idle' },
+  { name: 'cu_p1_lampbearer_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_lampbearer', kind: 'atk' },
+  { name: 'u_p2_scavenger_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_scavenger', kind: 'map' },
+  { name: 'cu_p2_scavenger', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_scavenger', kind: 'idle' },
+  { name: 'cu_p2_scavenger_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_scavenger', kind: 'atk' },
 ];
 
 /**
  * B1 批（asset-spec §9.2）：全部族的 T1 + T2，18 帧（6 单位 × 3）。
  * 帧名 / 槽位 / 锚点严格按 asset-spec §3.2 / §1.2：
- *   map 48×44（ax=-8, ay=-12，贴地） / cu_* 60×56（ax=-30, ay=-48） / cu_*_atk 60×56。
+ *   map 52×44（ax=-10, ay=-12，贴地） / cu_* 64×56（ax=-32, ay=-48） / cu_*_atk 64×56。
  * ⚠️ R-5：短名 lampbearer / scavenger / hornxbow / axethrower / dwarf / thornarcher /
  *   stoneimp / fireapprentice 是 asset-spec §3.2 + §2.2 的建议值，等 races.ts 定稿后对齐。
  */
 export const B1_FRAMES: B0FrameSpec[] = [
   // 晨曦 T2 号角弩手（p1 垂直母题：弩竖直举起）
-  { name: 'u_p1_hornxbow_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p1_hornxbow', kind: 'map' },
-  { name: 'cu_p1_hornxbow', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_hornxbow', kind: 'idle' },
-  { name: 'cu_p1_hornxbow_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_hornxbow', kind: 'atk' },
+  { name: 'u_p1_hornxbow_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_hornxbow', kind: 'map' },
+  { name: 'cu_p1_hornxbow', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_hornxbow', kind: 'idle' },
+  { name: 'cu_p1_hornxbow_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_hornxbow', kind: 'atk' },
   // 赤焰 T2 投斧蛮子（p2 楔形母题：横持斧，斧刃带缺口）
-  { name: 'u_p2_axethrower_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p2_axethrower', kind: 'map' },
-  { name: 'cu_p2_axethrower', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_axethrower', kind: 'idle' },
-  { name: 'cu_p2_axethrower_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_axethrower', kind: 'atk' },
+  { name: 'u_p2_axethrower_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_axethrower', kind: 'map' },
+  { name: 'cu_p2_axethrower', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_axethrower', kind: 'idle' },
+  { name: 'cu_p2_axethrower_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_axethrower', kind: 'atk' },
   // 翠林 T1 浇水矮人（p3 圆形母题：圆滚滚一坨，头顶一丛叶）
-  { name: 'u_p3_dwarf_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p3_dwarf', kind: 'map' },
-  { name: 'cu_p3_dwarf', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_dwarf', kind: 'idle' },
-  { name: 'cu_p3_dwarf_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_dwarf', kind: 'atk' },
+  { name: 'u_p3_dwarf_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_dwarf', kind: 'map' },
+  { name: 'cu_p3_dwarf', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_dwarf', kind: 'idle' },
+  { name: 'cu_p3_dwarf_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_dwarf', kind: 'atk' },
   // 翠林 T2 荆棘射手（p3 圆形母题：弓成弧，头顶枝叶绕成环）
-  { name: 'u_p3_thornarcher_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p3_thornarcher', kind: 'map' },
-  { name: 'cu_p3_thornarcher', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_thornarcher', kind: 'idle' },
-  { name: 'cu_p3_thornarcher_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_thornarcher', kind: 'atk' },
+  { name: 'u_p3_thornarcher_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_thornarcher', kind: 'map' },
+  { name: 'cu_p3_thornarcher', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_thornarcher', kind: 'idle' },
+  { name: 'cu_p3_thornarcher_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_thornarcher', kind: 'atk' },
   // 紫晶 T1 石雕小怪（p4 菱形母题：菱形石块，底部悬空 1px，身上一道裂纹）
-  { name: 'u_p4_stoneimp_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p4_stoneimp', kind: 'map' },
-  { name: 'cu_p4_stoneimp', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_stoneimp', kind: 'idle' },
-  { name: 'cu_p4_stoneimp_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_stoneimp', kind: 'atk' },
+  { name: 'u_p4_stoneimp_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_stoneimp', kind: 'map' },
+  { name: 'cu_p4_stoneimp', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_stoneimp', kind: 'idle' },
+  { name: 'cu_p4_stoneimp_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_stoneimp', kind: 'atk' },
   // 紫晶 T2 喷火学徒（p4 菱形母题：细长锥袍，杖尖菱形，嘴前一小团火）
-  { name: 'u_p4_fireapprentice_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p4_fireapprentice', kind: 'map' },
-  { name: 'cu_p4_fireapprentice', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_fireapprentice', kind: 'idle' },
-  { name: 'cu_p4_fireapprentice_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_fireapprentice', kind: 'atk' },
+  { name: 'u_p4_fireapprentice_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_fireapprentice', kind: 'map' },
+  { name: 'cu_p4_fireapprentice', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_fireapprentice', kind: 'idle' },
+  { name: 'cu_p4_fireapprentice_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_fireapprentice', kind: 'atk' },
 ];
 
 /**
  * B2 批（asset-spec §9.2）：全部族的 T3 + T4，24 帧（8 单位 × 3）。
  * 帧名 / 槽位 / 锚点严格按 asset-spec §3.2 / §1.2（与 B0/B1 同规格）：
- *   map 48×44（ax=-8, ay=-12，贴地） / cu_* 60×56（ax=-30, ay=-48） / cu_*_atk 60×56。
+ *   map 52×44（ax=-10, ay=-12，贴地） / cu_* 64×56（ax=-32, ay=-48） / cu_*_atk 64×56。
  * 剪影规格照 cartoon-style §5.6.4 二十格落地表（T3/T4 行），不自行发明。
  * ⚠️ R-5：id 已由团队拍板 D-63（p1_oathpike / p1_templar / p2_wolfrider / p2_firebrand /
  *   p3_vineguard / p3_treant / p4_hopgolem / p4_librarian），id 即帧名中缀（D-58）。
@@ -251,37 +251,37 @@ export const B1_FRAMES: B0FrameSpec[] = [
  */
 export const B2_FRAMES: B0FrameSpec[] = [
   // 晨曦 T3 铁誓枪兵（p1 垂直母题：矩形大盾正对镜头，枪竖直）
-  { name: 'u_p1_oathpike_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p1_oathpike', kind: 'map' },
-  { name: 'cu_p1_oathpike', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_oathpike', kind: 'idle' },
-  { name: 'cu_p1_oathpike_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_oathpike', kind: 'atk' },
+  { name: 'u_p1_oathpike_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_oathpike', kind: 'map' },
+  { name: 'cu_p1_oathpike', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_oathpike', kind: 'idle' },
+  { name: 'cu_p1_oathpike_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_oathpike', kind: 'atk' },
   // 晨曦 T4 圣殿骑士（p1 垂直母题：高坐骑人+马，竖直甲片，顶上冠羽）
-  { name: 'u_p1_templar_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p1_templar', kind: 'map' },
-  { name: 'cu_p1_templar', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_templar', kind: 'idle' },
-  { name: 'cu_p1_templar_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p1_templar', kind: 'atk' },
+  { name: 'u_p1_templar_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_templar', kind: 'map' },
+  { name: 'cu_p1_templar', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_templar', kind: 'idle' },
+  { name: 'cu_p1_templar_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_templar', kind: 'atk' },
   // 赤焰 T3 暴走狼骑（p2 楔形母题：人+狼双头剪影，狼头前伸，人后仰）
-  { name: 'u_p2_wolfrider_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p2_wolfrider', kind: 'map' },
-  { name: 'cu_p2_wolfrider', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_wolfrider', kind: 'idle' },
-  { name: 'cu_p2_wolfrider_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_wolfrider', kind: 'atk' },
+  { name: 'u_p2_wolfrider_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_wolfrider', kind: 'map' },
+  { name: 'cu_p2_wolfrider', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_wolfrider', kind: 'idle' },
+  { name: 'cu_p2_wolfrider_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_wolfrider', kind: 'atk' },
   // 赤焰 T4 火油狂徒（p2 楔形母题：横抱火油桶，桶盖锯齿，身后拖火舌）
-  { name: 'u_p2_firebrand_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p2_firebrand', kind: 'map' },
-  { name: 'cu_p2_firebrand', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_firebrand', kind: 'idle' },
-  { name: 'cu_p2_firebrand_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p2_firebrand', kind: 'atk' },
+  { name: 'u_p2_firebrand_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_firebrand', kind: 'map' },
+  { name: 'cu_p2_firebrand', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_firebrand', kind: 'idle' },
+  { name: 'cu_p2_firebrand_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_firebrand', kind: 'atk' },
   // 翠林 T3 藤蔓卫士（p3 圆形母题：圆形藤甲覆盖躯干，无可见直角）
-  { name: 'u_p3_vineguard_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p3_vineguard', kind: 'map' },
-  { name: 'cu_p3_vineguard', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_vineguard', kind: 'idle' },
-  { name: 'cu_p3_vineguard_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_vineguard', kind: 'atk' },
+  { name: 'u_p3_vineguard_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_vineguard', kind: 'map' },
+  { name: 'cu_p3_vineguard', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_vineguard', kind: 'idle' },
+  { name: 'cu_p3_vineguard_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_vineguard', kind: 'atk' },
   // 翠林 T4 树人大叔（p3 圆形母题：最宽的圆，树干圆柱，头顶 2 丛树冠）
-  { name: 'u_p3_treant_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p3_treant', kind: 'map' },
-  { name: 'cu_p3_treant', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_treant', kind: 'idle' },
-  { name: 'cu_p3_treant_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p3_treant', kind: 'atk' },
+  { name: 'u_p3_treant_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_treant', kind: 'map' },
+  { name: 'cu_p3_treant', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_treant', kind: 'idle' },
+  { name: 'cu_p3_treant_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_treant', kind: 'atk' },
   // 紫晶 T3 蹦跳魔偶（p4 菱形母题：菱形木偶，四肢细线，双脚离地）
-  { name: 'u_p4_hopgolem_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p4_hopgolem', kind: 'map' },
-  { name: 'cu_p4_hopgolem', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_hopgolem', kind: 'idle' },
-  { name: 'cu_p4_hopgolem_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_hopgolem', kind: 'atk' },
+  { name: 'u_p4_hopgolem_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_hopgolem', kind: 'map' },
+  { name: 'cu_p4_hopgolem', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_hopgolem', kind: 'idle' },
+  { name: 'cu_p4_hopgolem_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_hopgolem', kind: 'atk' },
   // 紫晶 T4 亡灵图书管理员（p4 菱形母题：高耸书堆突破肩线，远程姿态，书浮在手上）
-  { name: 'u_p4_librarian_map', w: 48, h: 44, ax: -8, ay: -12, unit: 'p4_librarian', kind: 'map' },
-  { name: 'cu_p4_librarian', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_librarian', kind: 'idle' },
-  { name: 'cu_p4_librarian_atk', w: 60, h: 56, ax: -30, ay: -48, unit: 'p4_librarian', kind: 'atk' },
+  { name: 'u_p4_librarian_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_librarian', kind: 'map' },
+  { name: 'cu_p4_librarian', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_librarian', kind: 'idle' },
+  { name: 'cu_p4_librarian_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_librarian', kind: 'atk' },
 ];
 
 /** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 + B2 24 = 48），供 `tools/b0audit.mjs` 全扫描，
@@ -304,7 +304,7 @@ export function b0FrameSpec(name: string): B0FrameSpec {
  * tier / 体量参数 ⇒ Tier 通道（纵轴）从未被实现。下面的元数据让审计（b0audit.mjs
  * 的 H1/H2/S1）与归一化机制（normalizeTier）共用同一份 tier→目标 的真值源。
  *
- * P0 收口后 normalizeTier 覆盖全部 16 单位的 **cu 帧**（60×56）；map 帧（48×44）暂缓 ——
+ * P0 收口后 normalizeTier 覆盖全部 16 单位的 **cu 帧**（64×56）；map 帧（52×44）暂缓 ——
  * 目标值已代裁（TIER_TARGET_PCT_MAP）但实施会撞断言 8，见 D-72。
  * TIER_OF / TIER_TARGET_PCT(_MAP) 是全量真值，供审计（b0audit.mjs 的 H1/H2/S1）
  * 与归一化机制共用同一份 tier→目标 的真值源。
@@ -323,7 +323,7 @@ const RULES = makeAdjacencyRules(B0_PALETTE);
 export const TIER_TARGET_PCT: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4: 88 };
 
 /**
- * map 画布（48×44）的 tier 目标 —— §5.6.2 只写了「占 **60×56** 战斗画布高」这一句，
+ * map 画布（52×44）的 tier 目标 —— §5.6.2 只写了「占 **64×56** 战斗画布高」这一句，
  * map 画布的目标值规格里没有；主理人先代裁、art-director 已于 2026-09-21 **追认**（见 silhouette-audit §7 ②）：
  *
  *   **选项 (a)「按 44/56 换算」** = cu 目标 × 44/56 ⇒ 48.7 / 55.0 / 61.3 / 69.1
@@ -377,8 +377,8 @@ function normalizeTier(pb: PixBuf, spec: B0FrameSpec): PixBuf {
   if (!tierNormalizeEnabled) return pb;
   const tier = TIER_OF[spec.unit];
   if (tier === undefined) return pb; // 不在 16 单位 tier 表（安全网）
-  // 画布高 + 目标表都按 spec 自适应：cu（60×56）用 §5.6.2 的 TIER_TARGET_PCT，
-  // map（48×44）用主理人代裁的 TIER_TARGET_PCT_MAP。两个画布共用同一套机制。
+  // 画布高 + 目标表都按 spec 自适应：cu（64×56）用 §5.6.2 的 TIER_TARGET_PCT，
+  // map（52×44）用主理人代裁的 TIER_TARGET_PCT_MAP。两个画布共用同一套机制。
   const canvasH = spec.h;
   const targetPct = spec.kind === 'map' ? TIER_TARGET_PCT_MAP[tier] : TIER_TARGET_PCT[tier];
 
@@ -752,7 +752,7 @@ function drawLampbearer(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawLampbearerCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：脚底 42，最高点 15（含灯尖），剪影高 28。 */
+/** 52×44 冒险地图帧：脚底 42，最高点 15（含灯尖），剪影高 28。 */
 function drawLampbearerMap(pb: PixBuf): void {
   const cx = 13; // 人物中轴
   const poleX = 21;
@@ -790,7 +790,7 @@ function drawLampbearerMap(pb: PixBuf): void {
   lantern(pb, 22, 15);
 }
 
-/** 60×56 战斗帧：脚底 54，最高点 21（灯尖），剪影高 34 = 60.7%（§5.6.2 T1 ≤62%）。 */
+/** 64×56 战斗帧：脚底 54，最高点 21（灯尖），剪影高 34 = 60.7%（§5.6.2 T1 ≤62%）。 */
 function drawLampbearerCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     const cx = 19;
@@ -915,7 +915,7 @@ function drawScavenger(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawScavengerCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：脚底 42，最高点 15（断钉尖），剪影高 28。 */
+/** 52×44 冒险地图帧：脚底 42，最高点 15（断钉尖），剪影高 28。 */
 function drawScavengerMap(pb: PixBuf): void {
   // 破袋（背在身后，比身体大）
   ragSack(pb, 2, 22, 11, 15);
@@ -955,7 +955,7 @@ function drawScavengerMap(pb: PixBuf): void {
   face(pb, 16, 21, 26, 28, 4, true);
 }
 
-/** 60×56 战斗帧：脚底 54，最高点 21（断钉尖），剪影高 34 = 60.7%。 */
+/** 64×56 战斗帧：脚底 54，最高点 21（断钉尖），剪影高 34 = 60.7%。 */
 function drawScavengerCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     // 破袋（背在身后，比身体大 —— 唯一失调）
@@ -1099,7 +1099,7 @@ function drawHornxbow(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawHornxbowCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：脚底 42，弩尖 9，剪影高 34。 */
+/** 52×44 冒险地图帧：脚底 42，弩尖 9，剪影高 34。 */
 function drawHornxbowMap(pb: PixBuf): void {
   const cx = 13;
   pb.rect(8, 39, 6, 3, C.canv2);
@@ -1126,7 +1126,7 @@ function drawHornxbowMap(pb: PixBuf): void {
   crossbow(pb, 20, 9, 34);
 }
 
-/** 60×56 战斗帧：脚底 54，弩尖 12，剪影高 ~43。 */
+/** 64×56 战斗帧：脚底 54，弩尖 12，剪影高 ~43。 */
 function drawHornxbowCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     pb.rect(13, 50, 6, 4, C.canv2);
@@ -1215,7 +1215,7 @@ function drawAxethrower(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawAxethrowerCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：脚底 42，斧尖 ~25（向右），剪影高 ~27。 */
+/** 52×44 冒险地图帧：脚底 42，斧尖 ~25（向右），剪影高 ~27。 */
 function drawAxethrowerMap(pb: PixBuf): void {
   pb.rect(12, 38, 7, 4, C.canv2);
   pb.rect(20, 38, 7, 4, C.canv2);
@@ -1241,7 +1241,7 @@ function drawAxethrowerMap(pb: PixBuf): void {
   throwingAxe(pb, 26, 26);
 }
 
-/** 60×56 战斗帧：脚底 54，斧刃 ~41（向右），剪影高 ~34。 */
+/** 64×56 战斗帧：脚底 54，斧刃 ~41（向右），剪影高 ~34。 */
 function drawAxethrowerCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     pb.rect(19, 50, 7, 5, C.canv2);
@@ -1329,7 +1329,7 @@ function drawDwarf(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawDwarfCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：脚底草 42，头顶叶 ~18，剪影高 ~24（圆滚滚）。 */
+/** 52×44 冒险地图帧：脚底草 42，头顶叶 ~18，剪影高 ~24（圆滚滚）。 */
 function drawDwarfMap(pb: PixBuf): void {
   grassBase(pb, 6, 24, 42);
   pb.ellipse(15, 36, 11, 9, C.p3a2); // 圆滚滚一坨（绿身）
@@ -1351,7 +1351,7 @@ function drawDwarfMap(pb: PixBuf): void {
   pb.set(10, 19, C.p3emissive);
 }
 
-/** 60×56 战斗帧：脚底草 54，头顶叶 ~26，剪影高 ~28。 */
+/** 64×56 战斗帧：脚底草 54，头顶叶 ~26，剪影高 ~28。 */
 function drawDwarfCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     grassBase(pb, 9, 33, 54);
@@ -1433,7 +1433,7 @@ function drawThornarcher(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawThornarcherCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：脚底 42，弓弧 ~24–40，剪影高 ~22。 */
+/** 52×44 冒险地图帧：脚底 42，弓弧 ~24–40，剪影高 ~22。 */
 function drawThornarcherMap(pb: PixBuf): void {
   grassBase(pb, 7, 23, 42);
   pb.ellipse(15, 35, 10, 9, C.p3a2); // 绿身
@@ -1446,7 +1446,7 @@ function drawThornarcherMap(pb: PixBuf): void {
   arcBow(pb, 24, 24, 36); // 弓弧收到草叶之上，避免弓(wood)贴草(leaf)
 }
 
-/** 60×56 战斗帧：脚底 54，弓弧 ~34–50，剪影高 ~28。 */
+/** 64×56 战斗帧：脚底 54，弓弧 ~34–50，剪影高 ~28。 */
 function drawThornarcherCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     grassBase(pb, 10, 32, 54);
@@ -1507,7 +1507,7 @@ function drawStoneimp(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawStoneimpCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：底部悬空（最高不透明行 40，画布 44 → 留 4px 空气，p4 母题）。 */
+/** 52×44 冒险地图帧：底部悬空（最高不透明行 40，画布 44 → 留 4px 空气，p4 母题）。 */
 function drawStoneimpMap(pb: PixBuf): void {
   // 菱形石块（p4 母题）：上尖 y8、最宽 y24(x6-26)、下尖 y40（悬空）
   pb.poly([[16, 8], [26, 24], [16, 40], [6, 24]], C.p4w2);
@@ -1527,7 +1527,7 @@ function drawStoneimpMap(pb: PixBuf): void {
   pb.poly([[30, 30], [33, 33], [30, 36], [27, 33]], C.p4emissive);
 }
 
-/** 60×56 战斗帧：底部悬空（下尖 y52，画布 56 → 留 4px 空气）。 */
+/** 64×56 战斗帧：底部悬空（下尖 y52，画布 56 → 留 4px 空气）。 */
 function drawStoneimpCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     pb.poly([[22, 10], [34, 30], [22, 52], [10, 30]], C.p4w2);
@@ -1574,7 +1574,7 @@ function drawFireapprentice(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawFireapprenticeCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：锥袍悬浮（下摆 y40，画布 44 → 留 4px 空气）。 */
+/** 52×44 冒险地图帧：锥袍悬浮（下摆 y40，画布 44 → 留 4px 空气）。 */
 function drawFireapprenticeMap(pb: PixBuf): void {
   // 细长锥袍（上细下宽，悬浮）
   pb.poly([[16, 10], [22, 10], [27, 40], [11, 40]], C.p4w2);
@@ -1592,7 +1592,7 @@ function drawFireapprenticeMap(pb: PixBuf): void {
   pb.ellipse(11, 18, 2, 2, C.p4emissive);
 }
 
-/** 60×56 战斗帧：锥袍悬浮（下摆 y52，画布 56 → 留 4px 空气）。 */
+/** 64×56 战斗帧：锥袍悬浮（下摆 y52，画布 56 → 留 4px 空气）。 */
 function drawFireapprenticeCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     pb.poly([[22, 14], [30, 14], [38, 52], [14, 52]], C.p4w2);
@@ -1652,7 +1652,7 @@ function drawOathpike(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawOathpikeCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：脚底 42，枪尖 7，剪影高 35（T3 ≈78%）。 */
+/** 52×44 冒险地图帧：脚底 42，枪尖 7，剪影高 35（T3 ≈78%）。 */
 function drawOathpikeMap(pb: PixBuf): void {
   const cx = 14;
   pb.rect(9, 39, 6, 3, C.canv2);
@@ -1681,7 +1681,7 @@ function drawOathpikeMap(pb: PixBuf): void {
   pb.rect(26, 40, 2, 2, C.skin2);
 }
 
-/** 60×56 战斗帧：脚底 54，枪尖 11，剪影高 43（T3 ≈78%）。 */
+/** 64×56 战斗帧：脚底 54，枪尖 11，剪影高 43（T3 ≈78%）。 */
 function drawOathpikeCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     const cx = 19;
@@ -1756,7 +1756,7 @@ function drawTemplar(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawTemplarCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：马蹄 42，冠羽尖 9，剪影高 33（T4 ≈75%，坐骑占高）。 */
+/** 52×44 冒险地图帧：马蹄 42，冠羽尖 9，剪影高 33（T4 ≈75%，坐骑占高）。 */
 function drawTemplarMap(pb: PixBuf): void {
   // 马身（白马 p1w2）+ 暗面 p1a0 鞍裙隔开与骑手
   pb.ellipse(15, 34, 11, 6, C.p1w2); // 马身
@@ -1783,7 +1783,7 @@ function drawTemplarMap(pb: PixBuf): void {
   face(pb, 14, 18, 19, 21, 3, false);
 }
 
-/** 60×56 战斗帧：马蹄 54，冠羽尖 11，剪影高 43（T4 ≈77% → 坐骑使整体更高）。 */
+/** 64×56 战斗帧：马蹄 54，冠羽尖 11，剪影高 43（T4 ≈77% → 坐骑使整体更高）。 */
 function drawTemplarCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     // 马身（白马）+ 暗面
@@ -1869,7 +1869,7 @@ function drawWolfrider(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawWolfriderCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：狼爪 42，骑手头顶 ~15，剪影高 ~27（T3 ≈78% → 坐骑使整体更高）。 */
+/** 52×44 冒险地图帧：狼爪 42，骑手头顶 ~15，剪影高 ~27（T3 ≈78% → 坐骑使整体更高）。 */
 function drawWolfriderMap(pb: PixBuf): void {
   // 狼身（灰 stone，与红衣区隔；陶土 p2w2 贴红衣会失败，故用 stone）
   pb.ellipse(17, 38, 12, 6, C.stone2);
@@ -1908,7 +1908,7 @@ function drawWolfriderMap(pb: PixBuf): void {
   pb.rect(16, 38, 3, 2, C.skin0); // 手（坐袖内，skin0↔p2a0 ΔL*≈22 ≥12，绝不碰红衣）
 }
 
-/** 60×56 战斗帧：狼爪 54，骑手头顶 ~19，剪影高 ~35（T3 ≈78% → 坐骑高）。 */
+/** 64×56 战斗帧：狼爪 54，骑手头顶 ~19，剪影高 ~35（T3 ≈78% → 坐骑高）。 */
 function drawWolfriderCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     // 狼身（灰 stone）
@@ -2002,7 +2002,7 @@ function drawFirebrand(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawFirebrandCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：脚底 42，桶+火舌横向铺到 x=33，剪影宽 ~30、高 ~27（T4，横阔）。
+/** 52×44 冒险地图帧：脚底 42，桶+火舌横向铺到 x=33，剪影宽 ~30、高 ~27（T4，横阔）。
  *  高宽比 ~0.9（明显宽于 T2 投斧蛮子 1.36，避免同族 T4↔T2 撞车）。 */
 function drawFirebrandMap(pb: PixBuf): void {
   // 脚（贴地，基线 43）
@@ -2044,7 +2044,7 @@ function drawFirebrandMap(pb: PixBuf): void {
   pb.set(32, 33, C.p2emissive);
 }
 
-/** 60×56 战斗帧：脚底 54，桶+火舌横向铺到 x=39，剪影宽 ~36、高 ~35（T4 ≈88%，横阔）。 */
+/** 64×56 战斗帧：脚底 54，桶+火舌横向铺到 x=39，剪影宽 ~36、高 ~35（T4 ≈88%，横阔）。 */
 function drawFirebrandCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     pb.rect(19, 50, 7, 4, C.canv2);
@@ -2141,7 +2141,7 @@ function drawVineguard(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawVineguardCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：草 42，头顶叶 ~15，剪影高 ~30（圆形）。 */
+/** 52×44 冒险地图帧：草 42，头顶叶 ~15，剪影高 ~30（圆形）。 */
 function drawVineguardMap(pb: PixBuf): void {
   grassBase(pb, 6, 24, 42);
   pb.ellipse(15, 36, 11, 9, C.p3a2);            // 圆身（绿）
@@ -2161,7 +2161,7 @@ function drawVineguardMap(pb: PixBuf): void {
   face(pb, 13, 17, 26, 28, 3, false);
 }
 
-/** 60×56 战斗帧：草 54，头顶叶 ~26，剪影高 ~34（圆形）。 */
+/** 64×56 战斗帧：草 54，头顶叶 ~26，剪影高 ~34（圆形）。 */
 function drawVineguardCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     grassBase(pb, 10, 32, 54);
@@ -2226,7 +2226,7 @@ function drawTreant(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawTreantCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：草 42，树冠顶 ~16，剪影高 ~26、宽 ~30（最宽圆）。 */
+/** 52×44 冒险地图帧：草 42，树冠顶 ~16，剪影高 ~26、宽 ~30（最宽圆）。 */
 function drawTreantMap(pb: PixBuf): void {
   grassBase(pb, 6, 24, 42);
   // 树干（圆柱，p3w0 树皮，圆角——有机物免切角）
@@ -2248,7 +2248,7 @@ function drawTreantMap(pb: PixBuf): void {
   pb.set(15, 16, C.leaf2);
 }
 
-/** 60×56 战斗帧：草 54，树冠顶 ~22，剪影高 ~32、宽 ~40（最宽圆）。 */
+/** 64×56 战斗帧：草 54，树冠顶 ~22，剪影高 ~32、宽 ~40（最宽圆）。 */
 function drawTreantCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     grassBase(pb, 10, 32, 54);
@@ -2309,7 +2309,7 @@ function drawHopgolem(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawHopgolemCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：菱形身躯 y6-40（瘦长），细肢收拢，脚底 y43（画布 44 留 1px 空气）。 */
+/** 52×44 冒险地图帧：菱形身躯 y6-40（瘦长），细肢收拢，脚底 y43（画布 44 留 1px 空气）。 */
 function drawHopgolemMap(pb: PixBuf): void {
   // 菱形身躯（p4 母题）：上尖 y6、最宽 y22(x8-24)、下尖 y40（脚离地）
   pb.poly([[16, 6], [24, 22], [16, 40], [8, 22]], C.p4a2);
@@ -2328,7 +2328,7 @@ function drawHopgolemMap(pb: PixBuf): void {
   pb.set(28, 33, C.p4a4);
 }
 
-/** 60×56 战斗帧：菱形身躯 y10-50（瘦长），脚底 y54（画布 56 留 2px 空气）。 */
+/** 64×56 战斗帧：菱形身躯 y10-50（瘦长），脚底 y54（画布 56 留 2px 空气）。 */
 function drawHopgolemCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     pb.poly([[22, 10], [34, 30], [22, 50], [10, 30]], C.p4a2);
@@ -2380,7 +2380,7 @@ function drawLibrarian(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
   else drawLibrarianCombat(pb, true);
 }
 
-/** 48×44 冒险地图帧：书塔 y8-23 突破肩线，长袍 y28-41，脚底 y41（留 3px 空气）。 */
+/** 52×44 冒险地图帧：书塔 y8-23 突破肩线，长袍 y28-41，脚底 y41（留 3px 空气）。 */
 function drawLibrarianMap(pb: PixBuf): void {
   // 长袍（顶沉书塔之下的 slender 身躯，p4w2）
   pb.poly([[16, 28], [20, 28], [22, 41], [10, 41]], C.p4w2);
@@ -2404,7 +2404,7 @@ function drawLibrarianMap(pb: PixBuf): void {
   pb.poly([[31, 28], [33, 30], [31, 32], [29, 30]], C.p4emissive); // 书脊发光菱形
 }
 
-/** 60×56 战斗帧：书塔 y12-31，长袍 y36-52，脚底 y52（留 4px 空气）。 */
+/** 64×56 战斗帧：书塔 y12-31，长袍 y36-52，脚底 y52（留 4px 空气）。 */
 function drawLibrarianCombat(pb: PixBuf, atk: boolean): void {
   if (!atk) {
     pb.poly([[22, 36], [28, 36], [31, 52], [13, 52]], C.p4w2);
