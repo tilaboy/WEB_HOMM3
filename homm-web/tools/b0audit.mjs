@@ -729,8 +729,8 @@ record(5, '基线对齐（两族 map 帧）', bA === bB && bA >= 0, {
 
  * 体量 = 剪影高 ÷ **该画布高** × 100，与 silhouette() 诊断同口径（含 1px 描边）。
  * 范围：**两个画布都覆盖** ——
- *   · cu（60×56）：目标 = TIER_TARGET_PCT（§5.6.2 的原文定义画布；画布宽经 D-73 加宽）
- *   · map（48×44）：目标 = TIER_TARGET_PCT_MAP（§5.6.2 的表头只定义了战斗画布；map 目标由主理人代裁、art-director 已追认）
+ *   · cu（64×56）：目标 = TIER_TARGET_PCT（§5.6.2 的原文定义画布；画布宽经 D-73 加宽）
+ *   · map（52×44）：目标 = TIER_TARGET_PCT_MAP（§5.6.2 的表头只定义了战斗画布；map 目标由主理人代裁、art-director 已追认）
  * ⚠️ 为什么必须覆盖 map：本 P0 之所以能潜伏到 B2 之后，正是**「实现的通道没有断言」**。
  *    只断言 cu 等于把同一个坑在 map 上再挖一次。
  * H1/H2 硬（不依赖容差）；S1 软（自设 **±3pt**，非规格，裁定见 silhouette-audit.md §7①；
@@ -875,7 +875,7 @@ console.log('                                 判据：AI 资产的颜色 100% �
 console.log('                                 （色板级 3a / 3b 已自动判定，见上方「自动断言」的 [3]）');
 console.log('  [6] 去色 32px 可辨（核心）MANUAL  3 个盲测者 × 各 3 次，晨曦 T1 与赤焰 T1 去色缩到 32px');
 console.log('                                 判据：全部答对（§5.6.5 的 20 格版本阈值 = 命中率 ≥90%）');
-console.log('  [7] 手机上表情可读      MANUAL  60×56 帧在 zoom 2 × dpr 3 下截图，眼与嘴线可辨');
+console.log('  [7] 手机上表情可读      MANUAL  64×56 帧在 zoom 2 × dpr 3 下截图，眼与嘴线可辨');
 console.log(`  [+] ${B0_PENDING_AI_FRAME} 全流程    MANUAL  七步管线（抠底→块众数降采样→钳色→落位→描边重建→手工修→PNG-8）`);
 console.log('        （本轮只做 6 个程序化帧；crestL_p1 是 asset-spec §9.1 的第 7 个资产，留到下一批）');
 
