@@ -408,13 +408,22 @@ function normalizeTier(pb: PixBuf, spec: B0FrameSpec): PixBuf {
   //    所以本体目标高 = 目标最终高 − 1。
   const targetFinal = Math.floor((targetPct / 100) * canvasH);
   const targetBody = targetFinal - 1;
-  if (targetBody <= 0 || targetBody === srcH) return pb;
+  if (targetBody <= 0) return pb;
+  // ⚠️ **不要再在 `targetBody === srcH` 时提前返回** —— 那会绕过下面的**帧内居中**，
+  // 使「高度刚好达标」的帧留在旧画布宽（32/44）的坐标上 ⇒ 在 52/64 的新帧里**偏左**。
+  // 实测：`u_p3_dwarf_map` 正是这一例（左越 10px、右越 0）。让它走 scale=1 的落点逻辑即可。
   const scale = targetBody / srcH;
 
   // 3) 落点：底部锚定画布底行、水平居中（放大 / 缩小两条路径共用）
   const destW = Math.max(1, Math.round(srcW * scale));
-  const cx = (x0 + x1) / 2;
-  const destX0 = Math.round(cx - destW / 2);
+  // ⚠️ **S3 帧内居中不变量**：水平锚点必须用**帧中心**，不能用「本体自身中心 cx」。
+  // 原因：`drawXxx` 的坐标是按**旧画布宽**（map 32 / cu 44）写死的历史常量（硬约束：
+  // 「不许手改 16 个 drawXxx」）。画布加宽到 52/64 后，本体在帧内**偏左**，
+  // 于是 `cx ≈ 16` 而帧中心是 25.5 ⇒ 按 cx 居中会把整只精灵再推到左边。
+  // 实测（探针 A / `tools/mapunitambiguity.mjs`）：16 帧里 **14 帧 FAIL**，
+  // 左越界 1–10px、右越界 0 ⇒ 完全不对称 —— 而这正是 `ax = −w/2` 落不到格心的原因。
+  // 改成按帧中心居中后，左右越界对称（≤2.5px/侧），`ax = −w/2` 即落在格心。
+  const destX0 = Math.round((pb.w - destW) / 2);
   const destY1 = pb.h - 1; // 底锚：本体底行 → 画布底
   const destY0 = destY1 - (targetBody - 1);
 

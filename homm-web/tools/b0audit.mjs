@@ -159,7 +159,7 @@ function bodyBox(name) {
       if (y > y1) y1 = y;
     }
   }
-  return { w: x1 - x0 + 1, h: y1 - y0 + 1 };
+  return { x0, x1, w: x1 - x0 + 1, h: y1 - y0 + 1 };
 }
 
 const A = (d, x, y) => (y >= 0 && y < d.length && x >= 0 && x < d[0].length ? d[y][x] : [0, 0, 0, 0]);
@@ -725,6 +725,73 @@ record(5, '基线对齐（两族 map 帧）', bA === bB && bA >= 0, {
   });
 }
 
+// 断言 13：**S3 帧内居中不变量** —— 剪影的水平中心必须等于**帧中心**（±1px）。
+//
+// 为什么必须有这条（`silhouette-audit §6④`，art-director 裁定）：
+//   `ax = −w/2`（map −10 / cu −32）这套锚点的**前提就是「剪影在帧内居中」**。
+//   而 `drawXxx` 的坐标是按**旧画布宽**（map 32 / cu 44）写死的历史常量（硬约束：不许手改），
+//   画布加宽后本体在帧内**偏左** ⇒ 若归一化按「本体自身中心」居中，整只精灵会再被推左，
+//   `ax = −w/2` 就落不到格心/六边形中心。
+//   ⚠️ 它与 S2 正交：S2 管「别太宽」，S3 管「在帧内居中」——**缺任一条 `ax` 都不成立**。
+//   ⚠️ 也是**既有潜伏缺陷**：H1/H2/S1 只测**体量**，横向从没被测过 ⇒ 48 帧里曾有 46 帧违例。
+{
+  const bad = [];
+  for (const f of frames) {
+    const d = f.d;
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    for (let y = 0; y < d.length; y++) {
+      for (let x = 0; x < d[0].length; x++) {
+        if (!opaque(d[y][x])) continue;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+      }
+    }
+    if (x1 < x0) continue;
+    const c = (x0 + x1) / 2;
+    const fc = (f.spec.w - 1) / 2;
+    if (Math.abs(c - fc) > 1 + 1e-9) {
+      bad.push(`${f.spec.name} 剪影中心 ${c} vs 帧中心 ${fc}（偏 ${(c - fc).toFixed(1)}）`);
+    }
+  }
+  record(13, 'S3 帧内居中（剪影中心 = 帧中心 ±1px）', bad.length === 0, {
+    name: 'S3·帧内居中',
+    违例帧数: bad.length,
+    明细: bad,
+  });
+}
+
+// 断言 13：**帧内水平居中不变量（S3）**。
+//
+// 锚点约定 `ax = (TILE − w)/2` 的**前提**是「本体在帧内水平居中」——
+// 它把**画布**居中到格上，画布里的本体若不居中，本体就落不到格心。
+//
+// ⚠️ **这条是补一个真坑**：画布加宽（cu 44→60→64 / map 32→48→52）后，`drawXxx` 的坐标
+// 仍是按**旧画布宽**写死的历史常量（硬约束「不许手改 16 个 drawXxx」）⇒ 本体整体偏左。
+// 实测（2026-09-21，`--no-tier-norm` 量原图）：**cu 偏左 3.5–14.0px、map 偏左 4.5–12.5px**，
+// 而当时 **12 条断言全绿** —— 又一次「**渲染属性没有断言**」，与 P0 同型。
+// 修法（已落地）：`normalizeTier` 的水平落点改用**帧中心** `(pb.w − destW)/2`，
+// 并**去掉 `targetBody === srcH` 的提前返回**（那会绕过居中）。
+//
+// 判据：本体 bbox 中心与帧中心之差 ≤ 1px（取整容差）。
+{
+  const bad = [];
+  for (const f of frames) {
+    const b = bodyBox(f.spec.name);
+    const centre = b.x0 + (b.w - 1) / 2;
+    const frameCentre = (f.spec.w - 1) / 2;
+    const off = centre - frameCentre;
+    if (Math.abs(off) > 1 + 1e-9) {
+      bad.push(`${f.spec.name} 偏 ${off >= 0 ? '+' : ''}${off.toFixed(1)}px`);
+    }
+  }
+  record(13, '帧内水平居中不变量（ax=−w/2 的前提）', bad.length === 0, {
+    name: '帧内居中',
+    偏移帧数: bad.length,
+    明细: bad.slice(0, 8),
+  });
+}
+
 /* ---------------------------------------------------------------- 剪影矩阵断言（§5.6.1 / §5.6.2）
 
  * 体量 = 剪影高 ÷ **该画布高** × 100，与 silhouette() 诊断同口径（含 1px 描边）。
@@ -826,7 +893,7 @@ for (const r of results) {
 
 console.log('\n── 自动断言（逐帧 1/2/4/8 + 色板级 3 + 基线 5） ──');
 const verdict = new Map();
-for (const id of [1, 2, 3, 4, 5, 8, 9, 10, 11, 12]) {
+for (const id of [1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13]) {
   const rs = byId.get(id) ?? [];
   const pass = rs.every((r) => r.pass);
   verdict.set(id, pass);
