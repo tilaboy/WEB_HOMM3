@@ -33,6 +33,7 @@ import {
   buildB0Frame,
   TIER_OF,
   TIER_TARGET_PCT,
+  setTierNormalizeEnabled,
 } from '../dist/render/unitArt.js';
 import { shade } from '../dist/render/pixel.js';
 
@@ -42,6 +43,9 @@ const argv = process.argv.slice(2);
 const wantPreview = argv.includes('--preview');
 const pngIdx = argv.indexOf('--png');
 const pngDir = pngIdx >= 0 ? argv[pngIdx + 1] : null;
+
+// 负向测试：--no-tier-norm 把阶段 1-B 的归一化机制整个短路掉（必须在建帧之前生效）。
+if (argv.includes('--no-tier-norm')) setTierNormalizeEnabled(false);
 
 /* ------------------------------------------------- 色板（美术圣经 §3.2/§3.3 字面值） */
 

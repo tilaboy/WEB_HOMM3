@@ -316,6 +316,98 @@ export const TIER_OF: Record<string, number> = {
 /** §5.6.2 目标（剪影高 ÷ 56 × 100，cu 帧）。±8pt 容差见 silhouette-audit.md §1（软断言 S1，非规格）。 */
 export const TIER_TARGET_PCT: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4: 88 };
 
+/* ==========================================================================
+ * 0c. Tier 体量归一化（§5.6.1 / §5.6.2 的纵轴通道）—— 阶段 1-B
+ * ==========================================================================
+ *
+ * 机制选择：**共享后置等比缩放（方向 a）**，不是给 16 个 drawXxx 加 tierTop/tierH 参数
+ * （方向 b）。理由逐条：
+ *   1. 根因（silhouette-audit.md §5）：drawXxx 坐标是手写常量，签名里没有 tier / 体量
+ *      参数。方向 b 等于把"手写常量"搬到签名里，治标不治本，还直接违反"不许手改 16 个
+ *      drawXxx"的硬约束。
+ *   2. 方向 a 只在流水线末端、描边之前插一步纯几何变换：量出本体剪影高 → 按
+ *      TIER_TARGET_PCT[tier] 等比缩放到目标高（底部锚定 + 水平居中）→ 写回同尺寸画布。
+ *      它是**单点共享**的，四族十六单位将来只放开门禁即可复用同一函数。
+ *   3. 等比（两轴同 scale）而非单轴缩放：满足 §5.6.5 第 3 条"改体量不改形状"——
+ *      整体放大 / 缩小保持宽高比 = 形状不变，只改体量。
+ *   4. 最近邻整数采样：每个输出像素 = 某个整数源像素的整份拷贝，alpha 只可能是 0/255
+ *      ⇒ 断言 1（无粉边）恒成立；不引入任何新颜色 ⇒ 调色板不变量（断言 3）恒成立。
+ *
+ * 门禁（阶段 1-B 只铺 p1）：spec.unit 以 'p1' 开头 且 是 44×56 的 cu 帧。map 帧（32×44）
+ * 目标值待 art-director 裁定，本函数直接放行不处理。
+ *
+ * 插入位置：buildB0Frame 内 switch 之后、pb.outline() 之前。描边是最后一步的 1px 膨胀，
+ * 放它之后会把 1px 描边插值成灰边 / 断点 ⇒ 断言 4 红。
+ */
+let tierNormalizeEnabled = true;
+/** 负向测试用：把机制整个短路掉。tools/b0audit.mjs 的 --no-tier-norm 会置 false。 */
+export function setTierNormalizeEnabled(v: boolean): void {
+  tierNormalizeEnabled = v;
+}
+
+function normalizeTier(pb: PixBuf, spec: B0FrameSpec): PixBuf {
+  if (!tierNormalizeEnabled) return pb;
+  const tier = TIER_OF[spec.unit];
+  if (tier === undefined) return pb; // 不在 16 单位 tier 表（安全网）
+  if (spec.unit.slice(0, 2) !== 'p1') return pb; // 阶段 1-B：只铺 p1
+  if (spec.w !== 44) return pb; // 只处理 cu 帧；map 帧目标待 art-director 裁定
+
+  // 1) 本体剪影 bbox（描边前）
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (let y = 0; y < pb.h; y++) {
+    for (let x = 0; x < pb.w; x++) {
+      const p = pb.px(x, y);
+      if (p[3] <= 8) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < x0) return pb; // 空帧保护
+  const srcW = x1 - x0 + 1;
+  const srcH = y1 - y0 + 1;
+
+  // 2) 目标剪影高（与 audit:b0 同口径：最终含 1px 描边的 bbox 高 ÷ 56 × 100）。
+  //    floor 让 T1/T2 稳稳落在 "≤" 上界以下；T3/T4 的 ±8pt 容差也吃得住。
+  //    后置描边在"底部锚定 + 本体未触顶"时恒 +1px（顶上加一圈、底贴画布边无圈），
+  //    所以本体目标高 = 目标最终高 − 1。
+  const targetFinal = Math.floor((TIER_TARGET_PCT[tier] / 100) * 56);
+  const targetBody = targetFinal - 1;
+  if (targetBody <= 0 || targetBody === srcH) return pb;
+  const scale = targetBody / srcH;
+
+  // 3) 等比最近邻缩放：底部锚定画布底行、水平居中
+  const destW = Math.max(1, Math.round(srcW * scale));
+  const cx = (x0 + x1) / 2;
+  const destX0 = Math.round(cx - destW / 2);
+  const destY1 = pb.h - 1; // 底锚：本体底行 → 画布底
+  const destY0 = destY1 - (targetBody - 1);
+
+  const out = new PixBuf(pb.w, pb.h);
+  for (let oy = destY0; oy <= destY1; oy++) {
+    const sy = y0 + Math.round((oy - destY0) / scale);
+    if (sy < y0 || sy > y1) continue;
+    for (let ox = destX0; ox < destX0 + destW; ox++) {
+      const sx = x0 + Math.round((ox - destX0) / scale);
+      if (sx < x0 || sx > x1) continue;
+      if (!out.inBounds(ox, oy)) continue;
+      const p = pb.px(sx, sy);
+      if (p[3] <= 8) continue;
+      // 整份拷贝源像素的 rgb（不插值、不混合），保持像素硬边与色板归属
+      out.set(
+        ox,
+        oy,
+        `#${((1 << 24) | (p[0] << 16) | (p[1] << 8) | p[2]).toString(16).slice(1)}`,
+      );
+    }
+  }
+  return out;
+}
+
 /**
  * @param name    帧名（见 B0_FRAMES）
  * @param outline 是否跑「描边重建」这一步（asset-spec §5.4 步骤 [5]）。
@@ -326,7 +418,7 @@ export const TIER_TARGET_PCT: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4:
  */
 export function buildB0Frame(name: string, outline = true): PixBuf {
   const spec = b0FrameSpec(name);
-  const pb = new PixBuf(spec.w, spec.h);
+  let pb = new PixBuf(spec.w, spec.h);
   switch (spec.unit) {
     case 'p1_lampbearer':
       drawLampbearer(pb, spec.kind);
@@ -377,6 +469,10 @@ export function buildB0Frame(name: string, outline = true): PixBuf {
       drawLibrarian(pb, spec.kind);
       break;
   }
+  // 阶段 1-B：Tier 体量归一化（§5.6.1 / §5.6.2 的纵轴通道）。
+  // 必须在描边之前跑——描边是最后一步的 1px 膨胀，放它之后会把描边插值成灰边 / 断点 ⇒ 断言 4 红。
+  // 这一轮只铺 p1 一族（见 normalizeTier 内的硬门禁）。
+  pb = normalizeTier(pb, spec);
   // 描边重建（asset-spec §5.4）：最后一步、只跑一次、1px、满不透明。
   if (outline) pb.outline(C.ink0, 1);
   return pb;
