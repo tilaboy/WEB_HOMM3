@@ -4,7 +4,9 @@
  *
  * 组：
  *   A  帧完整性（保留）    —— 每个 `kind==='map'` 帧的可见剪影整体落在槽位内（无横向裁切），
- *                            且相对目标格左右外扩**对称**（|左 − 右| ≤ 1px）。（亦可并入 atlasaudit。）
+ *                            相对目标格左右外扩**量** ≤8px/侧、且**对称**（|左 − 右| ≤ 1px）。
+ *                            （承自已退役的 `mapunitambiguity.mjs`，为其**超集** ⇒ 退役不丢守卫：
+ *                             只判对称不判量，会漏放"两侧都越 9px 但仍对称"的帧。）
  *   B′ 信息层不改变命中    —— `worldToGrid` / `pick` 与"画了什么"无关：
  *                            静态（输入模块不含徽标数据）+ 动态（徽标覆盖的每个像素 pick 逐像素恒等）。
  *   C  地盘标记            —— **已撤销**（徽标不占格 ⇒ 无地盘、无实体）⇒ 无断言。
@@ -151,7 +153,12 @@ for (const f of mapFrames) {
     console.error(`[mapbadgeaudit] ${f.name} 剪影为空 —— 前置条件不成立。`);
     process.exit(2);
   }
-  badges.push({ name: f.name, frame: { w: pb.w, h: pb.h, ax: f.ax, ay: f.ay, sil } });
+  // 前提（#3 · S3 帧内居中）：徽标几何假设"剪影在帧内居中" —— `ax=(TILE−w)/2` 只把**画布**居中；
+  // 若剪影自身偏离帧心，则"落到哪格就按那格居中贴地"不成立 ⇒ 该帧的"徽标 OK"无效（见 A′）。
+  const silCx = (sil.x0 + sil.x1) / 2;
+  const frameCx = (pb.w - 1) / 2;
+  const centerDev = Math.abs(silCx - frameCx);
+  badges.push({ name: f.name, frame: { w: pb.w, h: pb.h, ax: f.ax, ay: f.ay, sil }, centerDev, centerOk: centerDev <= 1 });
 }
 line(`徽标源：${badges.length} 个 kind=map 帧（画布 ${badges[0].frame.w}×${badges[0].frame.h} · TILE=${TILE}）`);
 
@@ -159,7 +166,12 @@ line(`徽标源：${badges.length} 个 kind=map 帧（画布 ${badges[0].frame.w
 const heroOffsets = await measureHeroOffsets();
 
 /* ============================ A · 帧完整性 ============================ */
-line('\n=== A 帧完整性（剪影在槽位内 + 相对格左右外扩对称 ≤1px）===');
+// 越界**量**上限（px/侧）：承自已退役的 `mapunitambiguity.mjs`（art-director 裁定，§13.0 写明
+// "仍在「≤8px/侧」上限内"）。只判"对称"不判"量"会漏放"两侧都越 9px 但对称"的帧 ⇒ 两条都要。
+const LEFT_CAP = 8;
+const RIGHT_CAP = 8;
+const ASYM_CAP = 1;
+line('\n=== A 帧完整性（剪影在槽位内 + 左右越界 ≤8px/侧 + 对称 ≤1px）===');
 {
   let aBad = 0;
   for (const b of badges) {
@@ -169,13 +181,30 @@ line('\n=== A 帧完整性（剪影在槽位内 + 相对格左右外扩对称 �
     const leftOvh = Math.max(0, -(frame.ax + sil.x0));
     const rightOvh = Math.max(0, frame.ax + sil.x1 - TILE);
     const sym = Math.abs(leftOvh - rightOvh);
-    const pass = withinSlot && sym <= 1;
+    const pass = withinSlot && leftOvh <= LEFT_CAP && rightOvh <= RIGHT_CAP && sym <= ASYM_CAP;
     if (!pass) {
       aBad++;
-      line(`[FAIL] ${name}  剪影 x[${sil.x0},${sil.x1}] 在槽位内=${withinSlot} 左越 ${leftOvh} 右越 ${rightOvh} |Δ| ${sym}`);
+      line(
+        `[FAIL] ${name}  剪影 x[${sil.x0},${sil.x1}] 在槽位内=${withinSlot} 左越 ${leftOvh}(≤${LEFT_CAP}) 右越 ${rightOvh}(≤${RIGHT_CAP}) |Δ| ${sym}(≤${ASYM_CAP})`,
+      );
     }
   }
-  ok(aBad === 0, `A：${badges.length} 帧剪影均在槽位内且左右外扩对称（失败 ${aBad}）`);
+  ok(aBad === 0, `A：${badges.length} 帧剪影在槽位内、左右越界 ≤${LEFT_CAP}/${RIGHT_CAP}、对称 ≤${ASYM_CAP}（失败 ${aBad}）`);
+}
+
+/* ============ A′ 前提：帧内居中（S3）—— 徽标几何的前提（team-lead #3 判据）============ */
+line('\n=== A′ 前提：剪影中心 = 帧中心 ±1px（S3 帧内居中；不满足 ⇒ 该帧不得报"徽标 OK"）===');
+{
+  let preBad = 0;
+  for (const b of badges) {
+    if (b.centerOk) continue;
+    preBad++;
+    const s = b.frame.sil;
+    line(
+      `[FAIL] 前提违反 ${b.name}  剪影中心 ${((s.x0 + s.x1) / 2).toFixed(1)} vs 帧中心 ${((b.frame.w - 1) / 2).toFixed(1)} ⇒ 偏差 ${b.centerDev.toFixed(1)}px > 1`,
+    );
+  }
+  ok(preBad === 0, `A′：${badges.length} 帧剪影在帧内居中（偏差 ≤1px · S3）（违反 ${preBad}）`);
 }
 
 /* ============================ B′ · 信息层不改变命中 ============================ */

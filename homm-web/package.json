@@ -18,7 +18,6 @@
     "audit:b0": "node tools/b0audit.mjs",
     "audit:atlas": "node tools/atlasaudit.mjs",
     "audit:ai-diag": "node tools/aidiagnose.mjs",
-    "audit:mapunit": "node tools/mapunitambiguity.mjs",
     "audit:badge": "node tools/mapbadgeaudit.mjs",
     "assets:mobile": "node tools/mobile-assets.mjs && capacitor-assets generate --android --assetPath resources --iconBackgroundColor \"#3a2a14\" --splashBackgroundColor \"#1b1f24\"",
     "mobile:sync": "npm run build && cap sync android"

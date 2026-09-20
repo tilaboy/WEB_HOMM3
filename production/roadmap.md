@@ -196,6 +196,7 @@ npm run smoke                # 基线 556 PASS / 0 FAIL
 npm run audit:atlas          # 图集容量（防静默丢帧，必跑）
 # 按改动域加跑：
 npm run audit:b0             # 改了精灵
+npm run audit:badge          # 改了地图徽标 / u_*_map 帧（D-64 接线）—— 帧越界 + 帧内居中 S3 + 布局不遮物
 STRICT=1 npm run audit:touch # 改了 UI
 SEEDS=3 npm run audit:layout && SEEDS=3 npm run audit:mines  # 改了核心数值
 ```
