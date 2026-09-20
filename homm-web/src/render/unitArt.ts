@@ -178,12 +178,20 @@ export interface B0FrameSpec {
   unit:
     | 'p1_lampbearer'
     | 'p1_hornxbow'
+    | 'p1_oathpike'
+    | 'p1_templar'
     | 'p2_scavenger'
     | 'p2_axethrower'
+    | 'p2_wolfrider'
+    | 'p2_firebrand'
     | 'p3_dwarf'
     | 'p3_thornarcher'
+    | 'p3_vineguard'
+    | 'p3_treant'
     | 'p4_stoneimp'
-    | 'p4_fireapprentice';
+    | 'p4_fireapprentice'
+    | 'p4_hopgolem'
+    | 'p4_librarian';
   kind: 'map' | 'idle' | 'atk';
 }
 
@@ -230,8 +238,29 @@ export const B1_FRAMES: B0FrameSpec[] = [
   { name: 'cu_p4_fireapprentice_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p4_fireapprentice', kind: 'atk' },
 ];
 
-/** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 = 24），供 `tools/b0audit.mjs` 全扫描。 */
-export const UNIT_FRAMES: B0FrameSpec[] = [...B0_FRAMES, ...B1_FRAMES];
+/**
+ * B2 批（asset-spec §9.2）：全部族的 T3 + T4，24 帧（8 单位 × 3）。
+ * 帧名 / 槽位 / 锚点严格按 asset-spec §3.2 / §1.2（与 B0/B1 同规格）：
+ *   map 32×44（ax=0, ay=-12，贴地） / cu_* 44×56（ax=-22, ay=-48） / cu_*_atk 44×56。
+ * 剪影规格照 cartoon-style §5.6.4 二十格落地表（T3/T4 行），不自行发明。
+ * ⚠️ R-5：id 已由团队拍板 D-63（p1_oathpike / p1_templar / p2_wolfrider / p2_firebrand /
+ *   p3_vineguard / p3_treant / p4_hopgolem / p4_librarian），id 即帧名中缀（D-58）。
+ * 按族提交：本数组随每个族的 6 帧逐步追加（未实现的族不登记，避免烘焙出空白帧）。
+ */
+export const B2_FRAMES: B0FrameSpec[] = [
+  // 晨曦 T3 铁誓枪兵（p1 垂直母题：矩形大盾正对镜头，枪竖直）
+  { name: 'u_p1_oathpike_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p1_oathpike', kind: 'map' },
+  { name: 'cu_p1_oathpike', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_oathpike', kind: 'idle' },
+  { name: 'cu_p1_oathpike_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_oathpike', kind: 'atk' },
+  // 晨曦 T4 圣殿骑士（p1 垂直母题：高坐骑人+马，竖直甲片，顶上冠羽）
+  { name: 'u_p1_templar_map', w: 32, h: 44, ax: 0, ay: -12, unit: 'p1_templar', kind: 'map' },
+  { name: 'cu_p1_templar', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_templar', kind: 'idle' },
+  { name: 'cu_p1_templar_atk', w: 44, h: 56, ax: -22, ay: -48, unit: 'p1_templar', kind: 'atk' },
+];
+
+/** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 + B2 24 = 48），供 `tools/b0audit.mjs` 全扫描，
+ *  `atlas.ts` / `combatAtlas.ts` 也遍历本数组烘焙（#24 已接好，无需改那两个文件）。 */
+export const UNIT_FRAMES: B0FrameSpec[] = [...B0_FRAMES, ...B1_FRAMES, ...B2_FRAMES];
 
 /** 第 7 个资产：AI 生成的 `crestL_p1`（256×384），本轮不做，只在验收脚本里留人工项。 */
 export const B0_PENDING_AI_FRAME = 'crestL_p1';
@@ -277,6 +306,12 @@ export function buildB0Frame(name: string, outline = true): PixBuf {
       break;
     case 'p4_fireapprentice':
       drawFireapprentice(pb, spec.kind);
+      break;
+    case 'p1_oathpike':
+      drawOathpike(pb, spec.kind);
+      break;
+    case 'p1_templar':
+      drawTemplar(pb, spec.kind);
       break;
   }
   // 描边重建（asset-spec §5.4）：最后一步、只跑一次、1px、满不透明。
@@ -1249,4 +1284,231 @@ function drawFireapprenticeCombat(pb: PixBuf, atk: boolean): void {
   // 喷出的大火团（更大，菱形，脱离本体）
   pb.poly([[16, 30], [20, 26], [24, 30], [20, 34]], C.p4emissive);
   pb.set(20, 29, C.p4a4);
+}
+
+/* ==========================================================================
+ * 12. p1 晨曦 T3 · 铁誓枪兵
+ *
+ * §5.6.3 形状家族：垂直矩形 / 平行线 / 左右对称 / 顶部 1 处尖角 / 平底落地 / 高宽比 ≥ 1.25
+ * §5.6.4 T3 格：矩形大盾正对镜头，枪竖直
+ * §1.3 唯一失调：竖直长枪比人还高（p1「一切向上」母题最强一档，T3 体量 ≈78%）
+ * §5.2 p1 兵种剪影：全部向上、高瘦、装备最整齐（头盔 + 竖条罩衫 + 矩形盾）
+ * 配色断言 8 预检：盾面 p1w2(#eae3d2, L*≈90) 只贴 p1a0(#22559e, L*≈38)/p1a2(#3f8fe8, L*≈62)，
+ *   色相差均 >150° → ΔL* 门槛仅 8；金属 boss 贴蓝衣 p1a2 色相差 ~8° 但 ΔL*≈29 ≥12；均过。
+ * ========================================================================== */
+
+/** 矩形大盾（p1 T3 的「板」：覆盖躯干正面 ≥40%）。人造物，四角切斜角（§1.2）。
+ *  ⚠️ boss 用 metal0（暗金属），绝不用 metal4：metal4(#dfe6f0) 与盾面 p1w2(#eae3d2)
+ *   同为近白，ΔL*=0.7 触发断言 8。metal0(#6b7686) 与 p1w2 ΔL*≈34 安全。 */
+function bigShield(pb: PixBuf, x: number, y: number, w: number, h: number): void {
+  chamfer(pb, x, y, w, h, C.p1w2, 1); // 石灰白盾面
+  pb.frame(x, y, w, h, C.p1a0); // 蓝边
+  pb.rect(x + ((w / 2) | 0) - 1, y + ((h / 2) | 0) - 2, 3, 4, C.metal0); // 中央暗金属 boss
+  pb.set(x + ((w / 2) | 0), y + ((h / 2) | 0) + 1, C.metal2);
+}
+
+function drawOathpike(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  if (kind === 'map') drawOathpikeMap(pb);
+  else if (kind === 'idle') drawOathpikeCombat(pb, false);
+  else drawOathpikeCombat(pb, true);
+}
+
+/** 32×44 冒险地图帧：脚底 42，枪尖 7，剪影高 35（T3 ≈78%）。 */
+function drawOathpikeMap(pb: PixBuf): void {
+  const cx = 14;
+  pb.rect(9, 39, 6, 3, C.canv2);
+  pb.rect(16, 39, 6, 3, C.canv2);
+  aoContact(pb, 9, 21, 42);
+  pb.rect(10, 36, 4, 3, C.p1a0);
+  pb.rect(16, 36, 4, 3, C.p1a0);
+  // 躯干：垂直矩形（p1 母题），竖条罩衫
+  pb.rect(9, 27, 13, 9, C.p1a2);
+  pb.hline(9, 21, 27, C.p1a0);
+  pb.rect(13, 28, 5, 7, C.p1w2);
+  pb.rect(9, 35, 13, 1, C.p1a0);
+  // 头 + 头盔（p1 装备最整齐，金属盔 + 尖顶）
+  pb.ellipse(cx, 23, 4.5, 4, C.skin2);
+  pb.ellipse(cx, 21, 5.5, 2, C.wood0);
+  pb.rect(9, 18, 11, 3, C.metal4);
+  pb.rect(cx, 16, 2, 2, C.p1clash); // 盔顶撞色羽（§4 H4，面积 ≤8%）
+  face(pb, 11, 15, 24, 26, 3, false);
+  // 矩形大盾正对镜头（覆盖躯干正面 ≥40%）
+  bigShield(pb, 10, 26, 12, 13);
+  // 竖直长枪（唯一失调：比人高，枪尖在头顶之上）
+  pb.rect(25, 9, 2, 27, C.metal4);
+  pb.rect(25, 9, 1, 27, C.metal2);
+  pb.rect(24, 7, 4, 3, C.wood4); // 枪镞
+  pb.rect(26, 36, 2, 5, C.p1a0); // 右手握杆
+  pb.rect(26, 40, 2, 2, C.skin2);
+}
+
+/** 44×56 战斗帧：脚底 54，枪尖 11，剪影高 43（T3 ≈78%）。 */
+function drawOathpikeCombat(pb: PixBuf, atk: boolean): void {
+  if (!atk) {
+    const cx = 19;
+    pb.rect(13, 51, 6, 4, C.canv2);
+    pb.rect(21, 51, 6, 4, C.canv2);
+    aoContact(pb, 13, 27, 54);
+    pb.rect(14, 46, 4, 5, C.p1a0);
+    pb.rect(21, 46, 4, 5, C.p1a0);
+    // 躯干：垂直矩形 + 竖条罩衫
+    pb.rect(13, 35, 14, 11, C.p1a2);
+    pb.hline(13, 26, 35, C.p1a0);
+    pb.rect(18, 36, 6, 9, C.p1w2);
+    pb.rect(13, 44, 14, 2, C.p1a0);
+    pb.hline(13, 26, 45, C.ink1);
+    pb.rect(18, 45, 3, 1, C.metal4);
+    // 头 + 金属盔 + 尖顶
+    pb.ellipse(cx, 29, 5.5, 5, C.skin2);
+    pb.ellipse(cx, 26, 5.5, 2, C.wood0);
+    pb.rect(13, 24, 13, 3, C.metal4);
+    pb.rect(cx, 21, 2, 3, C.p1clash);
+    face(pb, 16, 21, 30, 33, 3, false);
+    // 矩形大盾正对镜头
+    bigShield(pb, 14, 33, 16, 18);
+    // 竖直长枪（唯一失调：比人高）
+    pb.rect(31, 13, 2, 33, C.metal4);
+    pb.rect(31, 13, 1, 33, C.metal2);
+    pb.rect(30, 10, 4, 4, C.wood4);
+    pb.rect(33, 42, 3, 7, C.p1a0);
+    pb.rect(33, 47, 3, 2, C.skin2);
+    return;
+  }
+  // 攻击帧：0.85× 高（43→36）前冲刺枪，盾上抬
+  pb.rect(11, 51, 6, 4, C.canv2);
+  pb.rect(21, 50, 7, 5, C.canv2);
+  aoContact(pb, 11, 27, 54);
+  pb.rect(13, 47, 4, 4, C.p1a0);
+  pb.rect(23, 45, 4, 5, C.p1a0);
+  pb.poly([[14, 37], [26, 34], [28, 46], [16, 47]], C.p1a2);
+  pb.line(14, 37, 26, 34, C.p1a0);
+  pb.rect(18, 37, 6, 8, C.p1w2);
+  pb.rect(14, 45, 14, 2, C.p1a0);
+  pb.rect(18, 45, 3, 1, C.metal4);
+  pb.ellipse(21, 31, 5, 4, C.skin2);
+  pb.ellipse(21, 28, 5, 1.5, C.wood0);
+  pb.rect(16, 26, 11, 3, C.metal4);
+  pb.rect(20, 23, 2, 3, C.p1clash);
+  face(pb, 18, 23, 31, 34, 3, false);
+  // 盾上抬（贴前胸）
+  bigShield(pb, 14, 35, 15, 16);
+  // 枪向前下方刺出（金属杆 + 木镞）；枪杆起点 x≥30，与白盾(p1w2, x≤28) 隔 1px 空气，绝不相邻
+  pb.rect(29, 42, 2, 2, C.skin2); // 手（白盾右侧外，skin2↔p1w2 ΔL*≈17 ≥12）
+  thickLine(pb, 30, 42, 38, 33, C.metal4, C.metal4);
+  pb.rect(36, 31, 6, 2, C.metal4);
+  pb.rect(36, 30, 6, 1, C.metal2);
+  pb.rect(37, 29, 2, 6, C.wood4);
+}
+
+/* ==========================================================================
+ * 13. p1 晨曦 T4 · 圣殿骑士
+ *
+ * §5.6.3 形状家族：垂直矩形 / 左右对称 / 顶部尖角（冠羽）/ 平底落地 / 高宽比 ≥ 1.25
+ * §5.6.4 T4 格：高坐骑，人+马，全套竖直甲片，顶上冠羽
+ * §1.3 唯一失调：冠羽比头盔还高（p1「一切向上」母题在 T4 的尖角峰值）
+ * §5.2 p1 兵种剪影：全部向上、高瘦、装备最整齐
+ * 配色断言 8 预检：白马 p1w2(L*≈90) 只贴 p1a0 鞍裙(L*≈38)/p1a2 骑手(L*≈62)，色相差 >150°；
+ *   骑手金属甲片 metal4 贴蓝衣 p1a2 色相差 ~8° 但 ΔL*≈29 ≥12；马蹄 stone0 贴白马同族(stone)。
+ * ========================================================================== */
+
+function drawTemplar(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  if (kind === 'map') drawTemplarMap(pb);
+  else if (kind === 'idle') drawTemplarCombat(pb, false);
+  else drawTemplarCombat(pb, true);
+}
+
+/** 32×44 冒险地图帧：马蹄 42，冠羽尖 9，剪影高 33（T4 ≈75%，坐骑占高）。 */
+function drawTemplarMap(pb: PixBuf): void {
+  // 马身（白马 p1w2）+ 暗面 p1a0 鞍裙隔开与骑手
+  pb.ellipse(15, 34, 11, 6, C.p1w2); // 马身
+  pb.ellipse(15, 38, 11, 3, C.stone2); // 马腹暗面（同族 stone）
+  pb.rect(4, 33, 5, 4, C.p1w2); // 马头（前伸，左）
+  pb.rect(3, 33, 2, 2, C.stone0); // 口鼻
+  pb.rect(24, 33, 3, 5, C.p1a0); // 马尾（暗蓝）
+  // 四腿（细）
+  pb.rect(8, 39, 2, 3, C.stone0);
+  pb.rect(13, 39, 2, 3, C.stone0);
+  pb.rect(18, 39, 2, 3, C.stone0);
+  pb.rect(22, 39, 2, 3, C.stone0);
+  aoContact(pb, 8, 23, 42);
+  // 鞍裙（暗蓝，隔开白马与蓝骑手）
+  pb.rect(12, 30, 8, 5, C.p1a0);
+  // 骑手（人+马双头剪影的上头）：垂直甲片 + 蓝衣
+  pb.rect(13, 22, 6, 9, C.p1a2);
+  pb.rect(15, 22, 2, 9, C.metal4); // 竖直甲片（金属）
+  pb.ellipse(16, 19, 4, 3.5, C.skin2);
+  pb.rect(13, 16, 6, 3, C.metal4); // 头盔
+  // 冠羽（唯一失调：比头盔高）
+  pb.rect(16, 11, 2, 5, C.p1clash);
+  pb.set(16, 10, C.p1clash);
+  face(pb, 14, 18, 19, 21, 3, false);
+}
+
+/** 44×56 战斗帧：马蹄 54，冠羽尖 11，剪影高 43（T4 ≈77% → 坐骑使整体更高）。 */
+function drawTemplarCombat(pb: PixBuf, atk: boolean): void {
+  if (!atk) {
+    // 马身（白马）+ 暗面
+    pb.ellipse(22, 46, 15, 8, C.p1w2);
+    pb.ellipse(22, 51, 15, 4, C.stone2);
+    pb.rect(4, 44, 7, 6, C.p1w2); // 马头前伸（左）
+    pb.rect(2, 44, 3, 3, C.stone0); // 口鼻
+    pb.rect(38, 43, 4, 7, C.p1a0); // 马尾
+    // 四腿
+    pb.rect(10, 52, 3, 3, C.stone0);
+    pb.rect(18, 53, 3, 3, C.stone0);
+    pb.rect(27, 53, 3, 3, C.stone0);
+    pb.rect(34, 52, 3, 3, C.stone0);
+    aoContact(pb, 10, 36, 55);
+    // 鞍裙（暗蓝）
+    pb.rect(17, 40, 11, 7, C.p1a0);
+    // 骑手：垂直甲片 + 蓝衣 + 金属胸甲
+    pb.rect(18, 29, 8, 12, C.p1a2);
+    pb.rect(21, 29, 3, 12, C.metal4); // 竖直甲片
+    pb.hline(18, 25, 41, C.p1a0);
+    pb.rect(18, 40, 8, 1, C.p1a0);
+    // 手臂握缰（暗蓝袖）
+    pb.rect(15, 32, 3, 6, C.p1a0);
+    pb.rect(26, 32, 3, 6, C.p1a0);
+    pb.rect(15, 37, 3, 2, C.skin2);
+    pb.rect(26, 37, 3, 2, C.skin2);
+    // 头 + 金属盔
+    pb.ellipse(22, 25, 5, 4, C.skin2);
+    pb.ellipse(22, 22, 5, 1.5, C.wood0);
+    pb.rect(17, 19, 11, 3, C.metal4);
+    face(pb, 19, 24, 26, 28, 3, false);
+    // 冠羽（唯一失调：比头盔高，突破肩线）
+    pb.rect(22, 12, 3, 7, C.p1clash);
+    pb.set(22, 11, C.p1clash);
+    pb.set(23, 11, C.p1clash);
+    return;
+  }
+  // 攻击帧：0.85× 高（43→36）马前蹄扬起、骑手举枪下劈
+  pb.ellipse(22, 46, 15, 8, C.p1w2);
+  pb.ellipse(22, 51, 15, 4, C.stone2);
+  pb.rect(4, 44, 7, 6, C.p1w2);
+  pb.rect(2, 44, 3, 3, C.stone0);
+  pb.rect(38, 43, 4, 7, C.p1a0);
+  pb.rect(10, 50, 3, 5, C.stone0); // 后蹄蹬
+  pb.rect(18, 49, 3, 5, C.stone0);
+  pb.rect(27, 52, 3, 4, C.stone0);
+  pb.rect(34, 49, 3, 5, C.stone0); // 前蹄扬
+  aoContact(pb, 10, 36, 55);
+  pb.rect(17, 40, 11, 7, C.p1a0);
+  pb.poly([[18, 30], [27, 27], [28, 40], [17, 41]], C.p1a2);
+  pb.line(18, 30, 27, 27, C.p1a0);
+  pb.rect(21, 30, 3, 11, C.metal4);
+  pb.rect(15, 32, 3, 6, C.p1a0);
+  pb.rect(26, 31, 3, 6, C.p1a0);
+  pb.rect(15, 37, 3, 2, C.skin2);
+  pb.rect(26, 36, 3, 2, C.skin2);
+  pb.ellipse(22, 25, 5, 4, C.skin2);
+  pb.ellipse(22, 22, 5, 1.5, C.wood0);
+  pb.rect(17, 19, 11, 3, C.metal4);
+  face(pb, 19, 24, 26, 28, 3, false);
+  pb.rect(22, 12, 3, 7, C.p1clash);
+  pb.set(22, 11, C.p1clash);
+  // 长枪下劈（金属杆 + 木镞指左下）
+  thickLine(pb, 26, 30, 34, 38, C.metal4, C.metal4);
+  pb.rect(32, 37, 6, 2, C.metal4);
+  pb.rect(31, 36, 2, 6, C.wood4);
 }
