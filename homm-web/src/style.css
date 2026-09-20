@@ -722,11 +722,31 @@ table.est td:last-child {
    为此把 .modal.wide 改成 flex 列 + overflow:hidden，padding 交给内层。 */
 .modal.wide {
   width: min(560px, 94vw);
-  max-height: min(248px, 88%);
+  /* D-68：**必须显式给 height**，不能只给 max-height。
+     只写 max-height 时面板按内容定高、永远吃不满上限 ⇒ 里面 flex:1 的 .town-pane
+     分不到空间（实测被挤到 48px，建筑页 7 张卡一张都看不全 —— D-66）。
+     写死同值 height 后，面板占满 248px，pane 才拿到剩余空间。 */
+  height: min(300px, 94%);
+  max-height: min(300px, 94%);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   padding: 0;
+}
+
+/* Plan B 原型：宽面板（城镇）**跳出 #stage**。它默认在 #stage（= 视口 − 顶栏32 − 拇指带48 = 240）
+   里、以内边距 16 的 #modal-root 为参照，88% 只有 ~183。改成 fixed 覆盖整视口后，
+   可用高 ≈ 320−16 = 304，面板才能拿到 ~270、内容窗 ~130（D-68 的 ≥120 才有解）。
+   `:has()` 只对**含宽面板**时生效，其它弹窗仍在 #stage 内。 */
+#modal-root:has(.modal.wide) {
+  position: fixed;
+  inset: 0;
+  /* 跳出 #stage 后要**自己补安全区**（原来在 #stage 里由 #app 的 padding 兜着）：
+     否则面板头部「返回」会顶到状态栏/刘海下面点不到。全边 +8 再叠 inset。 */
+  padding: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 8px)
+    calc(var(--safe-area-inset-right, env(safe-area-inset-right, 0px)) + 8px)
+    calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 8px)
+    calc(var(--safe-area-inset-left, env(safe-area-inset-left, 0px)) + 8px);
 }
 
 /* 头部（sticky 的更强形态：它是 flex 固定项，永远在，不依赖滚动位置）。 */
@@ -839,7 +859,9 @@ table.est td:last-child {
 
 .bgrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  /* D-68：1 列 → 2 列。窄横屏（320 高）下，宽卡折行更少、卡更矮，
+     一屏可见卡数反而更多（2 列 × 2 行 = 4 张 > 单列挤出来的 1 张）。 */
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 
@@ -847,10 +869,11 @@ table.est td:last-child {
   background: #33240f;
   border: 1px solid transparent;
   border-radius: 3px;
-  padding: 8px 10px;
+  /* Plan B' 原型：两行紧凑卡 —— 首行 [名 · 建造]、次行整宽状态；卡高≈67。 */
+  padding: 4px 8px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .bcard.built {
@@ -865,19 +888,29 @@ table.est td:last-child {
 .bcard .bn {
   color: var(--parchment);
   font-weight: 500;
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.bcard .bd {
-  color: var(--text-dim);
-  font-size: 12px;
-  line-height: 1.5;
-  min-height: 32px;
+/* Plan B' 原型：首行 = 建筑名（左）+ 建造按钮（右）。 */
+.bcard .brow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
 }
 
+/* 次行整宽：造价 / 「还差」，单行不折、超长才省略。 */
 .bcard .bs {
   color: var(--gold-dim);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .bcard .bs.warn {

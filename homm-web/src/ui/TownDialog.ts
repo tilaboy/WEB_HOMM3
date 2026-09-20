@@ -202,13 +202,16 @@ function paintBuildings(
     const nm = document.createElement('div');
     nm.className = 'bn';
     nm.textContent = def.name;
-    const ds = document.createElement('div');
-    ds.className = 'bd';
-    ds.textContent = def.desc;
-    card.append(nm, ds, buildStateLine(st));
+    // Plan B' 原型：两行紧凑卡 —— 首行 [建筑名 · 建造]、次行整宽「还差」状态（不截断）。
+    // 描述不占行，移到悬浮提示。
+    card.title = def.desc;
+    const brow = document.createElement('div');
+    brow.className = 'brow';
+    brow.appendChild(nm);
+    card.append(brow, buildStateLine(st));
     if (st.unlocked && !st.built) {
       const ready = st.affordable && !st.spentToday;
-      card.appendChild(
+      brow.appendChild(
         actionBtn('建造', ready, () => {
           act(() => {
             if (!build(state, town, id)) {

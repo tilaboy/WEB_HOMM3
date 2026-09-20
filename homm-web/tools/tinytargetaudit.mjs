@@ -51,8 +51,10 @@ const APP_PORT = Number(process.env.PORT ?? 5173);
 const CDP_PORT = 9200 + (process.pid % 700);
 const PROBE_NAME = '_tinytargetprobe.html';
 const PROBE = path.join(dist, PROBE_NAME);
-// 移动视口：与真机横屏目标一致（ux-ia《in-game IA》§4 按 792×360 算屏预算）。
-const MOBILE = { w: 792, h: 360, dpr: 3 };
+// 移动视口：与**真机自然横屏**一致（792×320）。D-65：原用 792×360 是"理想横屏"，
+// 真机顶部安全区会吃掉 40px（360→320）——同一份 CSS 下这 40px 会把城镇面板内容窗从 48 压到 18，
+// 正是城镇面板回归（D-66）能绿灯放行的原因之一。守卫必须量真实值。
+const MOBILE = { w: 792, h: 320, dpr: 3 };
 // C3 等"已知待办"项默认只报不卡；STRICT=1 时升格为硬断言（顶栏重构批落地后已开）。
 const STRICT = process.env.STRICT === '1';
 
@@ -403,6 +405,99 @@ const APP_THUMB = `(() => {
   };
 })()`;
 
+/**
+ * **真实 app** 城镇面板体检（D-66 / D-68）：把 P3 最重要的窗口**真的打开来量**。
+ *
+ * 为什么单列一段：本探针此前**从不打开城镇面板**（没有任何动作打开它），
+ * 于是 P3 的内容窗回归（`.town-pane` 被挤到 48px、7 张卡一张看不全）**全程绿灯放行**。
+ * 「判有没有覆盖要找行为，不是数 token」（D-65）。这里用 `?devtown=1` 真开面板
+ * （等价于点 #side 的「管理」，但更稳、不依赖 UI 文案）。
+ *
+ * 量：pane 的 clientHeight（应 ≥120）、建筑页**完整可见**的 .bcard 数（应 ≥4 = 2 列 × 2 行）、
+ * 及其余 4 页各 ≥1 个完整可见的行块。判「完整可见」= 该块 rect 完整落在 pane 的 rect 内。
+ */
+const TOWN_PANEL = `(async () => {
+  const raf = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const qa = (s, root = document) => [...root.querySelectorAll(s)];
+  const rect = (el) => el.getBoundingClientRect();
+  let pane = null;
+  for (let i = 0; i < 60 && !pane; i++) { await raf(); pane = document.querySelector('.modal.wide .town-pane'); }
+  if (!pane) return { error: '没打开 .modal.wide .town-pane（?devtown=1 没进对局 / 无己方城镇？）' };
+  const modal = document.querySelector('.modal.wide');
+  const head = document.querySelector('.modal.wide .modal-head');
+  const tabs = qa('.town-tabs .btn');
+  const visible = (r, pr) => r.bottom <= pr.bottom + 0.5 && r.top >= pr.top - 0.5;
+  const measureTab = async (label) => {
+    if (label) {
+      const b = tabs.find((x) => (x.textContent || '').trim() === label);
+      if (!b) return { label, error: '找不到标签' };
+      b.click();
+      await raf();
+    }
+    const pr = rect(pane);
+    const cards = qa('.bcard', pane).map((c) => ({ h: +rect(c).height.toFixed(1), full: visible(rect(c), pr) }));
+    const rows = qa('.rrow, .ex-row, .my-res', pane).map((c) => ({ h: +rect(c).height.toFixed(1), full: visible(rect(c), pr) }));
+    return {
+      label: label || '(当前页)',
+      paneClientH: pane.clientHeight,
+      paneScrollH: pane.scrollHeight,
+      cardsTotal: cards.length,
+      cardsFull: cards.filter((c) => c.full).length,
+      rowsTotal: rows.length,
+      rowsFull: rows.filter((r) => r.full).length,
+      firstCardH: cards.length ? cards[0].h : null,
+      firstRowH: rows.length ? rows[0].h : null,
+    };
+  };
+  const out = {
+    modalH: +rect(modal).height.toFixed(1),
+    headH: head ? +rect(head).height.toFixed(1) : null,
+    paneClientH: pane.clientHeight,
+    paneScrollH: pane.scrollHeight,
+    paneH: +rect(pane).height.toFixed(1),
+    vp: { w: window.innerWidth, h: window.innerHeight },
+    tabs: {},
+  };
+  out.tabs.build = await measureTab('建筑');
+  out.debug = (() => {
+    const cs = getComputedStyle(modal);
+    const root = document.querySelector('#modal-root');
+    const stg = document.querySelector('#stage');
+    const meta = document.querySelector('.town-meta');
+    const tabsEl = document.querySelector('.town-tabs');
+    const h = (el) => (el ? +rect(el).height.toFixed(1) : null);
+    // 实测「天花板」：把面板撑到 modal-root 的内容盒满高，看 pane 最多能拿多少。
+    const paneBefore = pane.clientHeight;
+    modal.style.height = '100%';
+    modal.style.maxHeight = '100%';
+    const paneAt100 = pane.clientHeight; // 读 clientHeight 强制重排
+    modal.style.height = '';
+    modal.style.maxHeight = '';
+    return {
+      modalH: cs.height, modalMaxH: cs.maxHeight,
+      rootH: root ? getComputedStyle(root).height : null,
+      rootPad: root ? getComputedStyle(root).padding : null,
+      rootContentH: root ? root.clientHeight : null,
+      stageH: stg ? getComputedStyle(stg).height : null,
+      appH: document.querySelector('#app') ? getComputedStyle(document.querySelector('#app')).height : null,
+      headH: h(document.querySelector('.modal.wide .modal-head')),
+      metaH: h(meta), tabsH: h(tabsEl), townH: h(document.querySelector('.modal.wide > .town')),
+      paneBeforeH: paneBefore, paneAt100H: paneAt100,
+      cardH: h(document.querySelector('.bcard')),
+      bsClamp: (() => { const bs = document.querySelector('.bcard .bs'); return bs ? { clientW: bs.clientWidth, scrollW: bs.scrollWidth, clipped: bs.scrollWidth > bs.clientWidth + 1 } : null; })(),
+      innerH: window.innerHeight,
+    };
+  })();
+  out.tabs.dwell = await measureTab('兵营·行会');
+  out.tabs.recruit = await measureTab('招募');
+  out.tabs.army = await measureTab('驻军');
+  out.tabs.market = await measureTab('市场·工坊');
+  // 收尾：关面板，别影响后面的 a11y 阶段
+  const back = document.querySelector('.modal.wide .modal-head .btn');
+  if (back) { back.click(); await raf(); }
+  return out;
+})()`;
+
 /** a11y 可机检项（`accessibility-requirements.md` §5 第 2/3/4/5 条）。 */
 const A11Y = `(() => {
   const out = { focusVisible: { found: false, width: 0 }, reducedMotion: false, labels: {}, mediaTexts: [] };
@@ -445,6 +540,7 @@ let mobile;
 let mobileTall;
 let appTopbar = [];
 let appThumb = null;
+let townPanel = null;
 let a11y = null;
 try {
   const wsUrl = await findTarget();
@@ -469,7 +565,7 @@ try {
   await sleep(250); // 等一次布局稳定
   res = await evaluate(MEASURE);
 
-  // Phase B：切移动视口（792×360，DPR 3）重排后再量 —— 所有 ≤860px 的移动规则只有在这里才被激活。
+  // Phase B：切移动视口（792×320，DPR 3）重排后再量 —— 所有 ≤860px 的移动规则只有在这里才被激活。
   await send('Emulation.setDeviceMetricsOverride', {
     width: MOBILE.w,
     height: MOBILE.h,
@@ -527,6 +623,22 @@ try {
   });
   await sleep(280);
   appThumb = await evaluate(APP_THUMB);
+
+  // Phase D2（D-66 / D-68）：真打开城镇面板量内容窗。用 `?devtown=1` 直接开我方首座城镇，
+  // 避开"合成 fixture 自证"的陷阱，也避开关窗文案依赖。视口沿用 792×320（真机自然横屏）。
+  await send('Page.navigate', { url: `http://127.0.0.1:${APP_PORT}/index.html?devquick=1&devtown=1` });
+  let townReady = false;
+  for (let i = 0; i < 160; i++) {
+    try {
+      townReady = await evaluate(`!!document.querySelector('.modal.wide .town-pane')`);
+      if (townReady) break;
+    } catch {
+      /* 导航中执行上下文未就绪，继续等 */
+    }
+    await sleep(100);
+  }
+  await sleep(320); // 等首帧 + 面板布局稳定
+  townPanel = await evaluate(TOWN_PANEL);
 
   // Phase E：a11y —— ① 扫 CSSOM 找 `:focus-visible` 与 `prefers-reduced-motion` 块；
   // ② **行为验证**：用 CDP 模拟 reduce，看**计算样式**是否真的缩短（只看源码字符串会被"改了注释也算过"骗到）。
@@ -676,6 +788,38 @@ if (!appThumb) {
   console.log(
     `        共 ${appThumb.count} 个按钮：${appThumb.btns.map((b) => `${b.t || '?'}(${Math.round(b.w)}×${Math.round(b.h)}${b.primary ? '*' : ''})`).join(' · ')}`,
   );
+}
+
+/* ---- 城镇面板内容窗（D-66 / D-68）—— **始终硬断言**：P3 核心表面，回归过一次 ---- */
+console.log('\n── 真实 app（?devquick=1&devtown=1）· 城镇面板内容窗（792×320） ──');
+if (!townPanel || townPanel.error) {
+  console.log(`[FAIL] 没能打开城镇面板：${townPanel?.error ?? '未测到'}`);
+  bad++;
+} else {
+  const paneOk = townPanel.paneClientH >= 120;
+  const bt = townPanel.tabs.build;
+  const buildOk = (bt?.cardsFull ?? 0) >= 4;
+  const tabOk = (t) => (t?.cardsFull ?? 0) + (t?.rowsFull ?? 0) >= 1;
+  const dwellOk = tabOk(townPanel.tabs.dwell);
+  const recruitOk = tabOk(townPanel.tabs.recruit);
+  const armyOk = tabOk(townPanel.tabs.army);
+  const marketOk = tabOk(townPanel.tabs.market);
+  for (const ok of [paneOk, buildOk, dwellOk, recruitOk, armyOk, marketOk]) if (!ok) bad++;
+  console.log(
+    `[${paneOk ? 'PASS' : 'FAIL'}] 内容窗 .town-pane clientHeight ${townPanel.paneClientH}px ≥ 120（modal ${townPanel.modalH} · head ${townPanel.headH} · 视口 ${townPanel.vp.w}×${townPanel.vp.h}）`,
+  );
+  const screens = bt ? (bt.paneScrollH / Math.max(1, bt.paneClientH)).toFixed(1) : '?';
+  console.log(
+    `[${buildOk ? 'PASS' : 'FAIL'}] 建筑页完整可见 .bcard ${bt?.cardsFull ?? 0}/${bt?.cardsTotal ?? 0} 张 ≥ 4（首卡 ${bt?.firstCardH ?? '?'}px · 需滚 ${screens} 屏）`,
+  );
+  for (const k of ['dwell', 'recruit', 'army', 'market']) {
+    const t = townPanel.tabs[k];
+    const full = (t?.cardsFull ?? 0) + (t?.rowsFull ?? 0);
+    console.log(
+      `[${full >= 1 ? 'PASS' : 'FAIL'}] ${t?.label ?? k} 完整可见行块 ${full} ≥ 1（卡 ${t?.cardsTotal ?? 0} · 行 ${t?.rowsTotal ?? 0}${t?.error ? ' · ' + t.error : ''}）`,
+    );
+  }
+  if (townPanel.debug) console.log(`[信息] modal computed: ${JSON.stringify(townPanel.debug)}`);
 }
 
 /* ---- a11y 可机检项（基线 §5）—— **始终硬断言**（不是"已知待办"） ---- */
