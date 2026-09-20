@@ -808,6 +808,8 @@ table.est td:last-child {
   min-height: 0;
   overflow-y: auto;
   padding: 8px 10px 10px;
+  /* D-70：描述浮层 .bdesc 以此为定位参照。 */
+  position: relative;
 }
 
 /* 市场页「我的资源」行（#50）：决策输入必须**在看得到的地方**（现状是"点了才知道"）。 */
@@ -893,6 +895,32 @@ table.est td:last-child {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* D-70：可点开描述 —— 给一点可点提示（点线 + 指针）。 */
+  cursor: pointer;
+  text-decoration: underline dotted rgba(240, 212, 136, 0.45);
+  text-underline-offset: 3px;
+}
+
+.bcard .bn:hover {
+  color: var(--gold);
+}
+
+/* D-70：点击建筑名展开的**描述浮层** —— absolute、不参与布局 ⇒ 卡高与完整可见卡数不变。 */
+.bdesc {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  z-index: 6;
+  background: #241a0e;
+  border: 1px solid var(--gold-dim, var(--frame));
+  border-radius: 3px;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+  /* 不挡下层：按钮/其它卡片照常可点，不因浮层多一步。 */
+  pointer-events: none;
 }
 
 /* Plan B' 原型：首行 = 建筑名（左）+ 建造按钮（右）。 */

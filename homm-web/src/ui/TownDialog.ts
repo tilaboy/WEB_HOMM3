@@ -188,6 +188,41 @@ function paintBuildings(
   const town = state.towns[townId];
   if (!town) return;
 
+  // D-70：描述**不能只活在 `title` 里**（触屏没有 hover = 等于没写），而描述正是喜剧文案所在。
+  // 机制 = **点击建筑名 → 覆盖式浮层**（不是手风琴）：浮层 absolute、不参与布局 ⇒
+  //   · 折叠态卡高不变、建筑页 4 张不退；
+  //   · 1 次点击即可看到该卡描述；
+  //   · 建造按钮留在折叠行、不被多拦一步。
+  // 浮层 `pointer-events:none`：不挡住下层按钮/卡片的点击。
+  let descFor: HTMLElement | null = null;
+  let descEl: HTMLElement | null = null;
+  const revealDesc = (card: HTMLElement, desc: string, trigger: HTMLElement): void => {
+    if (descFor === card) {
+      descEl?.remove();
+      descEl = null;
+      descFor = null;
+      trigger.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    if (!descEl) {
+      descEl = document.createElement('div');
+      descEl.className = 'bdesc';
+      root.appendChild(descEl);
+    }
+    descFor = card;
+    trigger.setAttribute('aria-expanded', 'true');
+    descEl.textContent = desc;
+    // 定位：紧贴该卡「首行（名 · 建造）」下方；再夹在 pane 可视区内（顶/底都别越界）。
+    const pr = root.getBoundingClientRect();
+    const brow = card.querySelector('.brow');
+    const anchor = (brow ? brow.getBoundingClientRect().bottom : card.getBoundingClientRect().bottom) - pr.top + root.scrollTop;
+    const paneBottom = root.scrollTop + root.clientHeight;
+    const h = descEl.offsetHeight;
+    let top = anchor + 2;
+    if (top + h > paneBottom - 2) top = Math.max(root.scrollTop + 2, paneBottom - h - 2);
+    descEl.style.top = `${top}px`;
+  };
+
   const anySpent = ids.some((b) => buildStatus(state, town, b).spentToday);
   if (anySpent) root.appendChild(note2('今日已建造，明日可再建'));
 
@@ -202,9 +237,19 @@ function paintBuildings(
     const nm = document.createElement('div');
     nm.className = 'bn';
     nm.textContent = def.name;
-    // Plan B' 原型：两行紧凑卡 —— 首行 [建筑名 · 建造]、次行整宽「还差」状态（不截断）。
-    // 描述不占行，移到悬浮提示。
-    card.title = def.desc;
+    // Plan B'：两行紧凑卡 —— 首行 [建筑名 · 建造]、次行整宽「还差」状态（不截断）。
+    // D-70：建筑名区域可点 —— 点开该卡描述浮层（见上 revealDesc）。描述不再只躺在 title。
+    nm.setAttribute('role', 'button');
+    nm.setAttribute('tabindex', '0');
+    nm.setAttribute('aria-expanded', 'false');
+    const onName = (): void => revealDesc(card, def.desc, nm);
+    nm.addEventListener('click', onName);
+    nm.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onName();
+      }
+    });
     const brow = document.createElement('div');
     brow.className = 'brow';
     brow.appendChild(nm);

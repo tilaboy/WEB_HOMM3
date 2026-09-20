@@ -488,6 +488,30 @@ const TOWN_PANEL = `(async () => {
       innerH: window.innerHeight,
     };
   })();
+
+  // D-70：点建筑名 → 描述浮层。验收：desc 高>0 且在 pane 内，且**点击前后**完整可见卡数仍 ≥4。
+  out.d70 = await (async () => {
+    const bn = pane.querySelector('.bcard .bn');
+    if (!bn) return { error: '没有 .bcard .bn' };
+    const count = () => {
+      const pr = rect(pane);
+      return qa('.bcard', pane).filter((c) => { const r = rect(c); return r.bottom <= pr.bottom + 0.5 && r.top >= pr.top - 0.5; }).length;
+    };
+    const beforeCards = count();
+    bn.click();
+    await raf();
+    const el = pane.querySelector('.bdesc');
+    const pr = rect(pane);
+    const r = el ? rect(el) : null;
+    return {
+      beforeCards,
+      afterCards: count(),
+      descH: r ? +r.height.toFixed(1) : 0,
+      descInPane: !!r && r.bottom <= pr.bottom + 0.5 && r.top >= pr.top - 0.5,
+      descText: el ? (el.textContent || '').slice(0, 16) : null,
+    };
+  })();
+
   out.tabs.dwell = await measureTab('兵营·行会');
   out.tabs.recruit = await measureTab('招募');
   out.tabs.army = await measureTab('驻军');
@@ -819,6 +843,12 @@ if (!townPanel || townPanel.error) {
       `[${full >= 1 ? 'PASS' : 'FAIL'}] ${t?.label ?? k} 完整可见行块 ${full} ≥ 1（卡 ${t?.cardsTotal ?? 0} · 行 ${t?.rowsTotal ?? 0}${t?.error ? ' · ' + t.error : ''}）`,
     );
   }
+  const d70 = townPanel.d70;
+  const d70ok = !!d70 && d70.descH > 0 && d70.descInPane && d70.beforeCards >= 4 && d70.afterCards >= 4;
+  if (!d70ok) bad++;
+  console.log(
+    `[${d70ok ? 'PASS' : 'FAIL'}] D-70 点建筑名 → 描述浮层：高 ${d70?.descH ?? 0}px · 在 pane 内 ${d70?.descInPane ?? '?'} · 完整可见卡 前 ${d70?.beforeCards ?? '?'} / 后 ${d70?.afterCards ?? '?'}（均需 ≥4）`,
+  );
   if (townPanel.debug) console.log(`[信息] modal computed: ${JSON.stringify(townPanel.debug)}`);
 }
 
