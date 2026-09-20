@@ -48,6 +48,94 @@ function silhouette(pb) {
   return x1 < x0 ? null : { x0, x1, y0, y1 };
 }
 
+/**
+ * 英雄棋子剪影偏移 —— **从真实 `hero_<owner>` 帧派生**，不手写常量（防"常量随美术漂"）。
+ *
+ * 为什么要垫片：hero 帧由 atlas.ts 的 DOM 构建器产出，Node 里没有 DOM/canvas。
+ * 这里垫一个**最小 canvas/DOM 垫片**（同 tools/atlasaudit.mjs），只为读回帧的像素。
+ * 口径 = **整枚棋子剪影**（含 1px 描边、含右上旗帜）—— 比"主体不含旗"更**保守**，
+ * 且与 §13.3 M2′「徽标不得遮住英雄棋子」一致（排除旗会有"遮住旗却判绿"的盲区）。
+ */
+async function measureHeroOffsets() {
+  class StubCtx {
+    constructor(c) { this.canvas = c; }
+    putImageData(img) { this.canvas._img = img; }
+    drawImage(src, dx = 0, dy = 0) {
+      const dst = this.canvas;
+      if (!dst._buf) dst._buf = new Uint8ClampedArray(dst.width * dst.height * 4);
+      if (!src || !src._img) return;
+      const sw = src._img.width;
+      const sh = src._img.height;
+      const sd = src._img.data;
+      for (let yy = 0; yy < sh; yy++) {
+        for (let xx = 0; xx < sw; xx++) {
+          const tx = dx + xx;
+          const ty = dy + yy;
+          if (tx < 0 || ty < 0 || tx >= dst.width || ty >= dst.height) continue;
+          const si = (yy * sw + xx) * 4;
+          const di = (ty * dst.width + tx) * 4;
+          dst._buf[di] = sd[si]; dst._buf[di + 1] = sd[si + 1]; dst._buf[di + 2] = sd[si + 2]; dst._buf[di + 3] = sd[si + 3];
+        }
+      }
+    }
+    getImageData(x, y, w, h) { return new globalThis.ImageData(new Uint8ClampedArray(w * h * 4), w, h); }
+    fillRect() {} clearRect() {} save() {} restore() {} translate() {} scale() {}
+  }
+  class StubCanvas {
+    constructor() { this.width = 0; this.height = 0; this.style = {}; this._ctx = new StubCtx(this); }
+    getContext() { return this._ctx; }
+    toDataURL() { return ''; }
+  }
+  const prevDoc = globalThis.document;
+  const prevImg = globalThis.ImageData;
+  globalThis.ImageData = class ImageData {
+    constructor(d, w, h) { this.data = d; this.width = w; this.height = h; }
+  };
+  globalThis.document = { createElement: () => new StubCanvas() };
+  try {
+    const { Atlas } = await import('../dist/render/atlas.js');
+    const atlas = Atlas.build();
+    const buf = atlas.canvas._buf;
+    const AW = atlas.canvas.width;
+    let u = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    const seen = [];
+    for (const owner of ['p1', 'p2', 'p3', 'p4', 'neutral']) {
+      const F = atlas.get(`hero_${owner}`);
+      if (!F) {
+        console.error(`[mapbadgeaudit] 缺 hero_${owner} 帧 —— 前置条件不成立。`);
+        process.exit(2);
+      }
+      let x0 = Infinity;
+      let x1 = -Infinity;
+      let y0 = Infinity;
+      let y1 = -Infinity;
+      for (let y = 0; y < F.h; y++) {
+        for (let x = 0; x < F.w; x++) {
+          if (buf[((F.y + y) * AW + (F.x + x)) * 4 + 3] <= 8) continue;
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+      if (x1 < x0) {
+        console.error(`[mapbadgeaudit] hero_${owner} 剪影为空 —— 前置条件不成立。`);
+        process.exit(2);
+      }
+      seen.push({ owner, x0, x1, y0, y1, ax: F.ax, ay: F.ay });
+      u = { x0: Math.min(u.x0, x0), x1: Math.max(u.x1, x1), y0: Math.min(u.y0, y0), y1: Math.max(u.y1, y1) };
+    }
+    const a = seen[0];
+    const same = seen.every((s) => s.x0 === a.x0 && s.x1 === a.x1 && s.y0 === a.y0 && s.y1 === a.y1 && s.ax === a.ax && s.ay === a.ay);
+    if (!same) line(`[WARN] hero_<owner> 各帧几何不一致（已取并集）—— ${JSON.stringify(seen)}`);
+    line(`英雄棋子帧几何（真实帧派生）：owner×${seen.length} ax=${a.ax} ay=${a.ay} 剪影 x[${u.x0},${u.x1}] y[${u.y0},${u.y1}]`);
+    return { dx0: u.x0 + a.ax, dy0: u.y0 + a.ay, dx1: u.x1 + a.ax, dy1: u.y1 + a.ay };
+  } finally {
+    if (prevDoc === undefined) delete globalThis.document; else globalThis.document = prevDoc;
+    if (prevImg === undefined) delete globalThis.ImageData; else globalThis.ImageData = prevImg;
+  }
+}
+
 const mapFrames = UNIT_FRAMES.filter((f) => f.kind === 'map');
 if (mapFrames.length === 0) {
   console.error('[mapbadgeaudit] 帧表里没有 kind=map 的帧 —— UNIT_FRAMES 结构可能变了，前置条件不成立。');
@@ -66,6 +154,9 @@ for (const f of mapFrames) {
   badges.push({ name: f.name, frame: { w: pb.w, h: pb.h, ax: f.ax, ay: f.ay, sil } });
 }
 line(`徽标源：${badges.length} 个 kind=map 帧（画布 ${badges[0].frame.w}×${badges[0].frame.h} · TILE=${TILE}）`);
+
+/** 英雄棋子剪影偏移（相对英雄格；从真实 hero_<owner> 帧派生）。见 measureHeroOffsets()。 */
+const heroOffsets = await measureHeroOffsets();
 
 /* ============================ A · 帧完整性 ============================ */
 line('\n=== A 帧完整性（剪影在槽位内 + 相对格左右外扩对称 ≤1px）===');
@@ -142,14 +233,13 @@ line('\n=== D 布局不遮物（§13.4 三规则）===');
   // 邻格实体（§13.0 · atlas.ts 构建器）。
   const objBBox = (cx, cy) => ({ x0: cx * TILE, y0: cy * TILE, x1: cx * TILE + TILE - 1, y1: cy * TILE + TILE - 1 });
   const mkBBox = (cx, cy) => ({ x0: cx * TILE + 17, y0: cy * TILE + 17, x1: cx * TILE + 32, y1: cy * TILE + 32 });
-  // 英雄棋子主体（**不含旗杆/旗**；atlas.ts 的 hero() 构建器 + 1px 描边）—— 相对英雄格的像素偏移。
-  // 注意：棋子帧 ay=−12 ⇒ 主体上探自身格 12px（y 从 −4 起），这是 D 组的关键几何。
-  const HERO_BODY = { dx0: 8, dy0: -4, dx1: 23, dy1: 31 };
+  // 英雄棋子剪影（**从真实帧派生**，见 measureHeroOffsets()）—— 相对英雄格的像素偏移。
+  // 注意：棋子帧 ay=−12 ⇒ 剪影上探自身格 12px，这是 D 组的关键几何（上/下邻格会被否决）。
   const heroBody = () => ({
-    x0: HX * TILE + HERO_BODY.dx0,
-    y0: HY * TILE + HERO_BODY.dy0,
-    x1: HX * TILE + HERO_BODY.dx1,
-    y1: HY * TILE + HERO_BODY.dy1,
+    x0: HX * TILE + heroOffsets.dx0,
+    y0: HY * TILE + heroOffsets.dy0,
+    x1: HX * TILE + heroOffsets.dx1,
+    y1: HY * TILE + heroOffsets.dy1,
   });
 
   // 英雄本体作为障碍一起传（否则上/下会压棋子 —— 见 mapBadge.ts 的说明）。
@@ -213,7 +303,12 @@ if (process.argv.includes('--self-test')) {
   const HX = 5;
   const HY = 5;
   const frame = badges[0].frame;
-  const heroBody = { x0: HX * TILE + 8, y0: HY * TILE - 4, x1: HX * TILE + 23, y1: HY * TILE + 31 };
+  const heroBody = {
+    x0: HX * TILE + heroOffsets.dx0,
+    y0: HY * TILE + heroOffsets.dy0,
+    x1: HX * TILE + heroOffsets.dx1,
+    y1: HY * TILE + heroOffsets.dy1,
+  };
   const rc = { x: HX + 1, y: HY };
   const obstacles = [{ x0: rc.x * TILE, y0: rc.y * TILE, x1: rc.x * TILE + TILE - 1, y1: rc.y * TILE + TILE - 1 }];
   const dOk = (side) => {
