@@ -296,6 +296,26 @@ export function b0FrameSpec(name: string): B0FrameSpec {
   return f;
 }
 
+/* ==========================================================================
+ * 0b. Tier 体量通道（§5.6.1 / §5.6.2）—— 共享归一化机制所需元数据
+ *
+ * 根因（silhouette-audit.md §5）：16 组 drawXxx 的坐标是手写常量，签名里没有任何
+ * tier / 体量参数 ⇒ Tier 通道（纵轴）从未被实现。下面的元数据让审计（b0audit.mjs
+ * 的 H1/H2/S1）与归一化机制（normalizeTier）共用同一份 tier→目标 的真值源。
+ *
+ * 阶段 1-B 只把 normalizeTier 铺到 p1 一族；TIER_OF / TIER_TARGET_PCT 是全量真值，
+ * 供审计在 16 单位上全量扫剪影矩阵（map 帧不在 H1/H2/S1 范围，见 silhouette-audit.md §1）。
+ */
+export const TIER_OF: Record<string, number> = {
+  p1_lampbearer: 1, p2_scavenger: 1, p3_dwarf: 1, p4_stoneimp: 1,
+  p1_hornxbow: 2, p2_axethrower: 2, p3_thornarcher: 2, p4_fireapprentice: 2,
+  p1_oathpike: 3, p2_wolfrider: 3, p3_vineguard: 3, p4_hopgolem: 3,
+  p1_templar: 4, p2_firebrand: 4, p3_treant: 4, p4_librarian: 4,
+};
+
+/** §5.6.2 目标（剪影高 ÷ 56 × 100，cu 帧）。±8pt 容差见 silhouette-audit.md §1（软断言 S1，非规格）。 */
+export const TIER_TARGET_PCT: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4: 88 };
+
 /**
  * @param name    帧名（见 B0_FRAMES）
  * @param outline 是否跑「描边重建」这一步（asset-spec §5.4 步骤 [5]）。

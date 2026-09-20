@@ -31,6 +31,8 @@ import {
   B0_SHADE_STEPS,
   B0_PENDING_AI_FRAME,
   buildB0Frame,
+  TIER_OF,
+  TIER_TARGET_PCT,
 } from '../dist/render/unitArt.js';
 import { shade } from '../dist/render/pixel.js';
 
@@ -658,6 +660,83 @@ record(5, '基线对齐（两族 map 帧）', bA === bB && bA >= 0, {
   delta: Math.abs(bA - bB),
 });
 
+/* ---------------------------------------------------------------- 剪影矩阵断言（§5.6.1 / §5.6.2）
+
+ * 体量 = 剪影高 ÷ 画布高（cu 帧 = 56），与 silhouette() 诊断同口径（含 1px 描边）。
+ * 范围：只覆盖 cu 帧（44×56）；map 帧（32×44）目标值待 art-director 裁定，不纳入。
+ * H1/H2 硬（不依赖容差），S1 软（自设 ±8pt，非规格，见 silhouette-audit.md §1）。
+ */
+// 只取 idle 帧作 tier 体量代表（与 silhouette-audit.md 的 16 单位 / 120 对口径一致；
+// 每单位 2 张 cu 帧，atk 是 idle 的攻击变体，不计入矩阵）。
+const cuFrames = frames.filter((f) => f.spec.w === 44 && f.spec.kind === 'idle');
+// 体量 = 剪影高 ÷ 画布高（cu 帧 = 56）。silhouette() 的 bbox 形如 "W×H"，取 H。
+const volPct = (f) => {
+  const m = silhouette(f.d).bbox.match(/^(\d+)×(\d+)$/);
+  const sh = m ? +m[2] : 0;
+  return (sh / 56) * 100;
+};
+
+// 按族分组（p1/p2/p3/p4）
+const byFaction = new Map();
+for (const f of cuFrames) {
+  const fac = f.spec.unit.slice(0, 2);
+  if (!byFaction.has(fac)) byFaction.set(fac, []);
+  byFaction.get(fac).push(f);
+}
+
+// H1：四族各自的 T1→T4 体量严格递增，且最小步长 ≥6pt
+{
+  const detail = {};
+  let allOk = true;
+  for (const [fac, fs] of byFaction) {
+    const order = [1, 2, 3, 4].map((t) => fs.find((f) => TIER_OF[f.spec.unit] === t));
+    const vals = order.map((f) => (f ? +volPct(f).toFixed(1) : NaN));
+    let ok = true;
+    for (let t = 0; t < 4; t++) {
+      if (!order[t] || !isFinite(vals[t])) { ok = false; break; }
+      if (t > 0 && vals[t] - vals[t - 1] < 6 - 1e-9) ok = false; // 严格递增 + 步长 ≥6pt
+    }
+    if (!ok) allOk = false;
+    detail[`${fac} T1→T4`] = vals.map((v) => (isFinite(v) ? v.toFixed(1) : '—')).join(' / ');
+  }
+  record(9, 'H1 体量阶梯严格递增(步长≥6pt)', allOk, { ...detail, name: 'H1' });
+}
+
+// H2：跨族 tier 倒挂对 = 0（tier 低却比 tier 高的大，即矩阵纵轴塌掉）
+{
+  const list = cuFrames.map((f) => ({ unit: f.spec.unit, tier: TIER_OF[f.spec.unit], v: volPct(f) }));
+  let inv = 0;
+  const samples = [];
+  for (let i = 0; i < list.length; i++) {
+    for (let j = 0; j < list.length; j++) {
+      if (i === j) continue;
+      const a = list[i];
+      const b = list[j];
+      if (a.tier < b.tier && a.v > b.v + 1e-9) {
+        inv++;
+        if (samples.length < 10) samples.push(`${a.unit}(T${a.tier},${a.v.toFixed(1)}%)>${b.unit}(T${b.tier},${b.v.toFixed(1)}%)`);
+      }
+    }
+  }
+  record(10, 'H2 跨族 tier 倒挂对 = 0', inv === 0, { 倒挂对: inv, 示例: samples.join('  '), name: 'H2' });
+}
+
+// S1：每族每 tier 落在 §5.6.2 目标 ±8pt（软，自设容差，非规格）
+{
+  let bad = 0;
+  const detail = {};
+  for (const f of cuFrames) {
+    const t = TIER_OF[f.spec.unit];
+    const v = volPct(f);
+    const off = v - TIER_TARGET_PCT[t];
+    if (Math.abs(off) > 8 + 1e-9) {
+      bad++;
+      detail[f.spec.unit] = `${v.toFixed(1)}%(靶${TIER_TARGET_PCT[t]},偏${off >= 0 ? '+' : ''}${off.toFixed(1)})`;
+    }
+  }
+  record(11, 'S1 每族每 tier 落在目标 ±8pt(非规格容差)', bad === 0, { 越界帧数: bad, ...detail, name: 'S1' });
+}
+
 /* ---------------------------------------------------------------- 报告 */
 
 const byId = new Map();
@@ -668,7 +747,7 @@ for (const r of results) {
 
 console.log('\n── 自动断言（逐帧 1/2/4/8 + 色板级 3 + 基线 5） ──');
 const verdict = new Map();
-for (const id of [1, 2, 3, 4, 5, 8]) {
+for (const id of [1, 2, 3, 4, 5, 8, 9, 10, 11]) {
   const rs = byId.get(id) ?? [];
   const pass = rs.every((r) => r.pass);
   verdict.set(id, pass);
