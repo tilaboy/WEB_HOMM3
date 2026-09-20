@@ -729,12 +729,115 @@ function lightIcon(pb: PixBuf, on: boolean): void {
 
 /* ---------------- 打包 ---------------- */
 
+/** 一帧在图集里的落点（打包器产出的几何，不含锚点）。 */
+export interface PackItem {
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** 图集容量体检报告。给 `tools/atlasaudit.mjs`（#24）做机检断言用。 */
+export interface PackMetrics {
+  /** 图集画布尺寸。 */
+  w: number;
+  h: number;
+  /** 落点清单，按打包顺序。 */
+  items: PackItem[];
+  /** 行数（不同 y 的行数）。 */
+  rows: number;
+  /** 最宽一行的宽度（px）。 */
+  maxRowW: number;
+  /** 纵向占用：最后一帧的底边 y+h。 */
+  usedH: number;
+  /** 落点面积总和（px²，不含 2px 间隙）。 */
+  usedPx: number;
+  /** 越界帧：x+w>W 或 y+h>H。这些帧会被画布**静默裁掉**——运行时不报错，只是精灵消失。 */
+  overflow: PackItem[];
+}
+
+/** 行式打包器的游标。冒险图集（Packer）与战斗图集（Shelf）共用。 */
+export interface ShelfCursor {
+  px: number;
+  py: number;
+  rowH: number;
+}
+
+/**
+ * 换行规则（**唯一一份**）：本行放不下就换行，行高取本行最高帧，行间留 2px。
+ *
+ * 冒险图集的 `Packer` 与战斗图集的 `Shelf` 都走这里；审计脚本 `tools/atlasaudit.mjs`
+ * 复算容量时也走这里 —— 规则只有一份，审计的尺子和运行时是同一把尺子，
+ * 不会出现"审计说装得下、运行时却裁掉"的偏差。
+ */
+export function shelfAdvance(cur: ShelfCursor, w: number, itemW: number): void {
+  if (cur.px + itemW > w) {
+    cur.px = 0;
+    cur.py += cur.rowH + 2;
+    cur.rowH = 0;
+  }
+}
+
+/** 图集装不下时的运行时提示（战斗图集也用）：只 warn，不抛 —— 抛了就是开局白屏，比少几个精灵更糟。 */
+export function warnOverflow(label: string, m: PackMetrics): void {
+  const names = m.overflow.slice(0, 5).map((i) => `${i.name}@(${i.x},${i.y}) ${i.w}×${i.h}`);
+  console.warn(
+    `[图集容量] ${label} ${m.w}×${m.h} 装不下：${m.overflow.length} 帧越界` +
+      `（最低需要 y=${m.usedH}）→ ${names.join(' · ')}${m.overflow.length > 5 ? ' …' : ''}`,
+  );
+}
+
+/** 从落点清单算容量指标（纯函数，不碰 canvas）。 */
+export function packMetrics(items: readonly PackItem[], w: number, h: number): PackMetrics {
+  const rows = new Set<number>();
+  const overflow: PackItem[] = [];
+  let maxRowW = 0;
+  let usedH = 0;
+  let usedPx = 0;
+  let rowEnd = 0;
+  let prevY = -1;
+  for (const it of items) {
+    if (it.y !== prevY) {
+      if (prevY >= 0) maxRowW = Math.max(maxRowW, rowEnd);
+      rowEnd = 0;
+      prevY = it.y;
+      rows.add(it.y);
+    }
+    rowEnd = Math.max(rowEnd, it.x + it.w);
+    usedH = Math.max(usedH, it.y + it.h);
+    usedPx += it.w * it.h;
+    if (it.x + it.w > w || it.y + it.h > h) overflow.push(it);
+  }
+  maxRowW = Math.max(maxRowW, rowEnd);
+  return { w, h, items: items.slice(), rows: rows.size || 0, maxRowW, usedH, usedPx, overflow };
+}
+
+/**
+ * 纯函数版行式打包：只算落点，不画。
+ * 审计脚本拿它做**分辨力自检**（把画布缩到 256×256 复算，必须报越界）。
+ */
+export function shelfPack(
+  sizes: readonly { name: string; w: number; h: number }[],
+  w: number,
+  h: number,
+): PackMetrics {
+  const cur: ShelfCursor = { px: 0, py: 0, rowH: 0 };
+  const items: PackItem[] = [];
+  for (const s of sizes) {
+    shelfAdvance(cur, w, s.w);
+    items.push({ name: s.name, x: cur.px, y: cur.py, w: s.w, h: s.h });
+    cur.px += s.w + 2;
+    cur.rowH = Math.max(cur.rowH, s.h);
+  }
+  return packMetrics(items, w, h);
+}
+
 class Packer {
   canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private px = 0;
-  private py = 0;
-  private rowH = 0;
+  private cur: ShelfCursor = { px: 0, py: 0, rowH: 0 };
+  private items: PackItem[] = [];
 
   constructor(w: number, h: number) {
     this.canvas = document.createElement('canvas');
@@ -745,35 +848,40 @@ class Packer {
     this.ctx = ctx;
   }
 
-  place(pb: PixBuf, ax?: number, ay?: number): Frame {
+  place(name: string, pb: PixBuf, ax?: number, ay?: number): Frame {
     const c = pb.toCanvas();
-    if (this.px + c.width > this.canvas.width) {
-      this.px = 0;
-      this.py += this.rowH + 2;
-      this.rowH = 0;
-    }
-    this.ctx.drawImage(c, this.px, this.py);
+    shelfAdvance(this.cur, this.canvas.width, c.width);
+    this.ctx.drawImage(c, this.cur.px, this.cur.py);
     const f: Frame = {
-      x: this.px,
-      y: this.py,
+      x: this.cur.px,
+      y: this.cur.py,
       w: c.width,
       h: c.height,
       ax: ax ?? Math.round((TILE - c.width) / 2),
       ay: ay ?? TILE - c.height,
     };
-    this.px += c.width + 2;
-    this.rowH = Math.max(this.rowH, c.height);
+    this.items.push({ name, x: f.x, y: f.y, w: f.w, h: f.h });
+    this.cur.px += c.width + 2;
+    this.cur.rowH = Math.max(this.cur.rowH, c.height);
     return f;
+  }
+
+  metrics(): PackMetrics {
+    return packMetrics(this.items, this.canvas.width, this.canvas.height);
   }
 }
 
 export class Atlas {
   readonly canvas: HTMLCanvasElement;
+  /** 容量体检报告（#24）：给审计脚本读，运行时不消耗它。 */
+  readonly metrics: PackMetrics;
   private frames = new Map<string, Frame>();
   private urls = new Map<string, string>();
 
   private constructor(packer: Packer) {
     this.canvas = packer.canvas;
+    this.metrics = packer.metrics();
+    if (this.metrics.overflow.length) warnOverflow('冒险图集', this.metrics);
   }
 
   get(name: string): Frame | null {
@@ -815,22 +923,24 @@ export class Atlas {
       if (kind === 'water') {
         for (let v = 0; v < 2; v++) {
           for (let p = 0; p < 4; p++) {
-            frames.set(`g_water_${v}_${p}`, packer.place(terrainTile('water', v, p), 0, 0));
+            const nm = `g_water_${v}_${p}`;
+            frames.set(nm, packer.place(nm, terrainTile('water', v, p), 0, 0));
           }
         }
       } else {
         for (let v = 0; v < 3; v++) {
-          frames.set(`g_${kind}_${v}`, packer.place(terrainTile(kind, v), 0, 0));
+          const nm = `g_${kind}_${v}`;
+          frames.set(nm, packer.place(nm, terrainTile(kind, v), 0, 0));
         }
       }
     }
 
     for (const d of ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']) {
-      frames.set(`sh_${d}`, packer.place(shoreTile(d), 0, 0));
+      frames.set(`sh_${d}`, packer.place(`sh_${d}`, shoreTile(d), 0, 0));
     }
 
     const put = (name: string, pb: PixBuf, ax?: number, ay?: number): void => {
-      frames.set(name, packer.place(pb, ax, ay));
+      frames.set(name, packer.place(name, pb, ax, ay));
     };
 
     const p = (w: number, h: number): PixBuf => new PixBuf(w, h);

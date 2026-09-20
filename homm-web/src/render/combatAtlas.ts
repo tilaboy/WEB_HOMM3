@@ -9,6 +9,9 @@
  */
 import { PixBuf, hash2, shade } from './pixel.js';
 import { UNIT_FRAMES, buildB0Frame } from './unitArt.js';
+// 打包规则与冒险图集共用同一份（#24）：换行/行高/2px 间隙只有一处实现，
+// 审计脚本 `tools/atlasaudit.mjs` 复算容量时拿到的就是运行时这套规则。
+import { shelfAdvance, packMetrics, warnOverflow, type PackItem, type PackMetrics, type ShelfCursor } from './atlas.js';
 
 export interface CFrame {
   x: number;
@@ -23,9 +26,8 @@ export interface CFrame {
 class Shelf {
   readonly canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private px = 0;
-  private py = 0;
-  private rowH = 0;
+  private cur: ShelfCursor = { px: 0, py: 0, rowH: 0 };
+  private items: PackItem[] = [];
 
   constructor(readonly w: number, readonly h: number) {
     const c = document.createElement('canvas');
@@ -38,26 +40,32 @@ class Shelf {
     ctx.imageSmoothingEnabled = false;
   }
 
-  place(pb: PixBuf, ax = 0, ay = 0): CFrame {
+  place(name: string, pb: PixBuf, ax = 0, ay = 0): CFrame {
     const c = pb.toCanvas();
-    if (this.px + c.width > this.w) {
-      this.px = 0;
-      this.py += this.rowH + 2;
-      this.rowH = 0;
-    }
-    this.ctx.drawImage(c, this.px, this.py);
-    const f: CFrame = { x: this.px, y: this.py, w: c.width, h: c.height, ax, ay };
-    this.px += c.width + 2;
-    this.rowH = Math.max(this.rowH, c.height);
+    shelfAdvance(this.cur, this.w, c.width);
+    this.ctx.drawImage(c, this.cur.px, this.cur.py);
+    const f: CFrame = { x: this.cur.px, y: this.cur.py, w: c.width, h: c.height, ax, ay };
+    this.items.push({ name, x: f.x, y: f.y, w: f.w, h: f.h });
+    this.cur.px += c.width + 2;
+    this.cur.rowH = Math.max(this.cur.rowH, c.height);
     return f;
+  }
+
+  metrics(): PackMetrics {
+    return packMetrics(this.items, this.w, this.h);
   }
 }
 
 export class CombatAtlas {
   private frames = new Map<string, CFrame>();
   private urls = new Map<string, string>();
+  /** 容量体检报告（#24）：给审计脚本读。 */
+  readonly metrics: PackMetrics;
 
-  private constructor(readonly canvas: HTMLCanvasElement) {}
+  private constructor(readonly canvas: HTMLCanvasElement, metrics: PackMetrics) {
+    this.metrics = metrics;
+    if (metrics.overflow.length) warnOverflow('战斗图集', metrics);
+  }
 
   get(name: string): CFrame | null {
     return this.frames.get(name) ?? null;
@@ -93,7 +101,7 @@ export class CombatAtlas {
     const shelf = new Shelf(1024, 512);
     const frames = new Map<string, CFrame>();
     const put = (name: string, pb: PixBuf, ax = 0, ay = 0): void => {
-      frames.set(name, shelf.place(pb, ax, ay));
+      frames.set(name, shelf.place(name, pb, ax, ay));
     };
 
     for (let v = 0; v < 4; v++) put(`cf_${v}`, hexFloor(v), -20, -23);
@@ -123,7 +131,7 @@ export class CombatAtlas {
       put(spec.name, buildB0Frame(spec.name), spec.ax, spec.ay);
     }
 
-    const atlas = new CombatAtlas(shelf.canvas);
+    const atlas = new CombatAtlas(shelf.canvas, shelf.metrics());
     atlas.frames = frames;
     return atlas;
   }
