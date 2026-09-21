@@ -11,6 +11,7 @@ import {
 } from '../core/data/factions.js';
 import { TERRAIN } from '../core/data/terrains.js';
 import { LAYOUTS, LAYOUT_ORDER } from '../core/data/layouts.js';
+import { SCENARIOS, SCENARIO_BY_ID, scenarioGenOptions } from '../core/data/scenarios.js';
 import { createGame } from '../core/map/generator.js';
 import { idx } from '../core/map/grid.js';
 import { quality, clampMapSize, allowedMapSizes } from '../render/quality.js';
@@ -83,7 +84,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   /* 地图尺寸：按当前画质上限过滤（低端只到中型）——上限来自 quality.maxMapSize */
   const allowedSizes = allowedMapSizes(quality.maxMapSize);
   cfg.size = clampMapSize(cfg.size, quality.maxMapSize);
-  const sizeRow = segment<MapSize>(
+  const sizeSeg = segment<MapSize>(
     SIZE_ORDER.filter((id) => allowedSizes.includes(id)).map((id) => {
       const s = MAP_SIZES[id];
       return {
@@ -106,13 +107,14 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
       sync();
     },
   );
-  form.appendChild(field('地图尺寸', sizeRow));
+  // 先落在文档流里，稍后把「试玩场景」行插在它**之上**（§14.1：领主名字之后、尺寸之前）。
+  const sizeField = form.appendChild(field('地图尺寸', sizeSeg.el));
 
   /* 地图布局：结构靠模板，纹理靠种子——右侧预览会跟着重画 */
   const layoutHint = document.createElement('div');
   layoutHint.className = 'ss-hint';
   layoutHint.textContent = LAYOUTS[cfg.layout].desc;
-  const layoutRow = segment<MapLayout>(
+  const layoutSeg = segment<MapLayout>(
     LAYOUT_ORDER.map((id) => ({
       value: id,
       title: LAYOUTS[id].name,
@@ -126,7 +128,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
       sync();
     },
   );
-  form.appendChild(field('地图布局', layoutRow, layoutHint));
+  form.appendChild(field('地图布局', layoutSeg.el, layoutHint));
 
   /* 难度提示：本方案难度**同时影响玩家**——起始资源、野怪强度、移动力、电脑对手
    * 都会随难度变化。无对手时玩家侧杠杆（起始资源 / 野怪）依然生效，文案要切到对应表述。
@@ -142,7 +144,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   syncDiffHint();
 
   /* 电脑对手 */
-  const oppRow = segment<number>(
+  const oppSeg = segment<number>(
     [0, 1, 2, 3].map((n) => ({
       value: n,
       title: n === 0 ? '无' : `${n} 家`,
@@ -161,10 +163,10 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
       sync();
     },
   );
-  form.appendChild(field('电脑对手', oppRow));
+  form.appendChild(field('电脑对手', oppSeg.el));
 
   /* 难度 */
-  const diffRow = segment<Difficulty>(
+  const diffSeg = segment<Difficulty>(
     DIFFICULTY_ORDER.map((id) => ({
       value: id,
       title: DIFFICULTIES[id].name,
@@ -176,7 +178,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
       sync();
     },
   );
-  form.appendChild(field('难度', diffRow, diffHint));
+  form.appendChild(field('难度', diffSeg.el, diffHint));
 
   /* 种子 */
   const seedInput = document.createElement('input');
@@ -202,6 +204,120 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   seedWrap.className = 'ss-seedin';
   seedWrap.append(seedInput, reroll);
   form.appendChild(field('地图种子', seedWrap, '同一种子必然生成同一张地图，可以把种子发给朋友'));
+
+  /* ---------------- 试玩场景（§14.1）---------------- *
+   * 位置：插在「地图尺寸」**之上**（领主名字之后、尺寸之前）。
+   * 默认「自由对局」⇒ `cfg.scenario` 缺省（**不是** `'free'`）。
+   * 选场景：5 行设为该场景固定值 + **真 disabled**；切回自由对局：**恢复快照**（不是重置默认）。 */
+  const scenarioHint = document.createElement('div');
+  scenarioHint.id = SCENARIO_HINT_ID;
+  scenarioHint.className = 'ss-hint';
+  scenarioHint.textContent = FREE_HINT;
+  const scenarioSeg = segment<string | null>(
+    [
+      ...SCENARIOS.map((s): SegItem<string | null> => {
+        // 边缘情况 1：场景尺寸 > 本机画质档上限 ⇒ 该卡禁用并附理由。
+        // 因为 startNewGame 的 clampMapSize 会**静默**改小尺寸 ⇒ 场景就"不固定"了。
+        const ok = allowedMapSizes(quality.maxMapSize).includes(s.config.size);
+        return {
+          value: s.id,
+          title: s.name,
+          sub: SCENARIO_SUB[s.id] ?? s.sub,
+          hint: SCENARIO_HINT[s.id] ?? s.sub,
+          disabled: !ok,
+          disabledReason: '本机画质档不支持该尺寸',
+        };
+      }),
+      { value: null, title: '自由对局', sub: '自定义', hint: FREE_HINT },
+    ],
+    cfg.scenario ?? null,
+    (v) => applyScenario(v),
+  );
+  scenarioSeg.el.setAttribute('aria-label', '试玩场景');
+  form.insertBefore(field('试玩场景', scenarioSeg.el, scenarioHint), sizeField);
+
+  /** 进入场景前的那一份自由对局设置（只存这 5 个字段）。 */
+  let freeSnapshot: {
+    size: MapSize;
+    layout: MapLayout;
+    opponents: number;
+    difficulty: Difficulty;
+    seed: number;
+  } | null = null;
+
+  /** 锁定 / 解锁被场景接管的 5 行（G-2：种子行是 input+reroll，须**两个都**禁）。 */
+  function setRowsLocked(locked: boolean): void {
+    sizeSeg.setDisabled(locked);
+    layoutSeg.setDisabled(locked);
+    oppSeg.setDisabled(locked);
+    diffSeg.setDisabled(locked);
+    seedInput.disabled = locked;
+    reroll.disabled = locked;
+    const setDesc = (el: Element): void => {
+      if (locked) el.setAttribute('aria-describedby', SCENARIO_HINT_ID);
+      else el.removeAttribute('aria-describedby');
+    };
+    // G-4：5 行都挂 `aria-describedby` 指到 scenarioHint。**行容器 + 行内每个可点项**都挂
+    //（禁用项不可聚焦时，读屏按"组"播报容器上的描述；可聚焦时逐项也能读到）。
+    for (const row of [sizeSeg.el, layoutSeg.el, oppSeg.el, diffSeg.el]) {
+      setDesc(row);
+      for (const b of row.querySelectorAll('.ss-seg-item')) setDesc(b);
+    }
+    for (const el of [seedInput, reroll]) setDesc(el);
+  }
+
+  function applyScenario(v: string | null): void {
+    if (v === null) {
+      // 自由对局：恢复「进入场景前」那一份 cfg（**不是**重置 DEFAULT_CONFIG）——
+      // 这是 playtest-scenarios.md §4 A1 的「自由对局逐字节一致」回滚底线。
+      if (freeSnapshot) {
+        cfg.size = freeSnapshot.size;
+        cfg.layout = freeSnapshot.layout;
+        cfg.opponents = freeSnapshot.opponents;
+        cfg.difficulty = freeSnapshot.difficulty;
+        cfg.seed = freeSnapshot.seed;
+        sizeSeg.setValue(cfg.size);
+        layoutSeg.setValue(cfg.layout);
+        oppSeg.setValue(cfg.opponents);
+        diffSeg.setValue(cfg.difficulty);
+        seedInput.value = String(cfg.seed);
+        layoutHint.textContent = LAYOUTS[cfg.layout].desc;
+      }
+      delete cfg.scenario;
+      setRowsLocked(false);
+      scenarioHint.textContent = FREE_HINT;
+    } else {
+      const def = SCENARIO_BY_ID[v];
+      if (!def) return;
+      // 只在「当前是自由对局」时拍快照 ⇒ 自由→场景→场景 不会把场景值当成"自由配置"存下来。
+      if (!cfg.scenario) {
+        freeSnapshot = {
+          size: cfg.size,
+          layout: cfg.layout,
+          opponents: cfg.opponents,
+          difficulty: cfg.difficulty,
+          seed: cfg.seed,
+        };
+      }
+      const o = scenarioGenOptions(def);
+      cfg.size = o.size ?? cfg.size;
+      cfg.layout = o.layout ?? cfg.layout;
+      cfg.opponents = o.opponents ?? cfg.opponents;
+      cfg.difficulty = o.difficulty ?? cfg.difficulty;
+      cfg.seed = o.seed ?? cfg.seed;
+      cfg.scenario = def.id;
+      sizeSeg.setValue(cfg.size);
+      layoutSeg.setValue(cfg.layout);
+      oppSeg.setValue(cfg.opponents);
+      diffSeg.setValue(cfg.difficulty);
+      seedInput.value = String(cfg.seed);
+      layoutHint.textContent = LAYOUTS[cfg.layout].desc;
+      setRowsLocked(true);
+      scenarioHint.textContent = SCENARIO_HINT[def.id] ?? def.sub;
+    }
+    syncDiffHint();
+    sync();
+  }
 
   /* ---------------- 右侧：预览 ---------------- */
 
@@ -380,17 +496,54 @@ interface SegItem<T> {
   title: string;
   sub?: string;
   hint?: string;
+  /** 卡片在本机不可用（如场景尺寸超出当前画质档上限）⇒ 真 disabled。 */
+  disabled?: boolean;
+  /** 不可用时的理由（写进 `title`，读屏也能读到）。 */
+  disabledReason?: string;
 }
 
-function segment<T>(items: SegItem<T>[], current: T, onPick: (v: T) => void): HTMLElement {
+/** `segment()` 的句柄（G-1）：行本身 + 锁定 / 回填两件事，外露给场景行用。 */
+interface SegmentHandle<T> {
+  el: HTMLElement;
+  setDisabled(disabled: boolean): void;
+  setValue(value: T): void;
+}
+
+/* §14.1 表的「逐字」文案（权威 = design/ux/in-game-ia.md §14.1）。
+ * 不直接复用 `scenarios.ts` 的 `sub`：那写的是设计者的意图，这里的 `sub` 是给玩家的**一行速览**。 */
+const SCENARIO_SUB: Record<string, string> = {
+  tutorial: '无对手 · ≤10 分钟',
+  duel: '1 对手 · 20–30 分钟',
+};
+const SCENARIO_HINT: Record<string, string> = {
+  tutorial: '10 分钟，学会走路。 无对手，只有你能走的几条路。',
+  duel: '有人会来找你。 你发育的时候，他也在发育。',
+};
+const FREE_HINT = '自己定尺寸 / 布局 / 对手 / 难度 / 种子 —— 和以前一样。';
+const SCENARIO_HINT_ID = 'scenario-hint';
+
+function segment<T>(items: SegItem<T>[], current: T, onPick: (v: T) => void): SegmentHandle<T> {
   const row = document.createElement('div');
   row.className = 'ss-seg';
+  // G-4：一组单选卡 = 一个 radiogroup（role=radio + aria-checked），不是"一排按钮"。
+  row.setAttribute('role', 'radiogroup');
   const buttons: HTMLButtonElement[] = [];
+  const byValue = new Map<T, HTMLButtonElement>();
+
+  function setValue(v: T): void {
+    for (const b of buttons) {
+      const on = byValue.get(v) === b;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', String(on));
+    }
+  }
 
   for (const item of items) {
     const b = document.createElement('button');
     b.className = 'ss-seg-item';
-    b.title = item.hint ?? item.title;
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(item.value === current));
+    b.title = item.disabled ? (item.disabledReason ?? item.title) : (item.hint ?? item.title);
     const t = document.createElement('span');
     t.className = 't';
     t.textContent = item.title;
@@ -401,14 +554,27 @@ function segment<T>(items: SegItem<T>[], current: T, onPick: (v: T) => void): HT
       s.textContent = item.sub;
       b.appendChild(s);
     }
+    if (item.disabled) {
+      b.disabled = true;
+      b.classList.add('off');
+    }
     b.classList.toggle('on', item.value === current);
     b.addEventListener('click', () => {
-      for (const other of buttons) other.classList.remove('on');
-      b.classList.add('on');
+      setValue(item.value);
       onPick(item.value);
     });
     buttons.push(b);
+    byValue.set(item.value, b);
     row.appendChild(b);
   }
-  return row;
+
+  function setDisabled(disabled: boolean): void {
+    for (const b of buttons) {
+      // 真 `disabled`（G-4：不是仅视觉置灰）；`aria-disabled` 供读屏。
+      b.disabled = disabled;
+      b.setAttribute('aria-disabled', String(disabled));
+    }
+  }
+
+  return { el: row, setDisabled, setValue };
 }

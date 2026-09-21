@@ -1698,6 +1698,56 @@ body.in-battle #thumb {
   font-size: 11px;
 }
 
+/* §14.2 教学清单（#52）：与「本族被动」同族的**只读**行 —— 密排、每行 ≤24px（显示型，非可点）
+   ⇒ 不占 R4 的 ≤4 可点行额度。☐/☑ 不是唯一语义载体，旁边恒有「已学会 / 未学会」文字（a11y §4.3）。 */
+.hp-obj-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hp-obj-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.hp-obj-row.done {
+  color: var(--parchment);
+}
+
+.hp-obj-mark {
+  flex: 0 0 auto;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.hp-obj-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hp-obj-flag {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.hp-obj-row.done .hp-obj-mark,
+.hp-obj-row.done .hp-obj-flag {
+  color: #7fc25f;
+}
+
+.hp-obj-go {
+  margin-top: 6px;
+}
+
 @media (max-height: 720px) {
   .hp-tlist {
     max-height: 108px;
@@ -1880,6 +1930,22 @@ body.in-battle #thumb {
 
 .ss-seg-item.on .s {
   color: var(--gold-dim);
+}
+
+/* 被「试玩场景」接管的 5 行（§14.1）：真 disabled + 置灰，且 hover 不再高亮。 */
+.ss-seg-item:disabled,
+.ss-seg-item.off {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ss-seg-item:disabled:hover {
+  background: rgba(0, 0, 0, 0.28);
+}
+
+/* 锁定时被选中的那个值仍要可辨（它是"本场景的固定值"），只是明确"动不了"。 */
+.ss-seg-item.on:disabled {
+  opacity: 0.6;
 }
 
 /* 右侧预览 */

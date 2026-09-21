@@ -7,9 +7,18 @@ import { isRevealed } from '../core/map/fog.js';
 import { effectivePrimary, expToNext, manaMaxOf, maxMovePoints } from '../core/game/hero.js';
 import { factionStanding } from '../core/game/victory.js';
 import { dayOfWeek, weekOf } from '../core/game/turn.js';
+import { SCENARIO_BY_ID } from '../core/data/scenarios.js';
+import { ownedMines } from '../core/game/town.js';
 
 /** 面板永远是人类玩家 p1 的视角（迷雾、城池列表都按这个来）。 */
 const VIEWER: PlayerId = 'p1';
+
+/* §14.2 教学清单的两条阈值（数值权威 = `playtest-scenarios.md`，此处只引用、不复制理由）。
+ * 140 ≠ 60：`revealed` 是**定长 0/1 掩码**（长度恒 = w×h = 576），开局两视野圆并集约 82 ——
+ * 用 `.length >= 60` 会**开局即真**（假守卫）。140 ≈ 全图 24% ⇒ 前 1 分钟自然达成、但不可能开局即完成。 */
+const WALK_MIN = 140;
+/** ③ 阈值 = 2：教学场保证主城旁有木石矿（`playtest-scenarios.md §2.2 / §2.6 V3`）。 */
+const MINE_MIN = 2;
 
 export interface TownHooks {
   /** 把镜头移到该据点 */
@@ -31,12 +40,20 @@ export class HeroPanel {
   /** 记住上一次的入参，折叠宝物时才能就地重画而不惊动镜头。 */
   private lastState: GameState | null = null;
   private lastHero: string | null = null;
+  /** §14.2 教学清单锁存：一旦达成即保持（英雄阵亡后 `heroes['hero1']` 消失也不倒退）。 */
+  private objLatch: Record<string, boolean> = {};
+  /** 锁存属于哪一局（`state` 对象身份）：换局 / 载档即重播种，不把上一局进度带过来。 */
+  private objState: GameState | null = null;
+  /** 本局是否已用「现值」播种过：载入即 3/3 不算"达成转移" ⇒ 不弹 banner（§14.2 边缘情况 1）。 */
+  private objSeeded = false;
 
   constructor(
     private el: HTMLElement,
     private onSelect?: (heroId: string) => void,
     private onTown?: TownHooks,
     private onSpellBook?: (heroId: string) => void,
+    /** §14.2：3/3 时块末行「去对决场」（覆盖当前存档，调用方须先确认）。 */
+    private onGoDuel?: () => void,
   ) {
     // 调试：?devarts=1 直接展开宝物格（与 devbattle 同一套调试约定）
     this.showArtifacts = new URLSearchParams(location.search).has('devarts');
@@ -47,16 +64,28 @@ export class HeroPanel {
     this.lastHero = heroId;
     this.el.innerHTML = '';
 
+    // 教学清单锁存按"局"重置：新局 / 载档都会换 `state` 对象 ⇒ 换对象即重播种。
+    if (state !== this.objState) {
+      this.objState = state;
+      this.objLatch = {};
+      this.objSeeded = false;
+    }
+
     const hero = heroId ? state.heroes[heroId] : null;
     if (!hero) {
       this.el.appendChild(this.factionSection(state));
       this.el.appendChild(this.townSection(state, null));
+      // 英雄阵亡后清单仍在（② 靠锁存不倒退，§14.2 边缘情况 3）。
+      const teach = this.objectiveSection(state);
+      if (teach) this.el.appendChild(teach);
       const px = div('sec dim', '暂无可用英雄');
       this.el.appendChild(px);
       return;
     }
 
     this.el.appendChild(this.headSection(state, hero));
+    const teach = this.objectiveSection(state);
+    if (teach) this.el.appendChild(teach);
     if (this.showArtifacts) this.el.appendChild(this.artifactSection(hero));
     this.el.appendChild(this.barSection(hero, state));
     this.el.appendChild(this.statSection(hero));
@@ -220,6 +249,60 @@ export class HeroPanel {
     return wrap;
   }
 
+  /* ---------------- 教学清单（图一 objectives，§14.2；只读 GameState，零新系统） ---------------- */
+
+  private objectiveSection(state: GameState): HTMLElement | null {
+    // 渲染条件：只认教学场；自由对局 / 对决场不渲染（§14.2）。
+    if (state.config.scenario !== 'tutorial') return null;
+    const objs = SCENARIO_BY_ID['tutorial']?.objectives;
+    if (!objs || !objs.length) return null;
+
+    // 三条判定（§14.2 表，逐条已核源）；其中 ② 必须**锁存**（英雄阵亡后 hero1 会消失）。
+    const live: Record<string, boolean> = {
+      walk: revealedCount(state, VIEWER) >= WALK_MIN,
+      firstwin: (state.heroes['hero1']?.exp ?? 0) > 0,
+      mine: ownedMines(state, VIEWER).length >= MINE_MIN,
+    };
+    if (!this.objSeeded) {
+      // 首次用「现值」播种：载入即 3/3 不算"由假变真" ⇒ 不弹 banner（边缘情况 1）。
+      for (const o of objs) this.objLatch[o.id] = live[o.id] === true;
+      this.objSeeded = true;
+    } else {
+      for (const o of objs) if (live[o.id]) this.objLatch[o.id] = true; // 一旦达成即保持
+    }
+    const done = objs.filter((o) => this.objLatch[o.id]).length;
+
+    const wrap = div('sec hp-teach');
+    const h = document.createElement('h3');
+    h.textContent = `教学 · 学会了吗 ${done}/${objs.length}`;
+    wrap.appendChild(h);
+
+    const list = div('hp-obj-list');
+    list.setAttribute('role', 'list');
+    for (const o of objs) {
+      const got = this.objLatch[o.id] === true;
+      const row = div('hp-obj-row' + (got ? ' done' : ''));
+      row.setAttribute('role', 'listitem');
+      row.setAttribute('aria-label', `${got ? '已学会' : '未学会'}：${o.text}`);
+      const mark = span('hp-obj-mark', got ? '☑' : '☐');
+      mark.setAttribute('aria-hidden', 'true'); // ☐/☑ 不是唯一语义载体（a11y 基线 §4.3）
+      row.append(mark, span('hp-obj-text', o.text), span('hp-obj-flag', got ? '已学会' : '未学会'));
+      list.appendChild(row);
+    }
+    wrap.appendChild(list);
+
+    // 3/3 的**持久去处**：块末行「去对决场」（banner 关掉后仍可达，两个入口同一动作）。
+    if (done === objs.length && this.onGoDuel) {
+      const btn = document.createElement('button');
+      btn.className = 'btn tiny hp-obj-go';
+      btn.textContent = '去对决场';
+      btn.title = '开一局对决场（会覆盖当前存档）';
+      btn.addEventListener('click', () => this.onGoDuel?.());
+      wrap.appendChild(btn);
+    }
+    return wrap;
+  }
+
   /* ---------------- 势力（多阵营对局里最该一眼看到的东西） ---------------- */
 
   private factionSection(state: GameState): HTMLElement {
@@ -306,6 +389,11 @@ export class HeroPanel {
 }
 
 /* ---------------- 小工具 ---------------- */
+
+/** 已揭开的格数：`revealed` 是定长 0/1 掩码 ⇒ 必须数 1，**不能**取 `.length`（那恒 = 全图格数）。 */
+function revealedCount(state: GameState, player: PlayerId): number {
+  return state.players[player].revealed.reduce((n, v) => n + (v === 1 ? 1 : 0), 0);
+}
 
 function manhattan(a: GridPos, b: GridPos): number {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);

@@ -24,6 +24,7 @@ import { getSpell } from './core/data/spells.js';
 import { manaMaxOf, maxMovePoints } from './core/game/hero.js';
 import type { BattleOutcome } from './core/combat/battle.js';
 import { LAYOUTS } from './core/data/layouts.js';
+import { SCENARIO_BY_ID, scenarioGenOptions } from './core/data/scenarios.js';
 import { endDay } from './core/game/turn.js';
 import { evaluateOutcome, outcomeSummary } from './core/game/victory.js';
 import { Camera } from './render/camera.js';
@@ -542,6 +543,7 @@ const panel = new HeroPanel(
   },
   { onLocate: locateTown, onOpen: openTownById },
   (id) => openSpellBook(id),
+  () => goDuel(),
 );
 
 const hud = new HUD(topbar);
@@ -1069,6 +1071,45 @@ function startNewGame(config: GameConfig): void {
   renderLog();
   saveGame(state);
   hint(`${state.config.playerName} 的征程开始了`);
+}
+
+/**
+ * §14.2：教学 3/3 后「去对决场」= 开新局（`scenario='duel'`）。
+ * 会**覆盖当前存档** ⇒ 触发前先用既有确认弹窗确认（两个入口、同一动作）。
+ * 注：`§14.2` 原文写作 `scenario='arena'`，但代码里没有 `arena` 这个 id
+ *（`scenarios.ts` 的对决场 id = `'duel'`）—— 以数据为准取 `'duel'`。
+ */
+function goDuel(): void {
+  if (isModalOpen() || isBattleOpen()) return;
+  const def = SCENARIO_BY_ID['duel'];
+  if (!def) return;
+  showModal(stage, {
+    title: '去对决场',
+    body: ['会开一局新的对决场，当前进度（含本机存档）会被覆盖。'],
+    actions: [
+      { label: '取消', onClick: (c) => c() },
+      {
+        label: '开始',
+        primary: true,
+        onClick: (c) => {
+          c();
+          // `scenarioGenOptions` 是 `Partial<GameConfig>`（且 `DEFAULT_CONFIG` 不含 seed）
+          // ⇒ 显式取出 5 个固定值 + 断言其存在，避免 spread 把必填字段变可选。
+          const o = scenarioGenOptions(def);
+          if (o.size === undefined || o.layout === undefined || o.seed === undefined || o.opponents === undefined || o.difficulty === undefined) return;
+          startNewGame({
+            size: o.size,
+            layout: o.layout,
+            seed: o.seed,
+            opponents: o.opponents,
+            difficulty: o.difficulty,
+            playerName: state.config.playerName,
+            scenario: o.scenario,
+          });
+        },
+      },
+    ],
+  });
 }
 
 function showGameOver(): void {
