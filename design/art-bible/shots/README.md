@@ -123,3 +123,30 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 
 **边界（本次没覆盖）**：测的是**合成算子**，**不是几何 / 场景**（相机、迷雾、UI 布置、DPR 上采样）。
 那几项本来就由 `deviceshot.mjs` 在真 Chrome 里出图，**不经垫片** —— 两条通道互补，不是同一件事。
+
+---
+
+## 命名约定 + 本目录归属（2026-09-21 定，起因：三方撞车）
+
+**归属裁定（主理人 `c714805`）**：`design/art-bible/shots/` **按目录切给 `art-director` 单一写者**（不按变量分工 —— 本次撞车正是"同目录按变量分工"造成的）。`bitmap-asset-options.md` 归 `art-director-3`，不再写本目录。
+
+**命名约定（前缀 = 产出通道 / 口径，别再按"谁先跑"起名）**：
+
+| 前缀 | 通道 | 口径 / 用途 |
+|---|---|---|
+| `a_` `b_` `c_` | `artshot.mjs`（**垫片**，×2 放大） | 单变量 A/B：地貌层 / 布景层 / 夜光 |
+| `d_` | `chromeshot.mjs`（真 Chrome） | 桌面视口 1280×900，单张 |
+| `e_` | `deviceshot.mjs`（真 Chrome） | **真机视口 792×320@DPR3**，单变量 |
+| `f_` | `deviceshot.mjs` | 只差**档位**（脚本会打印 `tierMode`，以它为准） |
+| `g_` | 两者皆有 | `g_uniform_*`＝垫片**全草无物件**（§3.1.1 的口径）；`g_light_*`＝真机视口的**光照相位** |
+| `h_` … | — | 预留给下一个新口径 |
+
+**⚠️ 已废 / 不得再新增**：`e2_*`、`*_noon` 这类"补丁式后缀" —— 它们是撞车期的临时名。**同口径用同一前缀，不同口径另开字母**。
+
+## ⚠️ 目录当前状态（工作区，未提交）
+
+- **已提交、可引用**：`a_*` · `b_dress_off` · `c_*` · `d_chrome_*` · `e_*` · `f_*_noon` · `g_*` · `measurements-visible-delta.md`。
+- **工作区里改过、我未提交**：`b_dress_on.png` · `c_night_before.png` · `c_night_after.png` · `index.html` —— 它们被 `artshot.mjs` 重跑过一次，而那次重跑吃的是**尚未提交的 `setDressing.ts`**。
+  ⇒ **不要把它们当基线读**：**图里的像素目前没有对应的已提交代码**。
+  ⇒ 谁落地 `setDressing.ts`，**谁就再跑一次 `node tools/artshot.mjs` 并连同这 4 个文件一起提交**。这是本项目一贯的口径：**产物必须与已提交代码一致**。
+- **工作区里未跟踪**：`e2_shade_off/on.png`（**另一实例**按 `devzoom=0.5` 整图视角跑的，**我未复跑、未验口径**）· `d_live_chrome.png`（**我自己的**早期单张验证图：为确认 `chromeshot.mjs` 通道可用而抓，后被 `e_*` / `f_*` 成对证据取代）。**两者都不认领、不引用**；要留，就由产出者补上 `deviceshot.mjs` / `chromeshot.mjs` 的复跑命令、按上表改名后再入表。
