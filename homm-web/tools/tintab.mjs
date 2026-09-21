@@ -206,7 +206,18 @@ const MIN_N = 200; // 样本不足门槛（与 reachmeas 一致）—— 防"桶
 
 /* ------------------------------------------------------------------ 抓图 */
 
+// ★ 冻结"构建后动画"：`MapRenderer.draw()` 用 `performance.now()` 驱动
+//    水波（`Math.sin((wx+wy*0.6)/13 - now/430)`，行 ~413）与选中脉冲（`Math.sin(now/pulseDiv)`，行 ~614）。
+//    ⇒ 每次截图 `now` 不同 ⇒ "变化像素"里混入 ~50k 动画像素 —— 对**弱带 population**（water/dark）
+//    会淹没中位 = **污染**（实测：`edge` 模式 51125 个变化像素里只有 2 个是红）。
+//    ⇒ 注入时把 `performance.now` 钉成常量，使动画相位确定。`NO_FREEZE=1` 可关（诊断动画本身用）。
+const FREEZE_ANIM = process.env.NO_FREEZE !== '1';
+const NOW_STUB = FREEZE_ANIM
+  ? `try{const F=function(){return 123456.789;};try{Object.defineProperty(Performance.prototype,'now',{value:F,configurable:true,writable:true});}catch(e){}try{performance.now=F;}catch(e){}}catch(e){}`
+  : '';
+
 const HOOK = `(() => {
+  ${NOW_STUB}
   const FAMILIES = ${JSON.stringify(FAMILIES)};
   const COLORS = ${JSON.stringify(Object.fromEntries(FAMILIES.map((f) => [f, BY_FAMILY[f].map((t) => t.canon)])))};
   const norm = (s) => {
@@ -359,6 +370,7 @@ async function analyze(ph, shot, identityBuf) {
   console.log(`分类帧 : **身份帧 = 正午(0.22) none 底图**（不随相位变）—— 防"相位越暗、桶越塌 ⇒ 凭空通过"；与 reachmeas 第4参同帧`);
   console.log(`样本守卫: n < ${MIN_N} 标「样本不足」—— 该格不得据此判过（防"桶塌成空"真空通过）`);
   console.log(`草分层 : grass-bright L*>=${GRASS_L_BRIGHT} ｜ grass-mid ${GRASS_L_MID}<=L*<${GRASS_L_BRIGHT} ｜ grass-dark 22<=L*<${GRASS_L_MID}（tintab 内单一权威定义，与 §15.4 (α) 基线表同切法）`);
+  console.log(`动画   : ${FREEZE_ANIM ? '已冻结 performance.now（水波/脉冲相位确定 —— 防动画像素污染"变化集"）' : '⚠️ 未冻结（NO_FREEZE=1）—— water/dark 等弱带 population 会被动画污染，勿引'}`);
   console.log("分桶定义: classify() = { L*<22→dark ; b=max且b>r+12→water ; r=max且g≥b且r>120→sand ; g≥r且g>b→grass ; 其余→rock }（与 reachmeas.band() 逐字同条件）");
   console.log(`          草三分 L*≥${GRASS_L_BRIGHT}/${GRASS_L_MID}–${GRASS_L_BRIGHT}/22–${GRASS_L_MID}；uniform-grass = 5×5 邻域 terrain 码一致；暗缝 = 「dark」桶（含物件/接缝，未再细分）`);
   console.log('口径   : 净贡献=同像素画/不画之差；覆盖判据=通道差；ΔE=CIE76；色盲=Machado deuteranopia(1.0)');
