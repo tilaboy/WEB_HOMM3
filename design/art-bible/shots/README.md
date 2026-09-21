@@ -179,6 +179,8 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 
 **归属裁定（主理人 `c714805`）**：`design/art-bible/shots/` **按目录切给 `art-director` 单一写者**（不按变量分工 —— 本次撞车正是"同目录按变量分工"造成的）。`bitmap-asset-options.md` 归 `art-director-3`，不再写本目录。
 
+> **#95 复核（2026-09-21 · 主理人）**：本目录范围写死 = **`README.md` + `index.html` + 全部 PNG（含 `e_*` 基线）** ⇒ `art-director` 单一写者；`bitmap-asset-options.md` ⇒ `art-director-3`；另 `homm-web/src/render/quality.ts` 亦归 `art-director`（政策内容属美术域）。根因确认为**同目录按变量分工**（目录级 `git status` 检不出变量级冲突）⇒ 一律按目录切。
+
 **命名约定（前缀 = 产出通道 / 口径，别再按"谁先跑"起名）**：
 
 | 前缀 | 通道 | 口径 / 用途 |
@@ -192,10 +194,10 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 
 **⚠️ 已废 / 不得再新增**：`e2_*`、`*_noon` 这类"补丁式后缀" —— 它们是撞车期的临时名。**同口径用同一前缀，不同口径另开字母**。
 
-## ⚠️ 目录当前状态（工作区，未提交）
+## 目录当前状态（2026-09-21 已全部入库）
 
 - **已提交、可引用**：`a_*` · `b_dress_off` · `c_*` · `d_chrome_*` · `e_*` · `f_*_noon` · `g_*` · `h_real_*` · `measurements-visible-delta.md` · `measurements-setdressing-density.md`。
 - **`setDressing.ts` 已落地 ⇒ 本节原先那条「谁落地谁重跑」已履约**：`node tools/artshot.mjs` 已重跑，`b_dress_on.png` / `c_night_*.png` / `index.html`（以及被同一命令顺带重写的 `a_shade_off.png`）**已随后续提交入库，与已提交代码一致**。
   ⇒ `b_dress_off`（off）/ `b_dress_on`（on）现在可当作**布景层 A 组的基线对**读（`b_before` = `b_dress_off.png`）。
 - **已按命名约定移除**：`e2_shade_off/on.png`（撞车期的临时名，口径＝`devzoom=0.5` **整图视角**）。其数已并入 `measurements-visible-delta.md` §5 的「视角前提」一行（**不单独留文件**）。
-- **工作区里未跟踪**：`d_live_chrome.png`（早期单张验证图：为确认 `chromeshot.mjs` 通道可用而抓，后被 `e_*` / `f_*` 成对证据取代）。**不认领、不引用**；要留，就由产出者补上 `chromeshot.mjs` 的复跑命令后再入表。
+- **`d_live_chrome.png`**：早期单张验证图（为确认 `chromeshot.mjs` 通道可用而抓，后被 `e_*` / `f_*` 成对证据取代）。**已由主理人代提交入库（`e6088b4`）**；仍 **不认领、不引用** —— 要入表，先补 `chromeshot.mjs` 的复跑命令。
