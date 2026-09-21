@@ -91,5 +91,8 @@
   - `:966` `[...verdict.values()].every(Boolean)` ⇒ 若 `verdict` 为空（上游全部被跳过）⇒ `allPass = true` ⇒ **整门 `exit 0`**。
   - 判据形（建议）：`rs.length > 0 && rs.every(r => r.pass)`；并在 `:966` 前加 `verdict.size > 0`（或断言 `verdict.size === 11`，把"该出的断言数"也钉住）。
   - **为何列而不改**：文件归属 `eng-sprites`（"只报不改"）；本行只补"清单的完整性"，不改语义。
-- ★ **本次独立复核的两条实测**（`engineering-lead`，不依赖他人转述）：① `tools/*.mjs` 里**无任何 `grep` 外调**（`execSync` 只两处：`contactaudit` 的 `git status`、`tintab` 的 `git rev-parse`；`spawnSync` 一处：`scenarioaudit` 自跑）；② `grep -rnF '\|' tools/` 的命中**全是 PNG 二进制误报**（`tools/probes/*.png`），**文本 0 命中** ⇒ 与 `art-director` 的全仓扫同判。
+- ★ **本次独立复核的三条实测**（`engineering-lead`，不依赖他人转述）：① `tools/*.mjs` 里**无任何 `grep` 外调**（`execSync` 只两处：`contactaudit` 的 `git status`、`tintab` 的 `git rev-parse`；`spawnSync` 一处：`scenarioaudit` 自跑）；② `grep -rnF '\|' tools/` 的命中**全是 PNG 二进制误报**（`tools/probes/*.png`，**仅在不加 `-I` 时出现**）；③ ★ **加 `-I`（忽略二进制）后文本命中 = 1，而那 1 处就是本文件**（第 63–65 行在**讲述这个陷阱**）——
+  ⇒ **扫这条时请自带这个已知项**：**"唯一的文本命中是这份警告本身"**（自指）。**别把它读成"仓里真有一处 `\|`"。**
+  ⇒ 附带教训（同族）：**`grep -rl` 不忽略二进制时，PNG 的随机字节会造出"命中"** —— 我第一次扫就得到 **68 个文件"命中"**，全在 `tools/probes/*.png`。**"扫到东西"和"扫到对象"是两件事**（同「量错对象」）。
+- **`androidsync.mjs` 阳性对照的单元级两向**（`#180`，三步不分家的证据）：拿三个受控输入喂**逐字搬来的**标记判据 ⇒ `3/3` → **✓**；`0/0`（token 改名/功能掉了）→ **✗ 且报"★阳性对照失败"**（**旧式 `d === s` 在这一格是 ✓ = 假绿**）；`1/3` → **✗ 且报"两侧不等"** ⇒ `markBad=2`、`rc=1`。**三种成因分开报**、且**红色不误伤正常格**。
 
