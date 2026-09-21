@@ -250,7 +250,10 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 | **A. G1 地貌区层** `j_g1_off` → `j_g1_on` | `?devregion=0` | 3.72 | **27.6%** | **1.70** | **2.57** |
 | B. 零假设 `j_g1_on` → `j_g1_null` | 无 | 0.00 | 0.0% | 0.00 | 0.00 |
 | C. 地貌层（已上线 · 旁证）`?devshade=0` off→on | 地貌层 | 3.97 | 31.7% | 1.38 | **2.99** |
-| **D. ★参照杠：档位 low → high** | 档位 | 5.01 | **25.4%** | **2.24** | **2.84** |
+| **D. ★参照杠：档位 low → high**（`f_tier_low_noon.png` → `f_tier_high_noon.png`） | 档位 | 5.00 | **25.4%** | **2.24** | **2.84** |
+
+> D 腿**用本目录既有证据图**（不必另存）：本轮同构建实抓一对得 `5.01 / 25.4% / 2.24 / ΔE*ab 2.84` —— 与既有 `f_tier_*` 复算值**逐位一致** ⇒ 既有图**就是同构建的参照杠**。
+> 复算（ΔE\*ab 列同）：`CMP_CROP=84,804 node tools/imagecmp.mjs ../design/art-bible/shots/f_tier_low_noon.png ../design/art-bible/shots/f_tier_high_noon.png`
 
 **两条自校验**：① G1 这组数与上面「同构建重测」节**逐位相同**（3.72 / 27.6% / 1.70），且 `dist/main.js` md5 亦同 ⇒ **本构建 == G1 证据构建**（A 腿是本目录 `j_g1_*` 的复算）。② 不开 `SHOT_FREEZE` 同数 ⇒ 场景是静的。
 
