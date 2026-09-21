@@ -118,6 +118,25 @@ const NOGO_EDGE_INK = '#2a1a12';
 /** 格缘单边厚度（px）；**红 + 亮芯 + 暗墨三条** ⇒ 边界总宽 `3 * EDGE_W`（= 6px ≤ 6px 上限）。 */
 const EDGE_W = 2;
 
+/**
+ * 调试旗标：`?devtint=0` ⇒ **不画** ④ 可达染色层（蓝填充 + 不可走边界三带）。
+ *
+ * 用途 = **单变量**因果 A/B：「染色开 vs 关」在同一构建 / 同一次会话 / 同一帧下取对照
+ * （`tools/deviceshot.mjs` 之类真 Chrome，或 `tools/artshot.mjs` 垫片）。此前那对
+ * `i_reach_*.png` 绑的是**旧构建**、又是两个不同来源 ⇒ 数量不成立。
+ *
+ * 与 `render/quality.ts` 的 `?devdpr` 同一套做法：**查询参数在渲染模块内读**，
+ * 不惊动 `main.ts`。**不传旗标 ⇒ `true`** ⇒ 生产路径逐字节不变（默认空操作）。
+ * 非浏览器环境（node 垫片 / 单测）拿不到 `location` ⇒ 走 catch ⇒ 同样恒开。
+ */
+const DEV_TINT = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devtint') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
 export class MapRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
@@ -147,6 +166,19 @@ export class MapRenderer {
    * `?devbadge` 置 `true` —— 保留因果 A/B 能力（同一次会话、同一帧，开/关只差徽标）。
    */
   badgesVisible = false;
+
+  /**
+   * ④ 可达染色层总开关（蓝填充 `REACH_TINT` + 不可走边界三带）。
+   *
+   * **默认 `true`** —— 不传旗标时这一层照常画，行为与引入本开关之前**逐字节一致**
+   * （门是 `if (cost && this.tintEnabled)`，`true` 时等价于原来的 `if (cost)`）。
+   * `?devtint=0` 置 `false` —— 供**同构建 / 同会话 / 同帧**的因果 A/B（染色开 vs 关），
+   * 这是 `i_reach_*` 那对非单变量证据图的替代品（与 `?devbadge` / `?devshade` 同一套惯例）。
+   *
+   * 旗标**在本模块内读**（`DEV_TINT`，做法同 `render/quality.ts` 的 `?devdpr`）⇒ 不惊动
+   * `main.ts`，本开关是单文件改动。
+   */
+  tintEnabled = DEV_TINT;
 
   /**
    * 调试：开关地形「地貌层」（`terrainShade.ts` 的地图尺度明暗），并立即重烘。
@@ -467,7 +499,9 @@ export class MapRenderer {
        不可走**只描格缘、不填色**（填色实测不可辨且面积巨大，见常量处注释）；
        格缘(红+墨)只画在**已揭开**、且外邻落在**可达区**（含英雄自身格）的那一侧。 --- */
     const cost = vm.reachable;
-    if (cost) {
+    // `?devtint=0` ⇒ `tintEnabled === false` ⇒ 整块跳过（染色层空操作）；
+    // 不传旗标时 `tintEnabled === true` ⇒ `cost && true` ≡ `cost` ⇒ 与今天逐字节一致。
+    if (cost && this.tintEnabled) {
       // 前沿判定：**含英雄自身格**（Dijkstra 起点 cost===0 也属于可达区），
       // 并要求相邻格**已揭开**（未探索处不出红线，否则红线会顺迷雾边界乱爬）。
       const inRegion = (x: number, y: number): boolean => {
