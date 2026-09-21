@@ -48,12 +48,16 @@
  *      ⇒ 该"类"夜里不存在 ⇒ **判据被"该类为空"真空通过**、失败被藏（art-director 实测：相位帧 n=5⇒5.43"过" vs 身份帧 n=727⇒2.92 ❌）。
  *   ⚠️ 旧表机制（`art-director` 实测）：**「正午」列 6 类逐格可复现**；**「夜」列错格**（其夜草三行整体错开一格）
  *      ⇒ 旧夜行疑出自**相位帧**版本 ⇒ 引旧表夜行会与身份帧读数不同，**别当同一数**。
- *   ⚠️ 引用纪律：本文件 WCAG 列 = **均值**、`reachmeas` = **中位** ⇒ 同格两数不同 ≠ 矛盾，是口径 + 统计量都不同。
+ *   ⚠️ 引用纪律：本文件 WCAG **均值列**（`WCAG均值(参考)`）与 **中位列**（`WCAG中位`，`#138` 加）**同格两数并存**、
+ *     `reachmeas` = **中位** ⇒ 同格多数不同 ≠ 矛盾，是口径 + 统计量都不同；引用须连统计量一起报。
+ *   ★ `#138`（2026-09-21）加：**WCAG 中位列**（四统计量统一取中位以便 A/B 减差）+ 自证三件套升级
+ *     （并记 `dist/main.js` 指纹 + 测量时 HEAD）—— 供「动画冻结 A/B 证明」用。
  *   ⚠️ 样本守卫：`n < 200` 打「样本不足」—— 桶塌成空时该格**不得据此判过**（与 `reachmeas` 的 `MIN_N` 同族）。
  */
 
 import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
@@ -62,6 +66,7 @@ import { withHeadlessChrome, checkDevServer } from './_chrome.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC_REL = 'src/render/MapRenderer.ts';
 const DIST_REL = 'dist/render/MapRenderer.js';
+const MAIN_REL = 'dist/main.js'; // 自证三件套③：并记入口 bundle 指纹（防"量了 dist 但入口是旧档"）
 
 /* ------------------------------------------------------------------ 参数 */
 
@@ -92,6 +97,9 @@ const VH = Number(arg('vh', '757')); // Emulation 高；757 ⇒ 画布 1280x677
 const sha1 = (p) => { try { return createHash('sha1').update(readFileSync(path.join(ROOT, p))).digest('hex').slice(0, 12); } catch { return '(缺)'; } };
 const mtime = (p) => { try { return statSync(path.join(ROOT, p)).mtime.toISOString(); } catch { return '(缺)'; } };
 const readSrc = (p) => { try { return readFileSync(path.join(ROOT, p), 'utf8'); } catch { return null; } };
+/* 自证三件套③：测量时 HEAD 是否为当前 HEAD（防"历史读数"—— eng-sprites 升级项）。 */
+const headSha = () => { try { return execSync('git rev-parse HEAD', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim().slice(0, 12); } catch { return '(未知)'; } };
+const fp = (p) => ({ sha1: sha1(p), m: mtime(p) });
 
 /** 浏览器 fillStyle getter 的规范形（去空格）：#2a1a12 ⇒ rgb(42,26,18)。 */
 function canonical(color) {
@@ -330,7 +338,7 @@ async function analyze(ph, shot, identityBuf) {
     const withImg = await raw(modes[fam]);
     for (const pop of requestedPops) {
       const mask = popMask(pop);
-      const Ls = [], Es = [], Cs = [];
+      const Ls = [], Es = [], Cs = [], Ws = [];
       let n = 0, sw = 0;
       for (let y = gy0; y < gy1; y++) for (let x = 0; x < W; x++) {
         const i = y * W + x, o = i * C4;
@@ -342,11 +350,14 @@ async function analyze(ph, shot, identityBuf) {
         Es.push(dE(lab(r1, g1, b1), lab(r0, g0, b0)));
         const [cr1, cg1, cb1] = deut(r1, g1, b1), [cr0, cg0, cb0] = deut(r0, g0, b0);
         Cs.push(Math.abs(Lp(cr1, cg1, cb1) - Lp(cr0, cg0, cb0)));
-        sw += wcag(Yof(r1, g1, b1), Yof(r0, g0, b0)); n++;
+        const w = wcag(Yof(r1, g1, b1), Yof(r0, g0, b0));
+        Ws.push(w); sw += w; n++;
       }
       const med = (a) => (a.length ? a.slice().sort((x, y) => x - y)[(a.length - 1) >> 1] : NaN);
       const pct = (a, t) => (a.length ? (100 * a.filter((v) => v < t).length) / a.length : NaN);
-      rowsOut.push({ fam, pop, n, L: med(Ls), E: med(Es), C: med(Cs), cvdBelow: pct(Cs, 2.22), wcag: n ? sw / n : NaN });
+      /* ★ 加 WCAG 中位（Wc）：team-lead #138 要求四统计量**统一取中位**以做 A/B 减差；
+       *   原 WCAG 列是**均值**（`wcag`），保留不动（统计量纪律：同格两数须连统计量一起报）。 */
+      rowsOut.push({ fam, pop, n, L: med(Ls), E: med(Es), C: med(Cs), cvdBelow: pct(Cs, 2.22), wcag: n ? sw / n : NaN, Wc: med(Ws) });
     }
   }
   return { meta, rowsOut };
@@ -358,10 +369,12 @@ async function analyze(ph, shot, identityBuf) {
   const probe = await checkDevServer(PORT);
   if (!probe.ok) { console.error(probe.reason); process.exit(2); }
 
-  const fpBefore = { src: sha1(SRC_REL), srcM: mtime(SRC_REL), dist: sha1(DIST_REL), distM: mtime(DIST_REL) };
+  const fpBefore = { src: fp(SRC_REL), dist: fp(DIST_REL), main: fp(MAIN_REL) };
+  const headBefore = headSha();
 
   console.log('=== ④ 可达染色净贡献对照（tintab.mjs，差分口径） ===');
-  console.log(`指纹前 : src ${fpBefore.src} @ ${fpBefore.srcM}  |  dist ${fpBefore.dist} @ ${fpBefore.distM}`);
+  console.log(`指纹前 : src ${fpBefore.src.sha1} @ ${fpBefore.src.m} | dist ${fpBefore.dist.sha1} @ ${fpBefore.dist.m} | main ${fpBefore.main.sha1} @ ${fpBefore.main.m}`);
+  console.log(`HEAD   : ${headBefore}（测量前；跑完再核是否仍是当前 HEAD —— 防"历史读数"）`);
   console.log('src!=dist: 已核一致（不一致会 exit 2）');
   for (const f of FAMILIES) console.log(`族 ${LABEL[f]}: ${BY_FAMILY[f].map((t) => `${t.name}=${t.raw} => ${t.canon}`).join('  ')}`);
   console.log(`场景   : seed=${SEED} size=${SIZE} devreveal=1 视口 1280x${VH}(emulation,dpr1) => 画布 1280x${VH - 80}`);
@@ -379,8 +392,10 @@ console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**�
 
   mkdirSync(OUT, { recursive: true });
   const shots = await captureAll();
-  const fpAfter = { src: sha1(SRC_REL), dist: sha1(DIST_REL), distM: mtime(DIST_REL) };
-  const stable = fpBefore.src === fpAfter.src && fpBefore.dist === fpAfter.dist;
+  const fpAfter = { src: fp(SRC_REL), dist: fp(DIST_REL), main: fp(MAIN_REL) };
+  const headAfter = headSha();
+  const stable = fpBefore.src.sha1 === fpAfter.src.sha1 && fpBefore.dist.sha1 === fpAfter.dist.sha1 && fpBefore.main.sha1 === fpAfter.main.sha1;
+  const headSame = headBefore === headAfter && headBefore !== '(未知)';
 
   let missing = false;
   for (const ph of PHASES) {
@@ -390,14 +405,17 @@ console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**�
     console.log(`########## devlight=${ph}  canvas ${meta.canvas.w}x${meta.canvas.h} dpr ${meta.dpr} hero(${meta.hero.x},${meta.hero.y})`);
     console.log(`  fillRect 命中：${FAMILIES.map((f) => `${f}x${shot.hits[f]}`).join('  ')}`);
     for (const f of FAMILIES) if (!shot.hits[f]) { missing = true; console.log(`  [!] 族「${LABEL[f]}」命中 0 —— 颜色/名字可能已改，该族无效，勿引用！`); }
-    console.log('  族        | population      | 像素数 | ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG均值(参考)');
+    console.log('  族        | population      | 像素数 | ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG中位 | WCAG均值(参考)');
     for (const r of rowsOut) {
-      console.log(`  ${LABEL[r.fam]} | ${r.pop.padEnd(15)} | ${String(r.n).padStart(6)} | ${f2(r.L).padStart(7)} | ${f2(r.E).padStart(9)} | ${f2(r.C).padStart(10)} | ${(Number.isFinite(r.cvdBelow) ? r.cvdBelow.toFixed(0) + '%' : '-').padStart(8)} | ${f2(r.wcag)}${r.n < MIN_N ? '  ⚠样本不足' : ''}`);
+      console.log(`  ${LABEL[r.fam]} | ${r.pop.padEnd(15)} | ${String(r.n).padStart(6)} | ${f2(r.L).padStart(7)} | ${f2(r.E).padStart(9)} | ${f2(r.C).padStart(10)} | ${(Number.isFinite(r.cvdBelow) ? r.cvdBelow.toFixed(0) + '%' : '-').padStart(8)} | ${f2(r.Wc).padStart(7)} | ${f2(r.wcag)}${r.n < MIN_N ? '  ⚠样本不足' : ''}`);
+      console.log(`##ROW\t${ph}\t${r.fam}\t${r.pop}\t${r.n}\t${f2(r.L)}\t${f2(r.E)}\t${f2(r.C)}\t${f2(r.Wc)}\t${f2(r.wcag)}`);
     }
     console.log('');
   }
-  console.log(`指纹后 : src ${fpAfter.src}  |  dist ${fpAfter.dist} @ ${fpAfter.distM}`);
-  console.log(`自证   : ${stable ? 'OK 量测期间 src 与 dist 均未变（本组可信）' : 'FAIL 量测期间 src/dist 变了 —— 本组作废，请重跑'}`);
+  console.log(`指纹后 : src ${fpAfter.src.sha1} | dist ${fpAfter.dist.sha1} @ ${fpAfter.dist.m} | main ${fpAfter.main.sha1} @ ${fpAfter.main.m}`);
+  console.log(`自证①  : src≠dist 已核一致（启动时；不一致 exit 2）—— 量的是"运行的 dist"`);
+  console.log(`自证②  : ${stable ? 'OK 量测期间 src/dist/main 指纹均未变（本组可信）' : 'FAIL 量测期间 src/dist/main 变了 —— 本组作废，请重跑'}`);
+  console.log(`自证③  : HEAD 测前 ${headBefore} / 测后 ${headAfter} ⇒ ${headSame ? 'OK = 当前 HEAD（非历史读数）' : '⚠️ 测量期间 HEAD 变了 —— 须核对读数归属'}`);
   console.log(`PNG 输出：${OUT}/tint_<phase>_<${Object.keys(MODES).join('|')}>.png`);
   if (!stable) process.exit(3);
   if (missing) { console.error('存在 0 命中的族 => 结果不完整，非零退出。'); process.exit(1); }
