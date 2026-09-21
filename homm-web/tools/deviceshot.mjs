@@ -43,12 +43,15 @@
  *      本工具原等 `frames(45)` ≈ 0.75s ⇒ **单张大概率躲过，但这是"赛跑"、不是保证**：
  *      页面就绪慢一点就撞上，而 **A/B 两张是两次调用、耗时不同** ⇒ 会**凭空差出 137×31 一块**。
  *      （`-2` 侧它曾把 792 `dark` 的 `(a)并集` 抬高 `31059`。）
- *      **修法**：新文档注入 `#hint{display:none !important}`（`#hint` 是 `position:absolute` +
- *      `pointer-events:none` ⇒ **隐藏不改布局、不动 canvas**，只让那层 toast 不出现）。
- *      `SHOT_KEEPHINT=1` 关掉（只有为了复现历史图才用）。
+ *      **修法**：新文档注入 `#hint{display:none !important}` —— ⚠️ **但实测它"不是局部改动"**：
+ *      本通道「隐 vs 不隐」= **362 308 px 全帧差**（差异 bbox 覆盖整帧；安慰剂注入 = **0 px** ⇒ 不是"注入"造成）
+ *      ⇒ **本守卫默认关**（要隐藏请显式 `SHOT_HIDEHINT=1`，且 **A/B 两侧对称隐藏**）。详见下方 ⚠️ 与
+ *      `accessibility-requirements.md` / `shots/README.md` 的对应记录。
  *
  *   ⚠️ 两条都**只治"输入"**：`deviceshot` 仍**不冻帧**（要冻帧请给 `SHOT_FREEZE=1`），
  *      本工具**不对"是否冻帧"作断言** —— 水波/选中脉冲仍会进差分。
+ *   ⚠️ **任何"注入型"改动都要配安慰剂对照**（`SHOT_CSS=<inert 规则>`）：若 inert 规则也改变画面，
+ *      差异来自注入/时序，不是被测的那条规则。
  */
 
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -207,8 +210,16 @@ try {
   // ④ 抓帧免疫①：把 `#hint` 启动 toast 从**渲染结果**里摘掉（DOM 覆盖层，默认开；`SHOT_KEEPHINT=1` 关）。
   //    注入时机 = 新文档、`document` 一有根节点就插 `<style>` ⇒ 早于 `main.js` 跑，
   //    因此 toast 元素**即使后来才被创建**也天然不带显示。**只影响那一层，不改布局**。
-  const keepHint = !!process.env.SHOT_KEEPHINT;
-  if (!keepHint) {
+  //  ⚠️⚠️ 2026-09-21 **实测更正：隐藏 `#hint` 不是"逐像素局部"改动 ⇒ 本守卫改为「默认关」**。
+  //     本通道实测（独立进程 · `SHOT_FREEZE=1` · 同 URL · 同构建）：「隐」vs「不隐」= **362 308 px 全帧差**
+  //     （差异 bbox **覆盖整帧** 2376×960、`max|Δ|=182`；其中仅 **38 251 px** 落在那块 toast 内）
+  //     ⇒ 形态与「**整幅地图位移约 1 px**」一致（画布几何完全相同：两跑都打印 `canvas 2376x720 @css 792x240 dpr 3`）。
+  //     **安慰剂对照**（关键）：只注入一条 inert 规则 `#__nope_never_exists{display:none}` ⇒ 与"无注入"**0 px 差**
+  //     ⇒ 差异**不是**"多了一次注入 / 时序变了"造成，而是**隐藏 toast 本身**引起（原注写的"不改布局"**不成立**）。
+  //     ⇒ 故：`SHOT_HIDEHINT=1` 才隐藏；**默认保留**（一个会让整帧变的改动不能当静默默认值 ——
+  //        否则凡与历史读数比较，都是在比"两个不同场景"）。要隐藏时，**A/B 两侧必须同样隐藏**（对称）。
+  const hideHint = !!process.env.SHOT_HIDEHINT;
+  if (hideHint) {
     await send('Page.addScriptToEvaluateOnNewDocument', {
       source: `(() => {
         const put = () => {
@@ -292,7 +303,7 @@ try {
     `OK  ${outFile}  (canvas ${waited.w}x${waited.h} @css ${waited.cssW}x${waited.cssH} dpr ${canvasDpr}` +
       ` · viewport ${VW}x${VH}@${VDPR}` +
       ` · tierMode=${waited.mode ?? '(未注入)'}` +
-      ` · hint=${keepHint ? '保留⚠' : '隐藏'} · warmup=${warm ? '丢 1 帧' : '关⚠'})`,
+      ` · hint=${hideHint ? '隐藏(⚠全帧会变)' : '保留(默认)'} · warmup=${warm ? '丢 1 帧' : '关⚠'})`,
   );
 } catch (e) {
   console.error(`失败：${e.message}`);
