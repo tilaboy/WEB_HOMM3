@@ -55,15 +55,24 @@
  *   `?devdpr`，只改 dprCap）。头部 `画布dpr` 行 + 每相位 `canvas ... dpr N` 会写明实际值。
  * ⚠️ 换视口 = **换 population**（像素集合不同）⇒ 与桌面跑的**逐格数不可直接比**，只比**方向/判定**；
  *   报告须写明视口 + dpr（与「指纹要写文件+算法+值」「population 必须写」同族）。
- * ⚠️ **非桌面视口（792×320@3）已解（2026-09-21，owner）**：曾见 `dark`(暗缝) 类的 `(a)并集/(b)全族`
- *   随帧序在 **1548 ↔ 32607** 互换。**根因 = 两个独立瞬态，都要治**：
- *     ① **首张 `captureScreenshot` 未 settle**（**非**曾疑的 `?devreveal` 雾未 settle —— 实测雾色 `#0b0d10`
- *        在 none/full/edge/ink **恒 = 90390 px**，雾是 settle 的）：同 mode 连抓三张 **#1≠#2/#3**、
- *        **#2==#3 逐位相同**，且与 mode 无关（谁先抓谁出格）⇒ **修法 = 录制前丢弃首帧**（G-15 同族）。
+ * ⚠️ **非桌面视口（792×320@3）守恒右端异常 —— 已定位并修（2026-09-21，owner）**：曾见 `dark`(暗缝) 类的
+ *   `(a)并集/(b)全族` 随帧序在 **1548 ↔ 32607** 互换。**根因 = 两个独立瞬态，都要治**：
+ *     ① **首个导航的画布 dpr 晚 settle**（**非**曾疑的 `?devreveal` 雾未 settle，**也非**"截图编码未就绪"）。
+ *        **实测（冻结动画 + 逐帧记 canvas 尺寸）**：**首个导航** ready 时 canvas = `1584×480/dpr2`，
+ *        约 **600ms** 后才 settle 成 `2376×720/dpr3`；**第 2 次导航起 ready 即 dpr3**
+ *        （`initQuality` 档位微基准先在默认 mid 定尺寸、探完才切高 ⇒ 只有冷启动首帧受影响）。
+ *        抓帧若落在该窗 ⇒ 同一张截图里画布是"被上采样的 dpr2 内容" ⇒ 与后续帧 **像素集不同**
+ *        ⇒ 该相位所有"对 none 的差分"被污染（`full` 恰最先抓 ⇒ `(b)全族` 被抬高）⇒ 守恒右端互换。
+ *        这解释了"同 mode 连抓 **#1≠#2/#3、#2==#3**、与 mode 无关（谁先抓谁落窗）"——
+ *        根因是**画布尺寸**，不是截图本身。⇒ **修法 = 轮询 canvas 尺寸、稳定后方开录**（`waitCanvasSettled()`，
+ *        与 `quality.ts` G-15「预热帧丢弃 + 缓存版本门」同族）；既有"丢弃一张"保留作保险。`NO_SETTLE=1` 关。
  *     ② **`#hint` 启动 toast**（DOM 覆盖层，约载入后 1.5s 出现在地图区下缘；见下「DOM 覆盖层门」）——
  *        **删首帧治不了它**（它比首帧晚，实测第 5 个捕获才出现）⇒ **修法 = 注入 `display:none` 隐藏**。
- *   ⇒ 两处落地后实测（792@3 · 0.22）：`dark` Σ=(a)=(b)=**1548**、缺口 0、缺源 0；`sand`/`water` 缺口恰 == 多源。
- *   ⇒ 该视口**可放行 `dark`**。判「雾是否 settle」请数**地图区内** `#0b0d10` 变没变（勿只靠推理）。
+ *   ⇒ 两处落地后实测（792@3）：`dark` **Σ=(a)=(b)=1548、缺口 0、缺源 0**（0.22 与 0.68 一致、逐相位恒定）；
+ *      `sand`/`water` 缺口恰 == 多源。
+ *   ⇒ 该视口**可放行 `dark`**。判「雾是否 settle」请数**地图区内** `#0b0d10` 变没变（勿只靠推理）——
+ *      owner 复测（冻结 · settle 后）：地图区内 `#0b0d10` **逐抓恒定、与抓帧顺序无关**
+ *      （0.22 ≈ 5.0e4 px；0.5/0.68 = 0 px）⇒ 雾确实是 settle 的。
  *
  * ## ★ 瞬态抑制（2026-09-21，owner；与 `NOW_STUB` 冻结同族的第二类"非地形瞬态"）
  *   ② **启动 toast** `#hint`（`main.ts:604` `hint()`，文案 `main.ts:1121`）：**DOM 覆盖层**、约
@@ -108,6 +117,7 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
@@ -138,8 +148,18 @@ for (const p of requestedPops) {
 const PHASES = arg('phase', '0.22,0.68').split(',').map((s) => s.trim());
 const SEED = arg('seed', '20260917');
 const SIZE = arg('size', 'medium');
-const PORT = Number(arg('port', '5173'));
+/* ★ 自起服务（2026-09-21，team-lead 纪律④-2）：**不再依赖"碰巧在跑"的 127.0.0.1:5173**
+ *   （新失效模式：别的门控复用已在跑的服务、而它端的是真 `dist` ⇒ 假读数）。默认 **自 spawn
+ *   `tools/serve.mjs` 到一个空闲端口**（`serve.mjs` 端 `cwd/dist`），退出时 kill。
+ *   `--port=<n>` 指定端口；`--no-serve` 退回"连既有服务"（仅当你确定那服务端的是本仓 dist）。 */
+const PORT_ARG = arg('port', '');
+const NO_SERVE = process.argv.includes('--no-serve');
+let PORT = Number(PORT_ARG || '5173');
 const OUT = arg('out', '/tmp/tintab');
+/* ★ 通用查询参数透传（A/B 用）：`--extra='devhaloafter=1'`（可含多个 & 分隔项）原样拼进 URL。
+ *   例：`--extra=devhaloafter=1` / `--extra=devhalocomp=1`。**不改任何默认**。 */
+const EXTRA = arg('extra', '').replace(/^[?&]+/, '');
+const EXTRA_Q = EXTRA ? `&${EXTRA}` : '';
 let VH = Number(arg('vh', '757'));   // Emulation 高（CSS px）；757 ⇒ 画布 1280x677
 let VW = Number(arg('vw', '1280'));  // Emulation 宽（CSS px）
 let DPR = Number(arg('dpr', '1'));   // deviceScaleFactor
@@ -171,6 +191,37 @@ const readSrc = (p) => { try { return readFileSync(path.join(ROOT, p), 'utf8'); 
 /* 自证三件套③：测量时 HEAD 是否为当前 HEAD（防"历史读数"—— eng-sprites 升级项）。 */
 const headSha = () => { try { return execSync('git rev-parse HEAD', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim().slice(0, 12); } catch { return '(未知)'; } };
 const fp = (p) => ({ sha1: sha1(p), m: mtime(p) });
+
+/* ------------------------------------------------ 自起 dev server（纪律④-2） */
+
+/** 拿一个空闲端口（bind 0 ⇒ OS 分配），避免与别人的服务撞车。 */
+const freePort = () => new Promise((res, rej) => {
+  const s = net.createServer();
+  s.on('error', rej);
+  s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
+});
+
+let SERVER = null;      // 自起时置 true（**进程内**起服务，见下）；null ⇒ 用的是既有服务
+let SERVE_DIR = null;   // 自起时服务目录（= ROOT/dist）
+/* 起服务用**进程内 import**（而非 spawn 子进程）：`serve.mjs` 是"服务"的单一真相来源，
+ * 复用它、不抄第二份；且不产生子进程 ⇒ 跑完 `process.exit` 即全关，不留孤儿把父进程拖住
+ * （实测：spawn 子进程会让整条命令被信号组杀掉、退出码 137）。 */
+async function startOwnServer() {
+  if (!PORT_ARG) PORT = await freePort();
+  SERVE_DIR = path.join(ROOT, 'dist');
+  process.chdir(ROOT);                 // serve.mjs 端 `process.cwd()/dist`
+  process.env.PORT = String(PORT);
+  await import('./serve.mjs');
+  for (let i = 0; i < 120; i++) {
+    const ok = await checkDevServer(PORT).catch(() => ({ ok: false }));
+    if (ok.ok) { SERVER = true; return true; }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return false;
+}
+function stopOwnServer() { SERVER = null; /* 进程内服务随 process.exit 关闭，无需显式 kill */ }
+process.on('exit', stopOwnServer);
+process.on('SIGINT', () => { stopOwnServer(); process.exit(130); });
 
 /** 浏览器 fillStyle getter 的规范形（去空格）：#2a1a12 ⇒ rgb(42,26,18)。 */
 function canonical(color) {
@@ -338,12 +389,13 @@ const HOOK = `(() => {
   };
 })();`;
 
-/* ⚠️ 抓帧**顺序**（full 最先、none 次之、再各族）—— 自 **首帧丢弃**（见 `captureAll` 内「预热帧丢弃」）落地后
- *   已**不再敏感**：抓到的每张都是 settle 后的帧（实测同 mode 连抓 #2==#3 逐位相同）。
- *   历史（2026-09-21 前，未丢弃首帧时）：792@3 下 `dark` 的 `(a)并集/(b)全族` 会随"哪一帧最早/最晚"
- *   在 **1548 ↔ 32607** 间**互换** —— 根因 = **首张截图未 settle**（**非**曾疑的 `?devreveal` 雾未 settle：
- *   实测 `#0b0d10` 雾像素在 none/full/edge/ink **恒为 90390**，雾是 settle 的）。
- *   ⇒ 「真机视口独立腿」现可放行 `dark`；桌面视口本无此病（同差异未过阈）。 */
+/* ⚠️ 抓帧**顺序**（full 最先、none 次之、再各族）—— 自 **画布 settle 守卫 + 首帧丢弃**（见 `captureAll`）落地后
+ *   已**不再敏感**：抓到的每张都是 settle 后的帧（实测冻结下同 mode 连抓逐位相同）。
+ *   历史（2026-09-21 前，未等画布 settle 时）：792@3 下 `dark` 的 `(a)并集/(b)全族` 会随"哪一帧最早/最晚"
+ *   在 **1548 ↔ 32607** 间**互换** —— 根因 = **首个导航的画布 dpr 晚 settle**（实测 ready `1584×480/dpr2`
+ *   → 约 600ms 后 `2376×720/dpr3`；`full` 恰最先抓 ⇒ `(b)全族` 被抬高），**非**曾疑的 `?devreveal` 雾未 settle
+ *   （owner 复测：地图区 `#0b0d10` 逐抓恒定、与顺序无关 ⇒ 雾是 settle 的）。
+ *   ⇒ 「真机视口独立腿」现可放行 `dark`；桌面（dpr1）画布尺寸不随档位变 ⇒ 本无此病。 */
 const MODES = { full: Object.fromEntries(FAMILIES.map((f) => [f, false])), none: Object.fromEntries(FAMILIES.map((f) => [f, true])) };
 for (const f of FAMILIES) MODES[f] = Object.fromEntries(FAMILIES.map((g) => [g, g !== f]));
 
@@ -358,31 +410,54 @@ for (const f of FAMILIES) MODES[f] = Object.fromEntries(FAMILIES.map((g) => [g, 
  *   此处**只做可核验**：录制前核对注入的隐藏确实生效（`getComputedStyle(#hint).display === "none"`）。 */
 const HINT_HIDDEN = '(()=>{const e=document.getElementById("hint");return e?getComputedStyle(e).display==="none":null})()';
 
+/* ★ 画布尺寸 settle 守卫（2026-09-21 owner · 解 792 `dark` 守恒右端互换的**真因**，见头注①）：
+ *   `initQuality` 的档位微基准先按默认 mid 定画布尺寸、探完才切高 ⇒ **首个导航**的画布 dpr 约 600ms
+ *   才 settle（实测 792@3：ready `1584×480/dpr2` → ~600ms 后 `2376×720/dpr3`）。抓帧落在该窗即污染。
+ *   ⇒ 录制前**轮询 canvas 尺寸直到稳定**（≥3 次相等采样且已过最小等待）。`--dpr=1` 时档位不改画布尺寸
+ *   （= clientWidth）⇒ **跳过**；`NO_SETTLE=1` 关（复现用）；`--settlems=<ms>` 调最小等待（默认 1000）。 */
+const SETTLE_MIN_MS = Number(arg('settlems', '1000'));
+const SETTLE = DPR > 1 && process.env.NO_SETTLE !== '1';
+async function waitCanvasSettled(evaluate) {
+  const read = () => evaluate('(()=>{const c=document.querySelector("canvas");const r=c.getBoundingClientRect();return c.width+"x"+c.height+"/dpr"+(c.width/r.width).toFixed(2)})()').catch(() => '(err)');
+  if (!SETTLE) return { key: await read(), ms: 0, note: DPR > 1 ? 'NO_SETTLE=1（跳过）' : `dpr=${DPR} ⇒ 档位不改画布尺寸（跳过）` };
+  const t0 = Date.now();
+  let last = null, stable = 0;
+  for (;;) {
+    const k = await read(); const el = Date.now() - t0;
+    if (el >= SETTLE_MIN_MS && k === last) { if (++stable >= 2) return { key: k, ms: el, note: '已 settle' }; }
+    else if (k !== last) stable = 0;
+    last = k;
+    if (el > SETTLE_MIN_MS + 4000) return { key: last, ms: el, note: '⚠️ 超时未稳定' };
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
 async function captureAll() {
   return withHeadlessChrome(async ({ send, evaluate }) => {
     await send('Page.addScriptToEvaluateOnNewDocument', { source: HOOK });
     await send('Emulation.setDeviceMetricsOverride', { width: VW, height: VH, deviceScaleFactor: DPR, mobile: false });
     const shots = {};
     for (const ph of PHASES) {
-      const url = `http://127.0.0.1:${PORT}/?devquick=0&devsize=${SIZE}&devseed=${SEED}&devreveal=1&devprobe=1&devlight=${ph}${DEVDPR_Q}`;
+      const url = `http://127.0.0.1:${PORT}/?devquick=0&devsize=${SIZE}&devseed=${SEED}&devreveal=1&devprobe=1&devlight=${ph}${DEVDPR_Q}${EXTRA_Q}`;
       await send('Page.navigate', { url });
       for (let i = 0; i < 200; i++) {
         const ok = await evaluate('!!(window.__journey && window.__journey() && window.__journey().heroPos && document.querySelector("canvas") && window.__tintSkip)').catch(() => false);
         if (ok) break;
         await new Promise((r) => setTimeout(r, 50));
       }
+      /* ★ 画布 settle 守卫：先等画布尺寸稳定（首个导航的 dpr 约 600ms 才 settle，见头注①）再开录。 */
+      const settle = await waitCanvasSettled(evaluate);
       await evaluate('new Promise(r=>{let i=0;const s=()=>(++i>=30?r():requestAnimationFrame(s));requestAnimationFrame(s)})');
       /* ★ 覆盖层门**核验**：确认注入的 `#hint{display:none}` 生效（toast 不会在录制中占像素）。 */
       const hintHidden = await evaluate(HINT_HIDDEN).catch(() => null);
-      /* ★ 预热帧丢弃（2026-09-21，解 792 `dark` 守恒右端互换 —— 见头注「首帧未就绪」）：
-       *   `Page.captureScreenshot` 的**第一张**返回的是"尚未 settle"的合成帧。实测（792×320@3）：
-       *   同一 mode 连抓三张，**#1 与 #2/#3 差 10w+ px，#2 == #3 逐位相同**；且与 mode 无关
-       *   （none 先则 none#1 出格、full 先则 full#1 出格）。⇒ 首帧被当成数据 = 污染。
-       *   修法 = **先抓一张丢弃**（与 G-15「预热帧丢弃 + 缓存版本门」同族），再开录。
-       *   ⚠️ 桌面 1280 原亦隐有此病、只是同一差异未过 >4 阈（故此前 缺源≈0）；换视口才暴露。 */
+      /* ★ 预热帧丢弃（保留作**保险**）：`Page.captureScreenshot` 的**第一张**在冷启动首个导航上会落在
+       *   "画布尚未 settle"的窗口里（**真因 = 画布 dpr 晚 settle，见头注① + `waitCanvasSettled()`**；
+       *   非"截图编码/Settle"本身）：实测同 mode 连抓 **#1≠#2/#3、#2==#3**，且与 mode 无关（谁先抓谁落窗）
+       *   ⇒ 首帧被当成数据 = 污染。主修法是上面的 settle 轮询；"再丢一张"与 G-15「预热帧丢弃」同族、
+       *   成本极低 ⇒ 留作保险。⚠️ 桌面 1280/dpr1 画布尺寸不随档位变（settle 被跳过），本丢弃近乎无操作。 */
       await send('Page.captureScreenshot', { format: 'png' });
       const meta = await evaluate('(()=>{const c=document.querySelector("canvas");const j=window.__journey();const h=document.getElementById("hint");return {canvas:{w:c.width,h:c.height},dpr:c.width/c.clientWidth,dprRaw:window.devicePixelRatio,hero:j.heroPos,hint:!!h,hintShown:!!(h&&h.classList&&h.classList.contains("show"))}})()');
-      shots[ph] = { meta, hintHidden, modes: {} };
+      shots[ph] = { meta, hintHidden, settle, modes: {} };
       for (const [mode, skip] of Object.entries(MODES)) {
         await evaluate(`window.__tintSkip = ${JSON.stringify(skip)}`);
         await evaluate('new Promise(r=>{let i=0;const s=()=>(++i>=3?r():requestAnimationFrame(s));requestAnimationFrame(s)})');
@@ -399,19 +474,21 @@ async function captureAll() {
     if (shots[IDENTITY_PHASE]) {
       shots.identity = shots[IDENTITY_PHASE].modes.none;
     } else {
-      const url = `http://127.0.0.1:${PORT}/?devquick=0&devsize=${SIZE}&devseed=${SEED}&devreveal=1&devprobe=1&devlight=${IDENTITY_PHASE}${DEVDPR_Q}`;
+      const url = `http://127.0.0.1:${PORT}/?devquick=0&devsize=${SIZE}&devseed=${SEED}&devreveal=1&devprobe=1&devlight=${IDENTITY_PHASE}${DEVDPR_Q}${EXTRA_Q}`;
       await send('Page.navigate', { url });
       for (let i = 0; i < 200; i++) {
         const ok = await evaluate('!!(window.__journey && window.__journey() && window.__journey().heroPos && document.querySelector("canvas") && window.__tintSkip)').catch(() => false);
         if (ok) break;
         await new Promise((r) => setTimeout(r, 50));
       }
+      const settleIdentity = await waitCanvasSettled(evaluate);   // 画布 settle 守卫（同相位循环）
       await evaluate('new Promise(r=>{let i=0;const s=()=>(++i>=30?r():requestAnimationFrame(s));requestAnimationFrame(s)})');
       await send('Page.captureScreenshot', { format: 'png' });   // 预热帧丢弃（同上）
       await evaluate(`window.__tintSkip = ${JSON.stringify(MODES.none)}`);
       await evaluate('new Promise(r=>{let i=0;const s=()=>(++i>=3?r():requestAnimationFrame(s));requestAnimationFrame(s)})');
       const s = await send('Page.captureScreenshot', { format: 'png' });
       shots.identity = Buffer.from(s.data, 'base64');
+      shots.identitySettle = settleIdentity;
     }
     return shots;
   }, { devServerPort: PORT, profilePrefix: 'tintab-' });
@@ -536,13 +613,22 @@ async function analyze(ph, shot, identityBuf) {
 /* ------------------------------------------------------------------ 主流程 */
 
 (async () => {
-  const probe = await checkDevServer(PORT);
-  if (!probe.ok) { console.error(probe.reason); process.exit(2); }
+  /* ★ 自起服务（纪律④-2）：默认自 spawn serve.mjs 到空闲端口；`--no-serve` 才连既有服务。 */
+  if (!NO_SERVE) {
+    const ok = await startOwnServer();
+    if (!ok) { console.error(`自起 serve.mjs 失败（PORT=${PORT}）—— 检查 tools/serve.mjs 与 dist/ 是否存在。`); process.exit(2); }
+  } else {
+    const probe = await checkDevServer(PORT);
+    if (!probe.ok) { console.error(`${probe.reason}（--no-serve 模式下需你自备服务）`); process.exit(2); }
+  }
 
   const fpBefore = { src: fp(SRC_REL), dist: fp(DIST_REL), main: fp(MAIN_REL) };
   const headBefore = headSha();
 
   console.log('=== ④ 可达染色净贡献对照（tintab.mjs，差分口径） ===');
+  console.log(`服务   : ${NO_SERVE ? `连既有服务 127.0.0.1:${PORT}（--no-serve，⚠️ 不保证端的是本仓 dist）` : `**自起**（进程内 serve.mjs）@ 127.0.0.1:${PORT} · 服务目录 = ${SERVE_DIR}`}`);
+  console.log(`产物目录: ${SERVE_DIR ?? '(既有服务，未知)'} ⇒ 量的是**该目录下的 dist**（serve.mjs 端 cwd/dist）`);
+  console.log(`A/B 透传: ${EXTRA ? `?${EXTRA}` : '(无 --extra ⇒ 生产默认路径)'}`);
   console.log(`指纹前 : src ${fpBefore.src.sha1} @ ${fpBefore.src.m} | dist ${fpBefore.dist.sha1} @ ${fpBefore.dist.m} | main ${fpBefore.main.sha1} @ ${fpBefore.main.m}`);
   console.log('指纹算法: sha1 前 12 位（本文件）；team-lead 报的是 md5 前 8 位 —— 算法不同、非矛盾（shasum -a 1 <file> 可逐位复算）。引用请写「文件名 + 算法 + 值」。HEAD = git sha1 前 12；m = mtime(ISO)；main = dist/main.js 入口 bundle。');
   console.log(`HEAD   : ${headBefore}（测量前；跑完再核是否仍是当前 HEAD —— 防"历史读数"）`);
@@ -550,7 +636,7 @@ async function analyze(ph, shot, identityBuf) {
   for (const f of FAMILIES) console.log(`族 ${LABEL[f]}: ${BY_FAMILY[f].map((t) => `${t.name}=${t.raw} => ${t.canon}`).join('  ')}`);
   console.log(`场景   : seed=${SEED} size=${SIZE} devreveal=1 视口 ${VW}x${VH}@dpr${DPR}(emulation) => 截图 ${VW * DPR}x${VH * DPR}(device)`);
   console.log(`画布dpr : ${DEVDPR ? `覆写 ?devdpr=${DEVDPR}（画布真正 ×${DEVDPR}）` : '⚠️ 未覆写 ⇒ 按画质档 dprCap（mid=2）—— 截图 ×dpr 但画布可能被档位钳小（见每相位头 canvas ... dpr N）'}`);
-  console.log(`URL    : http://127.0.0.1:${PORT}/?devquick=0&devsize=${SIZE}&devseed=${SEED}&devreveal=1&devprobe=1&devlight=<相位>${DEVDPR_Q}`);
+  console.log(`URL    : http://127.0.0.1:${PORT}/?devquick=0&devsize=${SIZE}&devseed=${SEED}&devreveal=1&devprobe=1&devlight=<相位>${DEVDPR_Q}${EXTRA_Q}`);
   console.log(`地图区 : device y [${Math.round(MAP_TOP_CSS * DPR)} .. ${Math.round((VH - MAP_BOTTOM_CSS) * DPR)}]（= CSS y [${MAP_TOP_CSS} .. ${VH - MAP_BOTTOM_CSS}] ×dpr${DPR}；顶/底栏各 ${MAP_TOP_CSS}/${MAP_BOTTOM_CSS} CSS px）—— 换 dpr 会随之缩放`);
   console.log(`相位   : ${PHASES.join(', ')}　（0.22=正午 0.5=黄昏 0.68=深夜）`);
   console.log(`population: ${requestedPops.join(', ')}`);
@@ -581,6 +667,7 @@ console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**�
     /* 唯一权威判定 = **computed display**（注入是否真生效）；`classList.show` 只作说明：
      * `hint()` 无论是否被 CSS 隐藏都会置 `.show` ⇒ 它恒为 true，**非异常**，别拿它判隐藏是否生效。 */
     console.log(`  overlay门: #hint 注入隐藏 ${tst === true ? '已生效（computed display:none）✅' : tst === null ? '⚠️ 无 #hint 元素（未核）' : '❌ 未生效 ⇒ toast 可能在录制中占像素，读数存疑'} · 录制前已丢弃首帧 · classList.show=${meta.hintShown}（恒置位，非异常）`);
+    { const st = shot.settle; console.log(`  画布settle: ${st ? `canvas=${st.key} @ ${st.ms}ms（${st.note}）` : '(未记)'}`); }
     console.log(`  fillRect 命中：${FAMILIES.map((f) => `${f}x${shot.hits[f]}`).join('  ')}`);
     for (const f of FAMILIES) if (!shot.hits[f]) { missing = true; console.log(`  [!] 族「${LABEL[f]}」命中 0 —— 颜色/名字可能已改，该族无效，勿引用！`); }
     console.log('  族        | population      | 像素数 | ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG中位 | WCAG均值(参考) | 类总变化(a并集/b全族)');
@@ -609,6 +696,8 @@ console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**�
   console.log(`PNG 输出：${OUT}/tint_<phase>_<${Object.keys(MODES).join('|')}>.png`);
   if (!stable) process.exit(3);
   if (missing) { console.error('存在 0 命中的族 => 结果不完整，非零退出。'); process.exit(1); }
+  /* ★ 自起服务是进程内的 ⇒ 必须**显式 exit**，否则 server 句柄把事件循环拖住、脚本不返回。 */
+  process.exit(0);
 })().catch((e) => {
   console.error(e.message);
   process.exit(e.prerequisite ? 2 : 1);
