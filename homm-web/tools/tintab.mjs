@@ -306,7 +306,7 @@ console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**�
     console.log(`########## devlight=${ph}  canvas ${meta.canvas.w}x${meta.canvas.h} dpr ${meta.dpr} hero(${meta.hero.x},${meta.hero.y})`);
     console.log(`  fillRect 命中：${FAMILIES.map((f) => `${f}x${shot.hits[f]}`).join('  ')}`);
     for (const f of FAMILIES) if (!shot.hits[f]) { missing = true; console.log(`  [!] 族「${LABEL[f]}」命中 0 —— 颜色/名字可能已改，该族无效，勿引用！`); }
-    console.log('  族        | population      | 像素数 | 色差ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG(参考)');
+    console.log('  族        | population      | 像素数 | ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG均值(参考)');
     for (const r of rowsOut) {
       console.log(`  ${LABEL[r.fam]} | ${r.pop.padEnd(15)} | ${String(r.n).padStart(6)} | ${f2(r.L).padStart(7)} | ${f2(r.E).padStart(9)} | ${f2(r.C).padStart(10)} | ${(Number.isFinite(r.cvdBelow) ? r.cvdBelow.toFixed(0) + '%' : '-').padStart(8)} | ${f2(r.wcag)}`);
     }
