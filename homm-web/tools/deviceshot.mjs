@@ -203,6 +203,18 @@ try {
 
   if (!waited?.ok) throw new Error(`页面没就绪：${JSON.stringify(waited)}`);
 
+  // ④ 可选：**点一下**（`SHOT_CLICK='cssX,cssY'`，视口 CSS 坐标）—— 用来把
+  //    "英雄选中 ⇒ 可达染色出现"这一步做出来（`vm.reachable` 只在有英雄选中时非空）。
+  //    点完等若干帧，让 `recomputeField()` + 重绘都落地，再截图。
+  if (process.env.SHOT_CLICK) {
+    const [cx, cy] = process.env.SHOT_CLICK.split(',').map(Number);
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) throw new Error(`SHOT_CLICK 格式应为 'x,y'，收到 ${process.env.SHOT_CLICK}`);
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await send('Input.dispatchMouseEvent', { type, x: cx, y: cy, button: 'left', clickCount: 1, pointerType: 'mouse' });
+    }
+    await evaluate(`new Promise((r) => { let i = 0; const s = () => (++i >= 20 ? r(true) : requestAnimationFrame(s)); requestAnimationFrame(s); })`);
+  }
+
   const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(outFile, Buffer.from(shot.data, 'base64'));
   console.log(

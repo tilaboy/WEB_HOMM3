@@ -191,10 +191,14 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 | `f_` | `deviceshot.mjs` | 只差**档位**（脚本会打印 `tierMode`，以它为准） |
 | `g_` | 两者皆有 | `g_uniform_*`＝垫片**全草无物件**（§3.1.1 的口径）；`g_light_*`＝真机视口的**光照相位** |
 | `h_` | `dressshot.mjs`（**垫片**，×2 整图 / ×3 裁图） | **真图**（`createGame()`）上的布景层 A 组对照 + **最坏一屏裁图**（密度判据的口径，见 `measurements-setdressing-density.md`） |
-| `i_` | `deviceshot.mjs`（真 Chrome） | **④ 可达染色 (α) 的 before / after**（真机视口；正午/深夜 + 裁图；实现 `3e8084f`） |
-| `j_` | `deviceshot.mjs`（真 Chrome） | **地貌区层（G1 / `cartoon-style §3.1.2` 的 X1）** 单变量：`?devregion=0`（关）/ 缺省（开） |
+| `i_` | `deviceshot.mjs`（真 Chrome） | **④ 可达染色 (α) 的 before / after**（真机视口；正午/深夜 + 裁图；实现 `3e8084f`）· **判定见下「★ `shots/` 判定」** |
+| `j_` | `deviceshot.mjs`（真 Chrome） | **地貌区层（G1 / `cartoon-style §3.1.2` 的 X1）** 单变量：`?devregion=0`（关）/ 缺省（开）· **判定见下「★ `shots/` 判定」** |
+| ~~`r_`~~ | ~~`deviceshot.mjs` + `SHOT_CLICK`~~ | **已撤（弱信号对，图已删）** —— 见下「`r_*` 已撤」；能力 = `SHOT_CLICK` **保留** |
 
-**⚠️ 已废 / 不得再新增**：`e2_*`、`*_noon` 这类"补丁式后缀" —— 它们是撞车期的临时名。**同口径用同一前缀，不同口径另开字母**。
+**⚠️ 已废 / 不得再新增**：`e2_*`、`*_noon` 这类"补丁式后缀" —— 它们是撞车期的临时名。**同口径用同一前缀，不同口径另开字母**。**`r_*` 亦已撤**（见下）。
+
+> **`r_*` 已撤（2026-09-21 · `art-director` 自请）**：曾有一对 `r_off.png` / `r_on.png`（`deviceshot.mjs` + `SHOT_CLICK` 点英雄 ⇒ 可达染色出现；真机视口）。**图已删** —— 原因：默认场景里可达区**只占屏 ~0.8%**，信号太弱；**一对弱信号图留在 `shots/` 里、与 `i_reach_*` 并排，下一个读的人必然把它当同源证据**（"并排即同源"是本目录反复吃的亏）。**是我场景没调好，不是工具的问题。**
+> **能力留下**：`deviceshot.mjs` 的 **`SHOT_CLICK='cssX,cssY'`**（点一下再截）**保留** —— 那正是做「英雄选中 ⇒ 染色出现」同构建 A/B 的正确手段。**要复出：先调场景（让可达区占屏足够大）→ 先冻结 → 再出 → 出完在本文档登记。**
 
 ## G1「地貌区层」（X1）实测 —— **未过团队硬门控**（2026-09-21 · art-director）
 
@@ -212,9 +216,48 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 
 复算：`node tools/serve.mjs`（另开终端）`&& CMP_CROP=84,804 node tools/imagecmp.mjs ../design/art-bible/shots/j_g1_off.png ../design/art-bible/shots/j_g1_on.png`
 
+---
+
+## ★ `shots/` 判定（a11y 判定方 = `art-director` · 2026-09-21）
+
+> **分工（team-lead 裁）**：本目录 **证据 PNG = 生产**（art-director 家族均可写）；**`README.md` + `index.html` = 策展 / 判定**（**只 `art-director` 写**）。「出图」与「判定」**不互相代做**。
+
+### ④ 可达染色（`i_reach_*`）—— 判：**未达 §4.6 判据（不合格）**
+
+**是什么**：`i_reach_before_*`（染色关）/ `i_reach_after_*`（染色开 =(α) 落地版）成对，真机视口 792×320@DPR3（2376×960），正午 / 深夜 + 各一张 zoom 裁图（960×480）。**这组正是 §4.6 要的「A/B 口径」素材**（同页同相机、同像素同地形，只差染色层）。
+
+**判据（`accessibility-requirements.md §4.6`）**：A/B 口径下「**状态 vs 其底**」**WCAG ≥ 3:1**，**全天候含夜**（裁定 **(a)**，2026-09-21 新落）。`ΔL*` 只作**旁证**、**不作判据**。
+
+**判定依据（转述数 + 出处警示）**：本轮流转的相位对比度 **1.56（夜）/ 2.41（晨昏）/ 3.46（正午）: 1**，同点 `ΔL* 16.8`。
+- ⇒ **正午 3.46 ≥ 3 ✅**；**晨昏 2.41 ❌**；**夜 1.56 ❌** ⇒ **3 个相位过 1 个 ⇒ 整体不合格**。
+- ⚠️ **该数我未能在仓库 / 临时产物里定位到「绑构建」出处**：并行实例两次 `tintab` 运行**墨族 `ink×0`**（一次都没画到 ⇒ 该次对墨族无效），其中一次 `NOGO_EDGE_INK` 被解析为 `rgba(0,0,0,0)`（= 正在跑 **ink-off 负测**的中间态）。
+  ⇒ **本判定为「方向性判定」；正式验收数在冻结窗口复算后锁定。不换尺子、不叠下一层。**
+
+**处置**：见 §4.6 裁定 **(a)** —— **推荐 (a-1) 相位感知描边**（日间墨 / 夜间亮色），归属 `MapRenderer.ts`（engineering-lead）。**(b) 已判：不需 (β)/(γ)** —— 非色兜底 = **面 vs 边**的形式差 + 墨线**明度**差，**1.4.1 现已满足**。
+
+**复算要求（给 ④ owner）**：**冻结窗口内** → **A/B 口径** → **含墨族（`ink×N>0`；`tintab` 的 0 命中即非零退出 ⇒ 那次结果作废）** → **绑构建指纹**（`dist/render/MapRenderer.js` mtime/md5 + 源码 commit）⇒ 产出**全仓唯一一处**验收数（`tintab.mjs`，勿再另起口径）。
+
+### G1 地貌区层（`j_g1_*`）—— 判：**门控未过「如实记」成立 ✓；但绑定不全，需 G1 owner 重测**
+
+**是什么**：`j_g1_off.png`（`?devregion=0`）/ `j_g1_on.png`（缺省）成对，真机视口 792×320@DPR3。
+
+**判据（team-lead 硬门控）**：`mean |ΔL*| > 2.28` **且** 像素占比 `> 28%`。
+
+**判定**：
+- 记数 **2.20 / 33.7%** ⇒ 像素 **✅ 33.7% > 28%**；mean **❌ 2.20 < 2.28** ⇒ **未过门控**。
+  **判定方确认「未过、如实记」正确**（未调数、未叠层 ✓）。
+- ⚠️ **绑定不完整**：本节只写「`dist/main.js` md5 抓前抓后一致」（= **测量窗口内未变**），**没写「该 dist 出自哪个 commit」**。
+  按 `production/roadmap.md` **`a35f923`**「**任何门控阈值必须与所守护的代码同构建；代码一改，阈值必须重测**」⇒ **这道门控阈值与「G1 代码」的绑定关系未落** ⇒ **需在与 G1 代码同一构建上重抓一次、再写进门控**。
+- ⚠️ **跨构建红线**：本文档上面已记「同一 URL / 档位在两份 dist 上可差 **2.08 / 61.6%**」⇒ **跨构建比 `j_g1` 的数无意义**。
+- **我不重测**（team-lead 已把 G1 的落码 / 取数划给并行实例；我 = **判定方**）。**重测归 G1 owner**；出数后**回填本文档**，**由我复核判定行**（判定权在我）。
+
+---
+
 ## 目录当前状态（2026-09-21 已全部入库）
 
-- **已提交、可引用**：`a_*` · `b_dress_off` · `c_*` · `d_chrome_*` · `e_*` · `f_*_noon` · `g_*` · `h_real_*` · `measurements-visible-delta.md` · `measurements-setdressing-density.md`。
+- **已提交、可引用**：`a_*` · `b_dress_off` · `c_*` · `d_chrome_*` · `e_*` · `f_*_noon` · `g_*` · `h_real_*` · **`j_g1_*`** · `measurements-visible-delta.md` · `measurements-setdressing-density.md`。
+- **未入库（真图在盘、仅未 `git add`）**：`i_reach_*`（8 张，④ (α) 的 before/after + 裁图）。**判定见上「★ `shots/` 判定」**；**入库归 ④ 生产方**（我 = 判定方，不代做入库）。**入库前不得引用其数**。
+- **已删（本轮）**：`r_off.png` / `r_on.png` —— 弱信号对，原因见上「`r_*` 已撤」（能力 = `deviceshot.mjs` 的 `SHOT_CLICK` **保留**）。
 - **`setDressing.ts` 已落地 ⇒ 本节原先那条「谁落地谁重跑」已履约**：`node tools/artshot.mjs` 已重跑，`b_dress_on.png` / `c_night_*.png` / `index.html`（以及被同一命令顺带重写的 `a_shade_off.png`）**已随后续提交入库，与已提交代码一致**。
   ⇒ `b_dress_off`（off）/ `b_dress_on`（on）现在可当作**布景层 A 组的基线对**读（`b_before` = `b_dress_off.png`）。
 - **已按命名约定移除**：`e2_shade_off/on.png`（撞车期的临时名，口径＝`devzoom=0.5` **整图视角**）。其数已并入 `measurements-visible-delta.md` §5 的「视角前提」一行（**不单独留文件**）。
