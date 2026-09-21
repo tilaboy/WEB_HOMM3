@@ -63,7 +63,7 @@ import {
   recruitToHero,
   townDailyIncome,
 } from '../dist/core/game/town.js';
-import { settingsForTier, classifyProbe, probeTier, allowedMapSizes, clampMapSize, TIER_ORDER } from '../dist/render/quality.js';
+import { settingsForTier, classifyProbe, probeTier, allowedMapSizes, clampMapSize, TIER_ORDER, readCachedTier, cacheTier, clearCachedTier, PROBE_VERSION } from '../dist/render/quality.js';
 import {
   shouldEdgeScroll,
   normalizePointerType,
@@ -1875,6 +1875,41 @@ console.log('\n--- 移动端画质分档 ---');
   ok(fixed === 'high', 'G-15：丢弃启动预热帧后 冷启动100ms/稳态5ms → 高端（不再被误判 low）');
   const naive = await probeTier({ draw: () => {}, now: burst(), yieldFrame: () => Promise.resolve(), frames: 30, warmupFrames: 0, dpr: 3 });
   ok(naive === 'low', 'G-15 反证：不丢预热（warmupFrames=0）同一曲线 → 误判 low（证明修复确实在起作用）');
+}
+
+// 3b. G-15 缓存版本门：探测语义一动，旧缓存必须作废（否则「探测修好了、画面还是没变」）
+//     无头环境没有 localStorage，注入一个内存版（quality.ts 的 readLS/writeLS 在调用时才探测它）。
+{
+  const store = new Map();
+  const prevLS = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => void store.set(k, String(v)),
+    removeItem: (k) => void store.delete(k),
+  };
+  try {
+    cacheTier('high');
+    ok(
+      store.get('homm.tier') === 'high' && store.get('homm.tierProbeVer') === String(PROBE_VERSION),
+      `cacheTier 把档位与探测版本一起写盘（v${PROBE_VERSION}）`,
+    );
+    ok(readCachedTier() === 'high', '同版本缓存可命中（不误伤）');
+    // 旧缓存：没有版本键 → 作废
+    store.set('homm.tier', 'low');
+    store.delete('homm.tierProbeVer');
+    ok(readCachedTier() === null, 'G-15：无版本键的旧缓存作废（强制重测）');
+    // 旧缓存：版本不符（上次升级前写下的 low）→ 作废，不再静默沿用
+    store.set('homm.tier', 'low');
+    store.set('homm.tierProbeVer', String(PROBE_VERSION - 1));
+    ok(readCachedTier() === null, 'G-15：版本不符的旧缓存作废（升包后不被旧探测「钉」在 low）');
+    // 清除：档位与版本键一起清
+    cacheTier('mid');
+    clearCachedTier();
+    ok(readCachedTier() === null && !store.has('homm.tierProbeVer'), 'clearCachedTier 同时清掉档位与版本键');
+  } finally {
+    if (prevLS === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = prevLS;
+  }
 }
 
 // 4. 地图尺寸夹紧（§4.2 maxMapSize 的落地）
