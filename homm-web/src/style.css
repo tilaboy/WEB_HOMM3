@@ -1519,6 +1519,9 @@ body.in-battle #thumb {
   padding-bottom: 4px;
   margin-bottom: 6px;
   border-bottom: 1px solid var(--line);
+  /* `#156` ★：允许换行 —— 两条 bar 行**独占第 2 行全宽**（见 `.hp-bars-row`）。
+     不换行时 `meta` 会被同行 `nav` 挤到 ~32px ⇒ bar 标签换行 ⇒ `head` 128（实测）。 */
+  flex-wrap: wrap;
 }
 
 .hp-face {
@@ -1534,6 +1537,11 @@ body.in-battle #thumb {
   align-items: center;
   justify-content: center;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+  /* `#156`：肖像自本版起兼作「宝物」开关（`<button>`）⇒ 清掉 UA 默认内边距与字体。
+     仍是 40×40 的真实可点目标（`aria-expanded` 在 `HeroPanel.ts` 内设置）。 */
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 .hp-meta {
@@ -1547,12 +1555,25 @@ body.in-battle #thumb {
   gap: 6px;
   color: var(--parchment);
   font-size: 14px;
+  /* `#156`：`meta` 窄（`nav` 占宽）时名与等级**各换行成 3 行**（实测 `hp-name` 60px）⇒ 加 nowrap。
+     多英雄时 `nav` 有 ‹ › 两个按钮、`meta` 更窄 ⇒ 名字**省略号**收尾（等级永远完整）。 */
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.hp-name > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hp-lv {
   color: var(--gold);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .hp-sub {
@@ -1586,10 +1607,12 @@ body.in-battle #thumb {
   margin-bottom: 7px;
 }
 
-/* `#156`（D-1）：移动力 / 法力**并一行**（常驻核）；两格各占一半、窄面板也并排。 */
+/* `#156`（D-1）：移动力 / 法力**并一行**（常驻核）；两格各占一半、窄面板也并排。
+   ★ 且**独占一整行**（`flex-basis:100%`）：与 `nav` 同挤一行时被压到 ~32px ⇒ 标签换行 ⇒ head 128。 */
 .hp-bars-row {
   display: flex;
   gap: 8px;
+  flex: 1 0 100%;
 }
 .hp-bars-row .hp-bar-row {
   flex: 1 1 0;
@@ -1615,8 +1638,40 @@ body.in-battle #thumb {
   padding: 0 4px;
   font-size: 13px;
 }
+/* `#156` ★（b）「段内滚动」：只有**当前段**可滚，`#side` 自身**不滚**。
+   做法 = 把 `#side → .side-body → .hp-seg → .hp-pane` 拉成一条**列 flex + min-height:0** 链，
+   末端的 `.hp-pane` 才 `overflow-y:auto` ⇒ 它被限高 ⇒ 溢出发生在段内。
+   （`sideBody` 无类名，故由 `main.ts` 补 `.side-body`；`#side` 由 `auto` 改 `hidden`
+     —— **`hidden` 只是不让它滚，判据仍看 `scrollHeight ≤ clientHeight`，所以必须真放得下**。） */
+#side {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.side-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.hp-seg {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .hp-pane {
   margin-top: 4px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* `#156`：`宝物` 开关下沉到「部队」段首行（`head` 放不下两个 40px 图标）。 */
+.hp-army-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 4px;
 }
 .hp-city-sum {
   margin: 0 0 4px;
@@ -1625,6 +1680,10 @@ body.in-battle #thumb {
 .hp-bar-top {
   display: flex;
   justify-content: space-between;
+  gap: 4px;
+  /* `#156` ★ 实测：不加 nowrap 时「移动力 12 / 12」在半宽格（≈87px）里**换行成 2 行**
+   *（34px vs 另格的 17px）⇒ `hp-bars-row` 46px。nowrap 后回落到 1 行。 */
+  white-space: nowrap;
 }
 
 .hp-bar-k {

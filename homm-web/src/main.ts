@@ -97,6 +97,8 @@ side.appendChild(toggle);
 syncToggle();
 
 const sideBody = document.createElement('div');
+// `#156`（b）：面板内容容器需要类名才能进「列 flex + 段内滚动」的样式链（见 `.side-body`）。
+sideBody.className = 'side-body';
 side.appendChild(sideBody);
 
 const hintEl = document.createElement('div');

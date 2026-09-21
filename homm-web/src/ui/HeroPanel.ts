@@ -165,10 +165,21 @@ export class HeroPanel {
     const idx = state.heroOrder.indexOf(hero.id);
     const multi = state.heroOrder.length > 1;
 
-    const face = div('hp-face');
+    /* `#156` ★ 实测根因：`head` 行只有 184px 宽；`face`(40) + `hp-nav`(书 40 + 宝物 42 + gap 8 = 90)
+     * + gap 8 ⇒ `hp-meta` 只剩 **~36px** ⇒「名」与「Lv.3 · 120/500」**各折 2–3 行** ⇒ `hp-head` = 119（>96）。
+     * ⇒ 把 `宝物▾` 从 `nav` 挪到**肖像**上：**零宽度成本**，且仍是 **≥40×40 的真实可点目标**
+     *   （`aria-expanded` + `aria-label` + `title`，不破 a11y），`meta` 回到 ~88px ⇒ 名与等级一行放下。 */
+    const face = document.createElement('button');
+    face.className = 'hp-face';
     face.textContent = hero.name.slice(0, 1);
-    face.title = `${hero.name} · ${hero.heroClass}`;
+    face.title = `${hero.name} · ${hero.heroClass}（点击${this.showArtifacts ? '收起' : '展开'}宝物格）`;
+    face.setAttribute('aria-label', `${hero.name}，${this.showArtifacts ? '收起' : '展开'}宝物格`);
+    face.setAttribute('aria-expanded', String(this.showArtifacts));
     face.style.borderColor = factionColor(hero.owner);
+    face.addEventListener('click', () => {
+      this.showArtifacts = !this.showArtifacts;
+      if (this.lastState) this.update(this.lastState, this.lastHero);
+    });
     wrap.appendChild(face);
 
     const meta = div('hp-meta');
@@ -185,7 +196,7 @@ export class HeroPanel {
     bars.appendChild(barRow('移动力', Math.floor(hero.movePoints), maxMp, hero.movePoints, ''));
     const maxMana = manaMaxOf(hero);
     bars.appendChild(barRow('法力', hero.mana, maxMana, hero.mana, 'mana'));
-    meta.append(line1, bars);
+    meta.append(line1);
     wrap.appendChild(meta);
 
     const nav = div('hp-nav');
@@ -199,17 +210,16 @@ export class HeroPanel {
       const next = miniBtn('›', () => this.cycle(state, idx, 1), '下一位英雄');
       nav.append(prev, next);
     }
-    const artBtn = miniBtn(
-      this.showArtifacts ? '宝物▴' : '宝物▾',
-      () => {
-        this.showArtifacts = !this.showArtifacts;
-        if (this.lastState) this.update(this.lastState, this.lastHero);
-      },
-      '展开/收起宝物格',
-    );
-    artBtn.classList.toggle('on', this.showArtifacts);
-    nav.appendChild(artBtn);
+    /* `#156` ★ 实测根因：`nav` 里同时放 `书` + `宝物` 两个 40px 按钮 ⇒ `meta` 被挤到 **~36px**
+     * ⇒ 名 / 等级各换行成 3 行 ⇒ `hp-head` 涨到 **128**（实测）。
+     * ⇒ 处置（与 `魔法书` 同口径「放不下就下沉到段内」）：**`宝物` 移到「部队」段首行**，
+     *    `head` 只留 `书` 一个 ⇒ `meta` ≈88px，名与等级同行、不截断。 */
     wrap.appendChild(nav);
+
+    /* `#156` ★ 实测根因修正：两条 bar 若留在 `meta` 里，会被同行右侧的 `nav`（书 / 宝物 ≈96px）
+     * **挤到约 32px 宽** ⇒ 标签「移动力 12/12」换行成多行 ⇒ `hp-head` 被撑到 **128px**。
+     * ⇒ 让 bar 行**独占一行全宽**（`flex-basis:100%` 换行），`head` 回落到 ≤96。 */
+    wrap.appendChild(bars);
 
     return wrap;
   }
@@ -242,6 +252,11 @@ export class HeroPanel {
     const h = document.createElement('h3');
     h.textContent = '部队';
     wrap.appendChild(h);
+
+    /* `#156` ★ 收敛：`宝物` 开关**不在这里** —— 本段首行放一个 40px 按钮会给「部队」段加 ~44px，
+     * 而「部队」是**默认段**（硬②：默认段下 `#side` 不滚）⇒ 自己给自己加负担。
+     * 开关改挂**肖像**（`headSection` 的 `hp-face`）：零宽度、零高度、仍是 ≥40px 真实目标。
+     * （本行以下若再需要"段内工具行"，请先量 `hpbudget` 的默认段预算。） */
 
     const grid = div('hp-slots');
     if (!hero.army.length) {
