@@ -235,16 +235,26 @@ function tileMeanLSpread(cv) {
   }
   return Math.max(...means) - Math.min(...means);
 }
-function uniformSpread(macroShade) {
+function uniformSpreadCanvas(macroShade) {
   const map = uniformGrassMap();
   const t = new TerrainLayer();
   t.macroShade = macroShade;
   const cv = document.createElement('canvas');
   cv.width = W * TILE; cv.height = H * TILE;
   cv.getContext('2d').drawImage(t.ensure(map), 0, 0);
-  return tileMeanLSpread(cv);
+  return cv;
 }
-const sOff = uniformSpread(false), sOn = uniformSpread(true);
+const sOffCv = uniformSpreadCanvas(false), sOnCv = uniformSpreadCanvas(true);
+const sOff = tileMeanLSpread(sOffCv), sOn = tileMeanLSpread(sOnCv);
+
+/* G-18：把这张"全草地图"**存成 PNG**（**不 ×2 放大**，保持 1 格 = 32px），
+   让"相邻格平均 |ΔL*|"有可复算的输入：
+     CMP_TILE=32 node tools/imagecmp.mjs ../design/art-bible/shots/g_uniform_off.png ../design/art-bible/shots/g_uniform_on.png
+   ★ 本文件**不自己算**这个量 —— 算法只在 `imagecmp.mjs` 一处（避免"同一量两种算法"）。 */
+mkdirSync(OUT, { recursive: true });
+writeFileSync(join(OUT, 'g_uniform_off.png'), encodePng(sOffCv.width, sOffCv.height, sOffCv.buf));
+writeFileSync(join(OUT, 'g_uniform_on.png'), encodePng(sOnCv.width, sOnCv.height, sOnCv.buf));
+console.log('  → 全草地图（1:1，未放大）g_uniform_off.png / g_uniform_on.png —— 供 imagecmp.mjs 复算相邻格 |ΔL*|');
 const metric = `同一张全草地图上，逐格平均 L* 极差 <b>${sOff.toFixed(1)} → ${sOn.toFixed(1)}</b>（改前几乎为 0 ＝壁纸感）`;
 
 /* ---------------------------------------------------------------- 对照页 */
