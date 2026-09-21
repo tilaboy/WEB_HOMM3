@@ -576,9 +576,11 @@ console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**�
     const shot = shots[ph];
     for (const [mode, buf] of Object.entries(shot.modes)) writeFileSync(path.join(OUT, `tint_${ph}_${mode}.png`), buf);
     const { meta, rowsOut, popTotal, popFull, popMulti, popZero, zeroSamples } = await analyze(ph, shot, shots.identity);
-    console.log(`########## devlight=${ph}  canvas ${meta.canvas.w}x${meta.canvas.h} dpr ${meta.dpr}（window.devicePixelRatio=${meta.dprRaw}）hero(${meta.hero.x},${meta.hero.y})  #hint 存在=${meta.hint} 显示中=${meta.hintShown}（已注入 CSS 隐藏，期望 显示中=false）`);
+    console.log(`########## devlight=${ph}  canvas ${meta.canvas.w}x${meta.canvas.h} dpr ${meta.dpr}（window.devicePixelRatio=${meta.dprRaw}）hero(${meta.hero.x},${meta.hero.y})`);
     const tst = shots[ph].hintHidden;
-    console.log(`  overlay门: #hint 注入隐藏 ${tst === true ? '已生效（computed display:none）✅' : tst === null ? '⚠️ 无 #hint 元素（未核）' : '❌ 未生效 —— toast 可能在录制中占像素，读数存疑'} · 录制前已丢弃首帧`);
+    /* 唯一权威判定 = **computed display**（注入是否真生效）；`classList.show` 只作说明：
+     * `hint()` 无论是否被 CSS 隐藏都会置 `.show` ⇒ 它恒为 true，**非异常**，别拿它判隐藏是否生效。 */
+    console.log(`  overlay门: #hint 注入隐藏 ${tst === true ? '已生效（computed display:none）✅' : tst === null ? '⚠️ 无 #hint 元素（未核）' : '❌ 未生效 ⇒ toast 可能在录制中占像素，读数存疑'} · 录制前已丢弃首帧 · classList.show=${meta.hintShown}（恒置位，非异常）`);
     console.log(`  fillRect 命中：${FAMILIES.map((f) => `${f}x${shot.hits[f]}`).join('  ')}`);
     for (const f of FAMILIES) if (!shot.hits[f]) { missing = true; console.log(`  [!] 族「${LABEL[f]}」命中 0 —— 颜色/名字可能已改，该族无效，勿引用！`); }
     console.log('  族        | population      | 像素数 | ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG中位 | WCAG均值(参考) | 类总变化(a并集/b全族)');
