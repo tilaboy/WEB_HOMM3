@@ -1,6 +1,9 @@
 # ---- Node / 构建产物 ----
 node_modules/
 dist/
+# 隔离 / 临时构建目录（如 `dist-137` `dist-139` `dist-el`）：**被测对象是 `dist/`**，
+# 别在磁盘上留第二个能被误服务的构建（team-lead 纪律，见 roadmap 2026-09-21 条）。
+dist-*/
 
 # ---- Capacitor 原生工程（Android）构建产物 ----
 # （android/.gitignore 已含大部分；这里补一层，防止误提交到仓库根路径下）
