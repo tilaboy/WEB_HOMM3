@@ -115,3 +115,21 @@ CMP_CROP=84,804 node tools/imagecmp.mjs /tmp/shade_off.png /tmp/shade_on.png
 在组①（我的新层）只有 **0.98 L\***、而组④（本来就有、不挂档位的光照）有 **5.24 L\*** 的前提下，
 **"再叠加一层氛围"是收益最低的方向**；用户 `F-3.8` 说的「各种**贴图**」也已经由 `bitmap-asset-options.md` §3 论证过不是瓶颈。
 ⇒ 建议把"画面提升"的下一笔投在**尺寸 / 内容量 / 构图**上，并在**真机**上复测这份表（任务 #89 的阻塞解除后）。
+
+---
+
+## 7. 口径与归属（后补 · 只记可观察到的事实，不猜动机）
+
+本节写于 `8cfd35b` 之后。**同一目录有两个 `art-director` 实例在并行产出**，为避免后人读到互相矛盾的记录，把可核对的事实列出来：
+
+| 事实 | 依据 |
+|---|---|
+| `tools/deviceshot.mjs` 与 `tools/imagecmp.mjs` **随 `e7f1df3` 首次入库** | `git log --format='%h %ci %s' -- homm-web/tools/imagecmp.mjs` ⇒ 只有 `e7f1df3 2026-09-21 09:07:09` |
+| `8cfd35b`（09:07:36）的提交信息写「新增 tools/deviceshot.mjs / tools/imagecmp.mjs」，但该提交的 `--stat` **不含这两个文件** | 两者在 `e7f1df3` 已入库 ⇒ 信息与 stat 不一致 |
+| 当前磁盘上的 `imagecmp.mjs` 是**两个实例的合并物**：`CMP_CROP`（本文件 §2 用的裁切）与 `CMP_TILE=32` 的「逐格 / 相邻格 \|ΔL\*\|」指标（G-18 的 0.49→2.22 就落在后者）**同时存在** | 文件头同时有 ② 段与 `cropRows()`；`git diff` 对 HEAD 为空 |
+| `f_tier_high.png` / `f_tier_low.png` 与本文档用的 `f_tier_high_noon.png` / `f_tier_low_noon.png` **是同一变量的重复证据**（前者未入库、场景/参数未必相同） | 目录内两组同名前缀文件 |
+| 工作区里 `e_shade_off.png` / `e_shade_on.png` 被**重新拍摄过**（`git status` 显示 `M`） | `git log -- design/art-bible/shots/e_shade_on.png` ⇒ 入库版本来自 `e7f1df3` |
+
+**因此的用途限制**：本文档 §3 的全部数字**对应 `e7f1df3` 里那两版 `e_*` 图**；若有人后来重拍了同名文件，`mean|ΔL\*| 0.98` 这组数**不再自动成立**，必须按 §2 命令重算。
+**建议**：`shots/README.md` 与 `shots/index.html` **指定单一 owner**（本文档不碰这两个文件，写的时候对方正在改）。
+
