@@ -260,6 +260,40 @@ body {
   display: none;
 }
 
+/* ---------- §14.2 教学 3/3 非阻断 banner ---------- */
+/* 贴拇指带上方（`main.ts` 里插在 `#thumb` 之前，顺文档流），高 ≤48px；**不是 modal**。 */
+#obj-banner {
+  flex: 0 0 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  background: linear-gradient(180deg, #4a3418, #33240f);
+  /* 用 inset box-shadow 画分隔线（border 会吃掉内容高，同 #thumb 的做法） */
+  box-shadow: inset 0 2px 0 var(--gold-dim);
+  color: var(--parchment);
+  z-index: 20;
+}
+
+/* `display:flex`（0,1,0）会盖过 UA 的 `[hidden]{display:none}` ⇒ 显式补回（同 .tb-badge[hidden]）。 */
+#obj-banner[hidden] {
+  display: none;
+}
+
+#obj-banner .ob-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#obj-banner .btn {
+  flex: 0 0 auto;
+}
+
 /* 移动力细条样式已随 F-3.6 撤除（数值改由地图染色 + 英雄面板按需呈现）。 */
 
 /* ---------- 菜单 / 日志 / 设置（低频项，IA §7 / §3.2 #23 / a11y §4.2） ---------- */

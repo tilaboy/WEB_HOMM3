@@ -515,17 +515,25 @@ const SCENARIO_SUB: Record<string, string> = {
   tutorial: '无对手 · ≤10 分钟',
   duel: '1 对手 · 20–30 分钟',
 };
+/** §14.1：`scenarioHint` = 该场景的 `hint` **+ 预期时长**（team-lead 裁定）。
+ *  ⚠️ 卡片 `sub` 的时长**仍保留** —— 规格本就是 `sub`（速览）/ `hint`（选中说明）**两列**，
+ *  "并进 hint"不等于"从 sub 移走"。教学场的规格 `hint` 原文**已内含**「10 分钟」；
+ *  对决场原文不含 ⇒ 按规格补上预期时长（故这里不再统一追加，避免教学场出现两遍"10 分钟"）。 */
 const SCENARIO_HINT: Record<string, string> = {
   tutorial: '10 分钟，学会走路。 无对手，只有你能走的几条路。',
-  duel: '有人会来找你。 你发育的时候，他也在发育。',
+  duel: '有人会来找你。 你发育的时候，他也在发育。 预计 20–30 分钟。',
 };
 const FREE_HINT = '自己定尺寸 / 布局 / 对手 / 难度 / 种子 —— 和以前一样。';
-const SCENARIO_HINT_ID = 'scenario-hint';
+/** §14.1 nit：id 加 `ss-` 前缀（与 `.ss-*` 命名族一致，team-lead 裁定）。 */
+const SCENARIO_HINT_ID = 'ss-scenario-hint';
 
 function segment<T>(items: SegItem<T>[], current: T, onPick: (v: T) => void): SegmentHandle<T> {
   const row = document.createElement('div');
   row.className = 'ss-seg';
   // G-4：一组单选卡 = 一个 radiogroup（role=radio + aria-checked），不是"一排按钮"。
+  // ⚠️ 已知缺口（team-lead 裁定：保留语义、登记不阻塞）：严格 ARIA 单选组还需 **roving tabindex
+  //    + 方向键**导航。本项目用原生 `<button>`（可 Tab 聚焦）保留语义，未实现 roving ——
+  //    `STRICT=1 npm run audit:touch` 已过 ⇒ 不阻塞、不在本轮做。
   row.setAttribute('role', 'radiogroup');
   const buttons: HTMLButtonElement[] = [];
   const byValue = new Map<T, HTMLButtonElement>();

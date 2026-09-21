@@ -46,6 +46,10 @@ export class HeroPanel {
   private objState: GameState | null = null;
   /** 本局是否已用「现值」播种过：载入即 3/3 不算"达成转移" ⇒ 不弹 banner（§14.2 边缘情况 1）。 */
   private objSeeded = false;
+  /** §14.2「完成那一刻」的非阻断 banner 只触发一次（会话内一次性）。 */
+  private objBannerFired = false;
+  /** 上一次渲染时是否已全达成（含"载入即全达成"）—— 用来识别"由假变真"的那一次转移。 */
+  private objHadAllDone = false;
 
   constructor(
     private el: HTMLElement,
@@ -54,6 +58,9 @@ export class HeroPanel {
     private onSpellBook?: (heroId: string) => void,
     /** §14.2：3/3 时块末行「去对决场」（覆盖当前存档，调用方须先确认）。 */
     private onGoDuel?: () => void,
+    /** §14.2「完成那一刻」：教学清单**由未全达成 → 全达成**的那一次回调（非阻断 banner）。
+     *  **会话内一次性**；载入即 3/3 **不算**"转移" ⇒ 不触发（边缘情况 1）。 */
+    private onObjectivesComplete?: () => void,
   ) {
     // 调试：?devarts=1 直接展开宝物格（与 devbattle 同一套调试约定）
     this.showArtifacts = new URLSearchParams(location.search).has('devarts');
@@ -69,6 +76,8 @@ export class HeroPanel {
       this.objState = state;
       this.objLatch = {};
       this.objSeeded = false;
+      this.objBannerFired = false;
+      this.objHadAllDone = false;
     }
 
     const hero = heroId ? state.heroes[heroId] : null;
@@ -267,10 +276,20 @@ export class HeroPanel {
       // 首次用「现值」播种：载入即 3/3 不算"由假变真" ⇒ 不弹 banner（边缘情况 1）。
       for (const o of objs) this.objLatch[o.id] = live[o.id] === true;
       this.objSeeded = true;
+      // 播种即全达成（载入存档时已 3/3）⇒ 记为"已达成"，不算转移，不触发 banner。
+      this.objHadAllDone = objs.every((o) => this.objLatch[o.id]);
     } else {
       for (const o of objs) if (live[o.id]) this.objLatch[o.id] = true; // 一旦达成即保持
     }
     const done = objs.filter((o) => this.objLatch[o.id]).length;
+
+    // §14.2「完成那一刻」：**由未全达成 → 全达成**的那一次触发（会话内一次性；载入即 3/3 不弹）。
+    const allDone = done === objs.length;
+    if (allDone && !this.objHadAllDone && !this.objBannerFired) {
+      this.objBannerFired = true;
+      this.onObjectivesComplete?.();
+    }
+    this.objHadAllDone = allDone;
 
     const wrap = div('sec hp-teach');
     const h = document.createElement('h3');

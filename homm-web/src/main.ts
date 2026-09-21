@@ -121,6 +121,50 @@ const thumb = document.createElement('div');
 thumb.id = 'thumb';
 app.appendChild(thumb);
 
+/* ---------------- §14.2 教学 3/3 非阻断 banner ---------------- */
+
+/**
+ * 教学清单 3/3「完成那一刻」的**非阻断**提示（贴拇指带上方，高 ≤48px；§14.2）。
+ * **不是真 modal** —— §4.2 规定只有 城镇 / 魔法书 / 设置 三类走 modal；它按需叠加、
+ * **不常驻、不改地图可见率**（C1 / C5）。触发 = `HeroPanel` 在"由未全达成 → 全达成"
+ * 的那一次回调（会话内一次性；载入即 3/3 不弹）。文案/按钮为 §14.2 的逐字句。
+ */
+const objBanner = document.createElement('div');
+objBanner.id = 'obj-banner';
+objBanner.hidden = true;
+objBanner.setAttribute('role', 'status'); // 非阻断：读屏按状态播报，不夺焦
+app.insertBefore(objBanner, thumb);
+
+const objBannerText = document.createElement('span');
+objBannerText.className = 'ob-text';
+objBannerText.textContent = '你学会了。下一张图有人会来打你。';
+objBanner.appendChild(objBannerText);
+
+const objBannerGo = document.createElement('button');
+objBannerGo.className = 'btn tb-btn primary';
+objBannerGo.textContent = '去对决场';
+objBannerGo.addEventListener('click', () => {
+  hideObjBanner();
+  goDuel(); // 内部已有"覆盖当前存档"的确认弹窗（§14.2）
+});
+objBanner.appendChild(objBannerGo);
+
+const objBannerClose = document.createElement('button');
+objBannerClose.className = 'btn tb-btn';
+objBannerClose.textContent = '关闭';
+objBannerClose.setAttribute('aria-label', '关闭提示');
+objBannerClose.addEventListener('click', () => hideObjBanner());
+objBanner.appendChild(objBannerClose);
+
+/** 显示 3/3 完成 banner（由 `HeroPanel` 的 3/3 转移回调触发）。 */
+function showObjBanner(): void {
+  objBanner.hidden = false;
+}
+/** 关闭 banner / 切换世界时隐藏。 */
+function hideObjBanner(): void {
+  objBanner.hidden = true;
+}
+
 function tbButton(label: string, cls: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement('button');
   b.className = `btn tb-btn ${cls}`.trim();
@@ -322,6 +366,7 @@ function loadLatest(): void {
   refresh();
   renderLog();
   seenLog = state.log.length;
+  hideObjBanner(); // 换世界 ⇒ 3/3 banner 归零（新局里由 HeroPanel 重新判断）
   hint('已读取最近存档');
 }
 
@@ -544,6 +589,7 @@ const panel = new HeroPanel(
   { onLocate: locateTown, onOpen: openTownById },
   (id) => openSpellBook(id),
   () => goDuel(),
+  () => showObjBanner(),
 );
 
 const hud = new HUD(topbar);
@@ -1000,6 +1046,7 @@ function showOutcome(): void {
   refresh();
   renderLog();
   saveGame(state);
+  hideObjBanner(); // 终局 ⇒ 3/3 banner 归零
   showModal(stage, {
     title,
     body: [
@@ -1070,6 +1117,7 @@ function startNewGame(config: GameConfig): void {
   refresh();
   renderLog();
   saveGame(state);
+  hideObjBanner(); // 新局 ⇒ 3/3 banner 归零
   hint(`${state.config.playerName} 的征程开始了`);
 }
 
