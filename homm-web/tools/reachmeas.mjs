@@ -158,11 +158,17 @@ const ink = inkKey ? inkKey.split(',').map(Number) : null;
 const isInk = (a) => ink && Math.abs(a[0] - ink[0]) <= 3 && Math.abs(a[1] - ink[1]) <= 3 && Math.abs(a[2] - ink[2]) <= 3;
 
 const all = [], inkPx = [], perBand = new Map(ORDER.map((k) => [k, []]));
+const darkSplit = new Map([['暗·墨撞（before≈本相位墨色）', []], ['暗·底暗（影/缝/地形）', []]]);
 let darkEnd = 0;   // after 落在"暗端"= 墨像素特征（比精确色匹配鲁棒）
 for (const r of rows) {
   const c = ratio(r.a, r.b); all.push(c);
   if (r.a[0] < 80 && r.a[1] < 70) darkEnd++;
-  if (isInk(r.a)) { inkPx.push(c); perBand.get(classOf(r.i, r)).push(c); }
+  if (isInk(r.a)) {
+    inkPx.push(c);
+    const kk = classOf(r.i, r);
+    perBand.get(kk).push(c);
+    if (kk === '暗(物件/接缝)') darkSplit.get(isInk(r.b) ? '暗·墨撞（before≈本相位墨色）' : '暗·底暗（影/缝/地形）').push(c);
+  }
 }
 const stat = (s) => { s = s.slice().sort((x, y) => x - y); return { n: s.length, med: pctl(s, 0.5), p10: pctl(s, 0.1), p90: pctl(s, 0.9), ge3: s.length ? (100 * s.filter((c) => c >= 3).length) / s.length : NaN }; };
 
@@ -192,3 +198,19 @@ for (const k of ORDER) {
 }
 if (thin.length) console.log(`     ⚠️ 样本不足/不存在：${thin.join('、')} ⇒ 这些类**不能算"过"**（防真空通过）`);
 console.log(`     锚 = WCAG 1.4.11 非文本 3:1`);
+/* ── 诊断：「暗(物件/接缝)」拆两半（判 (a)/(b)/(c) 用）────────────────────────────────
+ * 判据：该类的**失败机制**决定处方 ——
+ *   ① `暗·墨撞`（`before` ≈ **本相位的墨色**）⇒ 是「**同色线相撞**」（④ 描边撞上物件自带的 `ink0` 描边）
+ *      ⇒ 量的是"墨 vs 墨" ⇒ **不是"底太暗"** ⇒ 处方 = **插亮带/改 z-order**（(ii) 的亮芯正好破它）。
+ *   ② `暗·底暗`（底是去饱和的地形/影/缝）⇒ 是「**底本来就暗**」⇒ 处方 = **亮芯**（(ii) 的目的）。
+ * ⇒ 若 ① 占比极低 ⇒ 该类基本是"底暗" ⇒ **不必 (a)/(b)**，交 (ii)。
+ * ⇒ 若 ① 占比高 ⇒ 才轮到 (a)「描边画在物件之上」；(a) 也不可接受时才 (b) 排除+写明理由。
+ */
+if (darkSplit.size) {
+  console.log(`  ── 诊断：「暗(物件/接缝)」拆两半（判 (a)/(b)/(c) 用）`);
+  for (const [k, arr] of darkSplit) {
+    const s = stat(arr);
+    if (!s.n) { console.log(`     ${k.padEnd(26)} | n=0`); continue; }
+    console.log(`     ${k.padEnd(26)} | ${String(s.n).padStart(6)} | WCAG 中位 ${f2(s.med).padStart(6)} | ≥3:1 ${s.ge3.toFixed(1)}%`);
+  }
+}
