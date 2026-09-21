@@ -130,6 +130,100 @@ function lstar(r, g, b) {
   return Y > 0.008856 ? 116 * Math.cbrt(Y) - 16 : 903.3 * Y;
 }
 
+/* ---- CIE L\*a\*b\*（D65）与 ΔE\*ab -------------------------------------------------
+ * 为什么除了 L\* 还要 a\*b\*（roadmap `3f11752`）：L\* 只量**明度**差。
+ * 若一次改动主要是**色相/饱和度**（如"草地偏青、沼泽偏冷"，或可达染色的蓝/红），
+ * 只报 |ΔL\*| 会**系统性低估**它；判"玩家看不看得出"要用**同维度的尺子**＝ ΔE\*ab。
+ * （色觉障碍另论：那要问"红绿色盲下 ΔL\* 还剩多少"，`tintab.mjs` 有该列。）
+ */
+function labFromRgb(r, g, b) {
+  const R = lin(r);
+  const G = lin(g);
+  const B = lin(b);
+  const X = R * 0.4124564 + G * 0.3575761 + B * 0.1804375;
+  const Y = R * 0.2126729 + G * 0.7151522 + B * 0.072175;
+  const Z = R * 0.0193339 + G * 0.119192 + B * 0.9503041;
+  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const fx = f(X / 0.95047);
+  const fy = f(Y);
+  const fz = f(Z / 1.08883);
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+function dEab(a, b) {
+  const d0 = a[0] - b[0];
+  const d1 = a[1] - b[1];
+  const d2 = a[2] - b[2];
+  return Math.sqrt(d0 * d0 + d1 * d1 + d2 * d2);
+}
+
+/* ---------------- 边缘对比（CMP_EDGE=<hex>）：量「某色描边 vs 其相邻底色」的 WCAG 对比 ----------------
+ *
+ * 用途：④ 可达染色改 (α) 后，格缘描边 = **不透明 `ink0` `#2a1a12`**（`MapRenderer.ts` 的 `NOGO_EDGE_INK`）。
+ * 判据（`accessibility-requirements.md §4.6`）= **WCAG 非文本 3:1**，量的对象是「**状态（描边）vs 其底（相邻地形）**」。
+ *
+ * 做法：找出容差内与目标色相近的像素；对每个，向**四邻（含隔 1px 的第二圈）找第一个非目标色**像素作"底"，
+ * 算 WCAG 对比 = (Yhi+0.05)/(Ylo+0.05)（Y = 相对亮度）。报 中位 / p10 / min / p90 + 底色 L* 分布 + "<3:1 占比"。
+ *
+ * ⚠️ 口径（诚实边界）：目标色若在图上**还出现在别处**（如物件描边也是 `ink0`），会一并计入 ——
+ *   因**颜色相同 ⇒ 对比同源**，对"`ink0` 能不能达 3:1"这个判断**无偏**；但它**不是**只量那圈 ④ 格缘。
+ *   要只量 ④ 格缘，需"染色开/关"两张图做差（见 §4.6 的 A/B 口径）。屏幕截图经 DPR 上采样 ⇒ 描边像素被插值，
+ *   故必须给容差 `CMP_EDGE_TOL`（默认 ±12），并以 **n（命中的描边像素数）** 判读数是否够量。
+ */
+function relY(r, g, b) {
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+function wcagRatio(y1, y2) {
+  const hi = Math.max(y1, y2);
+  const lo = Math.min(y1, y2);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+function edgeContrast(img, hex, tol) {
+  const t = [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+  const hit = (x, y) => {
+    const [r, g, b] = pixel(img, x, y);
+    return Math.abs(r - t[0]) <= tol && Math.abs(g - t[1]) <= tol && Math.abs(b - t[2]) <= tol;
+  };
+  const ratios = [];
+  const baseLs = [];
+  // 8 方向：先看紧邻，再看隔 1px 的第二圈 —— 描边宽度（④ 为 2 边 × `EDGE_W`=2px）可能 >1px
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]];
+  const yc = relY(t[0], t[1], t[2]);
+  for (let y = 0; y < img.height; y++) {
+    for (let x = 0; x < img.width; x++) {
+      if (!hit(x, y)) continue;
+      let found = null;
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= img.width || ny >= img.height) continue;
+        if (hit(nx, ny)) continue;
+        found = pixel(img, nx, ny);
+        break;
+      }
+      if (!found) continue;
+      ratios.push(wcagRatio(yc, relY(found[0], found[1], found[2])));
+      baseLs.push(lstar(found[0], found[1], found[2]));
+    }
+  }
+  const n = ratios.length;
+  if (!n) return { n: 0 };
+  const rs = Float64Array.from(ratios).sort();
+  const bl = Float64Array.from(baseLs).sort();
+  const q = (arr, p) => arr[Math.min(arr.length - 1, Math.floor(arr.length * p))];
+  return {
+    n,
+    median: q(rs, 0.5),
+    p10: q(rs, 0.1),
+    p90: q(rs, 0.9),
+    min: rs[0],
+    baseLMedian: q(bl, 0.5),
+    baseLMin: bl[0],
+    baseLMax: bl[bl.length - 1],
+    below3: ratios.filter((v) => v < 3).length / n,
+  };
+}
+
 function stats(img) {
   const n = img.width * img.height;
   let sr = 0;
@@ -267,6 +361,21 @@ for (const f of files) {
           `   相邻格平均 |ΔL*| ${t.adjMean.toFixed(2)}`,
       );
     }
+    // CMP_EDGE=<hex> ⇒ 量「该色描边 vs 其相邻底色」的 WCAG 对比（④ (α) 的 3:1 判据，见 accessibility §4.6）
+    const edgeHex = process.env.CMP_EDGE;
+    if (edgeHex) {
+      const tol = Number(process.env.CMP_EDGE_TOL ?? 12);
+      const e = edgeContrast(img, edgeHex.replace(/^#/, ''), tol);
+      if (!e.n) {
+        console.log(`  边缘对比 #${edgeHex}：图里找不到该色（容差 ±${tol}）`);
+      } else {
+        console.log(
+          `  边缘对比 #${edgeHex}（容差 ±${tol}，n=${e.n}）：` +
+            `中位 ${e.median.toFixed(2)}  p10 ${e.p10.toFixed(2)}  min ${e.min.toFixed(2)}  p90 ${e.p90.toFixed(2)}` +
+            `  <3:1 占比 ${(e.below3 * 100).toFixed(1)}%  底色 L* 中位 ${e.baseLMedian.toFixed(1)} [${e.baseLMin.toFixed(1)}, ${e.baseLMax.toFixed(1)}]`,
+        );
+      }
+    }
   } catch (e) {
     console.error(`${f}：解码失败 —— ${e.message}`);
     failed = true;
@@ -284,8 +393,10 @@ if (imgs.length >= 2) {
 
   let dSum = 0;
   let dLSum = 0;
+  let dESum = 0;
   let changed = 0;
   const dls = new Float64Array(W * H);
+  const des = new Float64Array(W * H);
   for (let i = 0; i < W * H; i++) {
     const dr = Math.abs(A[i * 3] - B[i * 3]);
     const dg = Math.abs(A[i * 3 + 1] - B[i * 3 + 1]);
@@ -295,14 +406,22 @@ if (imgs.length >= 2) {
     const dl = Math.abs(lstar(A[i * 3], A[i * 3 + 1], A[i * 3 + 2]) - lstar(B[i * 3], B[i * 3 + 1], B[i * 3 + 2]));
     dls[i] = dl;
     dLSum += dl;
+    const de = dEab(
+      labFromRgb(A[i * 3], A[i * 3 + 1], A[i * 3 + 2]),
+      labFromRgb(B[i * 3], B[i * 3 + 1], B[i * 3 + 2]),
+    );
+    des[i] = de;
+    dESum += de;
   }
   const sorted = Float64Array.from(dls).sort();
+  const sortedE = Float64Array.from(des).sort();
   const f2 = (v) => v.toFixed(2);
   console.log(
     `\n【对照】${imgs[0].file}  →  ${imgs[1].file}` +
       (resampled ? `\n  ⚠️ 两图尺寸不同（${a.width}×${a.height} vs ${b.width}×${b.height}），已最近邻缩到 ${W}×${H} 再比 —— 差异里含"分辨率"一项，不是纯颜色差` : '') +
       `\n  平均 |ΔRGB| ${f2(dSum / (W * H))}   变化像素占比 ${((changed / (W * H)) * 100).toFixed(1)}%（任一通道 |Δ|>8）` +
-      `\n  平均 |ΔL*| ${f2(dLSum / (W * H))}   p95 |ΔL*| ${f2(sorted[Math.floor((W * H) * 0.95)])}`,
+      `\n  平均 |ΔL*| ${f2(dLSum / (W * H))}   p95 |ΔL*| ${f2(sorted[Math.floor((W * H) * 0.95)])}` +
+      `\n  平均 ΔE*ab ${f2(dESum / (W * H))}   p95 ΔE*ab ${f2(sortedE[Math.floor((W * H) * 0.95)])}`,
   );
 }
 
