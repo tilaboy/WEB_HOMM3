@@ -25,12 +25,13 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
-import { distDir, distUrl, printHeader } from './_dist.mjs';
+import { distDir, distUrl, printHeader, requireFile } from './_dist.mjs';
 
 /* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。 */
 const DIST = distDir();
 printHeader(DIST, 'gate=b0audit');
 const u = (rel) => distUrl(rel, DIST);
+requireFile(DIST, 'render/unitArt.js');
 
 const {
   UNIT_FRAMES,

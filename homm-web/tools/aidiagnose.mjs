@@ -24,13 +24,20 @@
  *   tools/_aidiagnose.log    全部 AI 相关日志（按天）
  */
 import { writeFileSync } from 'node:fs';
-import { createGame } from '../dist/core/map/generator.js';
-import { endDay } from '../dist/core/game/turn.js';
-import { getUnit } from '../dist/core/data/units.js';
-import { BUILDINGS } from '../dist/core/data/buildings.js';
-import { heroPower } from '../dist/core/game/hero.js';
-import { factionName } from '../dist/core/data/factions.js';
-import { isEliminated, noTownDaysOf, NO_TOWN_GRACE_DAYS } from '../dist/core/game/victory.js';
+import { distDir, distUrl, printHeader } from './_dist.mjs';
+
+/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。 */
+const DIST = distDir();
+printHeader(DIST, 'gate=aidiagnose');
+const dimp = (rel) => distUrl(rel, DIST);
+
+const { createGame } = await import(dimp('core/map/generator.js'));
+const { endDay } = await import(dimp('core/game/turn.js'));
+const { getUnit } = await import(dimp('core/data/units.js'));
+const { BUILDINGS } = await import(dimp('core/data/buildings.js'));
+const { heroPower } = await import(dimp('core/game/hero.js'));
+const { factionName } = await import(dimp('core/data/factions.js'));
+const { isEliminated, noTownDaysOf, NO_TOWN_GRACE_DAYS } = await import(dimp('core/game/victory.js'));
 
 const SEEDS = Number(process.env.SEEDS ?? 3);
 const DAYS = Number(process.env.DAYS ?? 60);

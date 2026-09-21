@@ -2,9 +2,16 @@
  * M8 布局审计：每种布局 × 每种尺寸 × N 个种子，检查生成是否"真的成立"。
  * 关心四件事：能不能生出来、四家走不走得到、地形比例是否合理、深处有没有宝贝。
  */
-import { createGame } from '../dist/core/map/generator.js';
-import { isPassable } from '../dist/core/map/grid.js';
-import { TERRAIN } from '../dist/core/data/terrains.js';
+import { distDir, distUrl, printHeader } from './_dist.mjs';
+
+/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。 */
+const DIST = distDir();
+printHeader(DIST, 'gate=layoutaudit');
+const dimp = (rel) => distUrl(rel, DIST);
+
+const { createGame } = await import(dimp('core/map/generator.js'));
+const { isPassable } = await import(dimp('core/map/grid.js'));
+const { TERRAIN } = await import(dimp('core/data/terrains.js'));
 
 const LAYOUTS = ['wild', 'ring', 'islands', 'lanes'];
 const SIZES = ['small', 'medium', 'large', 'huge'];

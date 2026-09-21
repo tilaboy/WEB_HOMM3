@@ -23,11 +23,15 @@ import { writeFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { argOf, distDir, printHeader, freePort, serveInProcess } from './_dist.mjs';
 
 const root = process.cwd();
-const dist = path.join(root, 'dist');
+/* `--dist=<dir>`（缺省 `<cwd>/dist` = 旧行为，**逐字不变**）—— team-lead #164。 */
+const dist = distDir({ base: root });
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const APP_PORT = Number(process.env.PORT ?? 5173);
+/* 端口（#164 要求②）：`--port=<n>` / env `PORT` ⇒ 连**调用方给的**；否则取**空闲端口**自起。 */
+const PORT_ARG = argOf('port', null) ?? process.env.PORT ?? null;
+const APP_PORT = PORT_ARG ? Number(PORT_ARG) : await freePort();
 // 每次用不同端口：固定端口下若上一轮 Chrome 没退干净，findTarget 会连到那个**陈旧**实例、
 // 量到旧 DOM（假 PASS/假 FAIL——对验证工具而言是最糟的失效方式）。
 // 按 PID 派生端口，并与 tinytargetaudit.mjs 的 9200 段错开（9900 起），两个审计并行也不串台。
@@ -35,8 +39,11 @@ const CDP_PORT = 9900 + (process.pid % 90);
 const PROBE_NAME = '_hoverprobe.html';
 const PROBE = path.join(dist, PROBE_NAME);
 
+/* ★ 首行打印「我服务的目录 + cwd + 指纹」（#164 要求③）。 */
+printHeader(dist, `gate=hoveraudit · port=${APP_PORT}`);
+
 if (!existsSync(path.join(dist, 'ui', 'BattleScreen.js'))) {
-  console.error('dist/ui/BattleScreen.js 不存在，请先 npm run build');
+  console.error(`✗ ${dist}/ui/BattleScreen.js 不存在 —— 先 npm run build（或 --dist=<dir> 指向隔离构建）`);
   process.exit(2);
 }
 
@@ -68,14 +75,17 @@ window.__probeReady = true;
 );
 
 // 探针页要经 dev server 提供（./ui/... 是相对路径，file:// 起不来）
+// `#164` 要求②：没给 `--port` 时**取空闲端口进程内自起** serve.mjs 指向 `dist`（不 spawn 子进程）。
 try {
   const res = await fetch(`http://127.0.0.1:${APP_PORT}/${PROBE_NAME}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-} catch (e) {
-  console.error(
-    `dev server 没在 127.0.0.1:${APP_PORT} 上跑（${e.message}）；先另开终端 node tools/serve.mjs`,
-  );
-  process.exit(2);
+} catch {
+  const okSrv = await serveInProcess(dist, APP_PORT);
+  if (!okSrv) {
+    console.error(`✗ dev server 起不来（dir=${dist} :${APP_PORT}）—— 手工跑 node tools/serve.mjs 再看`);
+    rmSync(PROBE, { force: true });
+    process.exit(2);
+  }
 }
 
 const profile = mkdtempSync(path.join(tmpdir(), 'hoveraudit-'));

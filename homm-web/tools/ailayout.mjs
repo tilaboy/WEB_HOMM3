@@ -7,8 +7,15 @@
  * 同心环的 AI 有没有渡过外护城河摸到内环的矿。
  * 只要某档布局让 AI 卡在原地，这几列数字会立刻塌下去。
  */
-import { createGame } from '../dist/core/map/generator.js';
-import { endDay } from '../dist/core/game/turn.js';
+import { distDir, distUrl, printHeader } from './_dist.mjs';
+
+/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。 */
+const DIST = distDir();
+printHeader(DIST, 'gate=ailayout');
+const dimp = (rel) => distUrl(rel, DIST);
+
+const { createGame } = await import(dimp('core/map/generator.js'));
+const { endDay } = await import(dimp('core/game/turn.js'));
 
 const LAYOUTS = ['wild', 'ring', 'islands', 'lanes'];
 const SEEDS = Number(process.env.SEEDS ?? 4);

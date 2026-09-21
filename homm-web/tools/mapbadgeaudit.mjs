@@ -20,10 +20,18 @@
  * 退出码：0 = 全 PASS；1 = 有断言失败；2 = 前置条件不成立（帧表 / 规格结构被改）。
  */
 import fs from 'node:fs';
-import { UNIT_FRAMES, buildB0Frame } from '../dist/render/unitArt.js';
-import { TILE, worldToGrid } from '../dist/render/ortho.js';
-import { Camera } from '../dist/render/camera.js';
-import { chooseBadgeSide, badgeBBoxAt, bboxOverlaps } from '../dist/render/mapBadge.js';
+import path from 'node:path';
+import { distDir, distUrl, printHeader } from './_dist.mjs';
+
+/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。 */
+const DIST = distDir();
+printHeader(DIST, 'gate=mapbadgeaudit');
+const dimp = (rel) => distUrl(rel, DIST);
+
+const { UNIT_FRAMES, buildB0Frame } = await import(dimp('render/unitArt.js'));
+const { TILE, worldToGrid } = await import(dimp('render/ortho.js'));
+const { Camera } = await import(dimp('render/camera.js'));
+const { chooseBadgeSide, badgeBBoxAt, bboxOverlaps } = await import(dimp('render/mapBadge.js'));
 
 let fails = 0;
 const line = (s) => process.stdout.write(s + '\n');
@@ -95,7 +103,7 @@ async function measureHeroOffsets() {
   };
   globalThis.document = { createElement: () => new StubCanvas() };
   try {
-    const { Atlas } = await import('../dist/render/atlas.js');
+    const { Atlas } = await import(dimp('render/atlas.js'));
     const atlas = Atlas.build();
     const buf = atlas.canvas._buf;
     const AW = atlas.canvas.width;
@@ -220,7 +228,7 @@ line('\n=== A′ 前提：剪影中心 = 帧中心 ±1px（S3 帧内居中；不
 /* ============================ B′ · 信息层不改变命中 ============================ */
 line('\n=== B′ 信息层不改变命中 ===');
 {
-  const readDist = (rel) => fs.readFileSync(new URL(`../dist/render/${rel}`, import.meta.url), 'utf8');
+  const readDist = (rel) => fs.readFileSync(path.join(DIST, 'render', rel), 'utf8');
   const inputSrc = [readDist('camera.js'), readDist('ortho.js')].join('\n');
   ok(!/badge|u_[a-z0-9_]+_map/i.test(inputSrc), 'B′静态：camera.js / ortho.js 不含徽标 / u_*_map 引用（输入不吃渲染数据）');
 

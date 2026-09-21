@@ -1,4 +1,4 @@
-import { distDir, distUrl, printHeader } from './_dist.mjs';
+import { distDir, distUrl, printHeader, requireFile } from './_dist.mjs';
 
 /* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164：
  * 跑门不必覆盖共用 `dist/`。下面所有 `../dist/...` 一律经 `dimp()` 解析到被测目录；
@@ -6,6 +6,8 @@ import { distDir, distUrl, printHeader } from './_dist.mjs';
 const DIST = distDir();
 printHeader(DIST, 'gate=smoke');
 const dimp = (rel) => distUrl(rel, DIST);
+/* 前置：被测构建得真含本门要 import 的产物；缺 ⇒ exit 2（别吐模块解析栈）。 */
+requireFile(DIST, 'render/camera.js');
 
 const { Camera } = await import(dimp('render/camera.js'));
 const { lightTintAt } = await import(dimp('render/lightLayer.js'));

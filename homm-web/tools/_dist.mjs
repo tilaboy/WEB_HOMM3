@@ -83,6 +83,16 @@ export function printHeader(dir, extra = '') {
   return fp;
 }
 
+/** 断言 `dir` 下存在 `rel`；缺 ⇒ 按本仓约定以 **exit 2** 报「前置不满足」（不吐模块解析栈）。 */
+export function requireFile(dir, rel) {
+  const p = path.join(dir, rel);
+  if (!existsSync(p)) {
+    console.error(`✗ 前置不满足：${p} 不存在 —— 先 npm run build（或 --dist=<dir> 指向隔离构建）。`);
+    process.exit(2);
+  }
+  return p;
+}
+
 /** 取一个**空闲**端口（team-lead #164 要求②：自起服务不许复用已在跑的 5173）。 */
 export function freePort() {
   return new Promise((resolve, reject) => {

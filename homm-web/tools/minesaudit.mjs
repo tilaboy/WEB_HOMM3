@@ -15,12 +15,28 @@
  * 用法：SEEDS=3 node tools/minesaudit.mjs [size]
  *   不带参数则遍历 small/medium/large/huge 四档 × 全部布局。
  */
-import { createGame } from '../dist/core/map/generator.js';
-import { HOME_MINE_RING } from '../dist/core/data/mines.js';
+import { distDir, distUrl, printHeader } from './_dist.mjs';
+
+/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。 */
+const DIST = distDir();
+printHeader(DIST, 'gate=minesaudit');
+const dimp = (rel) => distUrl(rel, DIST);
+
+const { createGame } = await import(dimp('core/map/generator.js'));
+const { HOME_MINE_RING } = await import(dimp('core/data/mines.js'));
 
 const LAYOUTS = ['wild', 'ring', 'islands', 'lanes'];
 const SIZES = ['small', 'medium', 'large', 'huge'];
-const onlySize = process.argv[2];
+/* ⚠️ 位置参数 = 可选尺寸；**必须跳过 `--k=v` 旗标**。
+ * 起因（2026-09-21 复核实测）：`--dist=<dir>` 曾被 `process.argv[2]` 当成尺寸 ⇒
+ * `size !== onlySize` 恒真 ⇒ **一局都不跑**、还打印「全部通过」⇒ 一道**假绿**的必跑门控
+ * （`--dist` 一去就静默空跑；实测 PASS 行 `48 → 0`、exit 仍 0）。
+ * 现在：非 `--` 的首个位置参数才是尺寸；给了未知尺寸 ⇒ **直接 exit 2**（不再静默空跑）。 */
+const onlySize = process.argv.slice(2).find((a) => !a.startsWith('--'));
+if (onlySize && !SIZES.includes(onlySize)) {
+  console.error(`✗ 未知尺寸「${onlySize}」—— 可选：${SIZES.join(' / ')}（旗标请写成 --k=v）`);
+  process.exit(2);
+}
 const seeds = Number(process.env.SEEDS ?? 3);
 
 let fails = 0;
