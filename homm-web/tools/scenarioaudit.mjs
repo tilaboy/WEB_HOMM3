@@ -22,13 +22,26 @@
  *   node tools/serve.mjs                       # 另开一个终端（默认 5173）
  *   node tools/scenarioaudit.mjs
  *   node tools/scenarioaudit.mjs --url=http://127.0.0.1:5174 --port=5174
+ *   NEG=1 node tools/scenarioaudit.mjs         # **可证伪负测**：只跑「故意弄坏」的三组，断言都变红
  *
  * 退出码：0 全过 / 1 有 FAIL / 2 前置不满足（无 Chrome 或 dev server 没起）
  *
  * ⚠️ 前置：本工具**不改**任何文件、只读页面；它读的是 `dist/`（`serve.mjs` 的根）。
  *    换构建请先改 `dist/`，别在测量窗口里跑错构建。
+ *
+ * ## ★ 可证伪负测（`NEG=1`）—— team-lead 新规矩「**门必须双向可证：能红也能绿**」
+ * 正向跑一次全绿，**证明不了**门能红（它可能是**恒绿**：判据写错、永远命中）。
+ * 故本工具带一个**负测模式**：把三类判据**各故意弄坏一次**，断言它们**都变红**：
+ *   A. **前置**（「被测构建必须自证含被测对象」）—— 指一个**不含**「试玩场景」的 dist ⇒ 必须 `exit 2`；
+ *   B. **结构判据**（DOM）—— 现场 `remove()` 掉 `#obj-banner` ⇒ 存在性判据必须 `true → false`；
+ *   C. **数据判据**（真存档）—— 把自由对局真存档的 `config.scenario` 篡改成 `'tutorial'` ⇒
+ *      「自由对局无 `scenario` 键」必须 `true → false`。
+ * `NEG-PASS` = 该判据**确实会红**；`NEG-FAIL` = 它是**恒绿**（门坏了，必须修）。
+ * 负测**不进验收数**（它与正向套件互斥：`NEG=1` 时不跑正向）。
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withHeadlessChrome } from './_chrome.mjs';
@@ -46,8 +59,9 @@ const URL0 = arg('url', `http://127.0.0.1:${PROBE}`);
  * （2026-09-21 实战：dist 早 `#137` 20 分钟 ⇒ 曾产出 20 条假 FAIL）。 */
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /* `--dist=<dir>`：被测构建目录（默认 `dist`）。用临时隔离构建（如 `dist-137ck`）时指定它，
- * 免得为了跑门控去覆盖真正的 `dist`（`dist` 是测量对象，重建须申报 / 单人一次）。 */
-const DIST = path.join(ROOT, arg('dist', 'dist'));
+ * 免得为了跑门控去覆盖真正的 `dist`（`dist` 是测量对象，重建须申报 / 单人一次）。
+ * `path.resolve`（而非 `join`）⇒ **相对路径按 `ROOT` 解、绝对路径原样用**（负测 A 要传 tmpdir 绝对路径）。 */
+const DIST = path.resolve(ROOT, arg('dist', 'dist'));
 /* ⚠️ 标记所在产物已核准：「试玩场景」（`#137` 的核心标记）编译进 **`ui/StartScreen.js`**，
  *  **不在 `main.js`**（roadmap 那句"main.js 命中 0"说的是旧 `dist` 的事实，但据此写守卫会误判 —— 
  *  本条按**实测**取 `ui/StartScreen.js`）。 */
@@ -64,6 +78,36 @@ if (!readFileSync(START_JS, 'utf8').includes('试玩场景')) {
 let bad = 0;
 const PASS = (c, m) => { if (!c) bad++; console.log(`[${c ? 'PASS' : 'FAIL'}] ${m}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* ── `NEG=1` 可证伪负测（见文件头注「门必须双向可证」）── */
+const NEG = process.env.NEG === '1';
+let negBad = 0;
+const NEGPASS = (c, m) => { if (!c) negBad++; console.log(`[${c ? 'NEG-PASS' : 'NEG-FAIL'}] ${m}`); };
+
+/**
+ * 负测 A：给一个**不含**「试玩场景」标记的 dist 目录 ⇒ 前置必须 `exit 2`。
+ * 这正是 2026-09-21 实战那次的**该红要红**：前置写错文件时它必须挡下读数，
+ * 而不是把 stale-dist 的 FAIL 记到 `#137` 头上。
+ */
+function negPrecondition() {
+  const tmp = mkdtempSync(path.join(tmpdir(), 'neg-dist-'));
+  try {
+    mkdirSync(path.join(tmp, 'ui'), { recursive: true });
+    writeFileSync(path.join(tmp, 'ui', 'StartScreen.js'), '/* 故意不含「试玩场景」标记 */\n');
+    const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--dist=${tmp}`], {
+      encoding: 'utf8',
+      timeout: 60000,
+      env: { ...process.env, NEG: '0' },
+    });
+    return { status: r.status, ok: r.status === 2 };
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+if (NEG) {
+  const a = negPrecondition();
+  NEGPASS(a.ok, `A 前置可红：不含「试玩场景」的 dist ⇒ 期待 exit 2，实得 ${a.status}`);
+}
 
 try {
   await withHeadlessChrome(
@@ -83,6 +127,28 @@ try {
       const readOns = () =>
         evaluate(`(() => [...document.querySelectorAll('#start-screen .ss-seg')]
           .map(s => { const on = s.querySelector('.ss-seg-item.on'); return on ? on.querySelector('.t').textContent : '(none)'; }).join(' | '))()`);
+
+      /* ── `NEG=1`：只跑「故意弄坏」的结构/数据两类，断言都变红，然后收工（不跑正向套件）── */
+      if (NEG) {
+        // B 结构判据（DOM）：把 `#obj-banner` 摘掉 ⇒ 存在性判据必须 true→false
+        await boot();
+        const bProbe = () => evaluate(`(() => { const b = document.querySelector('#obj-banner'); return !!b && b.hidden === true && b.getAttribute('role') === 'status'; })()`);
+        const bBefore = await bProbe();
+        await evaluate(`(() => { const b = document.querySelector('#obj-banner'); if (b) b.remove(); })()`);
+        const bAfter = await bProbe();
+        NEGPASS(bBefore === true && bAfter === false, `B 结构判据可红：#obj-banner 在/默认隐藏时判据=true，remove() 后=false（before=${bBefore} after=${bAfter}）`);
+        // C 数据判据（真存档）：把自由对局真存档的 config.scenario 篡改成 'tutorial' ⇒ 判据必须 true→false
+        await boot();
+        await clickText('#start-screen button', '开始新游戏');
+        await sleep(1200);
+        const cProbe = () => evaluate(`(() => { let s = null; try { s = JSON.parse(localStorage.getItem('homm-save-v1')); } catch { s = null; } return !!s && !Object.prototype.hasOwnProperty.call(s.config, 'scenario'); })()`);
+        const cBefore = await cProbe();
+        await evaluate(`(() => { const s = JSON.parse(localStorage.getItem('homm-save-v1')); s.config.scenario = 'tutorial'; localStorage.setItem('homm-save-v1', JSON.stringify(s)); })()`);
+        const cAfter = await cProbe();
+        NEGPASS(cBefore === true && cAfter === false, `C 数据判据可红：自由对局真存档无 scenario 键=true，篡改后=false（before=${cBefore} after=${cAfter}）`);
+        console.log(`\n${negBad ? `★ ${negBad} 项 NEG-FAIL —— 判据可能**恒绿**（门坏了，必须修）` : '负测全部通过：A/B/C 三类判据**都能红**（门不是恒绿）'}`);
+        return;
+      }
 
       /* 0) 开始页结构 */
       await boot();
@@ -262,4 +328,4 @@ try {
   console.error(e.message ?? e);
   process.exit(e && e.prerequisite ? 2 : 1);
 }
-process.exit(bad ? 1 : 0);
+process.exit(NEG ? (negBad ? 1 : 0) : bad ? 1 : 0);
