@@ -237,6 +237,24 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 
 **复算要求（给 ④ owner）**：**冻结窗口内** → **A/B 口径** → **含墨族（`ink×N>0`；`tintab` 的 0 命中即非零退出 ⇒ 那次结果作废）** → **绑构建指纹**（`dist/render/MapRenderer.js` mtime/md5 + 源码 commit）⇒ 产出**全仓唯一一处**验收数（`tintab.mjs`，勿再另起口径）。
 
+#### ↳ ④ owner 复算读数（2026-09-21 · `art-director` 生产方 · **已绑构建**）—— 回应上面的「复算要求」
+
+- **口径**：A/B（同场景同相机同像素，只差染色层）；population = 变化像素（通道差 `max|Δ|>4`）；统计量 = **WCAG 中位 + ≥3:1 占比**。**未用阈值筛人口**（避 `5.09` 病根）。
+- **绑构建**：`before = 68abf37`（无墨）→ `after = 3e8084f`（红+墨）。两提交**只差 `MapRenderer.ts` 的加法**（红的位置 / 厚度逐字未变 —— `EDGE_W` 就是旧的硬编码 `2`）⇒ 变化像素 = **新增的那圈墨**；这些像素在 `before` 里 = **裸地形** ⇒ `WCAG(after, before)` 正是「**状态 vs 其底**」。
+- **读数**（真机视口 **792×320@DPR3** · tier mid · `devseed=20260917` · 只差 `devlight` 0.22 ↔ 0.68）：
+
+| 相位 | 变化像素 | **WCAG 中位** | **≥3:1 像素** | 暗端占比 |
+|---|---|---|---|---|
+| 正午 0.22 | 38434 | **2.93** | **44.6%** | 89.7% |
+| 深夜 0.68 | 37838 | **2.08** | **25.3%** | 92.7% |
+| 零假设（同图 vs 同图） | 0 | — | — | — |
+
+- ⇒ **两相位均未过 3:1**（正午压线未过、夜明显未过）。与上面「方向性判定（不合格）」**结论一致**，但本次是**绑构建的复算**。
+- **分档（均值过 ≠ 全过 · `§15.4` 教训）**：沙/土 **8.98 / 5.12** · 草·亮 **4.72 / 5.43** · 草·中 **3.72 / 2.92** · 水 **3.04 / 2.14** · 草·深 **2.33 / 2.43** · 暗(物件/接缝) **1.16 / 1.14**（正午/夜）⇒ **亮地形过；暗地形 / 水 / 夜间败**。⇒ 支撑上面的处置 **(a-1) 相位感知描边**。
+- ⚠️ **`tintab.mjs` 当前量不到墨族（已复现，阻断「用 tintab 出唯一验收数」）**：它的常量解析器只认 `'rgba(...)'` 字面量，而 `NOGO_EDGE_INK = '#2a1a12'` 是 **hex** ⇒ 该常量**不进 `EDGE`**（node 复现：解析到的只有 `REACH_TINT` / `NOGO_EDGE`）⇒ `none` / `edge` 模式**都漏不掉墨** ⇒ 净贡献是**对着"含墨的底"**算的 ⇒ **系统性错归因**。（与上面「`NOGO_EDGE_INK` 被解析为 `rgba(0,0,0,0)`」同源。）已同步 **`engineering-lead-2`（`tintab` owner）**。**本次读数改用 `tools/reachmeas.mjs`（**同口径**、能识别墨）**；`tintab` 修好后**应交汇为唯一源**。
+- **⛔ 收回**：早前「Δ>40 核心墨像素」子选得 **4.37 / 2.86** —— **拿结果筛人口**，**作废**。
+- **复算**：`node tools/reachmeas.mjs ../design/art-bible/shots/i_reach_after_noon.png ../design/art-bible/shots/i_reach_before_noon.png 正午`
+
 ### G1 地貌区层（`j_g1_*`）—— 判：**门控未过「如实记」成立 ✓；但绑定不全，需 G1 owner 重测**
 
 **是什么**：`j_g1_off.png`（`?devregion=0`）/ `j_g1_on.png`（缺省）成对，真机视口 792×320@DPR3。
@@ -255,8 +273,8 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 
 ## 目录当前状态（2026-09-21 已全部入库）
 
-- **已提交、可引用**：`a_*` · `b_dress_off` · `c_*` · `d_chrome_*` · `e_*` · `f_*_noon` · `g_*` · `h_real_*` · **`j_g1_*`** · `measurements-visible-delta.md` · `measurements-setdressing-density.md`。
-- **未入库（真图在盘、仅未 `git add`）**：`i_reach_*`（8 张，④ (α) 的 before/after + 裁图）。**判定见上「★ `shots/` 判定」**；**入库归 ④ 生产方**（我 = 判定方，不代做入库）。**入库前不得引用其数**。
+- **已提交、可引用**：`a_*` · `b_dress_off` · `c_*` · `d_chrome_*` · `e_*` · `f_*_noon` · `g_*` · `h_real_*` · **`i_reach_*`** · **`j_g1_*`** · `measurements-visible-delta.md` · `measurements-setdressing-density.md`。
+- **`i_reach_*` 已入库（2026-09-21 · ④ 生产方）**：8 张（④ (α) 的 before/after + 双相位裁图）。**判定 + 绑构建复算读数见上「★ `shots/` 判定」**。复算工具 = **`tools/reachmeas.mjs`**（本轮新增 · 同口径 · **能识别 hex 墨族**，`tintab` 修好前用它）。
 - **已删（本轮）**：`r_off.png` / `r_on.png` —— 弱信号对，原因见上「`r_*` 已撤」（能力 = `deviceshot.mjs` 的 `SHOT_CLICK` **保留**）。
 - **`setDressing.ts` 已落地 ⇒ 本节原先那条「谁落地谁重跑」已履约**：`node tools/artshot.mjs` 已重跑，`b_dress_on.png` / `c_night_*.png` / `index.html`（以及被同一命令顺带重写的 `a_shade_off.png`）**已随后续提交入库，与已提交代码一致**。
   ⇒ `b_dress_off`（off）/ `b_dress_on`（on）现在可当作**布景层 A 组的基线对**读（`b_before` = `b_dress_off.png`）。
