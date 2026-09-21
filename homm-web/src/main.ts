@@ -7,7 +7,6 @@ import { revealAround, isRevealed } from './core/map/fog.js';
 import { idx, inBounds } from './core/map/grid.js';
 import { TERRAIN } from './core/data/terrains.js';
 import { DEFAULT_CONFIG, factionName } from './core/data/factions.js';
-import { getUnit } from './core/data/units.js';
 import {
   applyHeroBattle,
   applyInteraction,
@@ -50,7 +49,7 @@ import { HUD } from './ui/HUD.js';
 import { HeroPanel } from './ui/HeroPanel.js';
 import { openStartScreen } from './ui/StartScreen.js';
 import { openTownDialog } from './ui/TownDialog.js';
-import { closeModal, hideInfoPopup, isModalOpen, lossTable, showInfoPopup, showModal } from './ui/Dialogs.js';
+import { closeModal, hideInfoPopup, isModalOpen, showInfoPopup, showModal } from './ui/Dialogs.js';
 import { isMuted, setMuted, sfx } from './ui/sfx.js';
 import { clearSave, hasSave, hydratePersistence, loadConfig, loadGame, saveConfig, saveGame } from './save/persistence.js';
 import { installLifecycle } from './app/lifecycle.js';
@@ -705,18 +704,9 @@ function onArrive(heroId: string, obj: MapObject): void {
       resolve(heroId, obj, true);
       return;
     }
-    const est = pending.estimate!;
-    const hero = state.heroes[heroId];
-    const rows: [string, string][] = [
-      ['我方兵力', describeArmy(hero.army)],
-      ['守军', describeArmy(garrison)],
-    ];
-    for (const l of est.losses) {
-      rows.push([getUnit(l.unitTypeId).name, `${l.before} → ${l.after}`]);
-    }
     showModal(stage, {
       title: pending.title,
-      body: [pending.message, `${pending.lossText ?? ''}（预估，实战结果取决于走位）`, lossTable(rows)],
+      body: [pending.message],
       actions: [
         { label: '撤退', danger: true, onClick: (c) => { c(); resolve(heroId, obj, false); } },
         { label: '进入战场', primary: true, onClick: (c) => { c(); startBattle(heroId, obj, pending.title); } },
@@ -726,20 +716,9 @@ function onArrive(heroId: string, obj: MapObject): void {
   }
 
   if (pending.kind === 'battle' && pending.estimate) {
-    const est = pending.estimate;
-    const hero = state.heroes[heroId];
-    const monster = obj.payload as { army: Army; guard?: GuardReward };
-    const rows: [string, string][] = [
-      ['我方兵力', describeArmy(hero.army)],
-      ['敌方兵力', describeArmy(monster.army)],
-    ];
-    if (monster.guard) rows.push(['它们看守着', describeGuard(monster.guard)]);
-    for (const l of est.losses) {
-      rows.push([`${getUnit(l.unitTypeId).name}`, `${l.before} → ${l.after}`]);
-    }
     showModal(stage, {
       title: pending.title,
-      body: [pending.message, pending.lossText ?? '', lossTable(rows)],
+      body: [pending.message],
       actions: [
         { label: '撤退（退回原地）', danger: true, onClick: (c) => { c(); resolve(heroId, obj, false); } },
         { label: '进入战场', primary: true, onClick: (c) => { c(); startBattle(heroId, obj, pending.title); } },

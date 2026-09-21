@@ -2194,5 +2194,41 @@ console.log('\n--- E3 无城 7 日出局 ---');
     'anim 字段确实挂在 UNITS 上（数据驱动，非 id 字面量判断）');
 }
 
+// 18. ③ 遭遇 / 攻城确认框瘦身：两行、不再出现「我方兵力 / 敌方兵力」、保留「打不打得过」结论
+//     校验 previewInteraction 产出的 message（唯一文案来源）——main.ts 的 body 直接就是 [message]，
+//     所以这条断言等价于「对话框正文恰好两行」。
+{
+  const g = createGame(4242);
+  const monsters = Object.values(g.map.objects).filter((o) => o.kind === 'wanderingMonster');
+  ok(monsters.length > 0, `③ 样本局里有野怪（${monsters.length} 处）`);
+
+  let checked = 0;
+  let bad = 0;
+  for (const m of monsters) {
+    g.heroes.hero1.pos = { ...m.pos };
+    const p = previewInteraction(g, 'hero1', m.id);
+    if (p?.kind !== 'battle') continue;
+    checked++;
+    const lines = p.message.split('\n');
+    // ① 恰好两行：第 1 行「是什么 + 守什么」，第 2 行「打不打得过 + 一句代价」
+    if (lines.length !== 2) { bad++; continue; }
+    // ② 不再出现「我方兵力 / 敌方兵力」（逐队损失表已移出对话框）
+    if (/我方兵力|敌方兵力/.test(p.message)) { bad++; continue; }
+    // ③ 第 2 行仍保留决策结论 + 代价
+    if (!/(可以取胜|难以攻克)/.test(lines[1]) || !/约损失 \d+% 兵力/.test(lines[1])) bad++;
+  }
+  ok(checked > 0, `③ 逐只野怪核对战斗预估框（${checked} 只）`);
+  ok(bad === 0, `③ 遭遇框恒为两行、无「我方兵力/敌方兵力」、含胜负结论（${checked - bad}/${checked}）`);
+
+  // 攻城框同规（同一套 message 构造）
+  const g2 = createGame(555);
+  const townObj = Object.values(g2.map.objects).find((o) => o.kind === 'town' && o.payload.townId === 'town_n1');
+  g2.heroes.hero1.pos = { ...townObj.pos };
+  const siegeMsg = previewInteraction(g2, 'hero1', townObj.id);
+  ok(siegeMsg?.kind === 'siege' && siegeMsg.message.split('\n').length === 2, '③ 攻城框也压到两行');
+  ok(!!siegeMsg && !/我方兵力|敌方兵力/.test(siegeMsg.message), '③ 攻城框无「我方兵力/敌方兵力」');
+  ok(!!siegeMsg && /(可以攻下|难以攻克)/.test(siegeMsg.message), '③ 攻城框保留「打不打得过」结论');
+}
+
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);
 process.exit(fails === 0 ? 0 : 1);

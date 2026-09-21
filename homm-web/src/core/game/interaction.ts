@@ -32,7 +32,6 @@ export interface PendingInteraction {
   confirmLabel?: string;
   cancelLabel?: string;
   estimate?: BattleOutcome;
-  lossText?: string;
   townId?: string;
   /** 攻城战才有：守方城墙等级 1/2/3，决定战场上有几座箭塔、城墙多厚。 */
   siegeLevel?: number;
@@ -130,18 +129,18 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
       const grade = lossGrade(ratio);
       const tierName = { weak: '零星散兵', mid: '成群野兽', strong: '强悍守卫' }[payload.tier] ?? '未知';
       const guardText = describeGuard(payload.guard);
+      // 两行（③ 遭遇框瘦身）：① 是什么 + 守什么 ② 打不打得过 + 一句代价。
+      // 不再列「我方兵力 / 敌方兵力」——自己的队伍玩家自己清楚，逐队损失表挪出对话框。
       return {
         objId,
         kind: 'battle',
         title: `遭遇${tierName}`,
         message:
-          `对方兵力：${describeArmy(payload.army)}。` +
-          (guardText ? `\n它们看守着：${guardText}，只有取胜才能拿到。` : '') +
-          `\n预估战果：${outcome.win ? '可以取胜' : '难以攻克'}。`,
+          `${describeArmy(payload.army)}${guardText ? `，看守 ${guardText}` : ''}` +
+          `\n${outcome.win ? '可以取胜' : '难以攻克'} · ${grade.text}（约损失 ${Math.round(ratio * 100)}% 兵力）`,
         confirmLabel: '开战',
         cancelLabel: '撤退',
         estimate: outcome,
-        lossText: `${grade.text}（约损失 ${Math.round(ratio * 100)}% 兵力）`,
       };
     }
     case 'treasureChest': {
@@ -185,13 +184,11 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
         kind: 'battle',
         title: payload.tier === 'strong' ? '重兵把守的宝库' : '宝库',
         message:
-          `守库兵力：${describeArmy(payload.army)}。\n` +
-          `库中财物：${describeVaultReward(payload.reward)}，只有取胜才能拿到。` +
-          `\n预估战果：${outcome.win ? '可以攻下' : '难以攻克'}。`,
+          `${describeArmy(payload.army)}，库中财物：${describeVaultReward(payload.reward)}` +
+          `\n${outcome.win ? '可以攻下' : '难以攻克'} · ${grade.text}（约损失 ${Math.round(ratio * 100)}% 兵力）`,
         confirmLabel: '强攻',
         cancelLabel: '撤退',
         estimate: outcome,
-        lossText: `${grade.text}（约损失 ${Math.round(ratio * 100)}% 兵力）`,
       };
     }
     case 'mine': {
@@ -235,21 +232,22 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
         wall,
       );
       const ratio = lossRatio(outcome);
+      // 同遭遇框：压到两行，城防只留一句短提示（细节教学挪出对话框）。
       const fort =
         wall > 0
-          ? `城防 ${'★'.repeat(wall)}：城墙挡住步兵和视线，攻方必须先砸开口子；主楼与角塔每轮自动射击，墙前的护城河还会削弱站在里面的部队。` +
-            (machines.length
-              ? `\n随军器械：${machines.map((m) => WAR_MACHINES[m].name).join('、')}。`
-              : '\n（未带攻城器械：部队砸墙伤害减半，缺口会开得很慢）')
-          : '此城没有城墙，将是一场野战。';
+          ? `城防 ${'★'.repeat(wall)}${
+              machines.length ? `（器械：${machines.map((m) => WAR_MACHINES[m].name).join('、')}）` : '（未带器械，破墙减半）'
+            }`
+          : '无城墙，野战';
       return {
         objId, kind: 'siege', townId, siegeLevel: wall,
         title: `进攻 ${town.name}`,
-        message: `守军：${describeArmy(garrison)}。\n${fort}\n预估战果：${outcome.win ? '可以攻下' : '难以攻克'}。`,
+        message:
+          `守军：${describeArmy(garrison)}　${fort}` +
+          `\n${outcome.win ? '可以攻下' : '难以攻克'} · ${lossGrade(ratio).text}（约损失 ${Math.round(ratio * 100)}% 兵力）`,
         confirmLabel: '攻城',
         cancelLabel: '撤退',
         estimate: outcome,
-        lossText: `${lossGrade(ratio).text}（约损失 ${Math.round(ratio * 100)}% 兵力）`,
       };
     }
     default:
