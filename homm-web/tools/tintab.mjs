@@ -65,6 +65,13 @@
  *     `reachmeas` = **中位** ⇒ 同格多数不同 ≠ 矛盾，是口径 + 统计量都不同；引用须连统计量一起报。
  *   ★ `#138`（2026-09-21）加：**WCAG 中位列**（四统计量统一取中位以便 A/B 减差）+ 自证三件套升级
  *     （并记 `dist/main.js` 指纹 + 测量时 HEAD）—— 供「动画冻结 A/B 证明」用。
+ *   ★ **`该类变化总数` 列 + 守恒断言**（team-lead 裁定三 `12d99d1`；owner 收口）：
+ *     每行附**类总变化**，两个右端**并存**（同格两数纪律）：`(a)并集`（任一带触及）/ `(b)全族`（`full` vs `none`）。
+ *     断言 `Σ(四带 n) ─ 右端`：**缺口 > 0 = 多源重叠的重复计数**（1px 交界 AA：`edge+glow`/`glow+ink`/`fill+edge`…），
+ *     **不是漏归**；**真漏归看「缺源」列 = `full` 变但无任一单带变 ⇒ 应 ≈ 0**。
+ *     实测（2026-09-21 · 三相位 · 冻结）：`(a)≈(b)`（差 ≤2）、**缺源 ≈ 0（water 仅 2，亚阈合成）** ⇒ **覆盖完整**；
+ *     缺口 ≈ 多源数（如 sand `+719` vs 多源 `683`）⇒ **`Σ == 右端` 字面不成立是重叠所致，非缺陷**。
+ *     ⚠️ 引用时用**右端（并集/全族）当"类的全量"**，`Σ(四带)` 是**带内视角**、含重复计数。
  *   ⚠️ 样本守卫：`n < 200` 打「样本不足」—— 桶塌成空时该格**不得据此判过**（与 `reachmeas` 的 `MIN_N` 同族）。
  */
 
@@ -444,6 +451,7 @@ async function analyze(ph, shot, identityBuf) {
 
   console.log('=== ④ 可达染色净贡献对照（tintab.mjs，差分口径） ===');
   console.log(`指纹前 : src ${fpBefore.src.sha1} @ ${fpBefore.src.m} | dist ${fpBefore.dist.sha1} @ ${fpBefore.dist.m} | main ${fpBefore.main.sha1} @ ${fpBefore.main.m}`);
+  console.log('指纹算法: sha1 前 12 位（本文件）；team-lead 报的是 md5 前 8 位 —— 算法不同、非矛盾（shasum -a 1 <file> 可逐位复算）。引用请写「文件名 + 算法 + 值」。HEAD = git sha1 前 12；m = mtime(ISO)；main = dist/main.js 入口 bundle。');
   console.log(`HEAD   : ${headBefore}（测量前；跑完再核是否仍是当前 HEAD —— 防"历史读数"）`);
   console.log('src!=dist: 已核一致（不一致会 exit 2）');
   for (const f of FAMILIES) console.log(`族 ${LABEL[f]}: ${BY_FAMILY[f].map((t) => `${t.name}=${t.raw} => ${t.canon}`).join('  ')}`);
