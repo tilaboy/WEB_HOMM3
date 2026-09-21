@@ -107,7 +107,7 @@ if (!tutorial) {
   PASS(allWeak, `V1 全图野怪**全为 weak**（gen.monsterTierBand 抬到 ∞ 生效）`);
   PASS(allFive, `V1 全图野怪数 = ${tutorial.gen.monsterCount}（8/8；gen.monsterCount 生效）`);
   const medMon15 = median(perSeed.map((r) => r.mon15));
-  console.log(`[信息] 图一 1.5 天圈内野怪中位 = ${medMon15}（规格 V1 期望 2–4，全为 weak）`);
+  console.log(`[信息] 图一 1.5 天圈内野怪中位 = ${medMon15}（规格 V1 期望 ≥3 且全为 weak；playtest-scenarios §2.6 已更正"2–4"为低估）`);
   console.log(`[信息] 图一 1 天圈内资源堆/宝箱 中位 = ${median(perSeed.map((r) => r.piles1))} / ${median(perSeed.map((r) => r.chests1))}（规格 V4 期望 ≥4/≥2）`);
 }
 
