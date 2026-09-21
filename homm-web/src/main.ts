@@ -182,7 +182,7 @@ menuBadge.className = 'tb-badge';
 menuBadge.hidden = true;
 menuBtn.appendChild(menuBadge);
 
-tbButton('英雄', '', () => openHeroPanel());
+tbButton('英雄', '', () => toggleHeroPanel());
 tbButton('城', '', () => openHomeTown());
 
 const endDayBtn = tbButton('结束一天', 'primary tb-end', () => doEndDay());
@@ -207,12 +207,17 @@ function updateThumb(): void {
   menuBtn.setAttribute('aria-label', unread > 0 ? `菜单，${unread} 条事件未读` : '菜单');
 }
 
-/** 「英雄」= 展开右侧英雄栏（探索侧信息面）。与栏内「收起」同一开关（R2 入口=出口）。 */
-function openHeroPanel(): void {
+/**
+ * 「英雄」= **开关**右侧英雄栏（探索侧信息面）。
+ * `#156` 终版（team-lead）：拇指带入口改成 **toggle**（原只展开）；配合 CSS **展开态隐藏 `#panel-toggle`**
+ * ⇒ 让出 52px 给内容。收起态仍可用拇指带「英雄」展开（入口不丢，R2 入口=出口重定义为同一 toggle）。
+ */
+function toggleHeroPanel(): void {
   if (isModalOpen() || isBattleOpen()) return;
-  side.classList.remove('collapsed');
+  const collapsed = side.classList.contains('collapsed');
+  side.classList.toggle('collapsed');
   syncToggle();
-  side.scrollTop = 0;
+  if (collapsed) side.scrollTop = 0;
 }
 
 /** 「城」= 经营主面直达（D-32 一等入口）：开最近/选中英雄所在的己方城镇。 */

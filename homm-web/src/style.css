@@ -536,6 +536,13 @@ body {
   white-space: nowrap;
 }
 
+/* `#156` 终版：**展开态隐藏** `#panel-toggle`（拇指带的「英雄」已是同一开关）⇒ 让出 52px（44 按钮 + 8 margin）
+   给内容；**收起态（48px 条）仍保留**这个 44px 入口 ⇒ 可达性不丢。
+   用 CSS 隐藏、**不删元素**（`syncToggle()` 仍照用，零 JS 删减风险）。 */
+#side:not(.collapsed) #panel-toggle {
+  display: none;
+}
+
 #side h3 {
   margin: 0 0 8px;
   font-size: 13px;
@@ -1508,8 +1515,9 @@ body.in-battle #thumb {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-bottom: 8px;
-  margin-bottom: 8px;
+  /* `#156`：并入 bars / 魔法书后为省竖轴，本行收紧到 4 / 6。 */
+  padding-bottom: 4px;
+  margin-bottom: 6px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -1561,9 +1569,9 @@ body.in-battle #thumb {
    并把列间距放到 8px（§5.2 中心距 ≥48px），降低误触。侧栏可滚动，多出来的高度可滚，不会挤爆。 */
 .hp-nav {
   display: flex;
-  flex-direction: column;
-  /* gap 8：§5.2 密集区「中心距 ≥48px」—— 40px 高（<btn.tiny>）+ 8 = 48。
-     原 gap 6 → 中心距 46 仍不足，故一并抬到 8。 */
+  /* `#156`：并入 `head` 行 ⇒ **横排**（原纵列：N 个按钮 × 40px ⇒ head 高被撑到 88+）。
+     §5.2 密集区「中心距 ≥48px」改由**横向** gap 8 承担（40 + 8 = 48）。 */
+  flex-direction: row;
   gap: 8px;
 }
 

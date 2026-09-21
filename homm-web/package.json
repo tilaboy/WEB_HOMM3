@@ -25,6 +25,7 @@
     "audit:scenario": "node tools/scenarioaudit.mjs",
     "audit:hpbudget": "node tools/hpbudget.mjs",
     "audit:haloflip": "node tools/haloflip.mjs",
+    "audit:panelgate": "node tools/panelgate.mjs",
     "audit:androidsync": "node tools/androidsync.mjs"
   },
   "devDependencies": {
