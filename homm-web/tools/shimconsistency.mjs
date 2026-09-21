@@ -38,11 +38,8 @@
  * 退出码：0 全部 ≤1 LSB / 1 存在 >1 的偏移 / 2 前置不满足
  */
 
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { spawn } from 'node:child_process';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import { installShim } from './_canvas.mjs';
+import { cdpPort, withHeadlessChrome } from './_chrome.mjs';
 
 /* ------------------------------------------------------------------ 被测指令（两套实现共用同一段） */
 
@@ -114,101 +111,26 @@ function runShim() {
 
 /* ------------------------------------------------------------------ Chrome 侧 */
 
+// 真 Chrome 的胶水（路径 / 端口 / 探活 / 拉起 / 等 target / WebSocket）统一走
+// `tools/_chrome.mjs` —— 那是本仓 CDP 通道的**唯一真相来源**，本文件是第一批用它的人。
+// 旧工具（tinytargetaudit / hoveraudit / destaudit / chromeshot / deviceshot）仍各带一份，
+// 按主理人裁定**等空闲再迁**，本轮不碰。
 const APP_PORT = Number(process.env.PORT ?? 5173);
-const CDP_PORT = 9800 + (process.pid % 150);
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-if (!existsSync(CHROME)) {
-  console.error(`找不到 Chrome：${CHROME}`);
-  process.exit(2);
-}
-try {
-  const res = await fetch(`http://127.0.0.1:${APP_PORT}/`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-} catch (e) {
-  console.error(`dev server 没在 127.0.0.1:${APP_PORT} 上跑（${e.message}）；先另开终端 node tools/serve.mjs`);
-  process.exit(2);
-}
-
-const profile = mkdtempSync(path.join(tmpdir(), 'shimconsistency-'));
-const chrome = spawn(
-  CHROME,
-  [
-    '--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars',
-    `--user-data-dir=${profile}`, `--remote-debugging-port=${CDP_PORT}`,
-    '--remote-allow-origins=*', 'about:blank',
-  ],
-  { stdio: ['ignore', 'ignore', 'ignore'] },
-);
-
-async function cleanup() {
-  if (!chrome.killed) chrome.kill('SIGKILL');
-  await new Promise((resolve) => {
-    if (chrome.exitCode !== null || chrome.signalCode !== null) return resolve();
-    chrome.once('exit', resolve);
-    setTimeout(resolve, 3000);
-  });
-  for (let i = 0; i < 5; i++) {
-    try { rmSync(profile, { recursive: true, force: true }); return; } catch { await sleep(200); }
-  }
-}
-
-async function findTarget() {
-  for (let i = 0; i < 120; i++) {
-    try {
-      const list = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`)).json();
-      const t = list.find((x) => x.type === 'page');
-      if (t?.webSocketDebuggerUrl) return t.webSocketDebuggerUrl;
-    } catch { /* 端口还没开 */ }
-    await sleep(100);
-  }
-  throw new Error('等不到 CDP target');
-}
 
 let chromeOut = null;
 try {
-  const wsUrl = await findTarget();
-  const ws = new WebSocket(wsUrl);
-  await new Promise((resolve, reject) => {
-    ws.addEventListener('open', resolve, { once: true });
-    ws.addEventListener('error', () => reject(new Error('CDP WebSocket 连不上')), { once: true });
-  });
-  let seq = 0;
-  const pending = new Map();
-  const send = (method, params = {}) => {
-    const id = ++seq;
-    ws.send(JSON.stringify({ id, method, params }));
-    return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
-  };
-  ws.addEventListener('message', (ev) => {
-    const msg = JSON.parse(ev.data);
-    if (msg.id && pending.has(msg.id)) {
-      const { resolve, reject } = pending.get(msg.id);
-      pending.delete(msg.id);
-      if (msg.error) reject(new Error(msg.error.message));
-      else resolve(msg.result);
-    }
-  });
-
-  await send('Runtime.enable');
-  const r = await send('Runtime.evaluate', {
-    expression: `(${OPS.toString()})()`,
-    returnByValue: true,
-    awaitPromise: true,
-  });
-  if (r.exceptionDetails) throw new Error(`页面内异常：${r.exceptionDetails.exception?.description ?? ''}`);
-  chromeOut = r.result?.value;
+  chromeOut = await withHeadlessChrome(
+    async ({ evaluate }) => evaluate(`(${OPS.toString()})()`),
+    { devServerPort: APP_PORT, port: cdpPort(9800, 150), profilePrefix: 'shimconsistency-' },
+  );
 } catch (e) {
   console.error(`失败：${e.message}`);
-  process.exitCode = 1;
-} finally {
-  await cleanup();
+  process.exit(e.prerequisite ? 2 : 1);
 }
 
 if (!chromeOut?.rgba) {
-  if (!process.exitCode) console.error('没拿到 Chrome 侧像素');
-  process.exit(process.exitCode || 1);
+  console.error('没拿到 Chrome 侧像素');
+  process.exit(1);
 }
 
 /* ------------------------------------------------------------------ 比 */
