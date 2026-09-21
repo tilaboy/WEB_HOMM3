@@ -163,16 +163,26 @@ const HALO_COMP = ((): boolean => {
 })();
 
 /**
- * 候选修法 (1)：`?devhaloafter=1` ⇒ 把 halo 的**三条边带**推迟到 `applyLighting` **之后**再画
- * （默认关）。结构性修法：让边带**免于整屏 multiply**，因此**与光照算子无关**（对比 (2) 的
- * 天花板由算子决定）。绘制仍走**世界坐标 + 相机变换**，故坐标与遮挡关系与旧版一致；
- * 唯一差别 = 这三条带不再被乘暗（也因此不再被 y 排序的实体遮挡 —— 原型阶段先量对比度）。
+ * ④ 光照修法 (1)：三条边带**改画在 `applyLighting` 之后**（结构性修法，免于整屏 multiply）。
+ *
+ * **现在默认 = 开**（`#154` 定案后翻默认；判据 = `accessibility-requirements.md §4.6`
+ * **四格全绿** `6.16 / 6.10 / 14.66 / 7.92` + 无回归，见该档 `V1.23`）。
+ * `?devhaloafter=0` 回退**旧路径**（三条带在光照**之前**画）。
+ *
+ * 静态等价（本次改动的门票 —— 只动了一个布尔表达式、调用点未动）：
+ *   · 翻默认前的 `default`      ≡ 本版 `?devhaloafter=0`（两侧同为 `haloAfter === false`）；
+ *   · 翻默认前的 `?devhaloafter=1` ≡ 本版 `default`      （两侧同为 `haloAfter === true`）。
+ *   ⇒ 两向逐像素等价**由调用点保证**（与 DEV_TINT 同款：查询参数在渲染模块内读、不惊动 `main.ts`）。
+ *
+ * 绘制仍走**世界坐标 + 相机变换**，故坐标与遮挡关系与旧版一致；
+ * 唯一差别 = 这三条带不再被乘暗（也因此不再被 y 排序的实体遮挡 —— 已接受为有意设计；
+ * "线横穿单位"记为**已知未判风险**，由真机试玩覆盖）。
  */
 const HALO_AFTER = ((): boolean => {
   try {
-    return new URLSearchParams(location.search).get('devhaloafter') === '1';
+    return new URLSearchParams(location.search).get('devhaloafter') !== '0';
   } catch {
-    return false;
+    return true;
   }
 })();
 
@@ -287,9 +297,9 @@ export class MapRenderer {
   haloLightComp = HALO_COMP;
 
   /**
-   * 候选修法 (1)：三条边带**改画在光照之后**（`?devhaloafter=1`）。**默认 `false`** ⇒
-   * 边走 old path（世界坐标、实体之前）⇒ 生产路径逐像素不变。开启时把三条边带的绘制
-   * 推迟到 `applyLighting` 之后（仍走世界坐标 + 相机变换）⇒ 免于整屏 multiply。
+   * ④ 光照修法 (1)：三条边带**改画在光照之后**。**现在默认 = 开**（`#154` 定案后翻默认）。
+   * `?devhaloafter=0` 回退旧路径（世界坐标、实体之前）⇒ 生产路径可逐像素回退到翻默认前。
+   * 开启时把三条边带的绘制推迟到 `applyLighting` 之后（仍走世界坐标 + 相机变换）⇒ 免于整屏 multiply。
    */
   haloAfter = HALO_AFTER;
 
@@ -633,7 +643,7 @@ export class MapRenderer {
     const edgeRed = compOn ? lightCompColor(NOGO_EDGE, compLight) : NOGO_EDGE;
     const edgeGlow = compOn ? lightCompColor(NOGO_EDGE_GLOW, compLight) : NOGO_EDGE_GLOW;
     const edgeInk = compOn ? lightCompColor(NOGO_EDGE_INK, compLight) : NOGO_EDGE_INK;
-    // 候选修法 (1)（`?devhaloafter=1`）：边带**推迟到光照之后**画 ⇒ 先登记、不立即填充。
+    // 修法 (1)（默认开；`?devhaloafter=0` 回退）：边带**推迟到光照之后**画 ⇒ 先登记、不立即填充。
     const afterBands: BandRect[] | null = this.haloAfter ? [] : null;
     // 边带落笔：默认（`afterBands===null`）立即填充，与原实现逐像素一致；开启 (1) 时只登记。
     const band = (c: string, bx: number, by: number, bw: number, bh: number): void => {
@@ -819,10 +829,10 @@ export class MapRenderer {
     /* --- 光照层（屏幕空间）：昼夜 multiply 叠色 + 暖光 + 暗角 --- */
     if (lightingOn()) this.applyLighting(now);
 
-    /* --- 候选修法 (1)：三条边带改画在光照**之后**（`?devhaloafter=1`，默认关） ---
+    /* --- 修法 (1)：三条边带改画在光照**之后**（默认开；`?devhaloafter=0` 回退旧路径） ---
        仍走世界坐标 + 相机变换（`ctx.restore()` 后变换已回到 dpr 基准，`applyLighting`
        内部自带 save/restore 不改它）⇒ 坐标与旧版一致；唯一差别 = 这三条带不再被上面的
-       multiply 乘暗。默认关时 `afterBands===null` ⇒ 本段空操作。 --- */
+       multiply 乘暗。`?devhaloafter=0`（回退）时 `afterBands===null` ⇒ 本段空操作。 --- */
     if (afterBands && afterBands.length > 0) {
       ctx.save();
       ctx.translate(cam.x, cam.y);
