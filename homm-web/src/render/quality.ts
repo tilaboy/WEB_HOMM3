@@ -65,7 +65,12 @@ const TIER_TABLE: Record<Tier, Omit<QualitySettings, 'tier' | 'hoverEffects'>> =
     dprCap: 1.5,
     maxMapSize: 32,
     selectionPulseHz: 2,
-    setDressing: 'off',
+    // 布景层（§6.1.5 / #85 裁定取 (a)）：
+    // A 组是**烘焙层**（运行时仅 1 次 drawImage，与地形层同量级，而地形层不在任何档位被关），
+    // 故 low 也开 `'static'` —— 成本证据：内存 ≤4 MiB / 烘焙 ≈10–30 ms 一次性 / 每帧 +1 drawImage。
+    // ⚠️ B 组（立体道具）落地前必须先把 groundDressing(烘焙→全档) 与 propDressing(每帧→随档) 拆开，
+    //    否则 low 会静默多出 B 组的每帧成本。见 cartoon-style.md §6.1.5。
+    setDressing: 'static',
   },
   mid: {
     lighting: 'multiply',
@@ -120,10 +125,38 @@ export function onTierChange(cb: TierListener): () => void {
   };
 }
 
+/* ---------------- 调试：`?devdpr=<n>` —— **只**改 dprCap（隔离实验） ---------------- */
+
+/**
+ * `?devdpr=1.5`：**只**覆写 `dprCap`（渲染倍率上限），**其它开关一律按档位正常生效**。
+ *
+ * 为什么需要它：`shots/README.md` 的实测表里，**档位 low↔high 的差（同构建内 2.28）明显大于单项氛围层**
+ * （地貌层 1.41），但**分不清这里面多少是锐度（`dprCap`）、多少是氛围层开关** —— 档位把两者**捆在一起**。
+ * 有了这个开关就能单变量：**同一个档位、只把 `dprCap` 压低**（或抬回 3）⇒ 差异里剔掉氛围层那一项。
+ * （实测：只差 `dprCap` 就有 1.26 ⇒ 约占档位差的 **55%**，锐度不是次要项。）
+ *
+ * 与 `lightLayer.ts` 的 `?devlight=0.68` 是同一套查询参数惯例：
+ * **无人传 ⇒ `null` ⇒ 生产路径逐字节不变**。fail-safe：非 DOM 环境（node / smoke）拿不到 `location` ⇒ `null`。
+ */
+function devDprCapOverride(): number | null {
+  if (typeof location === 'undefined') return null;
+  try {
+    const raw = new URLSearchParams(location.search).get('devdpr');
+    if (raw === null) return null;
+    const v = Number(raw);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+const DEV_DPR_CAP = devDprCapOverride();
+
 /** 应用某一档（原地改写单例；档位变化时通知监听器）。返回生效档位。 */
 export function applyTier(tier: Tier, hoverEffects: boolean = quality.hoverEffects): Tier {
   const changed = quality.tier !== tier;
   Object.assign(quality, settingsForTier(tier, hoverEffects));
+  // `?devdpr` 只动 dprCap，其余保持该档位的正常值（见 DEV_DPR_CAP 注释）；不传时为 null、整段不发生。
+  if (DEV_DPR_CAP !== null) quality.dprCap = DEV_DPR_CAP;
   if (changed) {
     for (const cb of listeners) {
       try {
