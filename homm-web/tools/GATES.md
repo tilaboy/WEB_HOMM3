@@ -86,3 +86,10 @@
   - 双向可证（逻辑层逐格）：`(0,0)` 一格由**绿翻红** —— 正是 token 改名或功能掉了那一格；**其余格逐格不变**（不误红）。
   - 今日实测：6 个 `MARKERS` 在 `dist` 的命中数 = `4/3/1/3/3/1`（全 `> 0`）⇒ **补对照后不误红**。
 - ⚠️ **未核项（归 `eng-sprites`，本条只报不改）**：`b0audit` 中**未带 `nonEmpty`** 的若干 `… === 0` 断言（`:205`/`:248`/`:299`/`:336`/`:464`/`:728`/`:765`）**是否可能空集通过**。
+- ★ **补漏（`engineering-lead` 2026-09-21，`#180`）—— 上面那份清单少了"更危险的那一类"**：`b0audit` 的**汇总层**用的是 `.every()`（空数组恒 `true`），**比 `=== 0` 更易空集假绿**，且**清单里没列**：
+  - `:874` `const rs = byId.get(id) ?? []` → `:875` `rs.every((r) => r.pass)` ⇒ 某 `id` 若**一次 `record()` 都没跑到**，`rs = []` ⇒ **该断言在汇总里显示 `PASS`（零样本）**。★ **有对照的只有 9/10/11**（`:821`/`:840`/`:856` 带 `nonEmpty`）⇒ **同一份门里守卫不一致**，正是"看起来绿了"的常见来源。
+  - `:966` `[...verdict.values()].every(Boolean)` ⇒ 若 `verdict` 为空（上游全部被跳过）⇒ `allPass = true` ⇒ **整门 `exit 0`**。
+  - 判据形（建议）：`rs.length > 0 && rs.every(r => r.pass)`；并在 `:966` 前加 `verdict.size > 0`（或断言 `verdict.size === 11`，把"该出的断言数"也钉住）。
+  - **为何列而不改**：文件归属 `eng-sprites`（"只报不改"）；本行只补"清单的完整性"，不改语义。
+- ★ **本次独立复核的两条实测**（`engineering-lead`，不依赖他人转述）：① `tools/*.mjs` 里**无任何 `grep` 外调**（`execSync` 只两处：`contactaudit` 的 `git status`、`tintab` 的 `git rev-parse`；`spawnSync` 一处：`scenarioaudit` 自跑）；② `grep -rnF '\|' tools/` 的命中**全是 PNG 二进制误报**（`tools/probes/*.png`），**文本 0 命中** ⇒ 与 `art-director` 的全仓扫同判。
+
