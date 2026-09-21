@@ -24,7 +24,7 @@
  * 抽成纯函数，`tools/artshot.mjs` 才能对**同一份地形**分别渲染"加/不加本层"两张图，
  * 从而给出一张**只差这一处改动**的对照截图 —— 而不是"算式 vs 实测"。
  */
-import { fbm } from './pixel.js';
+import { fbm, hash2 } from './pixel.js';
 
 /**
  * 低频地貌起伏，值域 [-1, 1]。
@@ -95,4 +95,53 @@ export function shadeOf(gx: number, gy: number, heightTiles: number): Shade {
  */
 export function wetEdgeAlpha(waterNeighbours: number): number {
   return Math.min(1, waterNeighbours / 3) * 0.16;
+}
+
+/* ============================ 地貌区（G1 / §3.1.2 的 X1） ============================ */
+
+/**
+ * 地貌区场 —— 比 `macroTone`（≈6 格/团）**更大尺度**的低频信号（≈14 格/团）。
+ *
+ * `macroTone` 补的是"没有**大地貌**"这一半（缓坡 / 洼地）；本函数再往上一层，
+ * 回答的是"**这是哪片地**"：成片林 / 成簇丘 / 裸岩，而不是一整张均匀草地。
+ * 与 `macroTone` 是**两路独立信号**（不同 seed），互不抵消。
+ */
+export function regionField(gx: number, gy: number): number {
+  return fbm(gx * 0.058, gy * 0.058, 4, 5127); // [0,1)
+}
+
+/** 地貌区数（§3.1.2 X1 取 3–4 个「地貌区」）。取 4。 */
+export const REGION_COUNT = 4;
+
+/**
+ * 地貌区 id（`0 .. REGION_COUNT-1`）。
+ *
+ * 场值量化时加**格级抖动**（±0.05 场值）⇒ 区边界是**锯齿**而非直线，
+ * 规避 §3.1.2 记的风险「分得太硬会读成'贴块分区'」。
+ */
+export function regionOf(gx: number, gy: number): number {
+  const v = regionField(gx, gy);
+  const jitter = (hash2(gx, gy, 613) - 0.5) * 0.10;
+  return Math.max(0, Math.min(REGION_COUNT - 1, Math.floor((v + jitter) * REGION_COUNT)));
+}
+
+/**
+ * 每区一套"地貌色偏"（**同时**动明度与冷暖）。索引 = `regionOf()`。
+ *
+ * 两条选择依据：
+ * ① **不能只差色温** —— 只差色相在灰度下会被抹平（同 `accessibility-requirements.md §4.6` 的教训）；
+ * ② **不能只差明度** —— 只差亮度会读成"同一片地的四个亮度"，不像"四片不同的地"。
+ * 故四区在 **ΔL\* ≈ 6~8** 的档上再叠冷暖差：干爽草甸（亮暖黄）/ 密林洼地（暗绿）/
+ * 旱地裸岩（中间调土黄）/ 冷湿沼泽（暗冷蓝）。这一档是"看得见但不脏"的量级。
+ */
+export const REGION_SHADES: ReadonlyArray<Shade> = [
+  { color: '#e6d79b', alpha: 0.15 }, // 0 干爽草甸：偏亮、暖黄
+  { color: '#16351f', alpha: 0.2 }, //  1 密林洼地：偏暗、深绿
+  { color: '#b98f4e', alpha: 0.17 }, // 2 旱地裸岩：中间调、土黄
+  { color: '#182740', alpha: 0.2 }, //  3 冷湿沼泽：偏暗、冷蓝
+];
+
+/** 该格的地貌区色偏（`regionOf` → `REGION_SHADES`）。 */
+export function regionShade(gx: number, gy: number): Shade {
+  return REGION_SHADES[regionOf(gx, gy)];
 }

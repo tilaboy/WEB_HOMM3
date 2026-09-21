@@ -5,7 +5,7 @@ import { TILE } from './ortho.js';
 import { getAtlas } from './atlas.js';
 import { hash2 } from './pixel.js';
 import { quality } from './quality.js';
-import { shadeOf, wetEdgeAlpha } from './terrainShade.js';
+import { shadeOf, wetEdgeAlpha, regionShade, regionOf } from './terrainShade.js';
 
 /**
  * 地形过渡优先级：序号高的地形会向序号低的"漫"过去。
@@ -47,6 +47,20 @@ export function bakeBytes(widthTiles: number, heightTiles: number, tile: number 
 let warnedOversize = false;
 
 /**
+ * `?devregion=0` ⇒ 关闭「地貌区层」（G1 / §3.1.2 X1）；不传 / 非 `'0'` ⇒ 开。
+ * node 垫片（`artshot.mjs`）里 `location` 不存在 ⇒ 视为开，由脚本显式置 `terrain.regionShade`。
+ * 与 `quality.ts` 自读 `?devdpr` 同一种做法：**无人传即不影响生产路径**。
+ */
+function devRegionOff(): boolean {
+  if (typeof location === 'undefined') return false;
+  try {
+    return new URLSearchParams(location.search).get('devregion') === '0';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 地形层：把"永远不会动"的部分一次性烘进一张整图大小的离屏画布。
  *
  * 为什么值得烘：原来每帧对每个可见格做一次精灵 blit + 8 次邻居水面
@@ -73,6 +87,16 @@ export class TerrainLayer {
    * 渲染"加/不加本层"的对照截图。**无人关闭 ⇒ 非生产路径**。
    */
   macroShade = true;
+
+  /**
+   * 地貌区层开关（`terrainShade.ts` 的 G1 / §3.1.2 X1）。默认 `true`；`?devregion=0` 关。
+   * 供真机视口做「只差这一层」的对照（口径见 `shots/README.md` 的「数字必须绑构建」）。
+   *
+   * **就地读查询参数**（不接 `main.ts` / `MapRenderer.ts`）：按 `production/roadmap.md`
+   * 的单一 owner 登记表，那两个文件归 `engineering-lead`、本文件归 `art-director`
+   * ⇒ 开关的"源"放在本文件里，避免为一行开关跨 owner 改文件。
+   */
+  regionShade = !devRegionOff();
 
   /** 强制下一帧重烘（预留：未来有改变地形的机制时调用）。 */
   invalidate(): void {
@@ -129,7 +153,10 @@ export class TerrainLayer {
         // 水面留透明：动画帧在主通道按帧画，这里只烘静止的陆地
         if (terrain === 'water') continue;
         const hsh = hash2(x, y, 17);
-        blit(`g_${terrain}_${Math.floor(hsh * 3) % 3}`, x, y);
+        // 地貌区参与**砖变体**选择：同一区以某个变体为主（按区号旋转），再叠逐格哈希抖动。
+        // 关掉地貌区层时 region 恒取 0 ⇒ 回到原行为（干净的 A/B 对照）。
+        const region = this.regionShade ? regionOf(x, y) : 0;
+        blit(`g_${terrain}_${(Math.floor(hsh * 3) + region) % 3}`, x, y);
 
         // 岸线：陆地与水相接的八方向描边
         if (isWater(x, y - 1)) blit('sh_n', x, y);
@@ -181,6 +208,17 @@ export class TerrainLayer {
           ctx.globalAlpha = sh.alpha;
           ctx.fillStyle = sh.color;
           ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+        }
+
+        // ①b 地貌区色偏（G1 / X1）：比 ① 更大尺度，回答"这是哪片地"。
+        //     同为一次半透明覆盖 ⇒ 仍是**烘焙期一次性成本、运行时零成本**；关闭时整段不发生。
+        if (this.regionShade) {
+          const rs = regionShade(x, y);
+          if (rs.alpha > 0.006) {
+            ctx.globalAlpha = rs.alpha;
+            ctx.fillStyle = rs.color;
+            ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+          }
         }
 
         // ② 近水湿边：朝水的每一条边压一条两段式冷暗带（外深内浅，免生硬直线）
