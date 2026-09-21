@@ -84,6 +84,18 @@ function guardMarker(obj: MapObject): string | null {
   return 'mk_chest';
 }
 
+/**
+ * ④ 可达范围两色（替换底部常驻移动力条）。
+ * - 可走：青蓝填充（用户原话"蓝色或绿色"），沿用旧值。
+ * - 不可走：红，但**面积远大于可走** ⇒ alpha 取**可走的一半以下**，
+ *   靠对比/边界读出"哪里去不了"，而不是靠填色把地形和符号一起糊住。
+ * 两色都只画在**已揭开的地面**上、且在实体循环之前（见 draw() 里的位置说明）。
+ */
+const REACH_TINT = 'rgba(120,200,255,0.16)';
+const NOGO_TINT = 'rgba(255,96,80,0.07)';
+/** 可达范围的红色外缘（格缘）：比填充明显，专供"读到边界在哪"。 */
+const NOGO_EDGE = 'rgba(255,96,80,0.42)';
+
 export class MapRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
@@ -425,16 +437,38 @@ export class MapRenderer {
       }
     }
 
-    /* --- 可移动范围 / 路径 / 悬停 --- */
-    if (vm.reachable) {
-      ctx.fillStyle = 'rgba(120,200,255,0.16)';
+    /* --- ④ 可达范围染色：可走=蓝、不可走=红（替换底部那条常驻移动力条）---
+       位置**保持在世界坐标、实体循环之前**（与旧版一致）。这不是偷懒：
+       世界坐标在 561 的 `ctx.restore()` 结束，而 `applyLighting`(564) 是**屏幕空间**
+       且在实体循环(501–559)之后 ⇒ 把染色"搬"到光照之后，会**既错坐标、又盖住单位**。
+       唯一能同时满足「不遮单位/建筑」与「只在已揭开地面」的画法，就是留在这里。
+       不可走的面积远大于可走 ⇒ 红用**更低一档 alpha 填充**，并给可达范围的**外缘描一圈红线**
+       （team-lead「靠格缘而不靠填色去区分」）——外缘才是要读的那条线。 --- */
+    const cost = vm.reachable;
+    if (cost) {
+      const walkable = (x: number, y: number): boolean => {
+        if (x < 0 || y < 0 || x >= map.width || y >= map.height) return false;
+        const c = cost[idx(map, x, y)];
+        return isFinite(c) && c > 0;
+      };
       for (let y = y0; y <= y1; y++) {
         for (let x = x0; x <= x1; x++) {
-          const i = idx(map, x, y);
-          const c = vm.reachable[i];
-          if (!isFinite(c) || c <= 0) continue;
-          if (!isRevealed(state, player, x, y)) continue;
+          if (!isRevealed(state, player, x, y)) continue; // 未探索不染色
+          const c = cost[idx(map, x, y)];
+          if (isFinite(c) && c > 0) {
+            ctx.fillStyle = REACH_TINT;
+            ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+            continue;
+          }
+          if (c === 0) continue; // 英雄所在格：不着色（保持干净）
+          ctx.fillStyle = NOGO_TINT;
           ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+          // 可达范围的外缘：只在紧邻可走格的那一侧描 2px 红线
+          ctx.fillStyle = NOGO_EDGE;
+          if (walkable(x, y - 1)) ctx.fillRect(x * TILE, y * TILE, TILE, 2);
+          if (walkable(x, y + 1)) ctx.fillRect(x * TILE, y * TILE + TILE - 2, TILE, 2);
+          if (walkable(x - 1, y)) ctx.fillRect(x * TILE, y * TILE, 2, TILE);
+          if (walkable(x + 1, y)) ctx.fillRect(x * TILE + TILE - 2, y * TILE, 2, TILE);
         }
       }
     }
