@@ -1862,6 +1862,19 @@ console.log('\n--- 移动端画质分档 ---');
   ok(safeDraw === 'mid', 'probeTier 在 draw 抛错时 fail-safe 退回 mid');
   const nan = await probeTier({ draw: () => {}, now: () => Number.NaN, yieldFrame: () => Promise.resolve(), frames: 30, dpr: 3 });
   ok(nan === 'mid', 'probeTier 时钟不可用（NaN）时退回 mid');
+
+  // G-15 回归：模拟冷启动拥堵曲线 —— 前 10 帧 100ms、其后 5ms（每帧两次 now()，dt=第二次增量）。
+  // 丢弃预热 ⇒ 采样全为稳态 5ms/DPR3 ⇒ high；不丢预热 ⇒ p95 被 100ms 抬高 ⇒ 误判 low。
+  // 第二条是**反证**：它必须在修复前/若退掉预热丢弃时变 RED，否则说明这测试没锁住行为。
+  const burst = () => {
+    let ci = 0;
+    let acc = 0;
+    return () => (acc += ci++ < 20 ? 100 : 5);
+  };
+  const fixed = await probeTier({ draw: () => {}, now: burst(), yieldFrame: () => Promise.resolve(), frames: 30, warmupFrames: 10, dpr: 3 });
+  ok(fixed === 'high', 'G-15：丢弃启动预热帧后 冷启动100ms/稳态5ms → 高端（不再被误判 low）');
+  const naive = await probeTier({ draw: () => {}, now: burst(), yieldFrame: () => Promise.resolve(), frames: 30, warmupFrames: 0, dpr: 3 });
+  ok(naive === 'low', 'G-15 反证：不丢预热（warmupFrames=0）同一曲线 → 误判 low（证明修复确实在起作用）');
 }
 
 // 4. 地图尺寸夹紧（§4.2 maxMapSize 的落地）

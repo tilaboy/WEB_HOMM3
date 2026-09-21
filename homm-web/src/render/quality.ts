@@ -5,7 +5,8 @@
  * 1) 所有降级都是**运行时开关**，不是编译期分支——同一份 dist 要能跑三档。
  * 2) 渲染层**只读** `quality` 这个单例对象；改档只能通过 applyTier / initQuality。
  * 3) 分档判定以**启动期微基准**为主（iOS 拿不到 deviceMemory），静态线索只兜底。
- * 4) 探测结果缓存进 localStorage（key `homm.tier`），并提供用户手动覆盖（自动/低/中/高）。
+ * 4) 探测结果缓存进 localStorage（key `homm.tier` + 版本 key，见 `PROBE_VERSION`），
+ *    并提供用户手动覆盖（自动/低/中/高）。
  *
  * 本模块是纯逻辑 + 少量 localStorage 访问，**不碰 DOM/Canvas**，
  * 因此可以在 node（smoke 测试）里直接 import，且探测在无 getImageData 环境下
@@ -176,25 +177,41 @@ export function hoverCapable(): boolean {
 const TIER_KEY = 'homm.tier';
 const MODE_KEY = 'homm.tierMode';
 
+/**
+ * 探测逻辑版本。**采样语义一变就 +1** —— 否则老用户升包后仍吃旧版探测写下的缓存，
+ * 出现「探测修好了、画面还是没变」的假阴性（这正是 G-15 那类"改了 A 处、B 处静默沿用"的病）。
+ * 版本不符时 `readCachedTier()` 返回 null ⇒ 强制重测一次，之后按新版本缓存。
+ *
+ * v1 = 初版（无预热帧）；v2 = 丢弃启动预热帧（G-15 修复）。
+ */
+export const PROBE_VERSION = 2;
+const VER_KEY = 'homm.tierProbeVer';
+
 function isTier(v: string | null): v is Tier {
   return v === 'low' || v === 'mid' || v === 'high';
 }
 
-/** 读取缓存的探测档位；无缓存/损坏回 null。 */
+/** 读取缓存的探测档位；无缓存 / 损坏 / **版本不符** 一律回 null（触发重测）。 */
 export function readCachedTier(): Tier | null {
   const v = readLS(TIER_KEY);
-  return isTier(v) ? v : null;
+  if (!isTier(v)) return null;
+  if (readLS(VER_KEY) !== String(PROBE_VERSION)) return null;
+  return v;
 }
 
-/** 写入探测档位。 */
+/** 写入探测档位 + 当前探测版本。 */
 export function cacheTier(tier: Tier): void {
   writeLS(TIER_KEY, tier);
+  writeLS(VER_KEY, String(PROBE_VERSION));
 }
 
 /** 清除探测缓存（设置页"重新检测"用）。 */
 export function clearCachedTier(): void {
   try {
-    if (typeof localStorage !== 'undefined') localStorage.removeItem(TIER_KEY);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(TIER_KEY);
+      localStorage.removeItem(VER_KEY);
+    }
   } catch {
     /* 同上 */
   }
@@ -234,6 +251,18 @@ export function clampMapSize(size: MapSize, cap: number): MapSize {
 
 /* ---------------- 启动期微基准（§4.3） ---------------- */
 
+/**
+ * 采样前**丢弃的预热帧数**。
+ *
+ * 启动最拥堵的时刻（地形首次烘焙 + WebView 预热 + `sync()` 里 getImageData 强制 GPU
+ * 停顿）不代表稳态能力——把它算进 p95，会把旗舰机**系统性误判成 low**（G-15：真机稳态
+ * JS 绘制 p95 仅 0.6ms，却因预热期 p95 >20ms 落到 low；而 low 档把氛围层全关）。
+ * 先跑 N 帧只驱动渲染、不进样本，再开始采样。
+ *
+ * 代价：探测多花 ≈10 帧（60fps 下 ≈0.17s），异步执行、不阻塞首帧。
+ * **阈值 20/12ms 不动**——它针对的是绘制耗时，与刷新率无关，设计本身站得住，问题只在采样时机。
+ */
+export const PROBE_WARMUP_FRAMES = 10;
 /** 采样帧数。 */
 export const PROBE_FRAMES = 30;
 /** p95 超过此值判低端（33 ms 预算，留余量）。 */
@@ -267,6 +296,8 @@ export interface ProbeDeps {
   yieldFrame?: () => Promise<void>;
   /** 采样帧数；默认 30。 */
   frames?: number;
+  /** 采样前丢弃的预热帧数；默认 `PROBE_WARMUP_FRAMES`。规则回归测试用。 */
+  warmupFrames?: number;
   /** DPR；默认从全局读。 */
   dpr?: number;
 }
@@ -284,7 +315,8 @@ function defaultNow(): number {
 }
 
 /**
- * 启动期微基准：采样 N 帧、取 p95、按 §4.3 阈值分档。
+ * 启动期微基准：**先丢弃 `warmupFrames` 帧预热**（冷启动拥堵期，不代表稳态能力），
+ * 再采样 N 帧、取 p95、按 §4.3 阈值分档。丢弃预热的理由见 `PROBE_WARMUP_FRAMES`（G-15）。
  *
  * **fail-safe**：任何一步抛错（例如无头环境没有 getImageData）、有效样本不足，
  * 一律返回 'mid'，绝不抛出——这样 tools/smoke.mjs 之类的 headless 环境不会被它带崩。
@@ -294,15 +326,18 @@ export async function probeTier(deps: ProbeDeps): Promise<Tier> {
     const now = deps.now ?? defaultNow;
     const yieldFrame = deps.yieldFrame ?? defaultYield;
     const frames = deps.frames ?? PROBE_FRAMES;
+    const warmup = deps.warmupFrames ?? PROBE_WARMUP_FRAMES;
     const dpr = deps.dpr ?? deviceDpr();
 
     const samples: number[] = [];
-    for (let i = 0; i < frames; i++) {
+    const total = warmup + frames;
+    for (let i = 0; i < total; i++) {
       const a = now();
       deps.draw();
       deps.sync?.();
       const dt = now() - a;
-      if (Number.isFinite(dt) && dt >= 0) samples.push(dt);
+      // 预热帧只驱动渲染、不进样本：它们量的是"冷启动拥堵"，不是"稳态绘制耗时"。
+      if (i >= warmup && Number.isFinite(dt) && dt >= 0) samples.push(dt);
       await yieldFrame();
     }
 
@@ -341,6 +376,7 @@ export async function initQuality(opts: InitQualityOptions): Promise<Tier> {
     now: opts.now,
     yieldFrame: opts.yieldFrame,
     frames: opts.frames,
+    warmupFrames: opts.warmupFrames,
   });
   cacheTier(tier);
   return applyTier(tier, hover);
