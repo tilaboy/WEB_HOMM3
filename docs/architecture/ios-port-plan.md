@@ -103,7 +103,7 @@
 |---|---|---|---|
 | P0-1 | 固化 iOS 手改项清单到**单一事实源**（本文件 §1.3 / §2 Phase 1） | 本文档 | 文档存在；`mobile-platform.md §2.5` 指向本文 |
 | P0-2 | 补 `resources/icon.png`（1024² 无 alpha，由 `mobile-assets.mjs` 的 emblem 合成） | 新源资产 | `sips -g hasAlpha resources/icon.png` = no；1024×1024 |
-| P0-3 | 写入约定：**"新代码不得引入 `getPlatform()` / `isNativePlatform()` 分支"**（现状已满足，只是没人写下来） | 一行约定（挂本文 / `CLAUDE.md`） | `grep -rnE 'getPlatform\|isNativePlatform' src/` = 0；且无 `import '@capacitor/*'` |
+| P0-3 | 写入约定：**"新代码不得引入 `getPlatform()` / `isNativePlatform()` 分支"**（现状已满足，只是没人写下来） | 一行约定（挂本文 / `CLAUDE.md`） | `grep -rnE 'getPlatform\|isNativePlatform' src/` = 0；且无 `import '@capacitor/*'`。★ **2026-09-21 更正（本行原记的命令是"假绿"，不静默替换）**：**`\|` 在本环境 shell grep（toybox 0.8.13，非 GNU）是字面量；加 `-E` 之后 `\|` 同样是字面量** ⇒ 原命令恒返 0，**与 `src/` 里到底有没有无关**。**正确的命令**：`grep -rnE 'getPlatform|isNativePlatform' src/`（**真的竖线**，不带反斜杠）；★ **且必须带阳性对照**（否则 0 分不清"干净"与"命令坏了"）：`printf 'isNativePlatform\n' \| grep -nE 'getPlatform|isNativePlatform'` **须非空**。用 ripgrep / Grep 工具亦可（本环境 `grep` 不可信） |
 | P0-4 | 确认 `appId` 已定稿（D-16） | — | `capacitor.config.ts:18` = `com.a2studio.thecodeofchivalry` |
 
 > Phase 0 **不需要 Mac、不需要花钱、不碰 `src/`**。四件事做完，iOS 的"可逆准备"就满了。
