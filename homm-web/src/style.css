@@ -1667,12 +1667,16 @@ body.in-battle #thumb {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
-/* `#156`：`宝物` 开关下沉到「部队」段首行（`head` 放不下两个 40px 图标）。 */
-.hp-army-tools {
-  display: flex;
-  justify-content: flex-end;
-  margin: 0 0 4px;
+/* `#156` ★：段内**最后一个** `.sec` 不该再留「分隔线 + 下外边距」——
+   它下面没有内容了，留着只会让默认段（部队）多出 ~14px ⇒ 明明放得下却滚 4px（实测 88/92）。
+   去掉后：部队 88/78 ✓ 完整可见、城池 88/86 ✓ 完整可见，只有属性（147）按设计段内滚。 */
+.hp-pane > .sec:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
 }
+/* `#156`：`宝物` 开关不由本段承载 —— 挂在**肖像**（`.hp-face`）上（零宽零高）。
+   段首再放 40px 工具行会给**默认段**加 ~44px ⇒ 与硬②（默认段不滚）冲突。 */
 .hp-city-sum {
   margin: 0 0 4px;
 }

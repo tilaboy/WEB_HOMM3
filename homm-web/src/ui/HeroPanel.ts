@@ -216,9 +216,10 @@ export class HeroPanel {
      *    `head` 只留 `书` 一个 ⇒ `meta` ≈88px，名与等级同行、不截断。 */
     wrap.appendChild(nav);
 
-    /* `#156` ★ 实测根因修正：两条 bar 若留在 `meta` 里，会被同行右侧的 `nav`（书 / 宝物 ≈96px）
-     * **挤到约 32px 宽** ⇒ 标签「移动力 12/12」换行成多行 ⇒ `hp-head` 被撑到 **128px**。
-     * ⇒ 让 bar 行**独占一行全宽**（`flex-basis:100%` 换行），`head` 回落到 ≤96。 */
+    /* `#156` ★ 实测根因修正：两条 bar 若留在 `meta` 里，就被同行右侧的 `hp-nav` 挤压
+     * （`meta` 实测只剩 ~36px）⇒ 标签「移动力 12/12」换行成 2 行、名与等级各折 2–3 行
+     * ⇒ `hp-head` 被撑到 **119**。⇒ 让 bar 行**独占一行全宽**（`flex-basis:100%`）：
+     * 实测 `hp-head` 119 → **82**（≤96 ✓），`hp-bars-row` 46 → 29。 */
     wrap.appendChild(bars);
 
     return wrap;
