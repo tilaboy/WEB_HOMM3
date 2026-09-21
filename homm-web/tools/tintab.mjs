@@ -7,7 +7,8 @@
  *   落地步骤：cp → `node --check tools/tintab.mjs` → `git add tools/tintab.mjs && git commit`。
  *
  * ## 分工（2026-09-21 team-lead 裁定，遵「同值多址」）
- *   空间口径的「状态 vs 其底」3:1  ⇒ `imagecmp.mjs --edge --hex=<hex>`（art-director 写域，本文件不碰）
+ *   空间口径的「状态 vs 其底」3:1  ⇒ 独立接口 **待补**：`imagecmp.mjs --edge` 在 HEAD **并不存在**
+ *   （曾以 env `CMP_EDGE` 试过、后撤回）。该文件归 art-director，本文件**不碰、也不引用不存在的接口**。
  *   差分口径 + population + ΔE*ab + 色盲 ⇒ 本文件；**WCAG 列降级为"参考"**，验收数不看它。
  *
  * ## 族（从 **dist** 解析，不写死）
@@ -288,7 +289,8 @@ async function analyze(ph, shot) {
   console.log(`场景   : seed=${SEED} size=${SIZE} devreveal=1 视口 1280x${VH}(emulation,dpr1) => 画布 1280x${VH - 80}`);
   console.log(`相位   : ${PHASES.join(', ')}　（0.22=正午 0.68=深夜）`);
   console.log(`population: ${requestedPops.join(', ')}`);
-  console.log('口径   : 净贡献=同像素画/不画之差；覆盖判据=通道差；ΔE=CIE76；色盲=Machado deuteranopia(1.0)；WCAG 仅供参考');
+  console.log('口径   : 净贡献=同像素画/不画之差；覆盖判据=通道差；ΔE=CIE76；色盲=Machado deuteranopia(1.0)');
+console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**（列头已标）—— 与 reachmeas.mjs 口径不同，引用时须连统计量一起报');
   console.log('');
 
   mkdirSync(OUT, { recursive: true });
