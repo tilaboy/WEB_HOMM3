@@ -6,9 +6,14 @@
  * （最近邻 blit / 实色填充 / alpha 合成）。于是 `TerrainLayer.bake()`、
  * `SetDressingLayer.bake()`、图集构建**一行不改**就能跑出像素。
  *
- * 诚实边界（必须在报告里照说）：这是**同一份代码 + 同一张图集**的 headless 合成，
- * **不是真机截图**（本项目无 headless 浏览器可用）。它证明的是「地形烘焙的输出差在哪」，
- * 不能证明「真机合成后端一致」——那需要 devprobe 在设备上取。
+ * 诚实边界（必须在报告里照说）：
+ * 本仓**有** headless 浏览器（Chrome + `tools/serve.mjs`）⇒「做不到浏览器合成对照」是**假的**。
+ * 本轮**选择**用自建 Canvas2D 垫片（理由：快、零依赖、最近邻语义与原实现对齐）——
+ * 是「**本轮没做**」，**不是「做不到」**（这两句话的区别，正是本项目今天反复治的那个病）。
+ * 因此本工具能证明「地形烘焙的输出差在哪」，但**未做**「垫片合成语义 vs 真实 Chrome
+ * Canvas2D 是否逐像素一致」这一层对照。真机层（DPR / 安全区 / 合成算子）另有现成通道：
+ * `tools/devprobe.mjs` + `tools/probes/*` + `tools/phone-tunnel.sh`（设备离线时做不了，
+ * 但那是「设备不在」，不是「没有通道」）。
  *
  * 用法：node tools/artshot.mjs [输出目录]
  */
@@ -260,7 +265,7 @@ h1{font-size:20px;margin:0 0 6px}h2{font-size:16px;margin:30px 0 6px;padding-bot
 </style></head><body>
 <h1>地图层画面提升 · 改前 / 改后</h1>
 <p class="sub">零位图、程序化像素画；TILE=32 与画家算法未动。由 <code>tools/artshot.mjs</code> 用运行期真实渲染代码 headless 合成（最近邻 ×2）。</p>
-<div class="note"><b>诚实边界</b>：这是同一份代码 + 同一张图集的 headless 合成，<b>不是真机截图</b>（本项目无 headless 浏览器）。它回答"地形烘焙的输出差在哪"，不回答"真机合成后端是否一致"。<br>每行<b>只差一个变量</b>，便于归因。</div>
+<div class="note"><b>图从哪来（边界说清）</b>：同一份代码 + 同一张图集，但用<b>自建 Canvas2D 垫片</b>在 node 里合成 —— <b>不是浏览器渲染、也不是真机截图</b>。本仓 <b>有</b> headless Chrome（+ <code>tools/serve.mjs</code>）⇒ 可做浏览器合成对照，但<b>本轮没做</b>（选择：快、零依赖），<b>不是做不到</b>。<br>所以它回答"地形烘焙的输出差在哪"，<b>未答</b>"垫片合成语义 vs 真实 Chrome Canvas2D 是否逐像素一致"（这一层建议由共享通道 <code>chromeshot</code> 补）。<br>每行<b>只差一个变量</b>，便于归因。</div>
 
 <h2>A · 地形「地貌层」（只差 macroShade）</h2>
 <p class="sub">左＝关（地形逐格同型砖重复＝壁纸感）；右＝开（地图尺度方向光＋低频地貌起伏＋亮暖暗冷）。客观量 —— ${metric}。</p>
