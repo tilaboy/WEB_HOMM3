@@ -10,6 +10,10 @@
  *     after  = **染色开**；before = **染色关（`&devtint=0`）**
  *     ⚠️ 两张必须是**同场景 / 同相机 / 同帧 / 同一构建**下抓的（只差染色层）。
  *
+ *   `WCAG=1 node tools/closureprobe.mjs <after.png> <before.png>`
+ *     ⇒ 追加「缺口段 带-vs-雾」的**实测** WCAG 分布（每类：n / 中位 / 最小 / 最大）+ 判定
+ *       （判据 = 该段至少有一条带 ≥3:1，team-lead ⑤）。**量实际像素色**（非标称色）。
+ *
  * 问题（team-lead 裁定 ②）：方向信息由「闭包轮廓」承载 ⇒ 渲染上轮廓必须闭合。
  * 代码已知：`inRegion()` 对**未揭开**格返回 false，且主绘制循环对未揭开格 `continue`
  * ⇒ 可达区贴着**未探索区**的那一段**不描线**。本探针用像素回答"该缺口是否存在"。
@@ -134,6 +138,26 @@ const isFog = (x, y) => {
 
 let fogTotal = 0, fogTouchChanged = 0, fogTouchFill = 0, fogTouchBand = 0;
 const fogTouchKind = { fill: 0, edge: 0, glow: 0, ink: 0 };
+// ★ 可选：缺口段「带-vs-雾」的实测 WCAG（`WCAG=1` 开）—— 回答 team-lead ⑤
+//   「闭合的判据 = 该段至少有一条带 ≥3:1」。**量的是实际像素色**（不是标称色），
+//   因为 `vignette` / 档位会改变实际色（见 roadmap `#155` 那条纪律：按标称色计数必须写档位 + 容差）。
+const bandVsFog = { fill: [], edge: [], glow: [], ink: [] };
+const fogCol = { fill: [], edge: [], glow: [], ink: [] };
+const relLum = ([r, g, b]) => {
+  const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+};
+const wcag = (c1, c2) => {
+  const a = relLum(c1), b = relLum(c2);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+};
+const median = (arr) => {
+  if (!arr.length) return NaN;
+  const s = [...arr].sort((p, q) => p - q);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+const hex = ([r, g, b]) => '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
 const gaps = []; // 例子坐标
 for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
   if (!isFog(x, y)) continue;
@@ -145,6 +169,10 @@ for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
     touched = true;
     const k = FAM[fam[ny * W + nx] - 1][0];
     fogTouchKind[k]++;
+    if (process.env.WCAG) {
+      bandVsFog[k].push(wcag(px(A, (ny * W + nx) * A.ch), px(A, (y * W + x) * A.ch)));
+      fogCol[k].push(px(A, (y * W + x) * A.ch));
+    }
     if (k === 'fill') { if (gaps.length < 12) gaps.push([nx, ny]); }
   }
   if (touched) {
@@ -169,4 +197,15 @@ console.log(`     其中邻接 **任意带(edge/glow/ink)** 的 n=${fogTouchBand
 console.log(`  · ⚠️ 下面这张表的单位不同（**"边"计数：一条边算一次，不是像素**）—— 别与上面两行并列成"同一个量两个数"：`);
 for (const k of ['fill', 'edge', 'glow', 'ink']) console.log(`     ${k.padEnd(5)} ${fogTouchKind[k]}`);
 console.log(`  · 水洗贴雾的例子（前 12 个像素坐标）：${gaps.map(g => `(${g[0]},${g[1]})`).join(' ')}`);
+if (process.env.WCAG) {
+  console.log('  · ★ 缺口段「带-vs-雾」实测 WCAG（`WCAG=1`）—— 判据 = 该段至少有一条带 ≥3:1（team-lead ⑤）');
+  console.log('     ★ 单位提醒：下面是「每一条"带像素↔相邻雾像素"边」的比值分布，**不是**逐类中位、**不是** (ii) 验收数。');
+  for (const k of ['fill', 'edge', 'glow', 'ink']) {
+    const v = bandVsFog[k];
+    if (!v.length) { console.log(`     ${k.padEnd(5)} n=0（该段无此类带）`); continue; }
+    console.log(`     ${k.padEnd(5)} n=${String(v.length).padEnd(5)} 中位 ${median(v).toFixed(2)}  最小 ${Math.min(...v).toFixed(2)}  最大 ${Math.max(...v).toFixed(2)}  相邻雾色(首) ${hex(fogCol[k][0])}`);
+  }
+  const pass = ['fill', 'edge', 'glow', 'ink'].filter((k) => bandVsFog[k].length && median(bandVsFog[k]) >= 3);
+  console.log(`     ⇒ 该段可用带（中位 ≥3:1）= ${pass.length ? pass.join('/') : '（无）'}  ${pass.length ? '✅ 该段闭合可读' : '❌ 该段不闭合可读（无一条带达 3:1）'}`);
+}
 console.log('⚠️ 边界：只证「缺口存在 / 被补上」，不证「缺口占轮廓多少」（fog 含图外底色、同色不可分）；本尺为旁证，非 (ii) 验收数。');
