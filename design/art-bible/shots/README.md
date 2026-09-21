@@ -191,7 +191,8 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 | `f_` | `deviceshot.mjs` | 只差**档位**（脚本会打印 `tierMode`，以它为准） |
 | `g_` | 两者皆有 | `g_uniform_*`＝垫片**全草无物件**（§3.1.1 的口径）；`g_light_*`＝真机视口的**光照相位** |
 | `h_` | `dressshot.mjs`（**垫片**，×2 整图 / ×3 裁图） | **真图**（`createGame()`）上的布景层 A 组对照 + **最坏一屏裁图**（密度判据的口径，见 `measurements-setdressing-density.md`） |
-| `i_` | `deviceshot.mjs`（真 Chrome） | **地貌区层（G1 / `cartoon-style §3.1.2` 的 X1）** 单变量：`?devregion=0`（关）/ 缺省（开） |
+| `i_` | `deviceshot.mjs`（真 Chrome） | **④ 可达染色 (α) 的 before / after**（真机视口；正午/深夜 + 裁图；实现 `3e8084f`） |
+| `j_` | `deviceshot.mjs`（真 Chrome） | **地貌区层（G1 / `cartoon-style §3.1.2` 的 X1）** 单变量：`?devregion=0`（关）/ 缺省（开） |
 
 **⚠️ 已废 / 不得再新增**：`e2_*`、`*_noon` 这类"补丁式后缀" —— 它们是撞车期的临时名。**同口径用同一前缀，不同口径另开字母**。
 
@@ -201,15 +202,15 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 
 | 对照 | 只差什么 | 平均 \|ΔRGB\| | 变化像素占比 | 平均 \|ΔL\*\| | p95 |
 |---|---|---|---|---|---|
-| `i_g1_off.png` → `i_g1_on.png` | `?devregion=0`（同 mid 档） | 4.79 | **33.7%** | **2.20** | 7.44 |
-| `i_g1_on.png` → 同 URL 再抓一次（零假设） | 无 | 0.00 | 0.0% | 0.00 | 0.00 |
+| `j_g1_off.png` → `j_g1_on.png` | `?devregion=0`（同 mid 档） | 4.79 | **33.7%** | **2.20** | 7.44 |
+| `j_g1_on.png` → 同 URL 再抓一次（零假设） | 无 | 0.00 | 0.0% | 0.00 | 0.00 |
 
 **门控判定（team-lead 写死：mean \|ΔL\*\| > 2.28 **且** 像素 > 28%）**：像素 **33.7% ✅**；mean **2.20 ❌** ⇒ **未过门控**。
 ⇒ 按主理人规则：**如实记「未超过噪声（档位 low↔high = 2.28）」**，不改数、不叠层。
 
 **诚实旁证（为什么这条不"等于没用"）**：G1 的 **2.20** 是**已上线**的地貌层（真机视口 **1.41**）的 **1.56×**，且**像素覆盖率 33.7% 已超过档位 low↔high 的 28%** —— 只在"平均幅度"一项差 3.5%。**收不收、要不要调同一层强度，交主理人裁。**
 
-复算：`node tools/serve.mjs`（另开终端）`&& CMP_CROP=84,804 node tools/imagecmp.mjs ../design/art-bible/shots/i_g1_off.png ../design/art-bible/shots/i_g1_on.png`
+复算：`node tools/serve.mjs`（另开终端）`&& CMP_CROP=84,804 node tools/imagecmp.mjs ../design/art-bible/shots/j_g1_off.png ../design/art-bible/shots/j_g1_on.png`
 
 ## 目录当前状态（2026-09-21 已全部入库）
 
