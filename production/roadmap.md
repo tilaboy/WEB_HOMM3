@@ -499,7 +499,8 @@ debug key 签名、7 档图标、`webContentsDebuggingEnabled=false`。
 
 | 文件 / 目录 | 单一 owner | 备注 |
 |---|---|---|
-| `homm-web/src/render/MapRenderer.ts` | `engineering-lead` | ④ 可达染色所在；**测量方只读** |
+| `homm-web/src/render/MapRenderer.ts` | `engineering-lead` | ④ 可达染色所在；**测量方只读**。⚠️ **临时外借**：⑧(α)「墨色 `ink0` 边界描边」落地期间**借给 `art-director`**（时间盒 = 提到交付为止），落地即归还 —— 见下方「B1 撞车」行 |
+| `homm-web/src/core/**`（含 `core/data/scenarios.ts` · `core/map/generator.ts` · `core/game/ai.ts` · `core/types.ts`） | **`engineering-lead`**（B1 场景/AI 线） | **2026-09-21 补登**（撞车后）。**其它实例一律只读复核**，不得写入。见下方「B1 撞车」行 |
 | `homm-web/src/main.ts` · `src/style.css` | `engineering-lead` | ④ 的 HUD 部分（顶栏/拇指带/菜单） |
 | `homm-web/src/render/quality.ts` | `art-director` | 档位政策（`TIER_TABLE` / `setDressing` / `dprCap`）；G-15 为工程侧已完成的历史改动 |
 | `homm-web/src/render/terrainLayer.ts` · `setDressing.ts` · `terrainShade.ts` · `lightLayer.ts` · `atlas.ts` | `art-director` | 画面层 |
