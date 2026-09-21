@@ -21,7 +21,9 @@
     "audit:badge": "node tools/mapbadgeaudit.mjs",
     "audit:contact": "node tools/contactaudit.mjs",
     "assets:mobile": "node tools/mobile-assets.mjs && capacitor-assets generate --android --assetPath resources --iconBackgroundColor \"#3a2a14\" --splashBackgroundColor \"#1b1f24\"",
-    "mobile:sync": "npm run build && cap sync android"
+    "mobile:sync": "npm run build && node tools/androidsync.mjs",
+    "audit:scenario": "node tools/scenarioaudit.mjs",
+    "audit:androidsync": "node tools/androidsync.mjs"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
