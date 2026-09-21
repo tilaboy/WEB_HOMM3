@@ -149,4 +149,5 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 - **工作区里改过、我未提交**：`b_dress_on.png` · `c_night_before.png` · `c_night_after.png` · `index.html` —— 它们被 `artshot.mjs` 重跑过一次，而那次重跑吃的是**尚未提交的 `setDressing.ts`**。
   ⇒ **不要把它们当基线读**：**图里的像素目前没有对应的已提交代码**。
   ⇒ 谁落地 `setDressing.ts`，**谁就再跑一次 `node tools/artshot.mjs` 并连同这 4 个文件一起提交**。这是本项目一贯的口径：**产物必须与已提交代码一致**。
-- **工作区里未跟踪**：`e2_shade_off/on.png`（**另一实例**按 `devzoom=0.5` 整图视角跑的，**我未复跑、未验口径**）· `d_live_chrome.png`（**我自己的**早期单张验证图：为确认 `chromeshot.mjs` 通道可用而抓，后被 `e_*` / `f_*` 成对证据取代）。**两者都不认领、不引用**；要留，就由产出者补上 `deviceshot.mjs` / `chromeshot.mjs` 的复跑命令、按上表改名后再入表。
+- **已按命名约定移除**：`e2_shade_off/on.png`（撞车期的临时名，口径＝`devzoom=0.5` **整图视角**）。其数已并入 `measurements-visible-delta.md` §5 的「视角前提」一行（**不单独留文件**）；如需保留该视角，按上表以 `h_` 前缀重命名并补复跑命令后再入表。
+- **工作区里未跟踪**：`d_live_chrome.png`（早期单张验证图：为确认 `chromeshot.mjs` 通道可用而抓，后被 `e_*` / `f_*` 成对证据取代）。**不认领、不引用**；要留，就由产出者补上 `chromeshot.mjs` 的复跑命令后再入表。
