@@ -100,13 +100,22 @@ function guardMarker(obj: MapObject): string | null {
  *   **墨色 `ink0` 描边**（**不透明**，与 §1.1 同色）作**明度锚**：灰度下由它把
  *   "可达 / 不可达"的**边界**画出来。验收判据 = `design/accessibility-requirements.md §4.6`
  *   （两态灰度下可辨，锚 WCAG 非文本 3:1，量「状态 vs 其底」）。
+ *
+ * ★ 2026-09-21 (ii) 修订（a11y §4.6 判 (a-1) 可做；team-lead 归 engineering-lead 落地）：单一**暗墨**
+ *   在**暗底**上对比不足（§4.6 分档：草·深 2.33 / 暗 1.16 / 夜 2.08）—— 因为同一相位内"极亮底"与
+ *   "极暗底"同时存在（沙·土 ↔ 草·深），**整条换任何单一颜色都会把一类地形留在失败侧**。故补一条
+ *   **亮芯**（`hi1` 暖高光，明度锚·**亮极**），与暗墨（**暗极**）落在**同一格地形**上
+ *   ⇒ **任何底色下两极其一必 ≥3:1**（暗底吃亮芯、亮底吃暗边）。红只作**色相锚**、不挤掉亮/墨任一侧。
+ *   边界带（贴可达区 → 不可走侧）= **红 2px + 亮芯 2px + 暗墨 2px = 6px（= 3×`EDGE_W`，≤6px 上限）**。
  */
 const REACH_TINT = 'rgba(120,200,255,0.16)';
-/** 格缘的**内侧红**（色相锚，贴可达区一侧）—— 沿用旧值。 */
+/** 格缘的**内侧红**（色相锚，贴可达区一侧）—— 沿用旧值；只作色相锚，不承担对比度。 */
 const NOGO_EDGE = 'rgba(255,96,80,0.42)';
-/** 格缘的**外侧墨色 `ink0`**（**明度锚**，不透明，复用 §1.1 的墨色）—— 抓「灰度可辨」。 */
+/** 格缘的**亮芯**（明度锚·**亮极**，不透明，复用 §3.2 的 `hi1` 暖高光）—— (ii) 救「暗底」。 */
+const NOGO_EDGE_GLOW = '#fff3c8';
+/** 格缘的**暗边墨色 `ink0`**（明度锚·**暗极**，不透明，复用 §1.1 的墨色）—— 救「亮底」。 */
 const NOGO_EDGE_INK = '#2a1a12';
-/** 格缘单边厚度（px）；红 + 墨各一条 ⇒ 边界总宽 `2 * EDGE_W`。 */
+/** 格缘单边厚度（px）；**红 + 亮芯 + 暗墨三条** ⇒ 边界总宽 `3 * EDGE_W`（= 6px ≤ 6px 上限）。 */
 const EDGE_W = 2;
 
 export class MapRenderer {
@@ -476,24 +485,30 @@ export class MapRenderer {
             continue;
           }
           if (isFinite(c)) continue; // 英雄自身格（c===0）：在可达区内部，不填不描
-          // 不可走：紧邻可达区的那一侧画**双线** = 内侧红（色相锚）+ 外侧墨（明度锚）。
-          // 「红」沿用旧位（贴可达区）；「墨」往不可走一侧再外扩 EDGE_W ⇒ 补上亮度分量。
+          // 不可走：紧邻可达区的那一侧画**三线 = 红（色相锚）+ 亮芯 + 暗墨（双色 halo）**。
+          // 顺序（贴可达区 → 不可走侧）：红(0) → 亮芯(EDGE_W) → 暗墨(2*EDGE_W)；亮/暗两锚落在**同一格地形**
+          // ⇒ 暗底吃亮芯、亮底吃暗边 ⇒ 任何底色下两极其一必 ≥3:1（§4.6 (a-1)/(ii)）。
           const px = x * TILE;
           const py = y * TILE;
           const top = inRegion(x, y - 1);
           const bot = inRegion(x, y + 1);
           const lft = inRegion(x - 1, y);
           const rgt = inRegion(x + 1, y);
-          ctx.fillStyle = NOGO_EDGE; // 内侧红（色相锚）
+          ctx.fillStyle = NOGO_EDGE; // ① 内侧红（色相锚，贴可达区一侧）
           if (top) ctx.fillRect(px, py, TILE, EDGE_W);
           if (bot) ctx.fillRect(px, py + TILE - EDGE_W, TILE, EDGE_W);
           if (lft) ctx.fillRect(px, py, EDGE_W, TILE);
           if (rgt) ctx.fillRect(px + TILE - EDGE_W, py, EDGE_W, TILE);
-          ctx.fillStyle = NOGO_EDGE_INK; // 外侧墨（明度锚，不透明）
+          ctx.fillStyle = NOGO_EDGE_GLOW; // ② 亮芯（明度锚·亮极，不透明）
           if (top) ctx.fillRect(px, py + EDGE_W, TILE, EDGE_W);
           if (bot) ctx.fillRect(px, py + TILE - EDGE_W * 2, TILE, EDGE_W);
           if (lft) ctx.fillRect(px + EDGE_W, py, EDGE_W, TILE);
           if (rgt) ctx.fillRect(px + TILE - EDGE_W * 2, py, EDGE_W, TILE);
+          ctx.fillStyle = NOGO_EDGE_INK; // ③ 暗边墨（明度锚·暗极，不透明）
+          if (top) ctx.fillRect(px, py + EDGE_W * 2, TILE, EDGE_W);
+          if (bot) ctx.fillRect(px, py + TILE - EDGE_W * 3, TILE, EDGE_W);
+          if (lft) ctx.fillRect(px + EDGE_W * 2, py, EDGE_W, TILE);
+          if (rgt) ctx.fillRect(px + TILE - EDGE_W * 3, py, EDGE_W, TILE);
         }
       }
     }
