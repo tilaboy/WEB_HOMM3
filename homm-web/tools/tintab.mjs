@@ -55,9 +55,23 @@
  *   `?devdpr`，只改 dprCap）。头部 `画布dpr` 行 + 每相位 `canvas ... dpr N` 会写明实际值。
  * ⚠️ 换视口 = **换 population**（像素集合不同）⇒ 与桌面跑的**逐格数不可直接比**，只比**方向/判定**；
  *   报告须写明视口 + dpr（与「指纹要写文件+算法+值」「population 必须写」同族）。
- * ⚠️ **非桌面视口已知未决（2026-09-21，owner 实测）**：792×320@3 下 `dark`(雾/暗缝) 类的
- *   `(a)并集/(b)全族` 在 **1548 ↔ 32607** 间**随帧序互换**，亮类（沙/草/水）不受影响 ⇒ 疑 **雾/揭图未 settle**
- *   （`?devreveal`），**不是顺序能修**。⇒ 该视口下 **`dark` 数先别用**（先说清雾是否 settle）；桌面视口无此病。
+ * ⚠️ **非桌面视口（792×320@3）已解（2026-09-21，owner）**：曾见 `dark`(暗缝) 类的 `(a)并集/(b)全族`
+ *   随帧序在 **1548 ↔ 32607** 互换。**根因 = 两个独立瞬态，都要治**：
+ *     ① **首张 `captureScreenshot` 未 settle**（**非**曾疑的 `?devreveal` 雾未 settle —— 实测雾色 `#0b0d10`
+ *        在 none/full/edge/ink **恒 = 90390 px**，雾是 settle 的）：同 mode 连抓三张 **#1≠#2/#3**、
+ *        **#2==#3 逐位相同**，且与 mode 无关（谁先抓谁出格）⇒ **修法 = 录制前丢弃首帧**（G-15 同族）。
+ *     ② **`#hint` 启动 toast**（DOM 覆盖层，约载入后 1.5s 出现在地图区下缘；见下「DOM 覆盖层门」）——
+ *        **删首帧治不了它**（它比首帧晚，实测第 5 个捕获才出现）⇒ **修法 = 注入 `display:none` 隐藏**。
+ *   ⇒ 两处落地后实测（792@3 · 0.22）：`dark` Σ=(a)=(b)=**1548**、缺口 0、缺源 0；`sand`/`water` 缺口恰 == 多源。
+ *   ⇒ 该视口**可放行 `dark`**。判「雾是否 settle」请数**地图区内** `#0b0d10` 变没变（勿只靠推理）。
+ *
+ * ## ★ 瞬态抑制（2026-09-21，owner；与 `NOW_STUB` 冻结同族的第二类"非地形瞬态"）
+ *   ② **启动 toast** `#hint`（`main.ts:604` `hint()`，文案 `main.ts:1121`）：**DOM 覆盖层**、约
+ *      **载入后 1.5s** 出现于**地图区下缘**（792@3 实测 bbox device `412x93` = CSS `[328,233 137x31]`）、
+ *      2s 淡出 ⇒ 落在测量窗内会**污染地图区**（曾把 `dark` `(a)并集` 抬高 **31059**）。
+ *      **修法 = HOOK 注入 `#hint{display:none}`**（测量帧确定、可复现）；头部每相位打印 `#hint 显示中`
+ *      供核。⚠️ 该 toast **与 canvas 渲染无关** —— 抑制它不改任何地图像素的绘制路径。
+ *   ① 动画（水波/脉冲）由 `NOW_STUB` 冻结（见下）。
  *
  * ## 草亮度分层（2026-09-21 加，team-lead 裁 `ff7db9c`）
  * `grass` 曾是一个**不分层**的桶 —— 而 §15.4 的 (α) **失败格恰恰是「草·深」** ⇒ 并进 `grass`
@@ -288,6 +302,19 @@ const NOW_STUB = FREEZE_ANIM
 
 const HOOK = `(() => {
   ${NOW_STUB}
+  /* ★ 抑制启动 toast（#hint；main.ts:604 hint()，文案 main.ts:1121）——
+   *   **DOM 覆盖层**（非 canvas 内容），约**载入后 1.5s** 出现于地图区**下缘**（实测 792@3：
+   *   bbox device 412x93 = CSS[328,233 137x31]），2s 后淡出 ⇒ 若测量帧落在该窗内即**污染地图区读数**
+   *   （实测曾把 dark 的 (a)并集 抬高 31059：ink-only 帧被 toast 盖住 ⇒ "该带在变"是假信号）。
+   *   ⇒ 注入 CSS 隐藏，使测量帧确定 —— 与 NOW_STUB 冻结动画**同族**：都是"移除非地形瞬态"。
+   *   ⚠️ 这是**唯一**被动的 DOM 瞬态；#objBanner（§14.2 教学目标）"载入即 3/3 不弹"、不在此窗内。 */
+  try {
+    const st = document.createElement('style');
+    st.textContent = '#hint{display:none !important;}';
+    const put = () => { try { (document.head || document.documentElement).appendChild(st); } catch (e) {} };
+    put();
+    document.addEventListener('DOMContentLoaded', put, { once: true });
+  } catch (e) {}
   const FAMILIES = ${JSON.stringify(FAMILIES)};
   const COLORS = ${JSON.stringify(Object.fromEntries(FAMILIES.map((f) => [f, BY_FAMILY[f].map((t) => t.canon)])))};
   const norm = (s) => {
@@ -310,12 +337,25 @@ const HOOK = `(() => {
   };
 })();`;
 
-/* ⚠️ 抓帧**顺序**（保持既有：full 最先、none 次之、再各族）。**别随手重排** —— 实测 792@3 下
- *   `dark`(雾) 类的 `(a)并集/(b)全族` 会随"哪一帧最早/最晚"在 **1548 ↔ 32607** 间**互换**：
- *   疑为 `?devreveal` 的**雾/揭图未 settle**（亮地形不受影响 ⇒ 只 `dark` 出病）⇒ **非顺序能修**。
- *   ⇒ 「真机视口独立腿」用 `dark` 前**须先证实雾已 settle**；桌面视口无此病（见 roadmap 记录）。 */
+/* ⚠️ 抓帧**顺序**（full 最先、none 次之、再各族）—— 自 **首帧丢弃**（见 `captureAll` 内「预热帧丢弃」）落地后
+ *   已**不再敏感**：抓到的每张都是 settle 后的帧（实测同 mode 连抓 #2==#3 逐位相同）。
+ *   历史（2026-09-21 前，未丢弃首帧时）：792@3 下 `dark` 的 `(a)并集/(b)全族` 会随"哪一帧最早/最晚"
+ *   在 **1548 ↔ 32607** 间**互换** —— 根因 = **首张截图未 settle**（**非**曾疑的 `?devreveal` 雾未 settle：
+ *   实测 `#0b0d10` 雾像素在 none/full/edge/ink **恒为 90390**，雾是 settle 的）。
+ *   ⇒ 「真机视口独立腿」现可放行 `dark`；桌面视口本无此病（同差异未过阈）。 */
 const MODES = { full: Object.fromEntries(FAMILIES.map((f) => [f, false])), none: Object.fromEntries(FAMILIES.map((f) => [f, true])) };
 for (const f of FAMILIES) MODES[f] = Object.fromEntries(FAMILIES.map((g) => [g, g !== f]));
+
+/* ★ DOM 覆盖层门（2026-09-21 owner · 解 792「dark 的 (b)全族」虚高）：
+ *   `src/main.ts:604 hint()` 的底部 toast（元素 `#hint`；新局时 `main.ts:1121` 触发
+ *   "〈玩家名〉的征程开始了"）载入后约 **1.5s 出现**（`classList:show` → `opacity:1`）、**2000ms+fade 后消失**。
+ *   录制窗口若**跨过它** ⇒ 相邻两帧凭空差出**一整块 toast 区**（实测 bbox device [982,699..1393,791]
+ *   = CSS 137×31）⇒ 被计成"变化" = 污染（曾把 792 `dark` 的 `(a)并集` 抬高 31059）。
+ *   处置 = **注入侧隐藏**（HOOK 内注入 `#hint{display:none !important}`）—— 与 `NOW_STUB` 冻结动画**同族**：
+ *   都是"移除非地形瞬态"。`#hint` 为 `position:absolute` + `pointer-events:none` ⇒ 隐藏**不改布局**、不动 canvas。
+ *   ⚠️ 本门**不能**用"删首帧"代替（toast 比首帧晚，实测第 5 个捕获才出现）—— 与首帧丢弃是**两个独立机制**，都要。
+ *   此处**只做可核验**：录制前核对注入的隐藏确实生效（`getComputedStyle(#hint).display === "none"`）。 */
+const HINT_HIDDEN = '(()=>{const e=document.getElementById("hint");return e?getComputedStyle(e).display==="none":null})()';
 
 async function captureAll() {
   return withHeadlessChrome(async ({ send, evaluate }) => {
@@ -331,8 +371,17 @@ async function captureAll() {
         await new Promise((r) => setTimeout(r, 50));
       }
       await evaluate('new Promise(r=>{let i=0;const s=()=>(++i>=30?r():requestAnimationFrame(s));requestAnimationFrame(s)})');
-      const meta = await evaluate('(()=>{const c=document.querySelector("canvas");const j=window.__journey();return {canvas:{w:c.width,h:c.height},dpr:c.width/c.clientWidth,dprRaw:window.devicePixelRatio,hero:j.heroPos}})()');
-      shots[ph] = { meta, modes: {} };
+      /* ★ 覆盖层门**核验**：确认注入的 `#hint{display:none}` 生效（toast 不会在录制中占像素）。 */
+      const hintHidden = await evaluate(HINT_HIDDEN).catch(() => null);
+      /* ★ 预热帧丢弃（2026-09-21，解 792 `dark` 守恒右端互换 —— 见头注「首帧未就绪」）：
+       *   `Page.captureScreenshot` 的**第一张**返回的是"尚未 settle"的合成帧。实测（792×320@3）：
+       *   同一 mode 连抓三张，**#1 与 #2/#3 差 10w+ px，#2 == #3 逐位相同**；且与 mode 无关
+       *   （none 先则 none#1 出格、full 先则 full#1 出格）。⇒ 首帧被当成数据 = 污染。
+       *   修法 = **先抓一张丢弃**（与 G-15「预热帧丢弃 + 缓存版本门」同族），再开录。
+       *   ⚠️ 桌面 1280 原亦隐有此病、只是同一差异未过 >4 阈（故此前 缺源≈0）；换视口才暴露。 */
+      await send('Page.captureScreenshot', { format: 'png' });
+      const meta = await evaluate('(()=>{const c=document.querySelector("canvas");const j=window.__journey();const h=document.getElementById("hint");return {canvas:{w:c.width,h:c.height},dpr:c.width/c.clientWidth,dprRaw:window.devicePixelRatio,hero:j.heroPos,hint:!!h,hintShown:!!(h&&h.classList&&h.classList.contains("show"))}})()');
+      shots[ph] = { meta, hintHidden, modes: {} };
       for (const [mode, skip] of Object.entries(MODES)) {
         await evaluate(`window.__tintSkip = ${JSON.stringify(skip)}`);
         await evaluate('new Promise(r=>{let i=0;const s=()=>(++i>=3?r():requestAnimationFrame(s));requestAnimationFrame(s)})');
@@ -357,6 +406,7 @@ async function captureAll() {
         await new Promise((r) => setTimeout(r, 50));
       }
       await evaluate('new Promise(r=>{let i=0;const s=()=>(++i>=30?r():requestAnimationFrame(s));requestAnimationFrame(s)})');
+      await send('Page.captureScreenshot', { format: 'png' });   // 预热帧丢弃（同上）
       await evaluate(`window.__tintSkip = ${JSON.stringify(MODES.none)}`);
       await evaluate('new Promise(r=>{let i=0;const s=()=>(++i>=3?r():requestAnimationFrame(s));requestAnimationFrame(s)})');
       const s = await send('Page.captureScreenshot', { format: 'png' });
@@ -525,7 +575,9 @@ console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**�
     const shot = shots[ph];
     for (const [mode, buf] of Object.entries(shot.modes)) writeFileSync(path.join(OUT, `tint_${ph}_${mode}.png`), buf);
     const { meta, rowsOut, popTotal, popFull, popMulti, popZero, zeroSamples } = await analyze(ph, shot, shots.identity);
-    console.log(`########## devlight=${ph}  canvas ${meta.canvas.w}x${meta.canvas.h} dpr ${meta.dpr}（window.devicePixelRatio=${meta.dprRaw}）hero(${meta.hero.x},${meta.hero.y})`);
+    console.log(`########## devlight=${ph}  canvas ${meta.canvas.w}x${meta.canvas.h} dpr ${meta.dpr}（window.devicePixelRatio=${meta.dprRaw}）hero(${meta.hero.x},${meta.hero.y})  #hint 存在=${meta.hint} 显示中=${meta.hintShown}（已注入 CSS 隐藏，期望 显示中=false）`);
+    const tst = shots[ph].hintHidden;
+    console.log(`  overlay门: #hint 注入隐藏 ${tst === true ? '已生效（computed display:none）✅' : tst === null ? '⚠️ 无 #hint 元素（未核）' : '❌ 未生效 —— toast 可能在录制中占像素，读数存疑'} · 录制前已丢弃首帧`);
     console.log(`  fillRect 命中：${FAMILIES.map((f) => `${f}x${shot.hits[f]}`).join('  ')}`);
     for (const f of FAMILIES) if (!shot.hits[f]) { missing = true; console.log(`  [!] 族「${LABEL[f]}」命中 0 —— 颜色/名字可能已改，该族无效，勿引用！`); }
     console.log('  族        | population      | 像素数 | ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG中位 | WCAG均值(参考) | 类总变化(a并集/b全族)');
