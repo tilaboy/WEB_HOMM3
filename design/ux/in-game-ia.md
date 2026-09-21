@@ -910,9 +910,11 @@
 
 | # | 文案 | 判定表达式（**已核源**） |
 |---|---|---|
-| ① | 你已经会走路了 | `state.players.p1.revealed.length >= 60`（`PlayerState.revealed: number[]` = 已揭开格的索引表） |
+| ① | 你已经会走路了 | `state.players.p1.revealed.reduce((n, v) => n + (v === 1 ? 1 : 0), 0) >= 140` —— **⚠️ 不能用 `.length`**：`revealed` 是**定长 0/1 掩码**（`generator.ts`：`new Array(w*h).fill(0)`；`fog.ts` 的 `revealAround` 只把格置 `1`、**从不改长度**）⇒ 24×24 恒为 **576**，`.length >= 60` **开局即真**（恒真 ⇒ 假守卫）。**阈值 140 ≈ 全图 24%**（相对选用种子 `247944` 的开局 ~82 ⇒ 再揭 ~58 格 ≈ **3–4 步**）⇒ **前 1 分钟自然达成、但不可能开局即完成** |
 | ② | 你打赢了第一仗 | `(state.heroes['hero1']?.exp ?? 0) > 0` —— **前提已证实**：`gainExp` 的 **3 个调用点全部在 `if (outcome.win)` 内**（`interaction.ts` 的野怪 / 攻城 / 遭遇三处）⇒ **经验只在胜仗后给**；且 `hero1` = 人类玩家英雄（`generator.ts`：`heroId = isHuman ? 'hero1' : \`hero_${fid}\``） |
-| ③ | 你有自己的矿了 | `Object.values(state.map.objects).filter(o => o.kind === 'mine' && (o.payload as MinePayload)?.owner === 'p1').length >= 2`（占领时 `p.owner` 被改写为占领者） |
+| ③ | 你有自己的矿了 | `ownedMines(state, 'p1').length >= 2` —— **复用既有导出**（`town.ts` 的 `ownedMines(state, player)`，内部就是同一个 `kind==='mine' && payload.owner===player` 过滤；`mineIncome` 也用它）⇒ **不在 UI 里重写一遍 filter**（本规格自己的"不做第二套"原则） |
+
+> **⚠️ 假守卫（① 的原写法已修）**：一个**开局即为真**的判据比**没有**判据更糟 —— 它会让清单**永远显示错误的进度**。① 原写的 `.length >= 60` 正是这种（定长数组 ⇒ 恒 `576 ≥ 60`，第 1 帧就 ☑）。⇒ 已在 `playtest-scenarios.md §2.4` 加**验收 V7：三条判定在开局状态下必须全为 false**（①：开局已揭 ~82 格 < 140）。
 
 > **② 的边界（须锁存）**：若 `hero1` **阵亡**，`heroes['hero1']` 消失 ⇒ 实时读数会**翻回 false**，让"学会了吗"倒退。⇒ 三条应**锁存**（**一旦达成即保持**，会话内布尔锁存或等价方案），**不是**每帧实时重算。教学场全是弱怪、0 对手，阵亡概率极低，但锁存才是正确形态。
 
