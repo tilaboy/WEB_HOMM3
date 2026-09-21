@@ -2,13 +2,18 @@
 /**
  * tintab.mjs —— ④ 可达染色「净贡献（差分）」对照台　(owner: engineering-lead-2)
  *
- * ★ 这是 engineering-lead-2 在 7dcbe59 之上的修复稿。因 tools/tintab.mjs 正被另一实例
- *   每 ~30s 覆写（livelock），本稿暂存 /tmp；其停写后 `cp` 覆盖即可。
- *   落地步骤：cp → `node --check tools/tintab.mjs` → `git add tools/tintab.mjs && git commit`。
+ * ★ 落库已完：修复稿已提交（`6867cff` / `bf92be4` / `5c0e757`）⇒ 不再是「暂存 /tmp 待 cp」的状态。
+ *   改本文件后必须 `node --check tools/tintab.mjs`，再 `git commit -- tools/tintab.mjs`（显式 pathspec）。
+ *
+ * ★ 冻结（2026-09-21，team-lead 裁定，已写进 `production/roadmap.md`）：**本文件只有 `engineering-lead-2` 可写**；
+ *   其它实例一律**只读**，**有增补交给 owner 并入**（内容不回退、只收口 —— 那些增补有价值，别丢）。
  *
  * ## 分工（2026-09-21 team-lead 裁定，遵「同值多址」）
- *   空间口径的「状态 vs 其底」3:1  ⇒ 独立接口 **待补**：`imagecmp.mjs --edge` 在 HEAD **并不存在**
- *   （曾以 env `CMP_EDGE` 试过、后撤回）。该文件归 art-director，本文件**不碰、也不引用不存在的接口**。
+ *   空间口径：
+ *     验收数       → `tools/reachmeas.mjs`（A/B「状态 vs 其底」；§4.6 权威：午 2.93 / 夜 2.08）
+ *     第二口径旁证 → `tools/imagecmp.mjs` 的 env `CMP_EDGE=<hex>`（`f740ec3`；含**全部** ink0 出现，
+ *                   非只量 ④ 格缘 ⇒ **不得当验收数**）
+ *     ⚠️ 旗标形 `--edge` 从未存在（这条原先是对的，保留）
  *   差分口径 + population + ΔE*ab + 色盲 ⇒ 本文件；**WCAG 列降级为"参考"**，验收数不看它。
  *
  * ## 族（从 **dist** 解析，不写死）
