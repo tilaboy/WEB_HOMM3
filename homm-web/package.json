@@ -24,6 +24,7 @@
     "mobile:sync": "npm run build && node tools/androidsync.mjs",
     "audit:scenario": "node tools/scenarioaudit.mjs",
     "audit:hpbudget": "node tools/hpbudget.mjs",
+    "audit:haloflip": "node tools/haloflip.mjs",
     "audit:androidsync": "node tools/androidsync.mjs"
   },
   "devDependencies": {
