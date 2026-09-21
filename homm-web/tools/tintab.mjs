@@ -352,25 +352,56 @@ async function analyze(ph, shot, identityBuf) {
     if (which in GRASS_BIN) { const bi = GRASS_BIN[which]; return (i) => gb[i] === bi; }
     const code = CODE[which]; return (i) => cls[i] === code;
   };
-  /* ★ 该类变化总数（守恒断言右端 · team-lead 裁定三 `12d99d1`）：
-   *   = 该类里"被**任一**染色带触及"的像素数 = 四带变化集在测量窗内的**并集**。
-   *   ⇒ `Σ(四带 n) == 该类变化总数`；不等 ⇒ 有像素没归入任何带 ⇒ **FAIL 并报缺口**。
-   *   （血案：`±3 墨核 15` vs `类全量 11094` —— "带的和"必须等于"类的全量"。） */
+  /* ★ 该类变化总数（守恒断言右端 · team-lead 裁定三 `12d99d1`）—— **两个右端并存、各自标身份**
+   *  （遵本文件头「同格两数纪律」）：`Σ(四带 n)` 要对上的"类总变化"有**两种定义**，一般不等：
+   *   (a) `并集(任一染)` = 该类里**被任一染色带触及**的像素 = 四带变化集的**并集**。
+   *   (b) `全族(full)`  = 该类里**四带一起画**（`MODES.full`）相对**不画**的变化总数。
+   *   二者差异的来源：
+   *     · **族重叠**：同一像素被 ≥2 带覆盖 ⇒ `Σ(四带 n)` **>** 并集（Σ 把重叠像素数了多遍）；
+   *     · **合成效应**：单带各自都不过阈值、**合画才过** ⇒ `全族` **>** 并集。
+   *   ⇒ 断言分别对 (a)/(b) 跑；不等即报缺口，并给**归属诊断**（多源 / 缺源）。
+   *   （血案：`±3 墨核 15` vs `类全量 11094` —— "带的和"必须能对上"类的全量"。）
+   *   ⚠️ **归属诊断只报数**（多出的落在哪 / 缺的是什么颜色），**不下结论**。 */
   const famImg = {};
-  const anyChg = new Uint8Array(N);
-  for (const fam of FAMILIES) {
+  const famBit = new Uint16Array(N);   // 每位 = 一个族是否改变该像素（族数 ≤4 ⇒ ≤4 bit）
+  const anyChg = new Uint8Array(N);    // (a) 并集(任一染)
+  for (let fi = 0; fi < FAMILIES.length; fi++) {
+    const fam = FAMILIES[fi], bit = 1 << fi;
     const img = await raw(modes[fam]);
     famImg[fam] = img;
     for (let y = gy0; y < gy1; y++) for (let x = 0; x < W; x++) {
-      const o = (y * W + x) * C4;
-      if (Math.abs(img.d[o] - B.d[o]) > 4 || Math.abs(img.d[o + 1] - B.d[o + 1]) > 4 || Math.abs(img.d[o + 2] - B.d[o + 2]) > 4) anyChg[y * W + x] = 1;
+      const i = y * W + x, o = i * C4;
+      if (Math.abs(img.d[o] - B.d[o]) > 4 || Math.abs(img.d[o + 1] - B.d[o + 1]) > 4 || Math.abs(img.d[o + 2] - B.d[o + 2]) > 4) { famBit[i] |= bit; anyChg[i] = 1; }
     }
   }
-  const popTotal = new Map();
+  /* (b) 全族变化：MODES.full（四带一起画）vs MODES.none（不画） */
+  const fullImg = await raw(modes.full);
+  const fullChg = new Uint8Array(N);
+  for (let y = gy0; y < gy1; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, o = i * C4;
+    if (Math.abs(fullImg.d[o] - B.d[o]) > 4 || Math.abs(fullImg.d[o + 1] - B.d[o + 1]) > 4 || Math.abs(fullImg.d[o + 2] - B.d[o + 2]) > 4) fullChg[i] = 1;
+  }
+  const bitCount = (v) => { let c = 0; while (v) { c += v & 1; v >>= 1; } return c; };
+  const popTotal = new Map();   // (a) 并集
+  const popFull = new Map();    // (b) 全族
+  const popMulti = new Map();   // 被 ≥2 族同时改变（= "多"的来源：族重叠）
+  const popZero = new Map();    // 全族变、但**无任一单族**变（= "缺"的来源：合成 or 窗口外）
+  const zeroSamples = new Map();
   for (const pop of requestedPops) {
-    const mask = popMask(pop); let t = 0;
-    for (let y = gy0; y < gy1; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (anyChg[i] && mask(i)) t++; }
-    popTotal.set(pop, t);
+    const mask = popMask(pop);
+    let uni = 0, full = 0, multi = 0, zero = 0; const zs = [];
+    for (let y = gy0; y < gy1; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x; if (!mask(i)) continue;
+      if (anyChg[i]) uni++;
+      if (fullChg[i]) full++;
+      const pc = bitCount(famBit[i]);
+      if (pc >= 2) multi++;
+      if (fullChg[i] && pc === 0) {
+        zero++;
+        if (zs.length < 5) { const o = i * C4; zs.push(`(${x},${y}) none(${B.d[o]},${B.d[o + 1]},${B.d[o + 2]})→full(${fullImg.d[o]},${fullImg.d[o + 1]},${fullImg.d[o + 2]})`); }
+      }
+    }
+    popTotal.set(pop, uni); popFull.set(pop, full); popMulti.set(pop, multi); popZero.set(pop, zero); zeroSamples.set(pop, zs);
   }
   const rowsOut = [];
   for (const fam of FAMILIES) {
@@ -396,10 +427,10 @@ async function analyze(ph, shot, identityBuf) {
       const pct = (a, t) => (a.length ? (100 * a.filter((v) => v < t).length) / a.length : NaN);
       /* ★ 加 WCAG 中位（Wc）：team-lead #138 要求四统计量**统一取中位**以做 A/B 减差；
        *   原 WCAG 列是**均值**（`wcag`），保留不动（统计量纪律：同格两数须连统计量一起报）。 */
-      rowsOut.push({ fam, pop, n, L: med(Ls), E: med(Es), C: med(Cs), cvdBelow: pct(Cs, 2.22), wcag: n ? sw / n : NaN, Wc: med(Ws), total: popTotal.get(pop) });
+      rowsOut.push({ fam, pop, n, L: med(Ls), E: med(Es), C: med(Cs), cvdBelow: pct(Cs, 2.22), wcag: n ? sw / n : NaN, Wc: med(Ws), totalU: popTotal.get(pop), totalF: popFull.get(pop) });
     }
   }
-  return { meta, rowsOut, popTotal };
+  return { meta, rowsOut, popTotal, popFull, popMulti, popZero, zeroSamples };
 }
 
 /* ------------------------------------------------------------------ 主流程 */
@@ -440,22 +471,27 @@ console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**�
   for (const ph of PHASES) {
     const shot = shots[ph];
     for (const [mode, buf] of Object.entries(shot.modes)) writeFileSync(path.join(OUT, `tint_${ph}_${mode}.png`), buf);
-    const { meta, rowsOut, popTotal } = await analyze(ph, shot, shots.identity);
+    const { meta, rowsOut, popTotal, popFull, popMulti, popZero, zeroSamples } = await analyze(ph, shot, shots.identity);
     console.log(`########## devlight=${ph}  canvas ${meta.canvas.w}x${meta.canvas.h} dpr ${meta.dpr} hero(${meta.hero.x},${meta.hero.y})`);
     console.log(`  fillRect 命中：${FAMILIES.map((f) => `${f}x${shot.hits[f]}`).join('  ')}`);
     for (const f of FAMILIES) if (!shot.hits[f]) { missing = true; console.log(`  [!] 族「${LABEL[f]}」命中 0 —— 颜色/名字可能已改，该族无效，勿引用！`); }
-    console.log('  族        | population      | 像素数 | ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG中位 | WCAG均值(参考) | 该类变化总数');
+    console.log('  族        | population      | 像素数 | ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG中位 | WCAG均值(参考) | 类总变化(a并集/b全族)');
     for (const r of rowsOut) {
-      console.log(`  ${LABEL[r.fam]} | ${r.pop.padEnd(15)} | ${String(r.n).padStart(6)} | ${f2(r.L).padStart(7)} | ${f2(r.E).padStart(9)} | ${f2(r.C).padStart(10)} | ${(Number.isFinite(r.cvdBelow) ? r.cvdBelow.toFixed(0) + '%' : '-').padStart(8)} | ${f2(r.Wc).padStart(7)} | ${f2(r.wcag).padStart(10)} | ${String(r.total ?? '-').padStart(12)}${r.n < MIN_N ? '  ⚠样本不足' : ''}`);
-      console.log(`##ROW\t${ph}\t${r.fam}\t${r.pop}\t${r.n}\t${f2(r.L)}\t${f2(r.E)}\t${f2(r.C)}\t${f2(r.Wc)}\t${f2(r.wcag)}\t${r.total}`);
+      console.log(`  ${LABEL[r.fam]} | ${r.pop.padEnd(15)} | ${String(r.n).padStart(6)} | ${f2(r.L).padStart(7)} | ${f2(r.E).padStart(9)} | ${f2(r.C).padStart(10)} | ${(Number.isFinite(r.cvdBelow) ? r.cvdBelow.toFixed(0) + '%' : '-').padStart(8)} | ${f2(r.Wc).padStart(7)} | ${f2(r.wcag).padStart(10)} | ${String(r.totalU ?? '-').padStart(6)}/${String(r.totalF ?? '-').padStart(6)}${r.n < MIN_N ? '  ⚠样本不足' : ''}`);
+      console.log(`##ROW\t${ph}\t${r.fam}\t${r.pop}\t${r.n}\t${f2(r.L)}\t${f2(r.E)}\t${f2(r.C)}\t${f2(r.Wc)}\t${f2(r.wcag)}\t${r.totalU}\t${r.totalF}`);
     }
-    /* ★ 守恒断言（team-lead 裁定三）：Σ(四带 n) == 该类变化总数；不等 = 有像素没归属 ⇒ 报缺口。 */
+    /* ★ 守恒断言（team-lead 裁定三）：`Σ(四带 n)` 对**两个右端**分别跑 —— (a)并集 / (b)全族；
+     *   不等即报缺口，并给归属（多源=族重叠 / 缺源=全族变但无单族变）。**只报数、不下结论。** */
     const sumN = new Map();
     for (const r of rowsOut) sumN.set(r.pop, (sumN.get(r.pop) || 0) + r.n);
-    console.log(`  守恒断言 Σ(四带n) == 该类变化总数: ${requestedPops.map((p) => {
-      const s = sumN.get(p) || 0, t = popTotal.get(p) || 0, gap = s - t;
-      return `${p} Σ=${s} 类=${t} ${gap === 0 ? '✓' : `✗缺口${gap > 0 ? '+' : ''}${gap}`}`;
-    }).join('  |  ')}`);
+    console.log('  守恒断言 Σ(四带n) ── (a)并集 / (b)全族；缺口 = Σ−(右端)（缺口>0 = **多源重叠的重复计数**，非漏归；真漏归看「缺源」列，缺源==0 即覆盖完整）：');
+    for (const p of requestedPops) {
+      const s = sumN.get(p) || 0, uni = popTotal.get(p) || 0, full = popFull.get(p) || 0;
+      const gU = s - uni, gF = s - full, sign = (v) => `${v > 0 ? '+' : ''}${v}`;
+      console.log(`    [${p.padEnd(13)}] Σ=${String(s).padStart(6)} | (a)并集=${String(uni).padStart(6)} 缺口${sign(gU).padStart(6)} | (b)全族=${String(full).padStart(6)} 缺口${sign(gF).padStart(6)} | 多源(≥2族)=${popMulti.get(p)} 缺源(全族·无单族)=${popZero.get(p)}`);
+    }
+    for (const p of requestedPops) { const zs = zeroSamples.get(p); if (zs && zs.length) console.log(`    缺源样本[${p}]: ${zs.join('  ')}`); }
+    console.log(`  ##CONS\t${ph}\t${requestedPops.map((p) => `${p}:sum=${sumN.get(p) || 0},uni=${popTotal.get(p) || 0},full=${popFull.get(p) || 0},multi=${popMulti.get(p)},zero=${popZero.get(p)}`).join('|')}`);
     console.log('');
   }
   console.log(`指纹后 : src ${fpAfter.src.sha1} | dist ${fpAfter.dist.sha1} @ ${fpAfter.dist.m} | main ${fpAfter.main.sha1} @ ${fpAfter.main.m}`);
