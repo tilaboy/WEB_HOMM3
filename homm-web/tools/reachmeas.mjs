@@ -228,3 +228,103 @@ if (darkSplit.size) {
     console.log(`     ${k.padEnd(26)} | ${String(s.n).padStart(6)} | WCAG 中位 ${f2(s.med).padStart(6)} | ≥3:1 ${s.ge3.toFixed(1)}%`);
   }
 }
+
+/* ── 诊断：④ 边带**族感知**（`REACH_FAMILIES=1` 才跑；**默认输出一字不改**）──────────────
+ * 为什么非有不可：上面那张逐类表的人口 = `isInk(a)`（**暗像素**谓词）。
+ *   `(ii)` 的**亮芯 `#fff3c8` 是亮极**、**不是暗像素** ⇒ 那张表**永远看不见它** ⇒
+ *   拿它量 `(ii)` 就是**尺子量错对象**（`ff7db9c`「两套定义两个数」的同型病：
+ *   验收工具量的是**旧修法**（单条墨），线上跑的是**新修法**（双色 halo））。
+ * 做法：从 **dist** 解析四个族色，对每个变化像素，取"**该族色按自身 alpha 合成在 `before` 之上**"
+ *   的**模型色**的最近者 ⇒ 归族（不透明族模型色 = 族色本身）。
+ *   ⇒ 输出 **族 × 地形** 的 n 与 WCAG 中位（判据 = `max(glow, ink)`，见 `§4.6` 契约第 6 条：
+ *     「两极其一 ≥3:1」，**不得**用混合 population 的中位 —— 红/水洗两族中位恒 ~1.1，
+ *     会把任何做对的 halo **按构造判死**）。
+ * ⚠️ 残差中位会打印：残差大 ⇒ 该格被**多层叠加**（模型色对不上单层）⇒ 别硬信归族。
+ * 负测法：`REACH_FAMILIES=1 node tools/reachmeas.mjs <after> <before> 标签 <正午底图>`；
+ *   想验证"尺子确实瞎"：拿一对 **before 无选择态** 的图 ⇒ 应报 `fill` 占比 ≈100%、`glow/ink` ≈0。
+ */
+if (process.env.REACH_FAMILIES) {
+  const distUrl = process.env.REACH_DIST || new URL('../dist/render/MapRenderer.js', import.meta.url);
+  let dtext = '';
+  try { dtext = readFileSync(distUrl, 'utf8'); }
+  catch { console.log('\n  ⚠️ 族诊断：读不到 dist/render/MapRenderer.js ⇒ 跳过（**不是"没有该族"**）'); }
+  const grabConst = (nm) => { const m = new RegExp(`const\\s+${nm}\\s*=\\s*'([^']+)'`).exec(dtext); return m ? m[1] : null; };
+  const parseColor = (s) => {
+    if (!s) return null;
+    let m = /^#([0-9a-f]{6})$/i.exec(s);
+    if (m) { const v = Number.parseInt(m[1], 16); return { c: [(v >> 16) & 255, (v >> 8) & 255, v & 255], a: 1 }; }
+    m = /^rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)$/i.exec(s);
+    if (!m) return null;
+    return { c: [Number(m[1]), Number(m[2]), Number(m[3])], a: m[4] === undefined ? 1 : Number(m[4]) };
+  };
+  const FAM = [['fill', 'REACH_TINT'], ['edge', 'NOGO_EDGE'], ['glow', 'NOGO_EDGE_GLOW'], ['ink', 'NOGO_EDGE_INK']]
+    .map(([k, nm]) => { const raw = grabConst(nm); const v = parseColor(raw); return v ? { k, nm, raw, ...v } : null; })
+    .filter(Boolean);
+  if (dtext && !FAM.length) console.log('\n  ⚠️ 族诊断：dist 里一个族色都没解析出 ⇒ 跳过（**别读成"没有该族"**）');
+  if (FAM.length) {
+    const byFam = new Map(FAM.map((f) => [f.k, { n: 0, res: [], cls: new Map(), clsR: new Map() }]));
+    let tot = 0;
+    for (const r of rows) {
+      tot++;
+      let best = FAM[0], bestD = Infinity;
+      for (const f of FAM) {
+        const e0 = Math.round(f.a * f.c[0] + (1 - f.a) * r.b[0]);
+        const e1 = Math.round(f.a * f.c[1] + (1 - f.a) * r.b[1]);
+        const e2 = Math.round(f.a * f.c[2] + (1 - f.a) * r.b[2]);
+        const d = (e0 - r.a[0]) ** 2 + (e1 - r.a[1]) ** 2 + (e2 - r.a[2]) ** 2;
+        if (d < bestD) { bestD = d; best = f; }
+      }
+      const g = byFam.get(best.k); g.n++; g.res.push(Math.sqrt(bestD));
+      const kk = classOf(r.i, r);
+      g.cls.set(kk, (g.cls.get(kk) || 0) + 1);
+      if (!g.clsR.has(kk)) g.clsR.set(kk, []);
+      g.clsR.get(kk).push(ratio(r.a, r.b));
+    }
+    console.log(`\n  ── 族诊断（REACH_FAMILIES=1）：变化像素**归族**（模型色 = 族色按 alpha 合成在 before 之上）`);
+    console.log(`     族   | 常量            | 族色                  |     n    |  占比  | 残差中位`);
+    const share = new Map();
+    for (const f of FAM) {
+      const g = byFam.get(f.k);
+      const rs = g.res.slice().sort((x, y) => x - y);
+      share.set(f.k, tot ? (100 * g.n) / tot : 0);
+      console.log(
+        `     ${f.k.padEnd(5)} | ${f.nm.padEnd(15)} | ${String(f.raw).padEnd(21)} | ${String(g.n).padStart(8)} | ` +
+          `${(tot ? (100 * g.n) / tot : 0).toFixed(1).padStart(5)}% | ${f2(pctl(rs, 0.5)).padStart(8)}`,
+      );
+    }
+    console.log(`     ── 族 × 地形（WCAG 中位；该类取 **max(glow, ink)** 判「两极其一 ≥3:1」）`);
+    const clsAll = [...new Set(FAM.flatMap((f) => [...byFam.get(f.k).cls.keys()]))];
+    const seen = [...new Set([...ORDER, ...clsAll])];
+    console.log(`       地形              |${FAM.map((f) => f.k.padStart(9)).join('|')}|  max(glow,ink)`);
+    for (const k of seen) {
+      const cells = FAM.map((f) => byFam.get(f.k).clsR.get(k) ?? []);
+      if (!cells.some((c) => c.length)) continue;
+      const meds = cells.map((c) => (c.length ? pctl(c.slice().sort((x, y) => x - y), 0.5) : NaN));
+      const gi = [FAM.findIndex((f) => f.k === 'glow'), FAM.findIndex((f) => f.k === 'ink')].filter((j) => j >= 0);
+      const best = gi.map((j) => meds[j]).filter((v) => Number.isFinite(v));
+      const ns = cells.map((c) => String(c.length).padStart(9));
+      console.log(
+        `       ${k.padEnd(16)} |${ns.join('|')}|  ${best.length ? f2(Math.max(...best)) : '—'}` +
+          `${best.length && Math.max(...best) < 3 ? '  ❌' : best.length ? '  ✅' : ''}`,
+      );
+    }
+    console.log(`       （n 在各自族列里；**n<${MIN_N} 的族**不得据此判过）；族占比最大者 = 该对实际在量什么`);
+    const resTop = Math.max(...FAM.map((f) => {
+      const rs = byFam.get(f.k).res.slice().sort((x, y) => x - y);
+      return rs.length ? pctl(rs, 0.5) : 0;
+    }));
+    if (resTop > 40) {
+      console.log(`     ⚠️ **残差中位 ${f2(resTop)} 偏大 ⇒ 归族不可尽信**：变化像素多为**多层叠加**（模型色是对"单层"算的）`);
+      console.log(`        ⇒ 本列只用来回答「**这对到底在量哪一族**」，**不要**当逐族验收数用。`);
+    }
+    /* 判"这对能不能当 ④ 的 A/B 验收数"：④ 边带画在**不可走格**内、水洗只覆盖**可走格**
+     * ⇒ **只要水洗也变了**，population 就被"水洗 vs 无水洗"灌满 ⇒ 量的不是「边 vs 其底」。
+     * ⇒ 判据 = `fill` 占比必须**可忽略**（≤5%）。 */
+    const fillShare = share.get('fill') ?? 0;
+    if (fillShare > 5) {
+      console.log(`     ⛔ **这对不能当 ④ 的 A/B 验收数**：fill（水洗）占 ${fillShare.toFixed(1)}% ⇒ 它混进了「水洗 vs 无水洗」。`);
+      console.log(`        「边 vs 其底」要求 **选择态恒定、只差边带**（水洗覆盖**可走格**、④ 边带画在**不可走格**内）`);
+      console.log(`        ⇒ 典型错法 = before 用"**没选择英雄**"（此时整条可达区都没水洗）⇒ 逐类表读的是水洗。`);
+    }
+  }
+}
