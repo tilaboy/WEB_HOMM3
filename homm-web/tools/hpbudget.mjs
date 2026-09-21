@@ -23,8 +23,15 @@
  *   · 改前（`b701e27` 之前 / 无分段控件）：必然 RED（`#side` 660 > 240，且无 tab 条）。
  *   · 改后：应转 GREEN。**在隔离构建上跑**（`--dist=`），**不要拿陈旧 `dist` 当判据**。
  *
+ * ## ★ 场景覆盖（2026-09-21 补 —— 由 `ux-ia` 指出：本门原先只量「教学场」单英雄）
+ *   单英雄时 `head` 的右列只有「魔法书」一个图标（40px）；**多英雄时右列还有 `‹ ›`**
+ *   （`.hp-nav .btn.tiny` min-width 40 ⇒ 右列 136px）⇒ 同一份代码，两场景下 `#side` 的高不同。
+ *   ⇒ **单场景的绿不算绿**（"算出来的余量不是判据"）。故本门支持 `--scenario=<场景名>`
+ *   （`教学场` / `对决场`；后者 `opponents:1` ⇒ `heroOrder.length=2` ⇒ 走多英雄分支）。
+ *   同时报 `headH` / `nameClipped` / `lvClipped` / `navBtns` 四个只读量。
+ *
  * ## 用法
- *   node tools/hpbudget.mjs --dist=/tmp/dist-xxx [--label=削减前|削减后]
+ *   node tools/hpbudget.mjs --dist=/tmp/dist-xxx [--label=削减前|削减后] [--scenario=教学场|对决场]
  *
  * 退出码：0 = ①②③ 全过 · 1 = 有一条不过 · 2 = 前置不满足（无 Chrome / 构建不含英雄栏）
  */
@@ -35,7 +42,8 @@ import { withHeadlessChrome, chromeAvailable } from './_chrome.mjs';
 
 const DIST = distDir();
 const LABEL = argOf('label', '');
-printHeader(DIST, `gate=hpbudget${LABEL ? ` · label=${LABEL}` : ''}`);
+const SCEN = argOf('scenario', '教学场');
+printHeader(DIST, `gate=hpbudget${LABEL ? ` · label=${LABEL}` : ''} · 场景=${SCEN}`);
 
 /* ---------------------------------------------------------------- 前置 */
 requireFile(DIST, 'ui/HeroPanel.js');
@@ -110,6 +118,12 @@ const MEASURE = `(() => {
       return on ? (on.textContent || '').trim() : null;
     })(),
     sections, paneSections,
+    /* ★ 场景覆盖读数（只读、不作判据）：多英雄（有 ‹ ›）时右列更宽 ⇒ head 高会变。
+     *   nameClipped/lvClipped = 真被截断（scrollWidth > clientWidth），不是"推算会截断"。 */
+    headH: (() => { const h = document.querySelector('#side .hp-head'); return h ? round(h.getBoundingClientRect().height) : null; })(),
+    navBtns: document.querySelectorAll('#side .hp-nav .btn').length,
+    nameClipped: (() => { const e = document.querySelector('#side .hp-name'); return e ? e.scrollWidth > e.clientWidth + 1 : null; })(),
+    lvClipped: (() => { const e = document.querySelector('#side .hp-lv'); return e ? e.scrollWidth > e.clientWidth + 1 : null; })(),
   };
 })()`;
 
@@ -123,6 +137,10 @@ function row(label, m) {
   );
   console.log(`      sideBody 子: ${fmt(m.sections) || '(无)'}`);
   if (m.paneSections.length) console.log(`      pane 子:     ${fmt(m.paneSections)}`);
+  console.log(
+    `      场景读数: headH=${m.headH} · navBtns=${m.navBtns}（3 = 多英雄，含 ‹ ›）` +
+      ` · 名截断=${m.nameClipped} · 等级截断=${m.lvClipped}`,
+  );
 }
 
 try {
@@ -148,7 +166,7 @@ try {
       })()`);
 
     await boot();
-    await clickText('#start-screen .ss-seg-item', '教学场');
+    await clickText('#start-screen .ss-seg-item', SCEN);
     await sleep(200);
     await clickText('#start-screen button', '开始新游戏');
     await sleep(1500);
