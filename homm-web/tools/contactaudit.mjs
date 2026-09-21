@@ -23,13 +23,19 @@
  *     （比预测还早 ⇒ 可能过激进/观感像作弊，值得看一眼，但不算失败）。
  *
  * 用法：npm run build && node tools/contactaudit.mjs
- * 退出码：0 = 全部通过；1 = 有硬断言不达标；2 = 环境没准备好（dist 缺失）。
+ * 退出码：0 = 全部通过；1 = 有硬断言不达标；2 = 环境没准备好（dist 缺失）；
+ *         3 = **结果作废**（跑的过程中工作树变了 —— 见下"元纪律"）。
+ *         ★ 3 与 1/2 **不得混用**：1 是"跑了、没达标"，2 是"没跑成"，3 是"跑了但读数不可信"。
  *
- * 元纪律（roadmap 59f8dd1）：跑前/跑后各核一次 `git status --porcelain`，不一致则结果作废。
+ * 元纪律（roadmap 59f8dd1，**已落地** —— 见文件末尾）：跑前/跑后各核一次
+ * `git status --porcelain`，不一致 ⇒ **结果作废（exit 3）**。
+ * ⚠️ 语义要点：**只比"跑前 vs 跑后"**。本工具**自身不写任何文件**，故**跑前就存在的 M
+ * （别的 agent 在飞）不作废本次** —— 那是"改动过"，不是"跑的过程中被改"。
  */
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { distDir, distUrl, printHeader } from './_dist.mjs';
+import { execSync } from 'node:child_process';
+import { distDir, distUrl, printHeader, REPO_ROOT } from './_dist.mjs';
 
 /* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164：
  * 跑门不必覆盖共用 `dist/`。下面 `../dist/...` 一律经 `u()` 解析到被测目录。 */
@@ -41,6 +47,17 @@ if (!existsSync(path.join(DIST, 'core', 'map', 'generator.js'))) {
   console.error(`dist 不存在，请先 npm run build（或 --dist=<dir> 指向隔离构建）：${DIST}`);
   process.exit(2);
 }
+
+/** 取工作树快照；取不到（非 git 仓库 / 无 git）⇒ `null`（**不静默、也不误判为作废**）。 */
+const treeSnap = () => {
+  try {
+    return execSync('git status --porcelain', { cwd: REPO_ROOT, encoding: 'utf8' });
+  } catch {
+    return null;
+  }
+};
+/** ★ 元纪律「跑前」快照 —— 必须在任何读数之前。 */
+const TREE0 = treeSnap();
 
 const { createGame } = await import(u('core/map/generator.js'));
 const { computePaths } = await import(u('core/map/pathfinding.js'));
@@ -209,4 +226,18 @@ if (medRush <= 18 && medRush < 6) {
 }
 
 console.log(`\n${bad === 0 ? '全部通过' : `有 ${bad} 条硬断言不达标`}`);
+
+/* ── 元纪律「跑后」快照 + 对比（roadmap 59f8dd1） ────────────────────────────
+ * 不一致 ⇒ 上面的每一条 PASS/FAIL **一律作废** ⇒ **exit 3**。
+ * ★ 为什么不能降级成 1：1 会被读成"跑了、但没达标"，而此处的问题是"**读数不可信**"
+ *   —— 正是本轮在治的「退出码与判词脱钩」。 */
+const TREE1 = treeSnap();
+if (TREE0 === null || TREE1 === null) {
+  WARNL('元纪律未能执行：取不到 `git status --porcelain`（非 git 仓库 / 无 git）⇒ 本次读数**未**做「工作树稳定性」核验。');
+} else if (TREE0 !== TREE1) {
+  console.error('✗ 结果作废（exit 3）：跑的过程中工作树变了 —— 跑前/跑后 `git status --porcelain` 不一致。');
+  console.error('  上面每一条 PASS/FAIL 都不可信（被测对象在脚下被改）。请在工作树静止时重跑。');
+  console.error(`  ---- 跑前 ----\n${TREE0}  ---- 跑后 ----\n${TREE1}`);
+  process.exit(3);
+}
 process.exit(bad === 0 ? 0 : 1);
