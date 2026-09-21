@@ -41,11 +41,15 @@
  *     ① 上层分档条件 `classify()` 已改为与 `reachmeas.band()` / `alpha_bin.cls()` **逐字同条件**；
  *     ② 草三分阈值 L*≥55 / ≥40 同上（`grass-bright` / `grass-mid` / `grass-dark`）。
  *   ⇒ 本文件与 ④ 的**验收数工具 `reachmeas.mjs` 同桶定义**（跨工具数才可比）。
- *   ✅ **帧 = 相位帧（(b)；2026-09-21 定 —— 原"未定"已作废）**：本文件按**该相位的底帧**分类
- *      （= "该相位下的地形"，与 `reachmeas.band(before)` 同帧）—— 这是**契约①（口径=A/B）的下游**，非独立口径。
- *      `alpha_bin` 按**正午**分类 ⇒ 属**跨相位错桶**：**其「正午」列可复现**（正午帧 ≡ 相位帧、不分歧），
- *      **只有「夜」列不可复现**（那时才发生跨相位错桶）—— 这解释了旧表"当年看着自洽"、夜行却错（`art-director` 实测正午列 6 类逐格复现）。
+ *   ✅ **帧 = 身份帧（(a)：正午 0.22 的 `none` 底图；2026-09-21 定 —— **相位帧已废**）**：
+ *      **分类**只用正午底图（地形身份不随光照变），**测量**逐相位各自做。与 `reachmeas` 第 4 参（身份帧）、
+ *      `/tmp/alpha_bin.mjs`（`cls(TN)`，`TN = A2_noon_none`）**同帧** ⇒ 两边同名桶是**同一批像素**、可拼表。
+ *      ⚠️ 为何废相位帧：按**相位底**分类时，夜深底被压暗 ⇒ 桶整体下移 ⇒ **夜「草·亮」塌成 n≈5**
+ *      ⇒ 该"类"夜里不存在 ⇒ **判据被"该类为空"真空通过**、失败被藏（art-director 实测：相位帧 n=5⇒5.43"过" vs 身份帧 n=727⇒2.92 ❌）。
+ *   ⚠️ 旧表机制（`art-director` 实测）：**「正午」列 6 类逐格可复现**；**「夜」列错格**（其夜草三行整体错开一格）
+ *      ⇒ 旧夜行疑出自**相位帧**版本 ⇒ 引旧表夜行会与身份帧读数不同，**别当同一数**。
  *   ⚠️ 引用纪律：本文件 WCAG 列 = **均值**、`reachmeas` = **中位** ⇒ 同格两数不同 ≠ 矛盾，是口径 + 统计量都不同。
+ *   ⚠️ 样本守卫：`n < 200` 打「样本不足」—— 桶塌成空时该格**不得据此判过**（与 `reachmeas` 的 `MIN_N` 同族）。
  */
 
 import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
@@ -198,6 +202,7 @@ function grassBin(r, g, b) {
   return L >= GRASS_L_BRIGHT ? 0 : L >= GRASS_L_MID ? 1 : 2;
 }
 const f2 = (v) => Number(v).toFixed(2);
+const MIN_N = 200; // 样本不足门槛（与 reachmeas 一致）—— 防"桶塌成空"真空通过
 
 /* ------------------------------------------------------------------ 抓图 */
 
@@ -251,6 +256,27 @@ async function captureAll() {
       }
       shots[ph].hits = await evaluate('window.__tintHits');
     }
+    /* ★ 身份帧（identity）：分类只用「正午(0.22) none」底图，**不随相位变**。
+     *   缘由（art-director 实测 + 我复现）：若按**相位底**分类，夜深时底被压暗 ⇒ 桶整体下移，
+     *   夜「草·亮」塌成 n=5 ⇒ 该"类"在夜里不存在 ⇒ **判据被"该类为空"真空通过**，失败被藏。
+     *   ⇒ 身份帧下同批像素恒定分类，跨相位可比、可拼表（与 `reachmeas` 第 4 参同帧）。 */
+    const IDENTITY_PHASE = '0.22';
+    if (shots[IDENTITY_PHASE]) {
+      shots.identity = shots[IDENTITY_PHASE].modes.none;
+    } else {
+      const url = `http://127.0.0.1:${PORT}/?devquick=0&devsize=${SIZE}&devseed=${SEED}&devreveal=1&devprobe=1&devlight=${IDENTITY_PHASE}`;
+      await send('Page.navigate', { url });
+      for (let i = 0; i < 200; i++) {
+        const ok = await evaluate('!!(window.__journey && window.__journey() && window.__journey().heroPos && document.querySelector("canvas") && window.__tintSkip)').catch(() => false);
+        if (ok) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      await evaluate('new Promise(r=>{let i=0;const s=()=>(++i>=30?r():requestAnimationFrame(s));requestAnimationFrame(s)})');
+      await evaluate(`window.__tintSkip = ${JSON.stringify(MODES.none)}`);
+      await evaluate('new Promise(r=>{let i=0;const s=()=>(++i>=3?r():requestAnimationFrame(s));requestAnimationFrame(s)})');
+      const s = await send('Page.captureScreenshot', { format: 'png' });
+      shots.identity = Buffer.from(s.data, 'base64');
+    }
     return shots;
   }, { devServerPort: PORT, profilePrefix: 'tintab-' });
 }
@@ -262,15 +288,17 @@ async function raw(buf) {
   return { d: data, w: info.width, h: info.height, c: info.channels };
 }
 
-async function analyze(ph, shot) {
+async function analyze(ph, shot, identityBuf) {
   const { meta, modes } = shot;
-  const B = await raw(modes.none);
+  const B = await raw(modes.none);        // 该相位「before」（测量用：画/不画之差）
+  const I = await raw(identityBuf);       // 身份帧（分类用：恒正午底，不随相位变）
   const W = B.w, H = B.h, N = W * H, C4 = B.c;
+  if (I.w !== W || I.h !== H) throw new Error(`身份帧 ${I.w}x${I.h} ≠ 相位帧 ${W}x${H} —— 分类与测量不在同一坐标系，拒绝出数。`);
   const gy0 = 42, gy1 = Math.min(720, H);
   const cls = new Uint8Array(N);
   const gb = new Int8Array(N);
   const CODE = { dark: 0, water: 1, grass: 2, sand: 3, rock: 4 };
-  for (let i = 0; i < N; i++) { const o = i * C4; cls[i] = CODE[classify(B.d[o], B.d[o + 1], B.d[o + 2])]; gb[i] = grassBin(B.d[o], B.d[o + 1], B.d[o + 2]); }
+  for (let i = 0; i < N; i++) { const o = i * C4; cls[i] = CODE[classify(I.d[o], I.d[o + 1], I.d[o + 2])]; gb[i] = grassBin(I.d[o], I.d[o + 1], I.d[o + 2]); }
   const uniform = new Uint8Array(N);
   for (let y = gy0; y < gy1; y++) for (let x = 0; x < W; x++) {
     const c0 = cls[y * W + x]; let ok = 1;
@@ -326,8 +354,10 @@ async function analyze(ph, shot) {
   console.log('src!=dist: 已核一致（不一致会 exit 2）');
   for (const f of FAMILIES) console.log(`族 ${LABEL[f]}: ${BY_FAMILY[f].map((t) => `${t.name}=${t.raw} => ${t.canon}`).join('  ')}`);
   console.log(`场景   : seed=${SEED} size=${SIZE} devreveal=1 视口 1280x${VH}(emulation,dpr1) => 画布 1280x${VH - 80}`);
-  console.log(`相位   : ${PHASES.join(', ')}　（0.22=正午 0.68=深夜）`);
+  console.log(`相位   : ${PHASES.join(', ')}　（0.22=正午 0.5=黄昏 0.68=深夜）`);
   console.log(`population: ${requestedPops.join(', ')}`);
+  console.log(`分类帧 : **身份帧 = 正午(0.22) none 底图**（不随相位变）—— 防"相位越暗、桶越塌 ⇒ 凭空通过"；与 reachmeas 第4参同帧`);
+  console.log(`样本守卫: n < ${MIN_N} 标「样本不足」—— 该格不得据此判过（防"桶塌成空"真空通过）`);
   console.log(`草分层 : grass-bright L*>=${GRASS_L_BRIGHT} ｜ grass-mid ${GRASS_L_MID}<=L*<${GRASS_L_BRIGHT} ｜ grass-dark 22<=L*<${GRASS_L_MID}（tintab 内单一权威定义，与 §15.4 (α) 基线表同切法）`);
   console.log("分桶定义: classify() = { L*<22→dark ; b=max且b>r+12→water ; r=max且g≥b且r>120→sand ; g≥r且g>b→grass ; 其余→rock }（与 reachmeas.band() 逐字同条件）");
   console.log(`          草三分 L*≥${GRASS_L_BRIGHT}/${GRASS_L_MID}–${GRASS_L_BRIGHT}/22–${GRASS_L_MID}；uniform-grass = 5×5 邻域 terrain 码一致；暗缝 = 「dark」桶（含物件/接缝，未再细分）`);
@@ -344,13 +374,13 @@ console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**�
   for (const ph of PHASES) {
     const shot = shots[ph];
     for (const [mode, buf] of Object.entries(shot.modes)) writeFileSync(path.join(OUT, `tint_${ph}_${mode}.png`), buf);
-    const { meta, rowsOut } = await analyze(ph, shot);
+    const { meta, rowsOut } = await analyze(ph, shot, shots.identity);
     console.log(`########## devlight=${ph}  canvas ${meta.canvas.w}x${meta.canvas.h} dpr ${meta.dpr} hero(${meta.hero.x},${meta.hero.y})`);
     console.log(`  fillRect 命中：${FAMILIES.map((f) => `${f}x${shot.hits[f]}`).join('  ')}`);
     for (const f of FAMILIES) if (!shot.hits[f]) { missing = true; console.log(`  [!] 族「${LABEL[f]}」命中 0 —— 颜色/名字可能已改，该族无效，勿引用！`); }
     console.log('  族        | population      | 像素数 | ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG均值(参考)');
     for (const r of rowsOut) {
-      console.log(`  ${LABEL[r.fam]} | ${r.pop.padEnd(15)} | ${String(r.n).padStart(6)} | ${f2(r.L).padStart(7)} | ${f2(r.E).padStart(9)} | ${f2(r.C).padStart(10)} | ${(Number.isFinite(r.cvdBelow) ? r.cvdBelow.toFixed(0) + '%' : '-').padStart(8)} | ${f2(r.wcag)}`);
+      console.log(`  ${LABEL[r.fam]} | ${r.pop.padEnd(15)} | ${String(r.n).padStart(6)} | ${f2(r.L).padStart(7)} | ${f2(r.E).padStart(9)} | ${f2(r.C).padStart(10)} | ${(Number.isFinite(r.cvdBelow) ? r.cvdBelow.toFixed(0) + '%' : '-').padStart(8)} | ${f2(r.wcag)}${r.n < MIN_N ? '  ⚠样本不足' : ''}`);
     }
     console.log('');
   }
