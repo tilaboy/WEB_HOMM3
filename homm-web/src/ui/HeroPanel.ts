@@ -48,8 +48,8 @@ export class HeroPanel {
   /** 记住上一次的入参，折叠宝物时才能就地重画而不惊动镜头。 */
   private lastState: GameState | null = null;
   private lastHero: string | null = null;
-  /** D-1「面板内分段」当前段（默认 = 属性）。`#156`。 */
-  private seg: SegKey = 'attr';
+  /** D-1「面板内分段」当前段。`#156` 终版（team-lead）：**默认段统一 = 部队、任何场景不例外**。 */
+  private seg: SegKey = 'army';
   /** §14.2 教学清单锁存：一旦达成即保持（英雄阵亡后 `heroes['hero1']` 消失也不倒退）。 */
   private objLatch: Record<string, boolean> = {};
   /** 锁存属于哪一局（`state` 对象身份）：换局 / 载档即重播种，不把上一局进度带过来。 */
