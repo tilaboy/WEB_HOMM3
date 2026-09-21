@@ -216,9 +216,15 @@ const MIN_N = 200; // 样本不足门槛（与 reachmeas 一致）—— 防"桶
 
 // ★ 冻结"构建后动画"：`MapRenderer.draw()` 用 `performance.now()` 驱动
 //    水波（`Math.sin((wx+wy*0.6)/13 - now/430)`，行 ~413）与选中脉冲（`Math.sin(now/pulseDiv)`，行 ~614）。
-//    ⇒ 每次截图 `now` 不同 ⇒ "变化像素"里混入 ~50k 动画像素 —— 对**弱带 population**（water/dark）
-//    会淹没中位 = **污染**（实测：`edge` 模式 51125 个变化像素里只有 2 个是红）。
+//    ⇒ **同一会话内**逐 mode 截图相隔数百 ms ⇒ 每次 `now` 前进 ⇒ 水波相位漂移
+//    ⇒ "变化像素"里混入大量**水波**像素 —— 对**弱带 population**（water/dark）会淹没中位 = **污染**。
 //    ⇒ 注入时把 `performance.now` 钉成常量，使动画相位确定。`NO_FREEZE=1` 可关（诊断动画本身用）。
+//    **★ 实测证据（2026-09-21 · `--phase=0.22` · `diff(none,edge)`：本应只剩"红"）**：
+//      · 未冻结 = **52576** 变化像素，其中**多出的 ~39k 全是 `blueish`（= 水波）**；
+//      · 冻结   = **13305**（≈ 2px 边界像素量级 ⇒ 干净）。
+//      · 跨 run（同 readiness）`none` vs `none` 仅 **42** 像素 ⇒ 水波相位 ≈ "载入后帧数"，
+//        与同一会话内两次截图的**相隔时间**成正比 ⇒ 这才是本会话内 39k 的来由。
+//      脚本：`/tmp/diff3.mjs`（一次性，按 terrain + blueish/reddish 分类）。
 const FREEZE_ANIM = process.env.NO_FREEZE !== '1';
 const NOW_STUB = FREEZE_ANIM
   ? `try{const F=function(){return 123456.789;};try{Object.defineProperty(Performance.prototype,'now',{value:F,configurable:true,writable:true});}catch(e){}try{performance.now=F;}catch(e){}}catch(e){}`
