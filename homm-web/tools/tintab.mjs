@@ -34,8 +34,14 @@
  *   聚合会 **"均值掩盖死区"**（把仍不过的暗格洗成过）。故按 `L*` 切三桶，**阈值即本文件内的单一权威定义**：
  *     `grass-bright`：L* ≥ 55 ｜ `grass-mid`：40 ≤ L* < 55 ｜ `grass-dark`：22 ≤ L* < 40
  *   （`L* < 22` 已归 `dark`；切法**沿用 §15.4 (α) 基线表**，使新表与该基线**可比**。）
- *   ⚠️ 历史病根：基线那张 7 行表出自**未入库**的 `/tmp/alpha_bin.mjs`，其 `cls()` 阈值与本文件
- *   **不是同一套** ⇒ 两套定义出两个数。**自此以本文件为准**；`#124` 复算须用本文件。
+ *   ⚠️ 历史病根：基线那张 7 行表出自**未入库**的 `/tmp/alpha_bin.mjs`，其 `cls()` 与本文件
+ *   **不是同一套** ⇒ 两套定义出两个数。**收口（2026-09-21，owner）**：
+ *     ① 上层分档条件 `classify()` 已改为与 `reachmeas.band()` / `alpha_bin.cls()` **逐字同条件**；
+ *     ② 草三分阈值 L*≥55 / ≥40 同上（`grass-bright` / `grass-mid` / `grass-dark`）。
+ *   ⇒ 本文件与 ④ 的**验收数工具 `reachmeas.mjs` 同桶定义**（跨工具数才可比）。
+ *   ⚠️ **帧（未定，`#124` 复算前须先定）**：本文件按**该相位的底帧**分类（= "该相位下的地形"，
+ *      与 `reachmeas` 的 `band(before)` 同帧）；而 `alpha_bin` 按**正午**分类（光照恒等=地形身份）。
+ *      二者在**夜间**会分到不同桶 ⇒ 要与那张旧 7 行表**逐格对齐**，须改用正午帧；否则只保证"同工具内可比"。
  */
 
 import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
@@ -135,13 +141,13 @@ if (mismatches.length) {
 }
 if (!DIST.size) { console.error(`${DIST_REL} 里解析不到 REACH_*/NOGO_* 色值常量 —— 核对命名约定。`); process.exit(2); }
 
-const BY_FAMILY = { fill: [], edge: [], ink: [] };
+const BY_FAMILY = { fill: [], edge: [], glow: [], ink: [] };
 for (const [n, raw] of DIST) {
-  const fam = /REACH|WALK/i.test(n) ? 'fill' : /INK/i.test(n) ? 'ink' : 'edge';
+  const fam = /REACH|WALK/i.test(n) ? 'fill' : /INK/i.test(n) ? 'ink' : /GLOW/i.test(n) ? 'glow' : 'edge';
   BY_FAMILY[fam].push({ name: n, raw, canon: canonical(raw) });
 }
-const FAMILIES = ['fill', 'edge', 'ink'].filter((f) => BY_FAMILY[f].length);
-const LABEL = { fill: '蓝fill  ', edge: '红(内侧)', ink: '墨(外侧)' };
+const FAMILIES = ['fill', 'edge', 'glow', 'ink'].filter((f) => BY_FAMILY[f].length);
+const LABEL = { fill: '蓝fill  ', edge: '红(内侧)', glow: '亮芯(halo)', ink: '墨(外侧)' };
 if (!FAMILIES.length) { console.error('本体化后没有可用族。'); process.exit(2); }
 
 /* ------------------------------------------------------------------ 色彩数学 */
@@ -167,11 +173,16 @@ const deut = (r, g, b) => [
   cl255(DEUT[1][0] * r + DEUT[1][1] * g + DEUT[1][2] * b),
   cl255(DEUT[2][0] * r + DEUT[2][1] * g + DEUT[2][2] * b),
 ];
+/* 地形分类 —— 与 `tools/reachmeas.mjs` 的 `band()`、`/tmp/alpha_bin.mjs` 的 `cls()` **逐字同条件**。
+ * ⚠️ 这是 team-lead 裁的「两套定义出两个数」的另一半：原 `classify()` 用 `g-b>=15`/`r-b>=25` 等，
+ *   与上述两者（`mx` 比较式）**不是同一套** ⇒ 桶成员不同 ⇒ 数不可比。此改后本文件 = reachmeas 同桶定义（跨工具一致）。 */
 function classify(r, g, b) {
-  if (Lp(r, g, b) < 22) return 'dark';
-  if (b - r >= 15) return 'water';
-  if (g - b >= 15 && g >= r - 10) return 'grass';
-  if (r - b >= 25 && r >= g) return 'sand';
+  const L = Lp(r, g, b);
+  if (L < 22) return 'dark';
+  const mx = Math.max(r, g, b);
+  if (b === mx && b > r + 12) return 'water';
+  if (r === mx && g >= b && r > 120) return 'sand';
+  if (g >= r && g > b) return 'grass';
   return 'rock';
 }
 /* 草亮度分层 —— 单一权威定义（切法沿用 §15.4 (α) 基线表，使新表与基线可比） */
