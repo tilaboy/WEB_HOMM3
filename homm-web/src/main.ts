@@ -232,10 +232,12 @@ function openLogPanel(): void {
 
 /**
  * 菜单（IA §7 / R6）：全部低频项的唯一入口，危险项入底并二次确认。
- * ⚠️ 一级项数为 **7**（继续 / 立即存档 / 读取最近存档 / 事件日志 / 设置 / 回到开始页 / 新游戏），
- * 比 §7「一级 ≤ 6 项」**多 1 项**。原因：§3.2 #23 的容量核对按「存档·读档 = 1 项」计，
- * 而代码里两者一直是分开的 2 项。**不擅自合并**（合并会改变既有操作路径，属 UX 决定）
- * —— 待裁决：并成一项，或放宽 §7 口径。
+ *
+ * 一级 = **6 项**（继续 / 存档·读档 / 事件日志 / 设置 / 回到开始页 / 新游戏），
+ * 恰为 §7「一级 ≤ 6 项」的上限。为把「事件日志」（F-3.6 从拇指带搬来）纳入上限内，
+ * 按 **§7 既有的菜单树**把原先分开的「立即存档 / 读取最近存档」收成**一项「存档 / 读档」+ 二级**
+ * （§7 树：`存档 / 读档 ├─ 立即存档 └─ 读取最近存档`；二级 ≤4 项，本处 3 项）。
+ * —— 这不是新设计，是把代码里"一直分开的 2 项"对齐到 §7 既有树；不合并一级就会到 7 项、破 §7。
  */
 function openMenu(): void {
   if (isModalOpen() || isBattleOpen()) return;
@@ -244,32 +246,48 @@ function openMenu(): void {
   root.className = 'menu';
   const panel = document.createElement('div');
   panel.className = 'menu-panel';
-  const h = document.createElement('h3');
-  h.textContent = '菜单';
-  panel.appendChild(h);
+  root.appendChild(panel);
+  root.addEventListener('click', (ev) => {
+    if (ev.target === root) root.remove();
+  });
 
   const closer = (): void => root.remove();
-  const items: [string, string, () => void][] = [
-    ['', '继续', () => closer()],
-    ['', '立即存档', () => { saveGame(state); closer(); hint('已存档'); }],
-    ['', '读取最近存档', () => { closer(); loadLatest(); }],
-    // 日志入口：F-3.6 从拇指带搬来（复用 openLogPanel，函数不变；IA §3.2 #23 ①）
-    ['', '事件日志', () => { closer(); openLogPanel(); }],
-    ['', '设置', () => { closer(); openSetup(); }],
-    ['', '回到开始页', () => { closer(); openStart(); }],
-    ['danger', '新游戏', () => { closer(); confirmNewGame(); }],
-  ];
-  for (const [cls, label, act] of items) {
+  const button = (cls: string, label: string, act: () => void): void => {
     const b = document.createElement('button');
     b.className = `btn menu-item${cls ? ' ' + cls : ''}`;
     b.textContent = label;
     b.addEventListener('click', act);
     panel.appendChild(b);
+  };
+  const heading = (title: string): void => {
+    const h = document.createElement('h3');
+    h.textContent = title;
+    panel.appendChild(h);
+  };
+
+  /** 二级：存档 / 读档（§7 树；二级 ≤4 项，本处 3 项）。 */
+  function renderSaveLoad(): void {
+    panel.replaceChildren();
+    heading('存档 / 读档');
+    button('', '立即存档', () => { saveGame(state); closer(); hint('已存档'); });
+    button('', '读取最近存档', () => { closer(); loadLatest(); });
+    button('', '返回', () => renderMain());
   }
-  root.appendChild(panel);
-  root.addEventListener('click', (ev) => {
-    if (ev.target === root) root.remove();
-  });
+
+  /** 一级：6 项，危险项永远在最底（§7）。 */
+  function renderMain(): void {
+    panel.replaceChildren();
+    heading('菜单');
+    button('', '继续', () => closer());
+    button('', '存档 / 读档', () => renderSaveLoad());
+    // 日志入口：F-3.6 从拇指带搬来（复用 openLogPanel，函数不变；IA §3.2 #23 ①）
+    button('', '事件日志', () => { closer(); openLogPanel(); });
+    button('', '设置', () => { closer(); openSetup(); });
+    button('', '回到开始页', () => { closer(); openStart(); });
+    button('danger', '新游戏', () => { closer(); confirmNewGame(); });
+  }
+
+  renderMain();
   app.appendChild(root);
 }
 
