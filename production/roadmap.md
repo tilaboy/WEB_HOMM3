@@ -512,7 +512,7 @@ debug key 签名、7 档图标、`webContentsDebuggingEnabled=false`。
 | `design/art-bible/shots/README.md` · `index.html` | **`art-director`（仅此实例）** | **策展 / 判定唯一写者**；他人只报不改 |
 | `design/accessibility-requirements.md` | **`art-director`** | 本轮被多实例同写（V1.6）⇒ 补登 |
 | `homm-web/tools/reachmeas.mjs` | **`art-director`** | **④ 空间口径 WCAG A/B 的唯一验收数产出者** |
-| `homm-web/tools/tintab.mjs` | **`engineering-lead-2`** | 差分口径 + population + ΔE*ab + 色盲列（WCAG 列标"参考"） |
+| `homm-web/tools/tintab.mjs` | **`engineering-lead-2`** | ⚠️ **2026-09-21 更正**：本行曾被写成「谁先占谁有 ⇒ 归并行 art 实例」—— **已废**（它制造了一个谁都合法的 owner）。**现口径：单一 owner = `engineering-lead-2`；他人只读、有增补交给它。****空间口径验收数 → `reachmeas.mjs`（art-director）；`tintab` 出差分 + population + ΔE\*ab + 色盲，WCAG 列标「参考」。** |
 | `design/art-bible/bitmap-asset-options.md` | `art-director-3` | |
 | `design/ux/in-game-ia.md` · `playtest-feedback.md` | `ux-ia` | |
 | `design/maps/` · `design/difficulty-spec.md` | **`design-strategist`** | ★ **2026-09-21 强化**：曾有第三方把「实现口径」写进 `design/maps/playtest-scenarios.md`（`a9a0ea1`）。**内容经核实正确、予以保留**，但**「把规格与实现对账」也必须先报一句** —— 单写者规则**不为"内容对"开例外**。 | |
