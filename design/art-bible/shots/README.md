@@ -119,6 +119,8 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 | `e5_null_b.png` | 上述 URL · **tier=high**，与 `e4_tier_high.png` 同配置 | ④ 零假设（噪声底） |
 | `e2_shade_off.png` / `e2_shade_on.png` | ⚠️ **不是本表口径**（未锁档位，并行实例抓） | 只能看效果，**不要拿它对 ①/③ 的数** |
 | `d_chrome_*.png` / `d_live_chrome.png` | 桌面视口 / 真机实拍 | 全 UI 外观，另一条线 |
+| `h_real_dress_off.png` / `h_real_dress_on.png` | `dressshot.mjs` · **真图** `createGame(seed=20260921,size=medium)`（32×32、218 物件）· 只差 `setDressing` | 布景层 A 组 · **整图**对照 |
+| `h_real_dress_off_crop.png` / `h_real_dress_on_crop.png` | 同上图 · 裁**最挤 12×4 屏**（tile 0,9）×3 | 布景层 A 组 · **人眼可读的一屏**（`measurements-setdressing-density.md` §5） |
 
 > ★ **`e` / `e2` / `e3` / `e4` / `e5` 不是"版本号"，是"实验编号"**：
 > `e`=地貌层 · `e2`=同题异跑 · `e3`=dprCap 隔离 · `e4`=档位 · `e5`=零假设。
@@ -182,15 +184,14 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 | `e_` | `deviceshot.mjs`（真 Chrome） | **真机视口 792×320@DPR3**，单变量 |
 | `f_` | `deviceshot.mjs` | 只差**档位**（脚本会打印 `tierMode`，以它为准） |
 | `g_` | 两者皆有 | `g_uniform_*`＝垫片**全草无物件**（§3.1.1 的口径）；`g_light_*`＝真机视口的**光照相位** |
-| `h_` … | — | 预留给下一个新口径 |
+| `h_` | `dressshot.mjs`（**垫片**，×2 整图 / ×3 裁图） | **真图**（`createGame()`）上的布景层 A 组对照 + **最坏一屏裁图**（密度判据的口径，见 `measurements-setdressing-density.md`） |
 
 **⚠️ 已废 / 不得再新增**：`e2_*`、`*_noon` 这类"补丁式后缀" —— 它们是撞车期的临时名。**同口径用同一前缀，不同口径另开字母**。
 
 ## ⚠️ 目录当前状态（工作区，未提交）
 
-- **已提交、可引用**：`a_*` · `b_dress_off` · `c_*` · `d_chrome_*` · `e_*` · `f_*_noon` · `g_*` · `measurements-visible-delta.md`。
-- **工作区里改过、我未提交**：`b_dress_on.png` · `c_night_before.png` · `c_night_after.png` · `index.html` —— 它们被 `artshot.mjs` 重跑过一次，而那次重跑吃的是**尚未提交的 `setDressing.ts`**。
-  ⇒ **不要把它们当基线读**：**图里的像素目前没有对应的已提交代码**。
-  ⇒ 谁落地 `setDressing.ts`，**谁就再跑一次 `node tools/artshot.mjs` 并连同这 4 个文件一起提交**。这是本项目一贯的口径：**产物必须与已提交代码一致**。
-- **已按命名约定移除**：`e2_shade_off/on.png`（撞车期的临时名，口径＝`devzoom=0.5` **整图视角**）。其数已并入 `measurements-visible-delta.md` §5 的「视角前提」一行（**不单独留文件**）；如需保留该视角，按上表以 `h_` 前缀重命名并补复跑命令后再入表。
+- **已提交、可引用**：`a_*` · `b_dress_off` · `c_*` · `d_chrome_*` · `e_*` · `f_*_noon` · `g_*` · `h_real_*` · `measurements-visible-delta.md` · `measurements-setdressing-density.md`。
+- **`setDressing.ts` 已落地 ⇒ 本节原先那条「谁落地谁重跑」已履约**：`node tools/artshot.mjs` 已重跑，`b_dress_on.png` / `c_night_*.png` / `index.html`（以及被同一命令顺带重写的 `a_shade_off.png`）**已随后续提交入库，与已提交代码一致**。
+  ⇒ `b_dress_off`（off）/ `b_dress_on`（on）现在可当作**布景层 A 组的基线对**读（`b_before` = `b_dress_off.png`）。
+- **已按命名约定移除**：`e2_shade_off/on.png`（撞车期的临时名，口径＝`devzoom=0.5` **整图视角**）。其数已并入 `measurements-visible-delta.md` §5 的「视角前提」一行（**不单独留文件**）。
 - **工作区里未跟踪**：`d_live_chrome.png`（早期单张验证图：为确认 `chromeshot.mjs` 通道可用而抓，后被 `e_*` / `f_*` 成对证据取代）。**不认领、不引用**；要留，就由产出者补上 `chromeshot.mjs` 的复跑命令后再入表。

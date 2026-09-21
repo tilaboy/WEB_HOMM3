@@ -84,15 +84,35 @@ const MIN_PROP_GAP = 3;
 const MIN_SAME_GAP = 9;
 
 /**
- * 与**游戏物件**的最小净距（格，切比雪夫）。
+ * 与**"一眼要看到的交互物"**的最小净距（格，切比雪夫）。
  *
  * 这是密度判据的一半（另一半是"语义锚点"，见 `fits`）：用户这一轮同时要
  * "画质提升"和"画面简洁"，而**地图上加道具 = 加信息量** —— 两者会打架。
  * 唯一可靠的判据是：**道具不能让它旁边的东西变难找**。资源点 / 宝箱 / 镇子
  * 是玩家要**一眼看到**的目标，所以它们周围 2 格内**一个布景都不放**。
  * （`sd_g_*` 本身永不遮挡单位，所以这不解决遮挡，只解决"抢注意力"。）
+ *
+ * ⚠️ **2026-09-21 修正（画面主线 · 自测揪出的真 bug）**：净距**只对"目标物"成立**，
+ * **不能对一切 `objectId` 成立**。旧实现把 `CLEAR` 套给了**所有**物件 —— 包括地图上
+ * 每张 **~130 个障碍物**（树 / 岩石 / 山）。后果有二，都是致命的：
+ *   1. **本层几乎放不下东西**：障碍物密布全图 ⇒ "2 格内无任何物件"的格子在真图上几乎不存在。
+ *      实测 9 张真实图（small/medium/large × seed 1/7/42）**总计只放下 9 个道具**
+ *      （全是 `sd_g_map`，因为它锚在水边），等于 **0.33 个/屏 = 玩家看不到**。
+ *   2. **与 `sd_g_helmet` 的语义锚点直接互斥**：头盔的 `fits` 要求"附近 2 格内有障碍物"，
+ *      而 `canPlace` 要求"2 格内无任何物件" —— **二者不可能同时为真** ⇒ 头盔永远放不下。
+ * 修正：净距只作用于 `TARGET_KINDS`；障碍物 / 游荡怪**只禁同格**（见 `canPlace` ①）。
  */
 const CLEAR = 2;
+
+/**
+ * 布景必须避让的**"目标物"**（= 玩家要一眼找到的交互物）。
+ *
+ * 只列**交互语义**的物件；**障碍物 / 游荡怪刻意不在列** —— 它们本身就是景物的一部分，
+ * 且多个 `fits` 锚点（如"路边有障碍物"）**依赖**附近有障碍物。把障碍纳入净距 = 自相矛盾。
+ */
+const TARGET_KINDS: readonly MapObjectKind[] = [
+  'resourcePile', 'treasureChest', 'artifact', 'fountain', 'town', 'mine', 'vault',
+];
 
 /* ---------------------------------------------------------------- 道具绘制 */
 
@@ -259,22 +279,32 @@ function makeCtx(map: GameMap, kindGrid: (MapObjectKind | null)[], x: number, y:
 }
 
 /**
- * 该格（及 `span×span` footprint）能否放：陆地、在界内、且**净距 CLEAR 内无游戏物件**。
- * 净距检查是"不抢注意力"的硬保证 —— 资源点 / 宝箱 / 镇子周围永不出现布景。
+ * 该格（及 `span×span` footprint）能否放。三层判据，**从宽到严**：
+ *
+ * ① **本格（footprint）**：在界内、非水、**无任何 `objectId`** —— 布景不与任何物件抢同格
+ *    （障碍物 / 游荡怪也只到这一层就够：同格必须避开，但**相邻可以**）。
+ * ② **目标物净距**：`TARGET_KINDS` 外沿 `CLEAR` 格内零布景 —— 保"一眼要看到的交互物"。
+ * ③ 其余（障碍物 / 游荡怪）**不设净距** —— 见 `CLEAR` 的 2026-09-21 修正。
  */
 function canPlace(map: GameMap, x: number, y: number, span: number): boolean {
+  // ① footprint：在界内、非水、无物件（任何 kind）
   for (let dy = 0; dy < span; dy++) {
     for (let dx = 0; dx < span; dx++) {
       const cx = x + dx, cy = y + dy;
       if (cx < 0 || cy < 0 || cx >= map.width || cy >= map.height) return false;
-      if (map.tiles[idx(map, cx, cy)].terrain === 'water') return false;
+      const c = map.tiles[idx(map, cx, cy)];
+      if (c.terrain === 'water') return false;
+      if (c.objectId) return false;
     }
   }
+  // ② 目标物净距：只避 TARGET_KINDS
   for (let dy = -CLEAR; dy < span + CLEAR; dy++) {
     for (let dx = -CLEAR; dx < span + CLEAR; dx++) {
       const nx = x + dx, ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
-      if (map.tiles[idx(map, nx, ny)].objectId) return false;
+      const c = map.tiles[idx(map, nx, ny)];
+      if (!c.objectId) continue;
+      if (TARGET_KINDS.includes(map.objects[c.objectId].kind)) return false;
     }
   }
   return true;
