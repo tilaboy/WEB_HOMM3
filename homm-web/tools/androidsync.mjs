@@ -13,8 +13,16 @@
  * ## 做什么
  *   1. `npx cap sync android`（= copy + update；把 `webDir: 'dist'` 并进 assets）；
  *   2. **逐文件 md5 比对**：`dist/` 里每个文件都必须在 assets 里、且内容一致；
- *   3. 另打印一组**标记命中数**（#137 入口 / banner / ④ halo），便于人读与归档。
+ *   3. 另打印一组**标记命中数**（#137 入口 / banner / ④ halo），便于人读与归档；
+ *      **且每个标记带阳性对照 `d > 0`**（`#180`）—— 见下。
  *   任一条不成立 ⇒ 非零退出，并**逐条列出**缺哪些、差在哪。
+ *
+ * ## `#180`：为什么标记命中数必须带阳性对照 `d > 0`
+ *   只判 `dist 命中 == assets 命中` 会有一个**静默空**：token 一改名（或该功能从构建里掉了）
+ *   ⇒ **两侧同为 `0`** ⇒ 相等 ⇒ **通过**。即"0 == 0"假绿。加上 `d > 0` 后，
+ *   `d = 0` 会**显式红**并报"阳性对照失败，token 可能改名/功能掉了"。
+ *   ⇒ 标记表（`MARKERS`）因此是一份**维护契约**：改 token 前必须确认功能仍在。
+ *   ★ 双向可证：把任一 token 改成不存在的串 ⇒ 该行必红（`d = 0`）；改回 ⇒ 绿。
  *
  * ## 用法
  *   npm run build            # 先产出 dist/
@@ -106,9 +114,22 @@ for (const [rel, token] of MARKERS) {
   };
   const d = read(DIST);
   const s = read(ASSETS);
-  const ok = d !== null && d === s;
+  /* ★ `#180` 阳性对照：`d > 0` **不是可选** —— 否则 token 一改名（或该功能从构建里掉了）
+   *   ⇒ 两侧同为 `0` ⇒ `d === s` 成立 ⇒ **静默通过**（"0 == 0" 假绿）。
+   *   这正是 `b0audit` 用 `&& nonEmpty` 挡掉的那一族；也是 `#180` 的点名项。
+   *   ★ 三种失败要分开报（成因不同、修法不同）：文件缺 / 阳性对照失败 / 两侧不等。 */
+  const missingSide = d === null ? 'dist' : s === null ? 'assets' : null;
+  const present = d !== null && d > 0;
+  const ok = present && d === s;
   if (!ok) markBad++;
-  console.log(`  ${ok ? '✓' : '✗'} ${rel} · 「${token}」= dist ${d} / assets ${s}`);
+  const why = missingSide
+    ? ` ⟵ ${missingSide} 侧无此文件`
+    : !present
+      ? ' ⟵ ★阳性对照失败：dist 命中 0（该标记已不在构建里 —— 功能掉了、或 token 改名了）'
+      : d !== s
+        ? ' ⟵ 两侧不等'
+        : '';
+  console.log(`  ${ok ? '✓' : '✗'} ${rel} · 「${token}」= dist ${d} / assets ${s}${why}`);
 }
 
 // 结论
