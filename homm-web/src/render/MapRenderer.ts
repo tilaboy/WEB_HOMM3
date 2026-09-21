@@ -91,12 +91,23 @@ function guardMarker(obj: MapObject): string | null {
  *   ① 实测（engineering-lead-2 正午/深夜两张同 seed 图）：原 0.07 红填充**肉眼不可辨**
  *      —— 填了等于没填，却要为**每一格不可达格**（面积远大于可达）多付一次 `fillRect`，
  *      是热路径上的净浪费（且 team-lead 判据 =「靠格缘而不是靠填色」去区分）；
- *   ② 非色兜底 = 这圈**红格缘**（形状/边界线索），色觉障碍者也读得出"可达性的边"。
+ *   ② 非色兜底 = 这圈**格缘**（形状/边界线索），色觉障碍者也读得出"可达性的边"。
  * 两态都只画在**已揭开的地面**上、且在实体循环之前（见 draw() 里的位置说明）。
+ *
+ * ★ 2026-09-21 修订（a11y，team-lead 裁定取 (α)）：原版只有**半透明红缘**（alpha 0.42）——
+ *   实测它**纯靠色相、几乎没有亮度分量**（红缘 vs 底 WCAG 仅 ~1.05:1、灰度下不可辨；
+ *   红缘与对面蓝格仅 ΔL*≈1.36）⇒ 不满足"两态灰度下可辨"。现在红缘**外侧**再补一条
+ *   **墨色 `ink0` 描边**（**不透明**，与 §1.1 同色）作**明度锚**：灰度下由它把
+ *   "可达 / 不可达"的**边界**画出来。验收判据 = `design/accessibility-requirements.md §4.6`
+ *   （两态灰度下可辨，锚 WCAG 非文本 3:1，量「状态 vs 其底」）。
  */
 const REACH_TINT = 'rgba(120,200,255,0.16)';
-/** 可达范围的红色外缘（格缘）：唯一承载"不可走"的线索，比任何填充都明显。 */
+/** 格缘的**内侧红**（色相锚，贴可达区一侧）—— 沿用旧值。 */
 const NOGO_EDGE = 'rgba(255,96,80,0.42)';
+/** 格缘的**外侧墨色 `ink0`**（**明度锚**，不透明，复用 §1.1 的墨色）—— 抓「灰度可辨」。 */
+const NOGO_EDGE_INK = '#2a1a12';
+/** 格缘单边厚度（px）；红 + 墨各一条 ⇒ 边界总宽 `2 * EDGE_W`。 */
+const EDGE_W = 2;
 
 export class MapRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -439,13 +450,13 @@ export class MapRenderer {
       }
     }
 
-    /* --- ④ 可达范围染色：可走=蓝、不可走=红格缘（替换底部那条常驻移动力条）---
+    /* --- ④ 可达范围染色：可走=蓝、不可走=红格缘+墨色外描边（替换底部那条常驻移动力条）---
        位置**保持在世界坐标、实体循环之前**（与旧版一致）。这不是偷懒：
        世界坐标在 `ctx.restore()` 结束，而 `applyLighting` 是**屏幕空间**
        且在实体循环之后 ⇒ 把染色"搬"到光照之后，会**既错坐标、又盖住单位**。
-       team-lead 的"夜间也要读得出"改用**对比度**解决（蓝填充 + 清晰红格缘），不改管线。
+       team-lead 的"夜间也要读得出"改用**对比度**解决（见常量处注释：红=色相锚、墨=明度锚），不改管线。
        不可走**只描格缘、不填色**（填色实测不可辨且面积巨大，见常量处注释）；
-       红线只画在**已揭开**、且外邻落在**可达区**（含英雄自身格）的那一侧。 --- */
+       格缘(红+墨)只画在**已揭开**、且外邻落在**可达区**（含英雄自身格）的那一侧。 --- */
     const cost = vm.reachable;
     if (cost) {
       // 前沿判定：**含英雄自身格**（Dijkstra 起点 cost===0 也属于可达区），
@@ -465,12 +476,24 @@ export class MapRenderer {
             continue;
           }
           if (isFinite(c)) continue; // 英雄自身格（c===0）：在可达区内部，不填不描
-          // 不可走：只在紧邻可达区的那一侧描 2px 红格缘（填色已删，见常量处注释）
-          ctx.fillStyle = NOGO_EDGE;
-          if (inRegion(x, y - 1)) ctx.fillRect(x * TILE, y * TILE, TILE, 2);
-          if (inRegion(x, y + 1)) ctx.fillRect(x * TILE, y * TILE + TILE - 2, TILE, 2);
-          if (inRegion(x - 1, y)) ctx.fillRect(x * TILE, y * TILE, 2, TILE);
-          if (inRegion(x + 1, y)) ctx.fillRect(x * TILE + TILE - 2, y * TILE, 2, TILE);
+          // 不可走：紧邻可达区的那一侧画**双线** = 内侧红（色相锚）+ 外侧墨（明度锚）。
+          // 「红」沿用旧位（贴可达区）；「墨」往不可走一侧再外扩 EDGE_W ⇒ 补上亮度分量。
+          const px = x * TILE;
+          const py = y * TILE;
+          const top = inRegion(x, y - 1);
+          const bot = inRegion(x, y + 1);
+          const lft = inRegion(x - 1, y);
+          const rgt = inRegion(x + 1, y);
+          ctx.fillStyle = NOGO_EDGE; // 内侧红（色相锚）
+          if (top) ctx.fillRect(px, py, TILE, EDGE_W);
+          if (bot) ctx.fillRect(px, py + TILE - EDGE_W, TILE, EDGE_W);
+          if (lft) ctx.fillRect(px, py, EDGE_W, TILE);
+          if (rgt) ctx.fillRect(px + TILE - EDGE_W, py, EDGE_W, TILE);
+          ctx.fillStyle = NOGO_EDGE_INK; // 外侧墨（明度锚，不透明）
+          if (top) ctx.fillRect(px, py + EDGE_W, TILE, EDGE_W);
+          if (bot) ctx.fillRect(px, py + TILE - EDGE_W * 2, TILE, EDGE_W);
+          if (lft) ctx.fillRect(px + EDGE_W, py, EDGE_W, TILE);
+          if (rgt) ctx.fillRect(px + TILE - EDGE_W * 2, py, EDGE_W, TILE);
         }
       }
     }
