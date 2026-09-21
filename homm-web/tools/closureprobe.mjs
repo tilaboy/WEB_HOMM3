@@ -25,13 +25,20 @@
  *   · 只证「**缺口存在 / 被补上**」，**不证「缺口占轮廓多少」** —— `fog` 含**图外底色**、
  *     与未探索遮盖**同色 `#0b0d10`**，两者在像素上分不开。
  *   · 它是**旁证尺**，**不是 `§4.6` 的 `(ii)` 验收数**（验收数走 `tintab` 逐类×逐带）。
+ *   · ⚠️ **本尺自己不冻帧**：`changed` 会把**动画像素**（水波 / 选中脉冲）算进去（= `#138` 那个病）。
+ *     ⇒ **输入必须已冻帧（抓图侧 `SHOT_FREEZE=1`）且"同帧"**；否则结论无意义。**本尺不给"是否冻帧"的断言。**
  *
  * `#155`（修「轮廓在雾侧不闭合」）的取证口径：
  *   · 修前 / 修后各跑一次，**两侧必须同构建**（`commit` + 构建命令 + 指纹 一并写进报告；
  *     跨构建的两个数**不得并列成"同一个量的两个数"**）。
- *   · 期望方向：`fog 邻接 fill` 的计数**下降**、`fog 邻接任意带` 的计数**上升**。
- *   · ⚠️ 触发开关名（据 `engineering-lead`，**落库前不得当"已存在的实体"引用**）：`?devfogclose=1`。
- *     （**不是** `?devclosure`；用错名 = 静默量到"默认 no-op"。）
+ *   · ⚠️ **★ 两次都必须带 `&devfogclose=1`（对称 · 单变量）—— 否则「修后」跑的是默认路径 ⇒ 假阴性**：
+ *     修法是 **default-off**；若不带旗标，修前/修后都是默认路径 ⇒ 逐像素不变 ⇒ 会得到「修了等于没修」（**错**）。
+ *     带旗标后：修前（旧构建，**未知参数 ⇒ 被忽略 ⇒ = 默认**）vs 修后（旗标生效）= **唯一差别 = 代码里有没有这条修法**。
+ *   · ★ **两个不同的量，别混报**：
+ *     (a) **带旗标 修前 vs 修后** = **修法效果**（期望：`fogTouchFill` 下降、`fogTouchBand` 上升）；
+ *     (b) **不带旗标 修后 vs 修前** = **默认路径 0 像素差**（= "门票"证据：默认 no-op）。
+ *   · ⚠️ 开关名（据 `engineering-lead`，**落库前不得当"已存在的实体"引用**）：`?devfogclose=1`
+ *     （**不是** `?devclosure`；用错名 = 静默量到"默认 no-op"）。
  */
 import { readFileSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
@@ -151,9 +158,9 @@ for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
 console.log(`尺寸 ${W}x${H}   变化像素 n=${changed.reduce((s, v) => s + v, 0)}`);
 console.log(`fog(#0b0d10±2) 像素 n=${fogTotal}`);
 console.log(`  · fog 4 邻接"变化像素"的像素 n=${fogTouchChanged}（该处染色层碰到了雾边界）`);
-console.log(`     其中邻接 **fill(水洗)** 的 n=${fogTouchFill}   ← ★ 若轮廓闭合，此处应 ≈0（应为"带"）`);
-console.log(`     其中邻接 **任意带(edge/glow/ink)** 的 n=${fogTouchBand}`);
-console.log(`  · fog 的"变化像素邻居"按族计（一条边算一次）：`);
+console.log(`     其中邻接 **fill(水洗)** 的 n=${fogTouchFill}  **（像素计数）**   ← ★ 若轮廓闭合，此处应 ≈0（应为"带"）`);
+console.log(`     其中邻接 **任意带(edge/glow/ink)** 的 n=${fogTouchBand}  **（像素计数）**`);
+console.log(`  · ⚠️ 下面这张表的单位不同（**"边"计数：一条边算一次，不是像素**）—— 别与上面两行并列成"同一个量两个数"：`);
 for (const k of ['fill', 'edge', 'glow', 'ink']) console.log(`     ${k.padEnd(5)} ${fogTouchKind[k]}`);
 console.log(`  · 水洗贴雾的例子（前 12 个像素坐标）：${gaps.map(g => `(${g[0]},${g[1]})`).join(' ')}`);
 console.log('⚠️ 边界：只证「缺口存在 / 被补上」，不证「缺口占轮廓多少」（fog 含图外底色、同色不可分）；本尺为旁证，非 (ii) 验收数。');
