@@ -130,15 +130,21 @@ if (!tutorial) {
     );
   }
 
+  // ★ 空集守卫（`#180`）：`.every()` 在**空数组**上恒为 `true` ⇒ 若 `SEEDS` 塌成空（或 `perSeed`
+  //   没填满），下面四条会**真空通过**；而旧文案还硬写「8/8」—— 把"零个样本上的恒真"说成"8 个样本"。
+  //   ⇒ 先断言**人口足够**，再把数量**印成实测值**（不写死）。
+  PASS(perSeed.length === SEEDS.length && perSeed.length >= 8,
+    `人口守卫：perSeed = ${perSeed.length}/${SEEDS.length}（须 === 且 ≥8）—— **空集不得通过**`);
   // 覆盖项生效 = 确定性的（不依赖种子分布），可硬断言：
+  const n = perSeed.length;
   const allFive = perSeed.every((r) => r.total === tutorial.gen.monsterCount);
   const noVault = perSeed.every((r) => r.vaults === 0);
   const noNeutral = perSeed.every((r) => r.neutralTowns === 0);
   const allWeak = perSeed.every((r) => r.tiers.every((t) => t === 'weak'));
-  PASS(noVault, `V2 全图 vault = 0（8/8；gen.vaults=0 生效）`);
-  PASS(noNeutral, `V2 中立城 = 0（8/8；gen.neutralTowns=0 生效）`);
+  PASS(noVault, `V2 全图 vault = 0（${n}/${SEEDS.length}；gen.vaults=0 生效）`);
+  PASS(noNeutral, `V2 中立城 = 0（${n}/${SEEDS.length}；gen.neutralTowns=0 生效）`);
   PASS(allWeak, `V1 全图野怪**全为 weak**（gen.monsterTierBand 抬到 ∞ 生效）`);
-  PASS(allFive, `V1 全图野怪数 = ${tutorial.gen.monsterCount}（8/8；gen.monsterCount 生效）`);
+  PASS(allFive, `V1 全图野怪数 = ${tutorial.gen.monsterCount}（${n}/${SEEDS.length}；gen.monsterCount 生效）`);
   const medMon15 = median(perSeed.map((r) => r.mon15));
   console.log(`[信息] 图一 1.5 天圈内野怪中位 = ${medMon15}（规格 V1 期望 ≥3 且全为 weak；playtest-scenarios §2.6 已更正"2–4"为低估）`);
   console.log(`[信息] 图一 1 天圈内资源堆/宝箱 中位 = ${median(perSeed.map((r) => r.piles1))} / ${median(perSeed.map((r) => r.chests1))}（规格 V4 期望 ≥4/≥2）`);
