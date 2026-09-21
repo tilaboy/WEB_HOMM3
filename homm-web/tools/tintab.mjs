@@ -66,6 +66,9 @@
  *        这解释了"同 mode 连抓 **#1≠#2/#3、#2==#3**、与 mode 无关（谁先抓谁落窗）"——
  *        根因是**画布尺寸**，不是截图本身。⇒ **修法 = 轮询 canvas 尺寸、稳定后方开录**（`waitCanvasSettled()`，
  *        与 `quality.ts` G-15「预热帧丢弃 + 缓存版本门」同族）；既有"丢弃一张"保留作保险。`NO_SETTLE=1` 关。
+ *        ⚠️ **该"首帧未就绪"由本通道（`tintab`）实测**；`art-director` 的 `deviceshot` 通道**未复现**
+ *        （同相位双抓 diff = 0 px；其通道 `SHOT_FREEZE=1` + 等 canvas + `await frames(45)` 预热）
+ *        ⇒ **通道差异、非矛盾**。守卫保留，标注「**未在该通道复现**」。
  *     ② **`#hint` 启动 toast**（DOM 覆盖层，约载入后 1.5s 出现在地图区下缘；见下「DOM 覆盖层门」）——
  *        **删首帧治不了它**（它比首帧晚，实测第 5 个捕获才出现）⇒ **修法 = 注入 `display:none` 隐藏**。
  *   ⇒ 两处落地后实测（792@3）：`dark` **Σ=(a)=(b)=1548、缺口 0、缺源 0**（0.22 与 0.68 一致、逐相位恒定）；
@@ -455,7 +458,11 @@ const USE_COMP = /devhalocomp/.test(EXTRA);
  *   录制窗口若**跨过它** ⇒ 相邻两帧凭空差出**一整块 toast 区**（实测 bbox device [982,699..1393,791]
  *   = CSS 137×31）⇒ 被计成"变化" = 污染（曾把 792 `dark` 的 `(a)并集` 抬高 31059）。
  *   处置 = **注入侧隐藏**（HOOK 内注入 `#hint{display:none !important}`）—— 与 `NOW_STUB` 冻结动画**同族**：
- *   都是"移除非地形瞬态"。`#hint` 为 `position:absolute` + `pointer-events:none` ⇒ 隐藏**不改布局**、不动 canvas。
+ *   都是"移除非地形瞬态"。⚠️ **但原注"隐藏不改布局"是错的、已撤回**（`art-director` 于 `deviceshot` 通道实测：
+ *   隐 vs 不隐 = **362308 px 差 / max|Δ|=182 / 差异 bbox 覆盖整帧**；两跑画布几何相同 ⇒ 形态 = **整幅地图位移≈1px**；
+ *   安慰剂 inert 规则对照 = **0 px** ⇒ 差异来自"隐藏 toast 本身"，非注入时序 —— 详见头注②）。
+ *   ★ 头部注 = 「**隐藏 `#hint` 会改变整帧（≈1px 位移型）；本工具 A/B 两侧对称隐藏**」⇒ 比的是**旗标**、非隐/不隐；
+ *   **修后绝对数**（如 `dark Σ=1548`）**不得与任何"隐藏前"历史读数并列**（不是换构建，是画面整体位移了）。
  *   ⚠️ 本门**不能**用"删首帧"代替（toast 比首帧晚，实测第 5 个捕获才出现）—— 与首帧丢弃是**两个独立机制**，都要。
  *   此处**只做可核验**：录制前核对注入的隐藏确实生效（`getComputedStyle(#hint).display === "none"`）。 */
 const HINT_HIDDEN = '(()=>{const e=document.getElementById("hint");return e?getComputedStyle(e).display==="none":null})()';
@@ -504,7 +511,10 @@ async function captureAll() {
        *   "画布尚未 settle"的窗口里（**真因 = 画布 dpr 晚 settle，见头注① + `waitCanvasSettled()`**；
        *   非"截图编码/Settle"本身）：实测同 mode 连抓 **#1≠#2/#3、#2==#3**，且与 mode 无关（谁先抓谁落窗）
        *   ⇒ 首帧被当成数据 = 污染。主修法是上面的 settle 轮询；"再丢一张"与 G-15「预热帧丢弃」同族、
-       *   成本极低 ⇒ 留作保险。⚠️ 桌面 1280/dpr1 画布尺寸不随档位变（settle 被跳过），本丢弃近乎无操作。 */
+       *   成本极低 ⇒ 留作保险。⚠️ 桌面 1280/dpr1 画布尺寸不随档位变（settle 被跳过），本丢弃近乎无操作。
+       *   ⚠️ **通道差异标注**：`art-director` 的 `deviceshot` 通道**未复现**此"首帧未就绪"（同相位双抓 diff = **0 px**）
+       *     —— 其通道已 `SHOT_FREEZE=1` + 等 canvas + `await frames(45)` 预热 ⇒ **通道差异、非矛盾**；
+       *     本守卫**保留**（在 `tintab` 通道有效），但标注「**未在该通道复现**」。 */
       await send('Page.captureScreenshot', { format: 'png' });
       const meta = await evaluate('(()=>{const c=document.querySelector("canvas");const j=window.__journey();const h=document.getElementById("hint");return {canvas:{w:c.width,h:c.height},dpr:c.width/c.clientWidth,dprRaw:window.devicePixelRatio,hero:j.heroPos,hint:!!h,hintShown:!!(h&&h.classList&&h.classList.contains("show"))}})()');
       /* ★ 光照补偿色窗（仅 `--extra=...devhalocomp...`）：在**同一相位**、开录前算好并追加（见 `COMP_JS`）。 */
