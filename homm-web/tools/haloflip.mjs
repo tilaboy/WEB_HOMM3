@@ -170,15 +170,27 @@ try {
        *   ⇒ 刀刃式 `ac > floor` 在"噪声 30 / 信号 29"时会给假绿（NEG1 的 ② 实测到 29 vs 28，只赢 1 块）。
        *   ⇒ 改用：**噪声侧留余量 `NOISE_MARGIN`**、**信号侧要够一个数量级 `SIGNAL_MIN`**。
        *   ⚠️ **这两个阈值是 `engineering-lead` 的提议值、待主理人按数核定**（阈值的归属是主理人）。 */
-      const NOISE_MARGIN = 40;   // 噪声本底之上再留的余量（块）
-      const SIGNAL_MIN = 200;    // 认为"两条臂真的不同"所需的最小差异（块）≈ 信号量的 1/3
+      /* ★ 阈值必须**带单位 + 分母 + 口径**（`engineering-lead-2` 2026-09-21 指出：两个裸常量
+       *   会变成下一个"无标签数"）。三样如下：
+       *     单位 = **块**（16×16 px 分块）；分母 = **6705 块**（= 149×45；画布 2376×720 = 792×320@DPR3）；
+       *     口径 = **每跑**（同一次进程内的 4 次导航 A / A2 / B / C），② 是"每跑·每模式对"。
+       *   判据形（采纳「信号 ≥ 本底 × k」而不是两个裸常量）：
+       *     ① diff(A,B) ≤ floor + NOISE_MARGIN
+       *     ② diff(A,C) ≥ max(K × floor, SIGNAL_MIN)   —— K × floor 相对本底留倍数余量
+       *   实测锚点：floor **0–28** 块、信号 **676 / 678** 块 ⇒ 比值 **≥24×**，K=10 有余量。
+       *   ⚠️ **本底为何不是 0**：`haloflip` 已在 main.js 之前把 `performance.now()` 钉成常数并停 `rAF`，
+       *     仍漂 0–28 ⇒ **成因未定**（候选：合成/文字光栅时刻、或隐藏 `#hint` 那一步）——
+       *     **不写成"钉时钟就好"**；靠安慰剂臂 `floor` 吃掉它。 */
+      const NOISE_MARGIN = 40; // 块 · 分母 6705 ⇒ 0.60% · 每跑
+      const SIGNAL_MIN = 200;  // 块 · 分母 6705 ⇒ 2.98% · 每跑·每模式对
+      const K = 10;            // 信号 / 本底 的倍数下限（实测 ≥24×）
       const floor = diffBlocks(A, A2);
       const ab = diffBlocks(A, B), ac = diffBlocks(A, C);
-      console.log(`--- 逐块差： 噪声本底(default vs default#2) → ${floor} 块； default vs =1 → ${ab}； default vs =0 → ${ac}（共 ${A.bw * A.bh} 块）`);
-      console.log(`    判据： ① 须 ≤ 噪声本底+${NOISE_MARGIN}； ② 须 ≥ max(${SIGNAL_MIN}, 噪声本底+${NOISE_MARGIN})`);
-      const sound = Math.max(SIGNAL_MIN, floor + NOISE_MARGIN);
-      PASS(ab <= floor + NOISE_MARGIN, `① default ≡ ?devhaloafter=1（逐块差 ${ab} ≤ ${floor + NOISE_MARGIN}）—— 证"默认 == 开"`);
-      PASS(ac >= sound, `② default ≠ ?devhaloafter=0（逐块差 ${ac} ≥ ${sound}）—— 证"旧路径可达且不等价"`);
+      console.log(`--- 逐块差（单位=块，分母=${A.bw * A.bh}）： 本底(default vs default#2) → ${floor}； default vs =1 → ${ab}； default vs =0 → ${ac}`);
+      const sound = Math.max(K * floor, SIGNAL_MIN);
+      console.log(`    判据： ① 须 ≤ ${floor} + ${NOISE_MARGIN} = ${floor + NOISE_MARGIN}； ② 须 ≥ max(${K}×${floor}, ${SIGNAL_MIN}) = ${sound}`);
+      PASS(ab <= floor + NOISE_MARGIN, `① default ≡ ?devhaloafter=1（${ab} ≤ ${floor + NOISE_MARGIN}）—— 证"默认 == 开"`);
+      PASS(ac >= sound, `② default ≠ ?devhaloafter=0（${ac} ≥ ${sound}）—— 证"旧路径可达且不等价"`);
       if (ac < sound) {
         console.log('   ⚠️ 两臂分不开（差异不够大）：**不是"门绿"，是"尺瞎或回退被吞"**。');
         console.log('      两种成因要分开看：(a) 本场景没画染色层（边带没画）⇒ 假阴性；');
