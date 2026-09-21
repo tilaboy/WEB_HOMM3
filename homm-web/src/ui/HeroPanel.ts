@@ -6,7 +6,6 @@ import { factionColor, factionIds, factionName } from '../core/data/factions.js'
 import { isRevealed } from '../core/map/fog.js';
 import { effectivePrimary, expToNext, manaMaxOf, maxMovePoints } from '../core/game/hero.js';
 import { factionStanding } from '../core/game/victory.js';
-import { dayOfWeek, weekOf } from '../core/game/turn.js';
 import { SCENARIO_BY_ID } from '../core/data/scenarios.js';
 import { ownedMines } from '../core/game/town.js';
 
@@ -28,11 +27,19 @@ export interface TownHooks {
 }
 
 /**
+ * D-1「面板内分段」的段键（`#156`）。**默认段 = 属性**。
+ * team-lead 裁定：tab 标签**只写段名**（属性 / 城池 / 势力）；**部队在常驻核里 ⇒ 不进分段**。
+ */
+type SegKey = 'attr' | 'town' | 'faction';
+
+/**
  * 右侧查看器（HOMM3 布局）。
  *
- * 顺序刻意按"每回合要看几眼"排：
- *   肖像 → 移动力/法力 → 四维 → 部队 → 城池
- * 信息压缩在一屏内，不滚动；宝物收进肖像区按需展开。
+ * ★ `#156`（D-1「面板内分段」，`in-game-ia.md §3.3`）—— 面板 = **常驻核 + 分段**：
+ *   · **常驻核** = `head`（等级/经验并一行） + `bars`（移动力/法力**并一行**） + `army` ≈ 239 ≤ 240；
+ *   · **分段** = 属性 / 城池 / 势力（**tab 条**、默认 = 属性）⇒ **常驻态与每个分段都 ≤240、永不滚动**。
+ *   · tab 控件**复用既有 `segment` 控件语言**（`.ss-seg` / `.ss-seg-item`），**不新造第二套**。
+ * 判据（可引用）：**英雄栏只放「这一个英雄」的属性**；玩家级 / 全局级信息不属于它。
  */
 export class HeroPanel {
   /** 宝物格默认收起，避免占掉一屏里最贵的空间。 */
@@ -40,6 +47,8 @@ export class HeroPanel {
   /** 记住上一次的入参，折叠宝物时才能就地重画而不惊动镜头。 */
   private lastState: GameState | null = null;
   private lastHero: string | null = null;
+  /** D-1「面板内分段」当前段（默认 = 属性）。`#156`。 */
+  private seg: SegKey = 'attr';
   /** §14.2 教学清单锁存：一旦达成即保持（英雄阵亡后 `heroes['hero1']` 消失也不倒退）。 */
   private objLatch: Record<string, boolean> = {};
   /** 锁存属于哪一局（`state` 对象身份）：换局 / 载档即重播种，不把上一局进度带过来。 */
@@ -82,8 +91,6 @@ export class HeroPanel {
 
     const hero = heroId ? state.heroes[heroId] : null;
     if (!hero) {
-      this.el.appendChild(this.factionSection(state));
-      this.el.appendChild(this.townSection(state, null));
       // 英雄阵亡后清单仍在（② 靠锁存不倒退，§14.2 边缘情况 3）。
       const teach = this.objectiveSection(state);
       if (teach) this.el.appendChild(teach);
@@ -92,15 +99,60 @@ export class HeroPanel {
       return;
     }
 
-    this.el.appendChild(this.headSection(state, hero));
+    // ★ 教学清单**每次都求值**（锁存 + "完成那一刻"banner 有副作用），**是否上屏由当前段决定**
+    //   （`#156`：它是只读块，落在**默认段「属性」**的首行 ⇒ 教学场一打开即见，且在 ≤240 预算内）。
     const teach = this.objectiveSection(state);
-    if (teach) this.el.appendChild(teach);
+
+    /* --- 常驻核（D-1）：head（压） + bars（两条并一行） + army ≈ 239 ≤ 240 --- */
+    this.el.appendChild(this.headSection(state, hero));
     if (this.showArtifacts) this.el.appendChild(this.artifactSection(hero));
     this.el.appendChild(this.barSection(hero, state));
-    this.el.appendChild(this.statSection(hero));
     this.el.appendChild(this.armySection(hero));
-    this.el.appendChild(this.factionSection(state));
-    this.el.appendChild(this.townSection(state, hero.id));
+
+    /* --- 分段（属性 / 城池 / 势力；默认 = 属性） --- */
+    this.el.appendChild(this.segSection(state, hero, teach));
+  }
+
+  /* ---------------- 分段（D-1；tab 条复用 `.ss-seg` 控件语言） ---------------- */
+
+  private segSection(state: GameState, hero: Hero, teach: HTMLElement | null): HTMLElement {
+    const wrap = div('hp-seg');
+
+    const tabs = div('ss-seg hp-tabs');
+    tabs.setAttribute('role', 'radiogroup');
+    const items: [SegKey, string][] = [
+      ['attr', '属性'],
+      ['town', '城池'],
+      ['faction', '势力'],
+    ];
+    for (const [key, label] of items) {
+      const b = document.createElement('button');
+      b.className = 'ss-seg-item hp-tab';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(this.seg === key));
+      b.classList.toggle('on', this.seg === key);
+      b.title = label;
+      b.appendChild(span('t', label));
+      b.addEventListener('click', () => {
+        if (this.seg === key) return;
+        this.seg = key;
+        if (this.lastState) this.update(this.lastState, this.lastHero);
+      });
+      tabs.appendChild(b);
+    }
+    wrap.appendChild(tabs);
+
+    const pane = div('hp-pane');
+    if (this.seg === 'attr') {
+      if (teach) pane.appendChild(teach); // 教学场：只读教学清单（默认段首行）
+      pane.appendChild(this.statSection(hero));
+    } else if (this.seg === 'town') {
+      pane.appendChild(this.townSection(state, hero.id));
+    } else {
+      pane.appendChild(this.factionSection(state));
+    }
+    wrap.appendChild(pane);
+    return wrap;
   }
 
   /* ---------------- 肖像 + 英雄切换 + 宝物开关 ---------------- */
@@ -119,12 +171,13 @@ export class HeroPanel {
 
     const meta = div('hp-meta');
     const line1 = div('hp-name');
+    // `#156` / F-3.5：`经验 X / Y` 并入等级（全栏唯一真正的「同值多址」——`head` 已印 `Lv.N`）。
+    // 副行（职业 · 第 N 周 N 日）删除：日期已在顶栏、职业与肖像/名同处 ⇒ 同值多址（§15.1 判据 2）。
     line1.append(
       span('', hero.name),
-      span('hp-lv', `Lv.${hero.level}`),
+      span('hp-lv', `Lv.${hero.level} · ${hero.exp}/${expToNext(hero.level)}`),
     );
-    const line2 = div('hp-sub', `${hero.heroClass} · 第 ${weekOf(state.day)} 周 ${dayOfWeek(state.day)} 天`);
-    meta.append(line1, line2);
+    meta.append(line1);
     wrap.appendChild(meta);
 
     const nav = div('hp-nav');
@@ -155,24 +208,27 @@ export class HeroPanel {
     if (next) this.onSelect?.(next);
   }
 
-  /* ---------------- 移动力 / 法力 ---------------- */
+  /* ---------------- 移动力 / 法力（`#156`：两条 bar 并一行） ---------------- */
 
   private barSection(hero: Hero, state: GameState): HTMLElement {
     const wrap = div('sec hp-bars');
 
+    const row = div('hp-bars-row');
     const maxMp = maxMovePoints(hero, state);
-    wrap.appendChild(
-      barRow('移动力', Math.floor(hero.movePoints), maxMp, hero.movePoints, ''),
-    );
+    row.appendChild(barRow('移动力', Math.floor(hero.movePoints), maxMp, hero.movePoints, ''));
 
     const maxMana = manaMaxOf(hero);
-    const manaRow = barRow('法力', hero.mana, maxMana, hero.mana, 'mana');
-    wrap.appendChild(manaRow);
+    row.appendChild(barRow('法力', hero.mana, maxMana, hero.mana, 'mana'));
+    wrap.appendChild(row);
 
+    // ⚠️ `#156`：§3.3 计划的「`魔法书` → 菜单一级项」**暂未搬** —— 菜单一级现 6 项、
+    //   恰为 §7「一级 ≤ 6 项」的**上限**（`main.ts` 一级：继续 / 存档·读档 / 事件日志 /
+    //   设置 / 回到开始页 / 新游戏）⇒ **直接加会破 §7**。⇒ 在"搬到哪、腾哪一位"裁定前，
+    //   **保留按钮、不删入口**（删了 = 信息/功能丢失，违反 F-3.6「载体搬家、非删除」）。
     const btn = document.createElement('button');
     // M-09：侧栏「魔法书」是孤立按钮，上下方都是非交互内容，可安全扩命中区到 ~48px
     //（.btn.tiny 底 40px + .tap 纵轴 ±4px）。
-    btn.className = 'btn tiny tap';
+    btn.className = 'btn tiny tap hp-spell';
     btn.textContent = '魔法书';
     btn.style.marginTop = '6px';
     btn.disabled = !hero.spells.length;
@@ -183,7 +239,7 @@ export class HeroPanel {
     return wrap;
   }
 
-  /* ---------------- 四维 ---------------- */
+  /* ---------------- 属性（四维；`经验` 已并入 `head` 的 `Lv.N`） ---------------- */
 
   private statSection(hero: Hero): HTMLElement {
     const p = effectivePrimary(hero);
@@ -194,8 +250,6 @@ export class HeroPanel {
       stat('魔', p.spellPower),
       stat('知', p.knowledge),
     );
-    const exp = div('hp-exp', `经验 ${hero.exp} / ${expToNext(hero.level)}`);
-    wrap.appendChild(exp);
     return wrap;
   }
 
@@ -322,13 +376,13 @@ export class HeroPanel {
     return wrap;
   }
 
-  /* ---------------- 势力（多阵营对局里最该一眼看到的东西） ---------------- */
+  /* ---------------- 势力（多阵营对局里最该一眼看到的东西；`#156`：进分段） ---------------- */
 
   private factionSection(state: GameState): HTMLElement {
     const ids = factionIds(state);
-    if (ids.length < 2) return div('sec hp-factions hidden');
+    if (ids.length < 2) return div('sec hp-fac hidden');
 
-    const wrap = div('sec hp-factions');
+    const wrap = div('sec hp-fac');
     const h = document.createElement('h3');
     h.textContent = '势力';
     wrap.appendChild(h);
@@ -346,10 +400,10 @@ export class HeroPanel {
     return wrap;
   }
 
-  /* ---------------- 城池（占据 HOMM3 小地图的位置） ---------------- */
+  /* ---------------- 城池（`#156`：段内首行 = 一行摘要，明细在下） ---------------- */
 
   private townSection(state: GameState, heroId: string | null): HTMLElement {
-    const wrap = div('sec hp-towns');
+    const wrap = div('sec hp-city');
     const hero = heroId ? state.heroes[heroId] : null;
 
     const known: (typeof state.towns)[string][] = [];
@@ -359,7 +413,10 @@ export class HeroPanel {
       else hidden += 1;
     }
 
+    // ★ `#156` / team-lead 裁定：**一行摘要 = 段内首行**（**不是** tab 标签 —— tab 是导航、不是内容）。
+    //   它保住"一句可扫读的规模感"，明细仍在本段下方（城镇面板另有专职入口）。
     const h = document.createElement('h3');
+    h.className = 'hp-city-sum';
     h.textContent = hidden ? `城池 ${known.length} · 未发现 ${hidden}` : `城池 ${known.length}`;
     wrap.appendChild(h);
 
@@ -370,22 +427,22 @@ export class HeroPanel {
       return wrap;
     }
 
-    const list = div('hp-tlist');
+    const list = div('hp-city-list');
     known.sort((a, b) => (a.owner === VIEWER ? -1 : 1) - (b.owner === VIEWER ? -1 : 1));
     for (const t of known) {
       const mine = t.owner === VIEWER;
-      const row = div('hp-trow');
+      const row = div('hp-crow');
 
-      const dot = div('hp-tdot' + (mine ? ' mine' : ''));
+      const dot = div('hp-ctdot' + (mine ? ' mine' : ''));
       if (!mine) dot.style.background = factionColor(t.owner);
       row.appendChild(dot);
 
-      const nm = div('hp-tname', t.name);
+      const nm = div('hp-ctname', t.name);
       row.appendChild(nm);
 
       const troops = t.garrison.reduce((s, st) => s + st.count, 0);
       const dist = hero ? manhattan(hero.pos, t.pos) : null;
-      const meta = div('hp-tmeta');
+      const meta = div('hp-ctmeta');
       meta.textContent = [
         mine ? '' : t.owner === 'neutral' ? '无主' : factionName(t.owner),
         troops ? `驻军 ${troops}` : '空城',
@@ -395,7 +452,7 @@ export class HeroPanel {
         .join(' · ');
       row.appendChild(meta);
 
-      const btns = div('hp-tbtns');
+      const btns = div('hp-ctbtns');
       if (mine) btns.appendChild(miniBtn('管理', () => this.onTown?.onOpen(t.id)));
       btns.appendChild(miniBtn('定位', () => this.onTown?.onLocate(t.id)));
       row.appendChild(btns);

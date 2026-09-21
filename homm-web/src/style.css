@@ -1578,6 +1578,42 @@ body.in-battle #thumb {
   margin-bottom: 7px;
 }
 
+/* `#156`（D-1）：移动力 / 法力**并一行**（常驻核）；两格各占一半、窄面板也并排。 */
+.hp-bars-row {
+  display: flex;
+  gap: 8px;
+}
+.hp-bars-row .hp-bar-row {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* `#156`：魔法书**暂留面板**（见 HeroPanel.ts 注释 —— 搬进菜单会破 §7 的「一级 ≤ 6 项」）。 */
+.hp-spell {
+  width: 100%;
+}
+/* `#156`（D-1）：分段 = **tab 条**（**复用既有 `.ss-seg` 控件语言**，不新造第二套）+ 段内容。 */
+.hp-seg {
+  margin-top: 4px;
+}
+.hp-tabs {
+  gap: 4px;
+}
+.hp-tabs .ss-seg-item {
+  min-width: 0;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  min-height: 40px; /* a11y：可点行 ≥40px（不靠缩字号腾空间） */
+  padding: 0 4px;
+  font-size: 13px;
+}
+.hp-pane {
+  margin-top: 4px;
+}
+.hp-city-sum {
+  margin: 0 0 4px;
+}
+
 .hp-bar-top {
   display: flex;
   justify-content: space-between;
@@ -1679,12 +1715,12 @@ body.in-battle #thumb {
   padding-top: 0;
 }
 
-.hp-tlist {
+.hp-city-list {
   max-height: 168px;
   overflow-y: auto;
 }
 
-.hp-trow {
+.hp-crow {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1722,7 +1758,7 @@ body.in-battle #thumb {
 
 /* 密集上下文：同排 2~3 个按钮，横向只隔 3px。同样不走 ::after（横向扩会重叠），
    改为抬高真实高度（继承 40px）+ 把横向间距放到 8px（满足"相邻 ≥8px"）+ 放宽左右内边距。 */
-.hp-tbtns {
+.hp-ctbtns {
   display: flex;
   gap: 8px;
 }
@@ -1783,14 +1819,14 @@ body.in-battle #thumb {
 }
 
 @media (max-height: 720px) {
-  .hp-tlist {
+  .hp-city-list {
     max-height: 108px;
   }
 }
 
 /* ---------- 势力一览（多阵营） ---------- */
 
-.hp-factions.hidden {
+.hp-fac.hidden {
   display: none;
 }
 
