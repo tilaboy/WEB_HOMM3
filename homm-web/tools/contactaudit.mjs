@@ -24,18 +24,23 @@
  *
  * 用法：npm run build && node tools/contactaudit.mjs
  * 退出码：0 = 全部通过；1 = 有硬断言不达标；2 = 环境没准备好（dist 缺失）；
- *         3 = **结果作废**（跑的过程中工作树变了 —— 见下"元纪律"）。
+ *         3 = **结果作废**（跑的过程中**被测构建**变了 —— 见下"元纪律"）。
  *         ★ 3 与 1/2 **不得混用**：1 是"跑了、没达标"，2 是"没跑成"，3 是"跑了但读数不可信"。
  *
- * 元纪律（roadmap 59f8dd1，**已落地** —— 见文件末尾）：跑前/跑后各核一次
- * `git status --porcelain`，不一致 ⇒ **结果作废（exit 3）**。
- * ⚠️ 语义要点：**只比"跑前 vs 跑后"**。本工具**自身不写任何文件**，故**跑前就存在的 M
- * （别的 agent 在飞）不作废本次** —— 那是"改动过"，不是"跑的过程中被改"。
+ * 元纪律（roadmap 59f8dd1，**已落地** —— 见文件末尾）：
+ *   ★ **作废判据 = 被测对象（`DIST`）的指纹跑前/跑后是否相同**，**不是** `git status`。
+ *     **为什么不能拿 `git status` 当判据**：`dist/` 是 **gitignored**（`homm-web/.gitignore:3`）
+ *     ⇒ `git status --porcelain` **结构上看不见被测对象** —— **真把 `dist` 重建了它也不会变**，
+ *     却会被"别人提交一个 docs 文件"触发 ⇒ **该看见的看不见、不该动的乱动**（已实测：本门
+ *     改前跑一次就因 `art-director` 提交 docs 而误报作废）。
+ *     ⇒ 故判据改用 **`fingerprint(DIST)`**（`main.js` md5 + 复合 sha256 + 文件表）；
+ *       `git status` **降级为「只 WARN 的旁证」**：它仍能提示"仓库在动"，但**不作废读数**
+ *       （例：台账 `production/roadmap.md` 在飞 —— 与本次读数无关，不得因此作废）。
  */
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
-import { distDir, distUrl, printHeader, REPO_ROOT } from './_dist.mjs';
+import { distDir, distUrl, printHeader, fingerprint, REPO_ROOT } from './_dist.mjs';
 
 /* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164：
  * 跑门不必覆盖共用 `dist/`。下面 `../dist/...` 一律经 `u()` 解析到被测目录。 */
@@ -48,7 +53,7 @@ if (!existsSync(path.join(DIST, 'core', 'map', 'generator.js'))) {
   process.exit(2);
 }
 
-/** 取工作树快照；取不到（非 git 仓库 / 无 git）⇒ `null`（**不静默、也不误判为作废**）。 */
+/** 取工作树快照（**旁证**用）；取不到（非 git 仓库 / 无 git）⇒ `null`。 */
 const treeSnap = () => {
   try {
     return execSync('git status --porcelain', { cwd: REPO_ROOT, encoding: 'utf8' });
@@ -56,7 +61,11 @@ const treeSnap = () => {
     return null;
   }
 };
-/** ★ 元纪律「跑前」快照 —— 必须在任何读数之前。 */
+/** 指纹归一成可比较的键：**含 `files` 表**（少一个文件 = 变了，md5 会变 null 也算变）。 */
+const fpKey = (fp) => `${fp.md5 ?? 'n/a'}|${fp.sha256 ?? 'n/a'}|${(fp.files ?? []).join(',')}`;
+/* ★ 元纪律「跑前」快照 —— 必须在任何读数之前。
+ *   主判据 = 被测构建指纹；旁证 = 工作树。 */
+const FP0 = fpKey(fingerprint(DIST));
 const TREE0 = treeSnap();
 
 const { createGame } = await import(u('core/map/generator.js'));
@@ -228,16 +237,22 @@ if (medRush <= 18 && medRush < 6) {
 console.log(`\n${bad === 0 ? '全部通过' : `有 ${bad} 条硬断言不达标`}`);
 
 /* ── 元纪律「跑后」快照 + 对比（roadmap 59f8dd1） ────────────────────────────
- * 不一致 ⇒ 上面的每一条 PASS/FAIL **一律作废** ⇒ **exit 3**。
- * ★ 为什么不能降级成 1：1 会被读成"跑了、但没达标"，而此处的问题是"**读数不可信**"
- *   —— 正是本轮在治的「退出码与判词脱钩」。 */
-const TREE1 = treeSnap();
-if (TREE0 === null || TREE1 === null) {
-  WARNL('元纪律未能执行：取不到 `git status --porcelain`（非 git 仓库 / 无 git）⇒ 本次读数**未**做「工作树稳定性」核验。');
-} else if (TREE0 !== TREE1) {
-  console.error('✗ 结果作废（exit 3）：跑的过程中工作树变了 —— 跑前/跑后 `git status --porcelain` 不一致。');
-  console.error('  上面每一条 PASS/FAIL 都不可信（被测对象在脚下被改）。请在工作树静止时重跑。');
-  console.error(`  ---- 跑前 ----\n${TREE0}  ---- 跑后 ----\n${TREE1}`);
+ * ① **主判据**：被测构建**指纹**变了 ⇒ 上面每一条 PASS/FAIL **一律作废** ⇒ **exit 3**。
+ *    ★ 不降级成 1：1 会被读成"跑了、但没达标"，而此处是"**读数不可信**"
+ *      —— 正是本轮在治的「退出码与判词脱钩」。
+ * ② **旁证**：工作树变了 ⇒ 只 **WARN**（**不作废**）。因为 `dist/` 是 gitignored、
+ *    `git status` 看不见被测对象；它能看见的那些（docs / 台账在飞）与本次读数无关 ——
+ *    **拿它作废会把"别人在写文档"误判成"本次读数无效"**。 */
+const FP1 = fpKey(fingerprint(DIST));
+if (FP0 !== FP1) {
+  console.error('✗ 结果作废（exit 3）：跑的过程中**被测构建变了** ——');
+  console.error(`  跑前 ${FP0}`);
+  console.error(`  跑后 ${FP1}`);
+  console.error('  上面每一条 PASS/FAIL 都不可信（被测对象在脚下被改）。请在构建静止时重跑。');
   process.exit(3);
+}
+const TREE1 = treeSnap();
+if (TREE0 !== null && TREE1 !== null && TREE0 !== TREE1) {
+  WARNL('旁证：跑的过程中工作树变了（`git status --porcelain` 前后不一致）—— **不作废本次**（被测构建指纹未变），仅为提示。');
 }
 process.exit(bad === 0 ? 0 : 1);
