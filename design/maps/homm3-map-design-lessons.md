@@ -179,7 +179,7 @@ node /tmp/measure3.mjs               # 各尺寸主城间距 + 选址筛选（§
 ```
 
 **脚本落点说明**：这三个脚本写在 `/tmp`，**没有进仓**（本次任务边界是"只写设计，不改 `src/`"）。
-若工程认为这些测量应固化为门控，**建议吸收成 `tools/mapaudit.mjs`**（与 `layoutaudit.mjs` / `minesaudit.mjs` 同族）：它测的是"这一张图**什么时候发生什么**"，是当前审计工具**完全覆盖不到**的一层。**这条建议已报 team-lead 与 engineering-lead。**
+若工程认为这些测量应固化为门控，**建议吸收成 `tools/contactaudit.mjs`**（与 `layoutaudit.mjs` / `minesaudit.mjs` 同族）：它测的是"这一张图**什么时候发生什么**"，是当前审计工具**完全覆盖不到**的一层。（该探针 **2026-09-21 已建**；⚠️ 但它的 **control 组必须先修** —— 要与 rush 组**同图**并加"两组同构"断言，否则接触日不可比，见 `playtest-scenarios.md §3.5`。）
 
 ---
 
