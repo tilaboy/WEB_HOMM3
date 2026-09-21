@@ -156,73 +156,15 @@ function dEab(a, b) {
   return Math.sqrt(d0 * d0 + d1 * d1 + d2 * d2);
 }
 
-/* ---------------- 边缘对比（CMP_EDGE=<hex>）：量「某色描边 vs 其相邻底色」的 WCAG 对比 ----------------
+/* ---------------- 【已撤】`CMP_EDGE=<hex>` 描边对比（team-lead 裁 · 2026-09-21） ----------------
  *
- * 用途：④ 可达染色改 (α) 后，格缘描边 = **不透明 `ink0` `#2a1a12`**（`MapRenderer.ts` 的 `NOGO_EDGE_INK`）。
- * 判据（`accessibility-requirements.md §4.6`）= **WCAG 非文本 3:1**，量的对象是「**状态（描边）vs 其底（相邻地形）**」。
- *
- * 做法：找出容差内与目标色相近的像素；对每个，向**四邻（含隔 1px 的第二圈）找第一个非目标色**像素作"底"，
- * 算 WCAG 对比 = (Yhi+0.05)/(Ylo+0.05)（Y = 相对亮度）。报 中位 / p10 / min / p90 + 底色 L* 分布 + "<3:1 占比"。
- *
- * ⚠️ 口径（诚实边界）：目标色若在图上**还出现在别处**（如物件描边也是 `ink0`），会一并计入 ——
- *   因**颜色相同 ⇒ 对比同源**，对"`ink0` 能不能达 3:1"这个判断**无偏**；但它**不是**只量那圈 ④ 格缘。
- *   要只量 ④ 格缘，需"染色开/关"两张图做差（见 §4.6 的 A/B 口径）。屏幕截图经 DPR 上采样 ⇒ 描边像素被插值，
- *   故必须给容差 `CMP_EDGE_TOL`（默认 ±12），并以 **n（命中的描边像素数）** 判读数是否够量。
+ * 曾在此实现「某色描边 vs 其相邻底色」的 WCAG 对比（`edgeContrast` / `relY` / `wcagRatio`）。
+ * **撤除理由**：它量的是**该色在整张图上的所有出现**（物件描边也是 `ink0`），**不是**只量那圈 ④ 格缘
+ * ⇒ **当不了 `accessibility-requirements.md §4.6` 的验收数**。
+ * **「一个验收数一处产」** ⇒ 既然当不了验收数，就不留第二把尺（`imagecmp` 回归单一职责：**比两张图差多少**）。
+ * **④ 的空间口径验收数唯一出处 = `tools/reachmeas.mjs`**（A/B 口径：2.93 午 / 2.08 夜）。
+ * 留此墓碑而**不是静默删除**：撤的是**代码**，口径要留痕（历史加口径、不重写）。
  */
-function relY(r, g, b) {
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-}
-function wcagRatio(y1, y2) {
-  const hi = Math.max(y1, y2);
-  const lo = Math.min(y1, y2);
-  return (hi + 0.05) / (lo + 0.05);
-}
-
-function edgeContrast(img, hex, tol) {
-  const t = [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
-  const hit = (x, y) => {
-    const [r, g, b] = pixel(img, x, y);
-    return Math.abs(r - t[0]) <= tol && Math.abs(g - t[1]) <= tol && Math.abs(b - t[2]) <= tol;
-  };
-  const ratios = [];
-  const baseLs = [];
-  // 8 方向：先看紧邻，再看隔 1px 的第二圈 —— 描边宽度（④ 为 2 边 × `EDGE_W`=2px）可能 >1px
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]];
-  const yc = relY(t[0], t[1], t[2]);
-  for (let y = 0; y < img.height; y++) {
-    for (let x = 0; x < img.width; x++) {
-      if (!hit(x, y)) continue;
-      let found = null;
-      for (const [dx, dy] of dirs) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= img.width || ny >= img.height) continue;
-        if (hit(nx, ny)) continue;
-        found = pixel(img, nx, ny);
-        break;
-      }
-      if (!found) continue;
-      ratios.push(wcagRatio(yc, relY(found[0], found[1], found[2])));
-      baseLs.push(lstar(found[0], found[1], found[2]));
-    }
-  }
-  const n = ratios.length;
-  if (!n) return { n: 0 };
-  const rs = Float64Array.from(ratios).sort();
-  const bl = Float64Array.from(baseLs).sort();
-  const q = (arr, p) => arr[Math.min(arr.length - 1, Math.floor(arr.length * p))];
-  return {
-    n,
-    median: q(rs, 0.5),
-    p10: q(rs, 0.1),
-    p90: q(rs, 0.9),
-    min: rs[0],
-    baseLMedian: q(bl, 0.5),
-    baseLMin: bl[0],
-    baseLMax: bl[bl.length - 1],
-    below3: ratios.filter((v) => v < 3).length / n,
-  };
-}
 
 function stats(img) {
   const n = img.width * img.height;
@@ -360,21 +302,6 @@ for (const f of files) {
           `均值域 [${t.min.toFixed(2)}, ${t.max.toFixed(2)}] 极差 ${t.spread.toFixed(2)}` +
           `   相邻格平均 |ΔL*| ${t.adjMean.toFixed(2)}`,
       );
-    }
-    // CMP_EDGE=<hex> ⇒ 量「该色描边 vs 其相邻底色」的 WCAG 对比（④ (α) 的 3:1 判据，见 accessibility §4.6）
-    const edgeHex = process.env.CMP_EDGE;
-    if (edgeHex) {
-      const tol = Number(process.env.CMP_EDGE_TOL ?? 12);
-      const e = edgeContrast(img, edgeHex.replace(/^#/, ''), tol);
-      if (!e.n) {
-        console.log(`  边缘对比 #${edgeHex}：图里找不到该色（容差 ±${tol}）`);
-      } else {
-        console.log(
-          `  边缘对比 #${edgeHex}（容差 ±${tol}，n=${e.n}）：` +
-            `中位 ${e.median.toFixed(2)}  p10 ${e.p10.toFixed(2)}  min ${e.min.toFixed(2)}  p90 ${e.p90.toFixed(2)}` +
-            `  <3:1 占比 ${(e.below3 * 100).toFixed(1)}%  底色 L* 中位 ${e.baseLMedian.toFixed(1)} [${e.baseLMin.toFixed(1)}, ${e.baseLMax.toFixed(1)}]`,
-        );
-      }
     }
   } catch (e) {
     console.error(`${f}：解码失败 —— ${e.message}`);
