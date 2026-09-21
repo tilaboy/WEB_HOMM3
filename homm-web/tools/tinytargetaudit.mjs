@@ -426,8 +426,27 @@ const APP_MENU = `(() => {
   menuBtn.click();
   const root = document.getElementById('menu');
   const items = root ? [...root.querySelectorAll('.menu-item')].map((b) => (b.textContent || '').trim()) : [];
+  // 一屏放下（F-3.6 后续）：量面板**是否纵向溢出**，以及每个一级项**是否完整落在面板 client 区**内。
+  let fit = null;
+  if (root) {
+    const panel = root.querySelector('.menu-panel');
+    if (panel) {
+      const pr = panel.getBoundingClientRect();
+      const rects = [...panel.querySelectorAll('.menu-item')].map((b) => {
+        const r = b.getBoundingClientRect();
+        return { label: (b.textContent || '').trim(), fully: r.top >= pr.top - 0.5 && r.bottom <= pr.bottom + 0.5 };
+      });
+      fit = {
+        clientH: panel.clientHeight,
+        scrollH: panel.scrollHeight,
+        overflow: panel.scrollHeight - panel.clientHeight,
+        hidden: rects.filter((r) => !r.fully).length,
+        itemCount: rects.length,
+      };
+    }
+  }
   if (root) root.remove();
-  return { thumbLabels, thumbHasLog, badgeOnMenu, menuAria, items, count: items.length };
+  return { thumbLabels, thumbHasLog, badgeOnMenu, menuAria, items, count: items.length, fit };
 })()`;
 
 /**
@@ -858,7 +877,11 @@ if (!appMenu || appMenu.error) {
   // ⇒ 判据 = §7 现行上限 **6**（design/ux/in-game-ia.md §7：一级 ≤ 6）。§7 改 ⇒ 只改这一处常量。
   const MENU_MAX = 6;
   const countOk = typeof appMenu.count === 'number' && appMenu.count <= MENU_MAX;
-  for (const ok of [noLogThumb, logInMenu, badgeMoved, ariaOk, countOk]) if (!ok) bad++;
+  // 一屏放下（F-3.6 后续 / IA §7）：**一级 6 项必须在面板内全部可见、不得纵向滚动**。
+  // 判据 = "一个 6 项的一级菜单不该需要滚动"（需要滚动 ⇔ §7「一级 ≤6」守的"一屏看完"已不成立）。
+  // ✗ 不许靠"允许它滚"达标（bd4ebb0）✗ 不许放宽 §7 上限去凑。
+  const fitOk = !!appMenu.fit && appMenu.fit.overflow <= 1 && appMenu.fit.hidden === 0;
+  for (const ok of [noLogThumb, logInMenu, badgeMoved, ariaOk, countOk, fitOk]) if (!ok) bad++;
   console.log(
     `[${noLogThumb ? 'PASS' : 'FAIL'}] 拇指带已无「日志」入口（实测拇指带：${appMenu.thumbLabels.join(' / ')}）`,
   );
@@ -869,6 +892,9 @@ if (!appMenu || appMenu.error) {
   );
   console.log(
     `[${countOk ? 'PASS' : 'FAIL'}] 菜单一级项 ${appMenu.count} 项 ≤ ${MENU_MAX}（§7 上限=6；守卫『不膨胀』而非当时读数）：${appMenu.items.join(' / ')}`,
+  );
+  console.log(
+    `[${fitOk ? 'PASS' : 'FAIL'}] 菜单一屏放下（不滚动）：面板 ${appMenu.fit?.clientH}px · 内容 ${appMenu.fit?.scrollH}px · 溢出 ${appMenu.fit?.overflow}px · 未完整可见 ${appMenu.fit?.hidden}/${appMenu.fit?.itemCount} 项`,
   );
 }
 

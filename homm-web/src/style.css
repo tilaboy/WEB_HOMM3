@@ -279,11 +279,15 @@ body {
 }
 
 .menu-panel {
-  width: min(320px, 92vw);
+  width: min(340px, 92vw);
   max-height: 86%;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+  /* 6 项一级菜单必须**一屏放下**（IA §7「一级 ≤6」守的正是"一屏看完"）：
+     竖向单列在横屏 792×320 下 = 393px 内容 > 244px 面板（溢出 149px、半屏被截，`audit:touch` 会红），
+     而 6×44 的 a11y 下限本身就已 > 244 ⇒ 单列**结构上放不下**。故走 **2 列 ×3 行**：
+     保留 48px 行高（a11y ≥44），总高 ≈222px < 244px。 */
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   padding: 16px;
   background: linear-gradient(180deg, #55401f, #35250f);
@@ -293,6 +297,8 @@ body {
 }
 
 .menu-panel h3 {
+  /* 标题横跨两列，否则会被挤进第 1 格 */
+  grid-column: 1 / -1;
   margin: 0 0 4px;
   font-size: 15px;
   font-weight: 500;
