@@ -504,10 +504,12 @@ debug key 签名、7 档图标、`webContentsDebuggingEnabled=false`。
 | `homm-web/tools/contactaudit.mjs` | `engineering-lead` | 门控探针（B1 验收门）。**文件由另一实例建立、由 `engineering-lead` 按门控口径修** —— 分工不是抢活。修项：**对照组混淆**（control 不带 `scenario` ⇒ 与 rush **不是同一张图** ⇒ 接触日不可比）⇒ control 须用**同一次** `createGame({scenario:'duel'})` 生成后**仅清** `state.config.scenario`，并**加断言「两组地图同构」**（`tiles`+`objects[].pos` 全等），**不同构 ⇒ FAIL 且两组数字作废** |
 | `homm-web/src/main.ts` · `src/style.css` | `engineering-lead` | ④ 的 HUD 部分（顶栏/拇指带/菜单） |
 | `homm-web/src/render/quality.ts` | `art-director` | 档位政策（`TIER_TABLE` / `setDressing` / `dprCap`）；G-15 为工程侧已完成的历史改动 |
-| `homm-web/src/render/terrainLayer.ts` · `setDressing.ts` · `terrainShade.ts` · `lightLayer.ts` · `atlas.ts` | `art-director` | 画面层 |
-| `homm-web/tools/artshot.mjs` · `imagecmp.mjs` · `deviceshot.mjs` · `chromeshot.mjs` · `shimconsistency.mjs` | `art-director` | 美术取证工具链 |
-| `homm-web/tools/b0audit.mjs` · `atlasaudit.mjs` · `smoke.mjs` · `tinytargetaudit.mjs` 等门控探针 | `engineering-lead` | 门控；**改动须报主理人** |
-| `design/art-bible/shots/` | `art-director` | 按**目录**切（不按变量切） |
+| `homm-web/src/render/terrainLayer.ts` · `terrainShade.ts` | **G1 执行实例**（未具名） | ⚠️ **2026-09-21 改**：G1 地貌区正被一个**并行 art 实例**实现（两文件现为 `M`）⇒ 归**它**，不归 `art-director`。**它必须自报实例名。** |
+| `homm-web/src/render/setDressing.ts` · `lightLayer.ts` · `atlas.ts` | `art-director` | 画面层其余 |
+| `homm-web/tools/artshot.mjs` · `imagecmp.mjs` · `deviceshot.mjs` · `chromeshot.mjs` · `shimconsistency.mjs` · `tintab.mjs` | **并行 art 实例**（占 `tintab` / `imagecmp` 的 `edgeContrast()`）/ `art-director`（其余） | 美术取证工具链。⚠️ **谁先占谁有**：`tintab.mjs` 与 `imagecmp.mjs` 已被并行实例写入 ⇒ 归它 |
+| `homm-web/tools/b0audit.mjs` · `atlasaudit.mjs` · `smoke.mjs` · `tinytargetaudit.mjs` · `contactaudit.mjs` 等门控探针 | `engineering-lead` | 门控；**改动须报主理人** |
+| `design/art-bible/shots/*.png`（**证据图**） | **art-director 家族**（`art-director`/`-2`/`-3`） | **2026-09-21 切细一层**：生产需要，家族均可写 |
+| `design/art-bible/shots/README.md` · `index.html` | **`art-director`（仅此实例）** | **策展 / 判定唯一写者**；他人只报不改 |
 | `design/art-bible/bitmap-asset-options.md` | `art-director-3` | |
 | `design/ux/in-game-ia.md` · `playtest-feedback.md` | `ux-ia` | |
 | `design/maps/` · `design/difficulty-spec.md` | **`design-strategist`** | ★ **2026-09-21 强化**：曾有第三方把「实现口径」写进 `design/maps/playtest-scenarios.md`（`a9a0ea1`）。**内容经核实正确、予以保留**，但**「把规格与实现对账」也必须先报一句** —— 单写者规则**不为"内容对"开例外**。 | |
@@ -515,6 +517,27 @@ debug key 签名、7 档图标、`webContentsDebuggingEnabled=false`。
 | `design/gdd/races.md` | **`design-strategist`** | ★ **改判（2026-09-21）**：GDD 归设计单写者。`ux-ia` 在本文件上的收口（`§6.4.2` / `§7` / `§8` 交接清单，`9a31e40` / `633609d` / `aeeb69a`）**已完成**，⇒ **本文件此后归 `design-strategist`**；`ux-ia` 如再需改动，**报一句再动**。 |
 
 **未列入的文件** ⇒ 动之前**先在群里报一句**（不要凭"我最相关"就动手）。
+
+### ⚠️ 本表**必须按「实例」读，不能按「角色」读**（2026-09-21 补，`art-director` 发现）
+
+**真根因**：本表原先逐行写的是**角色名**（如 `art-director`），而环境里**同一角色有多个实例**（`art-director` / `-2` / `-3`）。
+⇒ **每个实例读到的都是"这是我的"** ⇒ 撞车继续。**"按目录切"只堵住了不同角色之间，同一角色的多实例之间完全没堵。**
+
+**三条规则**：
+1. **逐行写具体实例名**，不写角色名。**角色相同不算数。**
+2. **动文件前先确认那一行写的是不是你自己的实例名。**
+3. **同一角色的多实例之间，按「子交付」分**（如"出图"给 A、"判定/登记"给 B），**不按文件分** —— 因为文件是共享的，交付物才可分。
+
+### ★ 测量窗口（freeze）规则（2026-09-21 补，`art-director` 拒绝出数所暴露的缺口）
+
+`59f8dd1` 只定了「**读数必须绑构建 + 工作树**」，**没定"什么时候树才算可绑"** ⇒ 现在补上：
+- **测量前**：owner 发一句「**冻结**」，**所有写者要么先提交、要么报出自己正在改哪些文件**；
+- **窗口内**：**不写**；真要写，先报，**本窗口作废**；
+- **记录**：跑前 / 跑后各 `git status --porcelain` + 构建指纹；**不一致 ⇒ 结果作废重跑**。
+- **推论（本次的实例）**：④ 染色的测量顺序是 **G1 owner 先提交 G1 → 冻结 → ④ 取数**，**不是并行** —— 未提交的 G1 改动会让任何 ④ 数字绑不上稳定状态。
+
+### 登记表与一次性批准的关系
+**登记表是权威。** 主理人的一次性批准（如"某文件借给某人"）**只有在同时更新本表之后才生效** —— 否则执行者应当**按表办**并上报（2026-09-21 `art-director` 即如此处理，**正确**）。
 | 2026-09-21（**元纪律升级：任何门控/测量结果必须绑定它所依据的状态**） | ★ 起因一（构建）：art-director 实测 —— **同 URL 同档位、换另一份 `dist`，相差 平均 2.08 / 61.6% 像素**，比表内任何信号都大（触发：并行的人在两抓之间跑了一次 `npm run build`）。★ 起因二（工作树）：engineering-lead 报 —— **另一实例把 `MENU_MAX` 临时改成 5 跑负测、又改回 6，而它的审计恰好撞上那个中间态、误读到 `≤5`**。⇒ **共享工作树会被别人中途改，读数可能是「别人某一瞬间的状态」。**★★ **规矩**：**任何门控 / 测量结果，必须绑定它当时所依据的状态** —— **① 构建**：记 `dist/main.js` mtime 或构建时间；**② 工作树**：跑之前与跑之后各 `git status --porcelain` **比对一次**，**不一致则结果作废、重跑**。★ 与「并列的两个数会被默认为同源」「同一个量出了两个数 ⇒ 必须写 population」**同族**：**比较/测量的前提必须被写下来，否则「都对」的数会互相打架。** |
 | 2026-09-21（**「工作树卷入」第 3 例 + 两半式修法定型**） | ★ `art-director-3` 报：它的 V1.4/V1.5 内容**大部分落在另一实例的提交 `6b4a0ba`**（09:27:19，+15/−11），自己的 `5425ccb` 只剩 **+1**。⇒ **本会话已知第 3 例**（`95f9569` / `ea6f84f` / `6b4a0ba`）。★ 它**逐条复核 7 处更正点** ⇒ **HEAD 内容完整、正确、无丢失**；**不回滚、不改归属**（符合「不追责」口径）。★ 顺带记一件**正面**的：`6b4a0ba` 还把它 §3.2 一句无出处措辞（「探索 2–3 天走完」）**精化成有出处的「主城→主城 2.6 天（8-seed 中位）」** —— 它判断该处改得对并保留。★★ **两半式修法定型（它给的措辞，我采纳）**：**`git commit -- <paths>` 堵「卷入」**（工作树时间窗）；**「单一 owner 登记表」堵「谁动手」**（并发认领）。**各堵一半。**⇒ 从今以后：**提交一律显式 pathspec**（`art-director-3` 本次 `5425ccb` 已照做：`git diff --cached` 先确认无人暂存）。 |
 | 2026-09-21（**「绑构建」的实战首例：门控阈值不得取自被取代的构建**） | ★ `art-director-3` 主动提醒 `art-director`：#108「G1 地貌特征 + 硬门控」的 **2.28 / 28%** 取自 `shots/README.md` ③、**绑构建 `a43acee`**；而 **`f62713f` 改过 `setDressing.ts`** ⇒ **前后必须在同一构建上重抓，否则门槛不成立。**★★ **这是一条新形态**（此前「绑构建」只管"报数不能说错"）：**门控的阈值会被"钉"在一个不再存在的状态上** ⇒ **门槛看着有据，其实量的是旧代码。** ⇒ **规矩**：**任何门控阈值必须与它所守护的代码同构建；代码一改，阈值必须重测（而不是沿用）。**★ 附带：`art-director-3` **自报唯一写域** = `design/art-bible/bitmap-asset-options.md`（登记表 `:509`），**`src/core/**` 一律只读**（引用过 `types.ts:72` 的 `MAP_SIZES.huge` 作硬事实，从不改）；**表里未列的目录先报再动** —— **这是登记表的第一个完整闭环，记为正例。** |
