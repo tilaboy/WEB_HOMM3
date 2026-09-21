@@ -69,8 +69,9 @@
  *   ② **启动 toast** `#hint`（`main.ts:604` `hint()`，文案 `main.ts:1121`）：**DOM 覆盖层**、约
  *      **载入后 1.5s** 出现于**地图区下缘**（792@3 实测 bbox device `412x93` = CSS `[328,233 137x31]`）、
  *      2s 淡出 ⇒ 落在测量窗内会**污染地图区**（曾把 `dark` `(a)并集` 抬高 **31059**）。
- *      **修法 = HOOK 注入 `#hint{display:none}`**（测量帧确定、可复现）；头部每相位打印 `#hint 显示中`
- *      供核。⚠️ 该 toast **与 canvas 渲染无关** —— 抑制它不改任何地图像素的绘制路径。
+ *      **修法 = HOOK 注入 `#hint{display:none}`**（测量帧确定、可复现）；头部每相位打印
+ *      「overlay门: #hint 注入隐藏 已生效（computed display:none）」（`getComputedStyle`）供核。
+ *      ⚠️ 该 toast **与 canvas 渲染无关** —— 抑制它不改任何地图像素的绘制路径。
  *   ① 动画（水波/脉冲）由 `NOW_STUB` 冻结（见下）。
  *
  * ## 草亮度分层（2026-09-21 加，team-lead 裁 `ff7db9c`）
