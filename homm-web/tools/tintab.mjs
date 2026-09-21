@@ -28,6 +28,14 @@
  * ## 自证未被并发改动（新规则③）：量测前后各记 src/dist 的 sha1+mtime，跑完再核；不一致 exit 3。
  *
  * ## population 必填（--pop=list 看选项）。覆盖判据按通道差 —— 不得用 |ΔL*| 阈值筛人口。
+ *
+ * ## 草亮度分层（2026-09-21 加，team-lead 裁 `ff7db9c`）
+ * `grass` 曾是一个**不分层**的桶 —— 而 §15.4 的 (α) **失败格恰恰是「草·深」** ⇒ 并进 `grass`
+ *   聚合会 **"均值掩盖死区"**（把仍不过的暗格洗成过）。故按 `L*` 切三桶，**阈值即本文件内的单一权威定义**：
+ *     `grass-bright`：L* ≥ 55 ｜ `grass-mid`：40 ≤ L* < 55 ｜ `grass-dark`：22 ≤ L* < 40
+ *   （`L* < 22` 已归 `dark`；切法**沿用 §15.4 (α) 基线表**，使新表与该基线**可比**。）
+ *   ⚠️ 历史病根：基线那张 7 行表出自**未入库**的 `/tmp/alpha_bin.mjs`，其 `cls()` 阈值与本文件
+ *   **不是同一套** ⇒ 两套定义出两个数。**自此以本文件为准**；`#124` 复算须用本文件。
  */
 
 import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
@@ -48,7 +56,7 @@ function arg(name, dflt) {
   return hit ? hit.slice(name.length + 3) : dflt;
 }
 
-const POPS = ['uniform-grass', 'grass', 'all', 'sand', 'water', 'rock', 'dark'];
+const POPS = ['uniform-grass', 'grass', 'grass-bright', 'grass-mid', 'grass-dark', 'all', 'sand', 'water', 'rock', 'dark'];
 const popArg = arg('pop', '');
 if (popArg === 'list' || !popArg) {
   console.error(`population 必填。可用：${POPS.join(' | ')}　（多个用逗号）\n例：node tools/tintab.mjs --pop=uniform-grass`);
@@ -166,6 +174,14 @@ function classify(r, g, b) {
   if (r - b >= 25 && r >= g) return 'sand';
   return 'rock';
 }
+/* 草亮度分层 —— 单一权威定义（切法沿用 §15.4 (α) 基线表，使新表与基线可比） */
+const GRASS_L_BRIGHT = 55, GRASS_L_MID = 40;
+const GRASS_BIN = { 'grass-bright': 0, 'grass-mid': 1, 'grass-dark': 2 };
+function grassBin(r, g, b) {
+  if (classify(r, g, b) !== 'grass') return -1;
+  const L = Lp(r, g, b);
+  return L >= GRASS_L_BRIGHT ? 0 : L >= GRASS_L_MID ? 1 : 2;
+}
 const f2 = (v) => Number(v).toFixed(2);
 
 /* ------------------------------------------------------------------ 抓图 */
@@ -237,8 +253,9 @@ async function analyze(ph, shot) {
   const W = B.w, H = B.h, N = W * H, C4 = B.c;
   const gy0 = 42, gy1 = Math.min(720, H);
   const cls = new Uint8Array(N);
+  const gb = new Int8Array(N);
   const CODE = { dark: 0, water: 1, grass: 2, sand: 3, rock: 4 };
-  for (let i = 0; i < N; i++) { const o = i * C4; cls[i] = CODE[classify(B.d[o], B.d[o + 1], B.d[o + 2])]; }
+  for (let i = 0; i < N; i++) { const o = i * C4; cls[i] = CODE[classify(B.d[o], B.d[o + 1], B.d[o + 2])]; gb[i] = grassBin(B.d[o], B.d[o + 1], B.d[o + 2]); }
   const uniform = new Uint8Array(N);
   for (let y = gy0; y < gy1; y++) for (let x = 0; x < W; x++) {
     const c0 = cls[y * W + x]; let ok = 1;
@@ -251,6 +268,7 @@ async function analyze(ph, shot) {
   const popMask = (which) => {
     if (which === 'all') return () => true;
     if (which === 'uniform-grass') return (i) => cls[i] === 2 && uniform[i];
+    if (which in GRASS_BIN) { const bi = GRASS_BIN[which]; return (i) => gb[i] === bi; }
     const code = CODE[which]; return (i) => cls[i] === code;
   };
   const rowsOut = [];
@@ -295,6 +313,7 @@ async function analyze(ph, shot) {
   console.log(`场景   : seed=${SEED} size=${SIZE} devreveal=1 视口 1280x${VH}(emulation,dpr1) => 画布 1280x${VH - 80}`);
   console.log(`相位   : ${PHASES.join(', ')}　（0.22=正午 0.68=深夜）`);
   console.log(`population: ${requestedPops.join(', ')}`);
+  console.log(`草分层 : grass-bright L*>=${GRASS_L_BRIGHT} ｜ grass-mid ${GRASS_L_MID}<=L*<${GRASS_L_BRIGHT} ｜ grass-dark 22<=L*<${GRASS_L_MID}（tintab 内单一权威定义，与 §15.4 (α) 基线表同切法）`);
   console.log('口径   : 净贡献=同像素画/不画之差；覆盖判据=通道差；ΔE=CIE76；色盲=Machado deuteranopia(1.0)');
 console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**（列头已标）—— 与 reachmeas.mjs 口径不同，引用时须连统计量一起报');
   console.log('');
