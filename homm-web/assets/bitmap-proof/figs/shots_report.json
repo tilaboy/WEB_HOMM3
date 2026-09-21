@@ -1,0 +1,42 @@
+{
+  "shots": [
+    {
+      "id": "phone",
+      "note": "真机横屏口径 792×320 @DPR3",
+      "cssW": 792,
+      "cssH": 320,
+      "dpr": 3,
+      "before": "before_phone.png",
+      "after": "after_phone.png",
+      "inject": {
+        "ok": true,
+        "brandW": 524,
+        "brandH": 191,
+        "imgW": 128,
+        "imgH": 191,
+        "natural": "256x384",
+        "imgRatio": 0.5
+      },
+      "injectedFrom": "assets/_pipeline/out/b_crestL_p1.png"
+    },
+    {
+      "id": "desk",
+      "note": "桌面口径 1280×900（立绘 1:1）",
+      "cssW": 1280,
+      "cssH": 900,
+      "dpr": 1,
+      "before": "before_desk.png",
+      "after": "after_desk.png",
+      "inject": {
+        "ok": true,
+        "brandW": 488,
+        "brandH": 383,
+        "imgW": 256,
+        "imgH": 383,
+        "natural": "256x384",
+        "imgRatio": 1
+      },
+      "injectedFrom": "assets/_pipeline/out/b_crestL_p1.png"
+    }
+  ]
+}

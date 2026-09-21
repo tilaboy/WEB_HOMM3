@@ -1,0 +1,120 @@
+{
+  "checkedAt": "2026-09-21T02:42:11.622Z",
+  "items": [
+    {
+      "artifact": "assets/_pipeline/out/b_crestL_p1.png",
+      "rows": [
+        [
+          "尺寸",
+          "256×384",
+          "PASS"
+        ],
+        [
+          "color type",
+          "3（3 = PNG-8 索引色）",
+          "PASS"
+        ],
+        [
+          "bit depth / interlace",
+          "8 / 0",
+          "PASS"
+        ],
+        [
+          "PLTE 色数",
+          "24（≤32）",
+          "PASS"
+        ],
+        [
+          "tRNS 长度 / 是否只含 0|255",
+          "24 / 实测 alpha 集合 0,255",
+          "PASS"
+        ],
+        [
+          "实际用色数",
+          "23",
+          "PASS"
+        ],
+        [
+          "文件字节",
+          "5704 B（预算 ≤24576）",
+          "PASS"
+        ],
+        [
+          "内联 base64 预估",
+          "7608 B",
+          "—"
+        ],
+        [
+          "断言1 洋红/粉残留",
+          "0 px",
+          "PASS"
+        ],
+        [
+          "水印区(x≥82%,y≥92%)不透明像素",
+          "0 px",
+          "PASS（水印像素已不在）"
+        ]
+      ]
+    },
+    {
+      "artifact": "(e) 双方独立复跑对照",
+      "rows": [
+        [
+          "对方（单帧 cu_p1_lampbearer 64×56）",
+          "平均|ΔL*| 0.00 / 变化 0.0%",
+          "PASS"
+        ],
+        [
+          "本档（三帧 map 52×44 + idle/atk 64×56）",
+          "平均|ΔL*| ∈ [0.00, 0.00]",
+          "PASS"
+        ],
+        [
+          "结论一致性",
+          "两条独立路径都得 0.00",
+          "PASS（互证）"
+        ]
+      ]
+    }
+  ],
+  "notes": [],
+  "b": {
+    "header": {
+      "colorType": 3,
+      "bitDepth": 8,
+      "interlace": 0,
+      "width": 256,
+      "height": 384,
+      "plte": 24,
+      "trnsLen": 24
+    },
+    "colors": 23,
+    "bytes": 5704,
+    "residualPink": 0,
+    "watermarkOpaquePx": 0
+  },
+  "eCross": {
+    "theirs": {
+      "meanAbsL": 0,
+      "maxL": 0,
+      "changedPct": 0
+    },
+    "mine": [
+      {
+        "name": "u_p1_lampbearer_map",
+        "meanAbsL": 0,
+        "changedPct": 0
+      },
+      {
+        "name": "cu_p1_lampbearer",
+        "meanAbsL": 0,
+        "changedPct": 0
+      },
+      {
+        "name": "cu_p1_lampbearer_atk",
+        "meanAbsL": 0,
+        "changedPct": 0
+      }
+    ]
+  }
+}
