@@ -62,6 +62,15 @@ export interface GameConfig {
   opponents: number;
   difficulty: Difficulty;
   playerName: string;
+  /**
+   * 试玩场景 id（见 `core/data/scenarios.ts`）。**缺省 = 自由对局**：
+   * 所有场景分支都不走 ⇒ 生成结果与引入场景之前**逐字节一致**
+   * （`playtest-scenarios.md §4 A1` 的"零改动回滚底线"）。
+   *
+   * 只存 **id 字符串**（不存整个 `ScenarioDef`）⇒ 存档结构只多这一个可选字段，
+   * `VERSION` 不动（§1.3 #6，与 difficulty 那次同一判断）。
+   */
+  scenario?: string;
 }
 
 export const MAP_SIZES: Record<MapSize, { width: number; height: number; name: string }> = {

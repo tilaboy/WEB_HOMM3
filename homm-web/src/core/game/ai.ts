@@ -6,7 +6,7 @@ import { MARKET_RATES, marketBuy } from './town.js';
 import type { TradableResource } from './town.js';
 import { getUnit } from '../data/units.js';
 import { mulberry32, deriveSeed, shuffle } from '../rng.js';
-import { idx } from '../map/grid.js';
+import { idx, isPassable } from '../map/grid.js';
 import { buildPath, computePaths, stepCost } from '../map/pathfinding.js';
 import { revealAround, isRevealed } from '../map/fog.js';
 import { HERO_SIGHT } from '../map/generator.js';
@@ -39,6 +39,7 @@ import {
 } from './town.js';
 import { pushLog } from './log.js';
 import { isEliminated } from './victory.js';
+import { SCENARIO_BY_ID } from '../data/scenarios.js';
 
 /**
  * 电脑对手（"影子领主"）。设计目标不是聪明，而是**可信**：
@@ -59,6 +60,20 @@ const BUILD_ORDER = [
 
 /** 出兵门槛：起始 20 弓手 = 200 血。aggression 越低越早出门。 */
 const BASE_COMMIT = 200;
+
+/**
+ * 场景 `rush` 的候选权重（图二）。**它不是"覆盖"，是"一个候选"** —— 和附近值得抢的矿、
+ * 打得赢的怪同场竞争，但它**必须高到能压过"顺路打只怪 / 捡堆资源"**：否则 AI 一路开打、
+ * 部队被磨光、到不了对面（实测：权重 ≤300 时接触日中位 >21 天，FAIL）。
+ *
+ * **实测阈值（8 seeds · `tools/contactaudit.mjs`）**：`≤300` ⇒ 中位 >21（FAIL）；
+ * `≥400` ⇒ 中位 **7 天**（PASS）。取 450 留余量。它仍**低于"要回家补兵"的上限 pull**
+ * （wounded 400 + 池/驻军最多再 +420）⇒ 该回家时照样回家，不会为冲而弃守。
+ *
+ * ⚠️ 与规格 §1.3 #5 的措辞（原写"**低权重候选**"）有出入：实测"低权重"达不到规格自己
+ * 的 4–6 天验收 —— 已在交付说明里如实回报，供主理人裁。
+ */
+const RUSH_BIAS = 450;
 
 interface Candidate {
   pos: GridPos;
@@ -321,6 +336,25 @@ function scarcityNeed(stock: Record<string, number | undefined>, res: string): n
   return 1 + Math.min(1, missing) * 1.2;
 }
 
+/**
+ * AI 是否**已经见过玩家（人类）的任何资产**：英雄 / 城镇 / 已占领的矿。
+ * 用于把 `rush` 钉在"初始倾向"而非"全图透视"（`playtest-scenarios §3.5` 裁定）。
+ */
+function hasSeenAnyAssetOf(state: GameState, ai: FactionId, foe: FactionId, seen: (p: GridPos) => boolean): boolean {
+  for (const h of Object.values(state.heroes)) {
+    if (h.owner === foe && h.owner !== ai && seen(h.pos)) return true;
+  }
+  for (const t of Object.values(state.towns)) {
+    if (t.owner === foe && seen(t.pos)) return true;
+  }
+  for (const obj of Object.values(state.map.objects)) {
+    if (obj.kind === 'mine' && (obj.payload as { owner?: string } | null)?.owner === foe && seen(obj.pos)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate | null {
   const field = computePaths(state, hero.pos, Infinity);
   const m = state.map;
@@ -485,6 +519,91 @@ function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate 
       const pull =
         Math.min(120, pool * 22) + (surplus > 0 ? Math.min(300, surplus * 0.4) : 0) + (wounded ? 400 : 0);
       candidates.push({ pos: town.pos, kind: 'home', score: pull - cost * 0.03 });
+    }
+  }
+
+  // 场景「rush」（图二）：**仅在"尚未见过任何玩家资产之前"**，把"朝玩家主城推进"
+  // 作为**一个候选**加进来 —— 沿用同一套候选评分，谁分高谁去（不是无脑覆盖）。
+  //
+  // 这是主理人批准的"脚本化初始倾向"（`playtest-scenarios §3.5` 裁定）；它**不透视**：
+  // 一旦 AI 见过玩家的英雄/城/矿（任一处），本条立即失效，回到常规候选。
+  const intent = state.config?.scenario
+    ? SCENARIO_BY_ID[state.config.scenario]?.aiIntent
+    : undefined;
+  if (intent === 'rush' && !hasSeenAnyAssetOf(state, player, 'p1', seen)) {
+    // 人类玩家固定 p1（见 types.ts）。主城没了（被灭）就不追。
+    const foeHome = state.towns['town_home'];
+    if (foeHome && foeHome.owner === 'p1') {
+      const W = m.width;
+      const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+      /** 这个格"会打起来"或"挡路"（野怪/宝库/城/障碍）—— rush 的行军要绕开它们。 */
+      const isFight = (x: number, y: number): boolean => {
+        const oid = m.tiles[y * W + x]?.objectId;
+        if (!oid) return false;
+        const o = m.objects[oid];
+        return !!o && (o.blocking || o.kind === 'wanderingMonster' || o.kind === 'vault' || o.kind === 'town');
+      };
+      const free = (x: number, y: number): boolean =>
+        x >= 0 && y >= 0 && x < W && y < m.height && isPassable(m, x, y) && !isFight(x, y);
+
+      // ① 从玩家主城做一次"只走空格"的 BFS（8 邻域）⇒ 得到"朝目标多远"的梯度
+      const bdist = new Int32Array(W * m.height).fill(-1);
+      const gi = foeHome.pos.y * W + foeHome.pos.x;
+      bdist[gi] = 0;
+      const queue = [gi];
+      for (let qi = 0; qi < queue.length; qi++) {
+        const cur = queue[qi];
+        const cx = cur % W;
+        const cy = (cur / W) | 0;
+        for (const [dx, dy] of DIRS8) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (!free(nx, ny)) continue;
+          const ni = ny * W + nx;
+          if (bdist[ni] !== -1) continue;
+          bdist[ni] = bdist[cur] + 1;
+          queue.push(ni);
+        }
+      }
+      // ② 英雄侧沿梯度走出一条"朝目标且不穿战斗格"的链
+      const chain: GridPos[] = [];
+      let cur = { x: hero.pos.x, y: hero.pos.y };
+      for (let i = 0; i < 96; i++) {
+        const here = bdist[cur.y * W + cur.x];
+        if (here < 0) break; // 英雄与目标之间**没有"不打仗"的通路**（唯一的桥被守卫卡死）
+        let best: GridPos | null = null;
+        let bestD = here;
+        for (const [dx, dy] of DIRS8) {
+          const nx = cur.x + dx;
+          const ny = cur.y + dy;
+          if (!free(nx, ny)) continue;
+          const d = bdist[ny * W + nx];
+          if (d >= 0 && d < bestD) {
+            bestD = d;
+            best = { x: nx, y: ny };
+          }
+        }
+        if (!best) break;
+        chain.push(best);
+        cur = best;
+        if (bdist[cur.y * W + cur.x] === 0) break;
+      }
+      // ③ 取链上**最远**、且 `aiMarch` 真正会走的那条路（`buildPath`，它不看物件）**不穿战斗格**的一点。
+      //    为什么不是"下一格"：那会变成一天挪 1 格，40 格要 40 天。
+      //    为什么不是"主城那个远点"：`aiMarch` 的 repath 忽略物件，会从一只打不过的野怪身上
+      //    穿过去、到那儿就停 ⇒ 若一直锁着同一个远点就**永久卡死**（实测 seed 1000：英雄卡在
+      //    (27,12)，路被 (27,11) 的野怪挡住，第 5 天停到第 21 天）。
+      let waypoint: GridPos | null = null;
+      for (let i = chain.length - 1; i >= 0; i--) {
+        const T = chain[i];
+        const path = buildPath(state, field, hero.pos, T);
+        if (!path.length) continue;
+        if (path.every((s) => !isFight(s.x, s.y))) {
+          waypoint = T;
+          break;
+        }
+      }
+      if (waypoint) candidates.push({ pos: waypoint, kind: 'loot', score: RUSH_BIAS });
     }
   }
 

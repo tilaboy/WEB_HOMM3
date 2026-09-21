@@ -31,6 +31,9 @@ import { mulberry32, randInt, shuffle, pick } from '../rng.js';
 import { maxMovePoints } from '../game/hero.js';
 import { castleCells, idx, isPassable } from './grid.js';
 import { revealAround } from './fog.js';
+// 试玩场景的生成期覆盖 / 生成后盖章。**无 scenario 时不参与任何分支** ⇒ 自由对局零变化。
+// （本模块 ↔ scenarios.ts 只有**类型**上的引用，编译后被擦除，不构成运行时循环依赖。）
+import { SCENARIO_BY_ID } from '../data/scenarios.js';
 
 export const BASE_MOVE_POINTS = 1800;
 export const HERO_SIGHT = 5;
@@ -658,7 +661,7 @@ export type GenOptions = Partial<GameConfig>;
 function normalizeConfig(opts: number | GenOptions): GameConfig {
   const o: GenOptions = typeof opts === 'number' ? { seed: opts } : opts;
   const rawName = (o.playerName ?? '').trim();
-  return {
+  const cfg: GameConfig = {
     size: o.size ?? DEFAULT_CONFIG.size,
     seed: o.seed ?? Math.floor(Math.random() * 1e9),
     // 老存档/老调用没有 layout 字段：补成旷野，行为与 M7 完全一致
@@ -667,6 +670,10 @@ function normalizeConfig(opts: number | GenOptions): GameConfig {
     difficulty: o.difficulty ?? DEFAULT_CONFIG.difficulty,
     playerName: rawName || DEFAULT_CONFIG.playerName,
   };
+  // 试玩场景 id **只在有值时**挂上：自由对局的 config 因此没有这个键 ⇒ 与引入场景前
+  // **逐字节一致**（A1 回滚底线；若是无条件写 `scenario: undefined`，`toEqual` 类比较会多一个键）。
+  if (o.scenario) cfg.scenario = o.scenario;
+  return cfg;
 }
 
 export function createGame(opts: number | GenOptions = {}): GameState {
@@ -693,6 +700,14 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   const h = size.height;
   /** 物件密度按面积缩放，小图不至于挤满、大图不至于空旷。 */
   const k = (w * h) / (MAP_SIZES.medium.width * MAP_SIZES.medium.height);
+
+  /**
+   * 试玩场景的**生成期覆盖**（`core/data/scenarios.ts`）。`cfg.scenario` 缺省 ⇒ `gen`
+   * 为 undefined ⇒ 下面每个覆盖点都落到 `?? 现值` 的右侧 ⇒ 自由对局与引入场景之前
+   * **逐字节一致**（`playtest-scenarios.md §4 A1` 的零改动回滚底线）。
+   */
+  const gen = cfg.scenario ? SCENARIO_BY_ID[cfg.scenario]?.gen : undefined;
+  const scen = cfg.scenario ? SCENARIO_BY_ID[cfg.scenario] : undefined;
 
   const { map } = buildTerrain(seed, w, h, cfg.layout);
   keepLargestLandmass(map);
@@ -740,7 +755,8 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   });
 
   // 2. 中立城：放在中等距离的内陆，别再塞进地图角落；对手越多中立城越少
-  const neutralCount = Math.max(
+  //    （场景覆盖：图一 = 0 座 —— 教学图不要"抢城"这个变量。）
+  const neutralCount = gen?.neutralTowns ?? Math.max(
     2,
     Math.round(3 * k) - Math.round(cfg.opponents * 0.5),
   );
@@ -852,9 +868,10 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   };
 
   // 野怪：按距最近主城的距离分档，每支都守着一份战利品
-  const weakMax = 9 * k;
-  const midMax = 18 * k;
-  const monsterCount = Math.max(6, Math.round(18 * k));
+  // 场景覆盖：图一 = 全图只有弱怪（分档阈值抬到 ∞）+ 只留 5 只，给教学留呼吸空间。
+  const weakMax = gen?.monsterTierBand?.weakMax ?? 9 * k;
+  const midMax = gen?.monsterTierBand?.midMax ?? 18 * k;
+  const monsterCount = gen?.monsterCount ?? Math.max(6, Math.round(18 * k));
   const monsterSpots: { p: GridPos; tier: 'weak' | 'mid' | 'strong' }[] = [];
   for (let i = 0; i < monsterCount; i++) {
     const p = takeSpot();
@@ -962,7 +979,7 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   }
 
   // 3) 宝库区：重兵守着的一库金子，打赢才拿得到，拿完就没了
-  const vaultCount = Math.max(2, Math.round(3 * k));
+  const vaultCount = gen?.vaults ?? Math.max(2, Math.round(3 * k));
   for (let i = 0; i < vaultCount; i++) {
     const p = takeWhere((q) => deepness(q) >= 13 * kl);
     if (!p) continue;
@@ -992,7 +1009,11 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
 
   // 4) 隘口守卫：给每处深处的宝贝配一个"卡在路口"的强档野怪
   //    走廊格 = 正交邻居里恰好两个能走、而且是正对的一对（南北通或东西通）
+  //    场景覆盖：图一 = false —— 实测"守卫必须比目标更靠近主城"这条规则会让强档怪
+  //     unavoidably 贴近主城（小图 1.5 天圈内 4~13 只）；教学期不能出现"打不过又绕不开"的仗。
+  const doChokepointGuards = gen?.chokepointGuards !== false;
   for (const target of deepSpots) {
+    if (!doChokepointGuards) break;
     const targetD = dNearestHome(target);
     /** 找守卫位：优先真正的走廊格，找不到就退而求其次挑最窄的那一格。 */
     let best: { p: GridPos; score: number } | null = null;
@@ -1086,6 +1107,58 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
       kind: 'artifact', pos: p, payload: { artifactId: artifactPool[i] },
       once: true, blocking: false, visitedBy: [],
     });
+  }
+
+  /* ---------------- 场景盖章（生成后 · 独立 rng 流） ---------------- */
+
+  // 图二「中线门控」（`playtest-scenarios §3.2`）：在两家主城连线的**中点附近**、按
+  // **现有隘口评分**取最优空格，放 1 只中档怪 + 一份厚金奖励 ⇒ 形成"谁先打过谁先过"的竞赛。
+  //
+  // ⚠️ **红线**（§1.3）：本段是全场**唯一"新增一次生成"**的钩子，**必须用独立 rng**。
+  // 接着用主 `rng` 会移动它的调用序列 ⇒ 同种子生成的地形/城镇/野怪整体错位 ⇒
+  // "同种子同图"这条对玩家的承诺就破了。故只用 `mulberry32(seed ^ 0x9e3779b9)`。
+  if (scen?.stamp?.midGuard && homeSpots.length >= 2) {
+    const rng2 = mulberry32(seed ^ 0x9e3779b9);
+    const a = homeSpots[0];
+    const b = homeSpots[1];
+    const mid = { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2) };
+    let best: { p: GridPos; score: number } | null = null;
+    for (let dy = -8; dy <= 8; dy++) {
+      for (let dx = -8; dx <= 8; dx++) {
+        const x = mid.x + dx;
+        const y = mid.y + dy;
+        if (!walkable(x, y)) continue;
+        const cell = idx(map, x, y);
+        if (map.tiles[cell].objectId || reach[cell] !== 1) continue;
+        const n = walkable(x, y - 1);
+        const s = walkable(x, y + 1);
+        const e = walkable(x + 1, y);
+        const w2 = walkable(x - 1, y);
+        const open = [n, s, e, w2].filter(Boolean).length;
+        if (open === 0) continue;
+        const corridor = (n && s && !e && !w2) || (e && w2 && !n && !s);
+        // 与隘口守卫同一套评分：走廊格 10 分底分，普通格按"越窄越好"折算，再减一点偏离中点
+        const score =
+          (corridor ? 10 : 4 - open * 0.1 + (open === 2 ? 2 : 0)) * 10 - (Math.abs(dx) + Math.abs(dy));
+        if (!best || score > best.score) best = { p: { x, y }, score };
+      }
+    }
+    // 找不到合适格（§6.2 风险③）⇒ 宁缺勿错，不退化到随机点
+    if (best) {
+      const { tier, reward } = scen.stamp.midGuard;
+      placer.add({
+        kind: 'wanderingMonster',
+        pos: best.p,
+        payload: {
+          army: monsterArmy(rng2, tier, diff.monsterMul),
+          tier,
+          guard: { kind: 'gold', amount: randInt(rng2, reward.amount[0], reward.amount[1]) },
+        },
+        once: true,
+        blocking: false,
+        visitedBy: [],
+      });
+    }
   }
 
   /* ---------------- state ---------------- */
