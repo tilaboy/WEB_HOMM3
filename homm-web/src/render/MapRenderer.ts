@@ -87,13 +87,15 @@ function guardMarker(obj: MapObject): string | null {
 /**
  * ④ 可达范围两色（替换底部常驻移动力条）。
  * - 可走：青蓝填充（用户原话"蓝色或绿色"），沿用旧值。
- * - 不可走：红，但**面积远大于可走** ⇒ alpha 取**可走的一半以下**，
- *   靠对比/边界读出"哪里去不了"，而不是靠填色把地形和符号一起糊住。
- * 两色都只画在**已揭开的地面**上、且在实体循环之前（见 draw() 里的位置说明）。
+ * - 不可走：**只描格缘，不填色**。两条硬理由：
+ *   ① 实测（engineering-lead-2 正午/深夜两张同 seed 图）：原 0.07 红填充**肉眼不可辨**
+ *      —— 填了等于没填，却要为**每一格不可达格**（面积远大于可达）多付一次 `fillRect`，
+ *      是热路径上的净浪费（且 team-lead 判据 =「靠格缘而不是靠填色」去区分）；
+ *   ② 非色兜底 = 这圈**红格缘**（形状/边界线索），色觉障碍者也读得出"可达性的边"。
+ * 两态都只画在**已揭开的地面**上、且在实体循环之前（见 draw() 里的位置说明）。
  */
 const REACH_TINT = 'rgba(120,200,255,0.16)';
-const NOGO_TINT = 'rgba(255,96,80,0.07)';
-/** 可达范围的红色外缘（格缘）：比填充明显，专供"读到边界在哪"。 */
+/** 可达范围的红色外缘（格缘）：唯一承载"不可走"的线索，比任何填充都明显。 */
 const NOGO_EDGE = 'rgba(255,96,80,0.42)';
 
 export class MapRenderer {
@@ -437,38 +439,38 @@ export class MapRenderer {
       }
     }
 
-    /* --- ④ 可达范围染色：可走=蓝、不可走=红（替换底部那条常驻移动力条）---
+    /* --- ④ 可达范围染色：可走=蓝、不可走=红格缘（替换底部那条常驻移动力条）---
        位置**保持在世界坐标、实体循环之前**（与旧版一致）。这不是偷懒：
-       世界坐标在 561 的 `ctx.restore()` 结束，而 `applyLighting`(564) 是**屏幕空间**
-       且在实体循环(501–559)之后 ⇒ 把染色"搬"到光照之后，会**既错坐标、又盖住单位**。
-       唯一能同时满足「不遮单位/建筑」与「只在已揭开地面」的画法，就是留在这里。
-       不可走的面积远大于可走 ⇒ 红用**更低一档 alpha 填充**，并给可达范围的**外缘描一圈红线**
-       （team-lead「靠格缘而不靠填色去区分」）——外缘才是要读的那条线。 --- */
+       世界坐标在 `ctx.restore()` 结束，而 `applyLighting` 是**屏幕空间**
+       且在实体循环之后 ⇒ 把染色"搬"到光照之后，会**既错坐标、又盖住单位**。
+       team-lead 的"夜间也要读得出"改用**对比度**解决（蓝填充 + 清晰红格缘），不改管线。
+       不可走**只描格缘、不填色**（填色实测不可辨且面积巨大，见常量处注释）；
+       红线只画在**已揭开**、且外邻落在**可达区**（含英雄自身格）的那一侧。 --- */
     const cost = vm.reachable;
     if (cost) {
-      const walkable = (x: number, y: number): boolean => {
+      // 前沿判定：**含英雄自身格**（Dijkstra 起点 cost===0 也属于可达区），
+      // 并要求相邻格**已揭开**（未探索处不出红线，否则红线会顺迷雾边界乱爬）。
+      const inRegion = (x: number, y: number): boolean => {
         if (x < 0 || y < 0 || x >= map.width || y >= map.height) return false;
-        const c = cost[idx(map, x, y)];
-        return isFinite(c) && c > 0;
+        if (!isRevealed(state, player, x, y)) return false;
+        return isFinite(cost[idx(map, x, y)]);
       };
       for (let y = y0; y <= y1; y++) {
         for (let x = x0; x <= x1; x++) {
           if (!isRevealed(state, player, x, y)) continue; // 未探索不染色
           const c = cost[idx(map, x, y)];
           if (isFinite(c) && c > 0) {
-            ctx.fillStyle = REACH_TINT;
+            ctx.fillStyle = REACH_TINT; // 可走：蓝填充
             ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
             continue;
           }
-          if (c === 0) continue; // 英雄所在格：不着色（保持干净）
-          ctx.fillStyle = NOGO_TINT;
-          ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
-          // 可达范围的外缘：只在紧邻可走格的那一侧描 2px 红线
+          if (isFinite(c)) continue; // 英雄自身格（c===0）：在可达区内部，不填不描
+          // 不可走：只在紧邻可达区的那一侧描 2px 红格缘（填色已删，见常量处注释）
           ctx.fillStyle = NOGO_EDGE;
-          if (walkable(x, y - 1)) ctx.fillRect(x * TILE, y * TILE, TILE, 2);
-          if (walkable(x, y + 1)) ctx.fillRect(x * TILE, y * TILE + TILE - 2, TILE, 2);
-          if (walkable(x - 1, y)) ctx.fillRect(x * TILE, y * TILE, 2, TILE);
-          if (walkable(x + 1, y)) ctx.fillRect(x * TILE + TILE - 2, y * TILE, 2, TILE);
+          if (inRegion(x, y - 1)) ctx.fillRect(x * TILE, y * TILE, TILE, 2);
+          if (inRegion(x, y + 1)) ctx.fillRect(x * TILE, y * TILE + TILE - 2, TILE, 2);
+          if (inRegion(x - 1, y)) ctx.fillRect(x * TILE, y * TILE, 2, TILE);
+          if (inRegion(x + 1, y)) ctx.fillRect(x * TILE + TILE - 2, y * TILE, 2, TILE);
         }
       }
     }
