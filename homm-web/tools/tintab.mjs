@@ -15,7 +15,20 @@
  *        它量的是该色在**整图**上的全部出现（物件描边也是 ink0）、**非只量 ④ 格缘** ⇒ 当不了验收数 ⇒ 撤代码。
  *        （**别把它读成"旁证缺失"**：撤的是一件不能当验收数的东西，不是"少了一个交付"。）
  *     ⚠️ 旗标形 `--edge` 从未存在（这条原先是对的，保留）
- *   差分口径 + population + ΔE*ab + 色盲 ⇒ 本文件；**WCAG 列降级为"参考"**，验收数不看它。
+ *   差分口径 + population + ΔE*ab + 色盲 ⇒ 本文件；**WCAG 列（中位/均值两列）均为"参考"**，验收数不看它。
+ *
+ * ## ★ 同格两数纪律（2026-09-21 team-lead 裁 · 本会话最该沉淀的一条）
+ * **同一个格子出现两个数时 —— 不许删掉其中一个，也不许并排留白**；必须同时给出：
+ *   ① **各自标注它的统计量**（如 `WCAG均值(参考)` / `WCAG中位`）；
+ *   ② **指明哪一个才是判据**（本 ④ 的判据 = **中位**，出处 `tools/reachmeas.mjs`）；
+ *   ③ 说明**哪些结论建在哪个量上**（例：本文件的「两极其一 ≥3:1」互补性结论建在 **`ΔL*` 中位**上，
+ *      与 WCAG 的均值/中位之争无涉）。
+ * 理由：本会话反复出事的形状 = **「并列的两个数被默认为同源」** / **「同一个量出现两个数」**。
+ *   **长期解不是"只留一个数"（那会丢信息），而是"让每个数自带身份"。**
+ * ⚠️ **可检验的判读**：**`中位 > 均值`** 是"两数不矛盾"的一条**方向性证据**（右偏分布下成立）——
+ *   用它**证**"两数只是口径/统计量不同"，而不是靠嘴说"它们口径不同"。
+ *   实例：`水` 亮芯 WCAG **均值 4.58 / 4.42 / 3.37**（本文件，`#138` 前）vs **中位 4.71 / 4.79 / 3.64**（`#138` 后）
+ *   ⇒ 中位 > 均值 ⇒ **同批像素、两个统计量**，非数据漂移。
  *
  * ## 族（从 **dist** 解析，不写死）
  * `REACH_*` → `fill`；`*INK*` → `ink`；`*GLOW*` → `glow`；其余 `NOGO_*` / `*EDGE*` → `edge`。
@@ -339,9 +352,29 @@ async function analyze(ph, shot, identityBuf) {
     if (which in GRASS_BIN) { const bi = GRASS_BIN[which]; return (i) => gb[i] === bi; }
     const code = CODE[which]; return (i) => cls[i] === code;
   };
+  /* ★ 该类变化总数（守恒断言右端 · team-lead 裁定三 `12d99d1`）：
+   *   = 该类里"被**任一**染色带触及"的像素数 = 四带变化集在测量窗内的**并集**。
+   *   ⇒ `Σ(四带 n) == 该类变化总数`；不等 ⇒ 有像素没归入任何带 ⇒ **FAIL 并报缺口**。
+   *   （血案：`±3 墨核 15` vs `类全量 11094` —— "带的和"必须等于"类的全量"。） */
+  const famImg = {};
+  const anyChg = new Uint8Array(N);
+  for (const fam of FAMILIES) {
+    const img = await raw(modes[fam]);
+    famImg[fam] = img;
+    for (let y = gy0; y < gy1; y++) for (let x = 0; x < W; x++) {
+      const o = (y * W + x) * C4;
+      if (Math.abs(img.d[o] - B.d[o]) > 4 || Math.abs(img.d[o + 1] - B.d[o + 1]) > 4 || Math.abs(img.d[o + 2] - B.d[o + 2]) > 4) anyChg[y * W + x] = 1;
+    }
+  }
+  const popTotal = new Map();
+  for (const pop of requestedPops) {
+    const mask = popMask(pop); let t = 0;
+    for (let y = gy0; y < gy1; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (anyChg[i] && mask(i)) t++; }
+    popTotal.set(pop, t);
+  }
   const rowsOut = [];
   for (const fam of FAMILIES) {
-    const withImg = await raw(modes[fam]);
+    const withImg = famImg[fam];
     for (const pop of requestedPops) {
       const mask = popMask(pop);
       const Ls = [], Es = [], Cs = [], Ws = [];
@@ -363,10 +396,10 @@ async function analyze(ph, shot, identityBuf) {
       const pct = (a, t) => (a.length ? (100 * a.filter((v) => v < t).length) / a.length : NaN);
       /* ★ 加 WCAG 中位（Wc）：team-lead #138 要求四统计量**统一取中位**以做 A/B 减差；
        *   原 WCAG 列是**均值**（`wcag`），保留不动（统计量纪律：同格两数须连统计量一起报）。 */
-      rowsOut.push({ fam, pop, n, L: med(Ls), E: med(Es), C: med(Cs), cvdBelow: pct(Cs, 2.22), wcag: n ? sw / n : NaN, Wc: med(Ws) });
+      rowsOut.push({ fam, pop, n, L: med(Ls), E: med(Es), C: med(Cs), cvdBelow: pct(Cs, 2.22), wcag: n ? sw / n : NaN, Wc: med(Ws), total: popTotal.get(pop) });
     }
   }
-  return { meta, rowsOut };
+  return { meta, rowsOut, popTotal };
 }
 
 /* ------------------------------------------------------------------ 主流程 */
@@ -407,15 +440,22 @@ console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**�
   for (const ph of PHASES) {
     const shot = shots[ph];
     for (const [mode, buf] of Object.entries(shot.modes)) writeFileSync(path.join(OUT, `tint_${ph}_${mode}.png`), buf);
-    const { meta, rowsOut } = await analyze(ph, shot, shots.identity);
+    const { meta, rowsOut, popTotal } = await analyze(ph, shot, shots.identity);
     console.log(`########## devlight=${ph}  canvas ${meta.canvas.w}x${meta.canvas.h} dpr ${meta.dpr} hero(${meta.hero.x},${meta.hero.y})`);
     console.log(`  fillRect 命中：${FAMILIES.map((f) => `${f}x${shot.hits[f]}`).join('  ')}`);
     for (const f of FAMILIES) if (!shot.hits[f]) { missing = true; console.log(`  [!] 族「${LABEL[f]}」命中 0 —— 颜色/名字可能已改，该族无效，勿引用！`); }
-    console.log('  族        | population      | 像素数 | ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG中位 | WCAG均值(参考)');
+    console.log('  族        | population      | 像素数 | ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG中位 | WCAG均值(参考) | 该类变化总数');
     for (const r of rowsOut) {
-      console.log(`  ${LABEL[r.fam]} | ${r.pop.padEnd(15)} | ${String(r.n).padStart(6)} | ${f2(r.L).padStart(7)} | ${f2(r.E).padStart(9)} | ${f2(r.C).padStart(10)} | ${(Number.isFinite(r.cvdBelow) ? r.cvdBelow.toFixed(0) + '%' : '-').padStart(8)} | ${f2(r.Wc).padStart(7)} | ${f2(r.wcag)}${r.n < MIN_N ? '  ⚠样本不足' : ''}`);
-      console.log(`##ROW\t${ph}\t${r.fam}\t${r.pop}\t${r.n}\t${f2(r.L)}\t${f2(r.E)}\t${f2(r.C)}\t${f2(r.Wc)}\t${f2(r.wcag)}`);
+      console.log(`  ${LABEL[r.fam]} | ${r.pop.padEnd(15)} | ${String(r.n).padStart(6)} | ${f2(r.L).padStart(7)} | ${f2(r.E).padStart(9)} | ${f2(r.C).padStart(10)} | ${(Number.isFinite(r.cvdBelow) ? r.cvdBelow.toFixed(0) + '%' : '-').padStart(8)} | ${f2(r.Wc).padStart(7)} | ${f2(r.wcag).padStart(10)} | ${String(r.total ?? '-').padStart(12)}${r.n < MIN_N ? '  ⚠样本不足' : ''}`);
+      console.log(`##ROW\t${ph}\t${r.fam}\t${r.pop}\t${r.n}\t${f2(r.L)}\t${f2(r.E)}\t${f2(r.C)}\t${f2(r.Wc)}\t${f2(r.wcag)}\t${r.total}`);
     }
+    /* ★ 守恒断言（team-lead 裁定三）：Σ(四带 n) == 该类变化总数；不等 = 有像素没归属 ⇒ 报缺口。 */
+    const sumN = new Map();
+    for (const r of rowsOut) sumN.set(r.pop, (sumN.get(r.pop) || 0) + r.n);
+    console.log(`  守恒断言 Σ(四带n) == 该类变化总数: ${requestedPops.map((p) => {
+      const s = sumN.get(p) || 0, t = popTotal.get(p) || 0, gap = s - t;
+      return `${p} Σ=${s} 类=${t} ${gap === 0 ? '✓' : `✗缺口${gap > 0 ? '+' : ''}${gap}`}`;
+    }).join('  |  ')}`);
     console.log('');
   }
   console.log(`指纹后 : src ${fpAfter.src.sha1} | dist ${fpAfter.dist.sha1} @ ${fpAfter.dist.m} | main ${fpAfter.main.sha1} @ ${fpAfter.main.m}`);
