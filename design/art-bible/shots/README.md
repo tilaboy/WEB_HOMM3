@@ -117,7 +117,7 @@ node tools/deviceshot.mjs out.png '<游戏URL>'            high
 | `e3_dprcap_3p0.png` | 上述 URL · **tier=high**（不传 `devdpr`） | ② 渲染倍率（高） |
 | `e4_tier_low.png` / `e4_tier_high.png` | 上述 URL · 只差档位 | ③ 档位 |
 | `e5_null_b.png` | 上述 URL · **tier=high**，与 `e4_tier_high.png` 同配置 | ④ 零假设（噪声底） |
-| `e2_shade_off.png` / `e2_shade_on.png` | ⚠️ **不是本表口径**（未锁档位，并行实例抓） | 只能看效果，**不要拿它对 ①/③ 的数** |
+| ~~`e2_shade_off.png` / `e2_shade_on.png`~~ | ⚠️ **文件已移除**（撞车期第三种场景；其数并入 `measurements-visible-delta.md §5`，见文末「目录当前状态」） | 不留文件 —— **不要拿它当 ①/③** |
 | `d_chrome_*.png` / `d_live_chrome.png` | 桌面视口 / 真机实拍 | 全 UI 外观，另一条线 |
 | `h_real_dress_off.png` / `h_real_dress_on.png` | `dressshot.mjs` · **真图** `createGame(seed=20260921,size=medium)`（32×32、218 物件）· 只差 `setDressing` | 布景层 A 组 · **整图**对照 |
 | `h_real_dress_off_crop.png` / `h_real_dress_on_crop.png` | 同上图 · 裁**最挤 12×4 屏**（tile 0,9）×3 | 布景层 A 组 · **人眼可读的一屏**（`measurements-setdressing-density.md` §5） |
