@@ -13,6 +13,14 @@
  *   `WCAG=1 node tools/closureprobe.mjs <after.png> <before.png>`
  *     ⇒ 追加「缺口段 带-vs-雾」的**实测** WCAG 分布（每类：n / 中位 / 最小 / 最大）+ 判定
  *       （判据 = 该段至少有一条带 ≥3:1，team-lead ⑤）。**量实际像素色**（非标称色）。
+ *     ⛔ **人口警告（2026-09-21 实测更正）**：本模式的人口 = **紧贴雾的那一条带像素**（4 邻接）
+ *       ⇒ 而 `#155` 的带栈「红 → 亮芯 → **墨**」里**贴雾的恒是最外层的「墨」**
+ *       ⇒ **本模式只能报 `ink`、看不到亮芯** ⇒ **它答不出⑤那条判据**（会把 13.7:1 的亮芯读成"无一条带 ≥3:1" ⇒ **假阴性**）。
+ *       **答判据请用 `STACK=1`**；本模式保留（它回答的是另一个问题："紧贴雾那条带对比度多少"）。
+ *
+ *   `STACK=1 [STACK_PX=48] node tools/closureprobe.mjs <after.png> <before.png>`
+ *     ⇒ 追加「缺口段**带栈**」逐族实测 WCAG（n / 中位 / 最小 / 最大 + 实际色）——
+ *       **人口 = 整条带栈** = ⑤ 判据真正要的"该段"。默认关闭，不加则输出**逐字不变**。
  *
  * 问题（team-lead 裁定 ②）：方向信息由「闭包轮廓」承载 ⇒ 渲染上轮廓必须闭合。
  * 代码已知：`inRegion()` 对**未揭开**格返回 false，且主绘制循环对未揭开格 `continue`
@@ -207,5 +215,56 @@ if (process.env.WCAG) {
   }
   const pass = ['fill', 'edge', 'glow', 'ink'].filter((k) => bandVsFog[k].length && median(bandVsFog[k]) >= 3);
   console.log(`     ⇒ 该段可用带（中位 ≥3:1）= ${pass.length ? pass.join('/') : '（无）'}  ${pass.length ? '✅ 该段闭合可读' : '❌ 该段不闭合可读（无一条带达 3:1）'}`);
+  console.log('     ⚠️⚠️ **本表的人口 =「紧贴雾的那一条带像素」（4 邻接）** ⇒ 它**只能**看到**最外层**那一条；');
+  console.log('        而外侧恒为「墨」⇒ **本表天然答不出"该段至少有一条带 ≥3:1"**（判据要的是「该段」的**全部带**）。');
+  console.log('        要答那条判据 **必须用 `STACK=1`**（见下）；把本表的 `ink` 中位当判据 = **人口错**。');
+}
+// ★ `STACK=1`：把「缺口段的**带栈**」整段量出来 —— 回答 team-lead ⑤ 的那条判据本身。
+//   为什么要有它（2026-09-21 · `art-director` · 修 `WCAG=1` 的人口缺陷）：
+//   `WCAG=1` 只量「雾 ↔ 紧贴雾的那个变化像素」⇒ 人口 = **最外层一条带**。而 `#155` 的带栈
+//   从可达区向外是 **红(0) → 亮芯(EDGE_W) → 墨(2*EDGE_W)**（见尺子头注的栈序）⇒ **贴雾的恒是「墨」**，
+//   于是 `WCAG=1` 只可能报 `ink`，**看不到亮芯** ⇒ 会得出「该段不闭合可读」的**假阴性**。
+//   本模式改人口 = **从每个雾界像素沿"离开雾"的方向，把整条 `changed` 栈走一遍**，按族汇总
+//   ⇒ 每族各给 n / 中位 / 最小 / 最大（对比参照 = 该雾像素的实际色）。**默认关闭、默认输出逐字不变。**
+if (process.env.STACK) {
+  const UPTO = Number(process.env.STACK_PX ?? 48); // 走到这么远就停（dpr3 下一条带 ≈12px、三条 ≈36px）
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const walked = new Uint8Array(W * H);
+  const stackVsFog = { fill: [], edge: [], glow: [], ink: [] };
+  const stackCol = { fill: [], edge: [], glow: [], ink: [] };
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+    if (!isFog(x, y)) continue;
+    const fc = px(A, (y * W + x) * A.ch);
+    for (const [dx, dy] of DIRS) {
+      const nx = x + dx, ny = y + dy;
+      if (!changed[ny * W + nx] || walked[ny * W + nx]) continue;
+      walked[ny * W + nx] = 1;
+      for (let k = 0; k <= UPTO; k++) {
+        const qx = nx + k * dx, qy = ny + k * dy;
+        if (qx < 0 || qy < 0 || qx >= W || qy >= H) break;
+        const q = qy * W + qx;
+        if (!changed[q]) break; // 走出染色层（回到裸地形）即止
+        const c = px(A, q * A.ch);
+        const kk = FAM[fam[q] - 1][0];
+        stackVsFog[kk].push(wcag(c, fc));
+        if (stackCol[kk].length < 400) stackCol[kk].push(c);
+      }
+    }
+  }
+  console.log(`  · ★ 缺口段「带栈」逐族实测 WCAG（\`STACK=1\`；走了 ${UPTO}px / 与雾界像素数 = ${fogTouchChanged}）—— 判据 = 该段至少有一条带 ≥3:1（team-lead ⑤）`);
+  console.log('     ⚠️ 人口 = **整条带栈**（= 判据要的"该段"），不是"紧贴雾那一条"。计数是"像素×边界"访问数，比例意义有限，**看中位**。');
+  console.log('     ⚠️ `fill` 一列**不参与判定**：往外走会走进可达区，那列里混着**可达区地形**（实测 `#b0ad93` 亮沙）');
+  console.log('        ⇒ 正是契约里「被『被染格恰好是亮地形』污染」那个坑。**本段新增的带 = edge/glow/ink 三条。**');
+  const ok = [];
+  for (const k of ['fill', 'edge', 'glow', 'ink']) {
+    const v = stackVsFog[k];
+    if (!v.length) { console.log(`     ${k.padEnd(5)} n=0`); continue; }
+    const med = median(v);
+    const cols = [...new Set(stackCol[k].map(hex))].slice(0, 4).join(' ');
+    const usable = k !== 'fill'; // fill = 可达区水洗/地形混入 ⇒ 不作"带"
+    console.log(`     ${k.padEnd(5)} n=${String(v.length).padEnd(6)} 中位 ${med.toFixed(2)}  最小 ${Math.min(...v).toFixed(2)}  最大 ${Math.max(...v).toFixed(2)}  实际色 ${cols}  ${usable ? (med >= 3 ? '✅' : '❌') : '（不参与判定）'}`);
+    if (usable && med >= 3) ok.push(k);
+  }
+  console.log(`     ⇒ 该段可用带（edge/glow/ink 中位 ≥3:1）= ${ok.length ? ok.join('/') : '（无）'}  ${ok.length ? '✅ 该段闭合可读' : '❌ 该段不闭合可读（无一条带达 3:1）'}`);
 }
 console.log('⚠️ 边界：只证「缺口存在 / 被补上」，不证「缺口占轮廓多少」（fog 含图外底色、同色不可分）；本尺为旁证，非 (ii) 验收数。');
