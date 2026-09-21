@@ -201,7 +201,8 @@ body {
 /* ---------- bottom thumb band（IA §4.2 / R5） ---------- */
 #thumb {
   /* 全部高频交互集中在下缘一条 48px 带内，位置固定（肌肉记忆）。
-     只读的移动力细条 + 5 个文字按钮（菜单 / 英雄 / 城 / 日志 / 结束一天）。 */
+     F-3.6 后为 **4 个文字按钮**（菜单 / 英雄 / 城 / 结束一天）：移动力细条与日志入口已撤
+     —— 前者改为地图染色（MapRenderer 可达范围），后者移入菜单一级项「事件日志」。 */
   flex: 0 0 48px;
   height: 48px;
   display: flex;
@@ -233,10 +234,7 @@ body {
   min-width: 92px;
 }
 
-.tb-log {
-  position: relative;
-}
-
+/* 未读角标。宿主是「菜单」按钮（F-3.6 后日志入口移入菜单，角标随迁）。 */
 .tb-badge {
   display: inline-block;
   margin-left: 4px;
@@ -258,33 +256,7 @@ body {
   display: none;
 }
 
-/* 移动力细条：只读展示（IA §3.3 #25「每回合看几眼」→ 提到拇指带） */
-.tb-move {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 6px;
-  color: var(--text-dim);
-  font-size: 12px;
-}
-
-.tb-move-k {
-  white-space: nowrap;
-}
-
-.tb-move .bar {
-  flex: 1 1 auto;
-  min-width: 40px;
-  margin-top: 0;
-}
-
-.tb-move-v {
-  color: var(--parchment);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
+/* 移动力细条样式已随 F-3.6 撤除（数值改由地图染色 + 英雄面板按需呈现）。 */
 
 /* ---------- 菜单 / 日志 / 设置（低频项，IA §7 / §3.2 #23 / a11y §4.2） ---------- */
 .menu,

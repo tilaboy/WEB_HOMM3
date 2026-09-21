@@ -106,30 +106,19 @@ stage.appendChild(hintEl);
 
 /**
  * 全部高频交互集中在下缘一条 48px 带内，且**位置固定**（肌肉记忆）。
- * 6 件：移动力细条(只读) + 菜单 + 英雄 + 城 + 日志 + 结束一天 —— 全为**纯文字标签**、
+ * 4 件：菜单 / 英雄 / 城 / 结束一天 —— 全为**纯文字标签**、
  * ≤2 字、**零图标**（D-40 / Q10：文字天然是语义载体，44px 放得下一两个汉字，省 4 份绘制）。
  * 「城」= 经营主面的一等常驻入口（D-32 / R9：探索与经营并列，城不得从属于英雄面板）。
  * 顶栏整条只读（R7），故"顶栏矮"与"按钮大"不再冲突。
+ *
+ * F-3.6（用户原话："移动力也没必要一直显示在下面…能减少别的显示框就减少"）已撤两件：
+ * ① **移动力细条** → 数值改由**地图染色**呈现（`MapRenderer` 可达范围两色）+ 英雄面板按需；
+ * ② **日志入口** → 移入**菜单一级项「事件日志」**（低频回顾归菜单），未读角标与读屏播报随迁到
+ *    「菜单」按钮（IA §3.2 #23 ①②③ —— 信息只搬家、不丢失）。
  */
 const thumb = document.createElement('div');
 thumb.id = 'thumb';
 app.appendChild(thumb);
-
-const moveWrap = document.createElement('div');
-moveWrap.className = 'tb-move';
-moveWrap.setAttribute('role', 'img');
-const moveK = document.createElement('span');
-moveK.className = 'tb-move-k';
-moveK.textContent = '移动力';
-const moveBar = document.createElement('i');
-moveBar.className = 'bar';
-const moveFill = document.createElement('i');
-moveBar.appendChild(moveFill);
-const moveV = document.createElement('span');
-moveV.className = 'tb-move-v';
-moveV.textContent = '—';
-moveWrap.append(moveK, moveBar, moveV);
-thumb.appendChild(moveWrap);
 
 function tbButton(label: string, cls: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement('button');
@@ -140,21 +129,16 @@ function tbButton(label: string, cls: string, onClick: () => void): HTMLButtonEl
   return b;
 }
 
-tbButton('菜单', '', () => openMenu());
+// 「菜单」= 全部低频项的唯一入口（§7 R6）。日志入口移入菜单后，未读指示**随迁到此按钮**：
+// 角标复用 `.tb-badge`，且 `aria-label` 也带「N 条事件未读」——数字不得是唯一语义载体（a11y 基线 §4.3）。
+const menuBtn = tbButton('菜单', '', () => openMenu());
+const menuBadge = document.createElement('span');
+menuBadge.className = 'tb-badge';
+menuBadge.hidden = true;
+menuBtn.appendChild(menuBadge);
+
 tbButton('英雄', '', () => openHeroPanel());
 tbButton('城', '', () => openHomeTown());
-
-const logBtn = document.createElement('button');
-logBtn.className = 'btn tb-btn tb-log';
-logBtn.setAttribute('aria-label', '事件日志');
-const logLabel = document.createElement('span');
-logLabel.textContent = '日志';
-const logBadge = document.createElement('span');
-logBadge.className = 'tb-badge';
-logBadge.hidden = true;
-logBtn.append(logLabel, logBadge);
-logBtn.addEventListener('click', () => openLogPanel());
-thumb.appendChild(logBtn);
 
 const endDayBtn = tbButton('结束一天', 'primary tb-end', () => doEndDay());
 
@@ -171,17 +155,11 @@ function updateThumb(): void {
   endDayBtn.disabled = over;
   endDayBtn.textContent = over ? '对局结束' : '结束一天';
 
-  const h = selected ? state.heroes[selected] : null;
-  const maxMp = h ? maxMovePoints(h, state) : 0;
-  const mp = h ? Math.max(0, h.movePoints) : 0;
-  moveFill.style.width = maxMp > 0 ? `${Math.max(0, Math.min(100, Math.round((mp / maxMp) * 100)))}%` : '0%';
-  moveV.textContent = h ? `${Math.round(mp)}/${Math.round(maxMp)}` : '—';
-  moveWrap.setAttribute('aria-label', h ? `移动力 ${Math.round(mp)}/${Math.round(maxMp)}` : '移动力（无选中英雄）');
-
+  // F-3.6：移动力不再常驻拇指带（数值改由地图染色 + 英雄面板按需呈现），此处只维护菜单未读角标。
   const unread = Math.max(0, state.log.length - seenLog);
-  logBadge.hidden = unread === 0;
-  logBadge.textContent = String(unread);
-  logBtn.setAttribute('aria-label', unread > 0 ? `事件日志，${unread} 条未读` : '事件日志');
+  menuBadge.hidden = unread === 0;
+  menuBadge.textContent = String(unread);
+  menuBtn.setAttribute('aria-label', unread > 0 ? `菜单，${unread} 条事件未读` : '菜单');
 }
 
 /** 「英雄」= 展开右侧英雄栏（探索侧信息面）。与栏内「收起」同一开关（R2 入口=出口）。 */
@@ -252,7 +230,13 @@ function openLogPanel(): void {
   updateThumb();
 }
 
-/** 菜单（IA §7 / R6）：全部低频项的唯一入口，一级 ≤6 项、危险项入底并二次确认。 */
+/**
+ * 菜单（IA §7 / R6）：全部低频项的唯一入口，危险项入底并二次确认。
+ * ⚠️ 一级项数为 **7**（继续 / 立即存档 / 读取最近存档 / 事件日志 / 设置 / 回到开始页 / 新游戏），
+ * 比 §7「一级 ≤ 6 项」**多 1 项**。原因：§3.2 #23 的容量核对按「存档·读档 = 1 项」计，
+ * 而代码里两者一直是分开的 2 项。**不擅自合并**（合并会改变既有操作路径，属 UX 决定）
+ * —— 待裁决：并成一项，或放宽 §7 口径。
+ */
 function openMenu(): void {
   if (isModalOpen() || isBattleOpen()) return;
   const root = document.createElement('div');
@@ -269,6 +253,8 @@ function openMenu(): void {
     ['', '继续', () => closer()],
     ['', '立即存档', () => { saveGame(state); closer(); hint('已存档'); }],
     ['', '读取最近存档', () => { closer(); loadLatest(); }],
+    // 日志入口：F-3.6 从拇指带搬来（复用 openLogPanel，函数不变；IA §3.2 #23 ①）
+    ['', '事件日志', () => { closer(); openLogPanel(); }],
     ['', '设置', () => { closer(); openSetup(); }],
     ['', '回到开始页', () => { closer(); openStart(); }],
     ['danger', '新游戏', () => { closer(); confirmNewGame(); }],
