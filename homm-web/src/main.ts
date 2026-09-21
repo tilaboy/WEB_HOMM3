@@ -484,6 +484,11 @@ const renderer = new MapRenderer(canvas, camera);
 // 调试：?devbadge=1 重新打开地图队伍徽标（默认已撤，见用户试玩裁决）。
 // 与 ?devquick / ?devtown 同一套惯例 —— 查询参数驱动；无人传即不影响生产路径。
 if (bootParams.has('devbadge')) renderer.badgesVisible = true;
+// 调试：?devshade=0 关闭地形「地貌层」（terrainShade）—— 只做「同视角、只差地貌层」的
+// 改前/改后对照（tools/deviceshot.mjs 真 Chrome / tools/artshot.mjs 垫片）。
+// 与 ?devbadge / ?devlight 同一套惯例 —— 查询参数驱动；不传即恒开（默认不影响生产路径）。
+const devShade = bootParams.get('devshade');
+if (devShade !== null) renderer.setMacroShade(devShade !== '0'); // '0' ⇒ 关；其余 ⇒ 开
 
 /** 打开城镇面板：城里有英雄就带上他，没有就远程管理（只能补驻军）。 */
 function openTownById(townId: string): void {

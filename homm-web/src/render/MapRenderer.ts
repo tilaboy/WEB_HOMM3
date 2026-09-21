@@ -114,6 +114,21 @@ export class MapRenderer {
    */
   badgesVisible = false;
 
+  /**
+   * 调试：开关地形「地貌层」（`terrainShade.ts` 的地图尺度明暗），并立即重烘。
+   *
+   * 为什么是方法而不是直接暴露字段：`terrain` 是 `private`，且 `macroShade` 只在
+   * **烘焙**时生效（`TerrainLayer.bake()`）—— 改了它必须 `invalidate()` 让下一帧重烘，
+   * 否则烘焙缓存还在，开关看着"没反应"。把这两步收进一个方法，避免调用方漏掉重烘。
+   *
+   * 与 `badgesVisible` 同一种 dev 开关：**仅供对照截图**（`?devshade=0`，见 `main.ts`）。
+   * 无人调用 ⇒ 恒为默认开 ⇒ 不影响生产路径。
+   */
+  setMacroShade(on: boolean): void {
+    this.terrain.macroShade = on;
+    this.terrain.invalidate();
+  }
+
   constructor(
     private canvas: HTMLCanvasElement,
     private camera: Camera,
