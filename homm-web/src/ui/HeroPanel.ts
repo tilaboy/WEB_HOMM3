@@ -27,10 +27,11 @@ export interface TownHooks {
 }
 
 /**
- * D-1「面板内分段」的段键（`#156`）。**默认段 = 属性**。
- * team-lead 裁定：tab 标签**只写段名**（属性 / 城池 / 势力）；**部队在常驻核里 ⇒ 不进分段**。
+ * D-1「面板内分段」的段键（`#156`）。**段 ≤ 4、默认段 = 部队**（最常用）。
+ * 现行 spec（`#156` description）：段 = {部队 / 属性 / 城池 / 势力}；`army` **进分段**、
+ * `bars` **并入 `head`**（不占独立行）、`hp-towns` 一行摘要。
  */
-type SegKey = 'attr' | 'town' | 'faction';
+type SegKey = 'army' | 'attr' | 'town' | 'faction';
 
 /**
  * 右侧查看器（HOMM3 布局）。
@@ -100,16 +101,14 @@ export class HeroPanel {
     }
 
     // ★ 教学清单**每次都求值**（锁存 + "完成那一刻"banner 有副作用），**是否上屏由当前段决定**
-    //   （`#156`：它是只读块，落在**默认段「属性」**的首行 ⇒ 教学场一打开即见，且在 ≤240 预算内）。
+    //   （`#156` 现行 spec：`teach` 是教学场的只读块 ⇒ 落在**「属性」段**；常驻核 = `head`(含 bars) + tab 条）。
     const teach = this.objectiveSection(state);
 
-    /* --- 常驻核（D-1）：head（压） + bars（两条并一行） + army ≈ 239 ≤ 240 --- */
+    /* --- 常驻核（D-1 现行 spec）= head（含 bars + 魔法书图标） + tab 条 --- */
     this.el.appendChild(this.headSection(state, hero));
     if (this.showArtifacts) this.el.appendChild(this.artifactSection(hero));
-    this.el.appendChild(this.barSection(hero, state));
-    this.el.appendChild(this.armySection(hero));
 
-    /* --- 分段（属性 / 城池 / 势力；默认 = 属性） --- */
+    /* --- 分段（{部队 / 属性 / 城池 / 势力}；默认 = 部队） --- */
     this.el.appendChild(this.segSection(state, hero, teach));
   }
 
@@ -121,6 +120,7 @@ export class HeroPanel {
     const tabs = div('ss-seg hp-tabs');
     tabs.setAttribute('role', 'radiogroup');
     const items: [SegKey, string][] = [
+      ['army', '部队'],
       ['attr', '属性'],
       ['town', '城池'],
       ['faction', '势力'],
@@ -143,8 +143,10 @@ export class HeroPanel {
     wrap.appendChild(tabs);
 
     const pane = div('hp-pane');
-    if (this.seg === 'attr') {
-      if (teach) pane.appendChild(teach); // 教学场：只读教学清单（默认段首行）
+    if (this.seg === 'army') {
+      pane.appendChild(this.armySection(hero));
+    } else if (this.seg === 'attr') {
+      if (teach) pane.appendChild(teach); // 教学场：只读教学清单，落在「属性」段
       pane.appendChild(this.statSection(hero));
     } else if (this.seg === 'town') {
       pane.appendChild(this.townSection(state, hero.id));
@@ -177,10 +179,21 @@ export class HeroPanel {
       span('', hero.name),
       span('hp-lv', `Lv.${hero.level} · ${hero.exp}/${expToNext(hero.level)}`),
     );
-    meta.append(line1);
+    // `#156` 现行 spec：移动力/法力**并入 head**（不占独立行）。
+    const bars = div('hp-bars-row');
+    const maxMp = maxMovePoints(hero, state);
+    bars.appendChild(barRow('移动力', Math.floor(hero.movePoints), maxMp, hero.movePoints, ''));
+    const maxMana = manaMaxOf(hero);
+    bars.appendChild(barRow('法力', hero.mana, maxMana, hero.mana, 'mana'));
+    meta.append(line1, bars);
     wrap.appendChild(meta);
 
     const nav = div('hp-nav');
+    // `#156` 现行 spec：`魔法书` 并入 head 行做图标按钮（触控沿用 `.btn.tiny` 的 ≥40px）。
+    const spell = miniBtn('书', () => this.onSpellBook?.(hero.id), hero.spells.length ? '魔法书' : '还没学会任何法术（建魔法行会）');
+    spell.classList.add('hp-spell');
+    spell.disabled = !hero.spells.length;
+    nav.appendChild(spell);
     if (multi) {
       const prev = miniBtn('‹', () => this.cycle(state, idx, -1), '上一位英雄');
       const next = miniBtn('›', () => this.cycle(state, idx, 1), '下一位英雄');
@@ -206,37 +219,6 @@ export class HeroPanel {
     if (n < 2) return;
     const next = state.heroOrder[(idx + delta + n) % n];
     if (next) this.onSelect?.(next);
-  }
-
-  /* ---------------- 移动力 / 法力（`#156`：两条 bar 并一行） ---------------- */
-
-  private barSection(hero: Hero, state: GameState): HTMLElement {
-    const wrap = div('sec hp-bars');
-
-    const row = div('hp-bars-row');
-    const maxMp = maxMovePoints(hero, state);
-    row.appendChild(barRow('移动力', Math.floor(hero.movePoints), maxMp, hero.movePoints, ''));
-
-    const maxMana = manaMaxOf(hero);
-    row.appendChild(barRow('法力', hero.mana, maxMana, hero.mana, 'mana'));
-    wrap.appendChild(row);
-
-    // ⚠️ `#156`：§3.3 计划的「`魔法书` → 菜单一级项」**暂未搬** —— 菜单一级现 6 项、
-    //   恰为 §7「一级 ≤ 6 项」的**上限**（`main.ts` 一级：继续 / 存档·读档 / 事件日志 /
-    //   设置 / 回到开始页 / 新游戏）⇒ **直接加会破 §7**。⇒ 在"搬到哪、腾哪一位"裁定前，
-    //   **保留按钮、不删入口**（删了 = 信息/功能丢失，违反 F-3.6「载体搬家、非删除」）。
-    const btn = document.createElement('button');
-    // M-09：侧栏「魔法书」是孤立按钮，上下方都是非交互内容，可安全扩命中区到 ~48px
-    //（.btn.tiny 底 40px + .tap 纵轴 ±4px）。
-    btn.className = 'btn tiny tap hp-spell';
-    btn.textContent = '魔法书';
-    btn.style.marginTop = '6px';
-    btn.disabled = !hero.spells.length;
-    btn.title = hero.spells.length ? '查看并施放已学会的法术' : '还没学会任何法术（建魔法行会）';
-    btn.addEventListener('click', () => this.onSpellBook?.(hero.id));
-    wrap.appendChild(btn);
-
-    return wrap;
   }
 
   /* ---------------- 属性（四维；`经验` 已并入 `head` 的 `Lv.N`） ---------------- */

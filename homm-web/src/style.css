@@ -1587,9 +1587,9 @@ body.in-battle #thumb {
   flex: 1 1 0;
   min-width: 0;
 }
-/* `#156`：魔法书**暂留面板**（见 HeroPanel.ts 注释 —— 搬进菜单会破 §7 的「一级 ≤ 6 项」）。 */
+/* `#156`：魔法书已并入 `head` 行做图标按钮（横排 nav 里，宽度自适应）。 */
 .hp-spell {
-  width: 100%;
+  width: auto;
 }
 /* `#156`（D-1）：分段 = **tab 条**（**复用既有 `.ss-seg` 控件语言**，不新造第二套）+ 段内容。 */
 .hp-seg {
