@@ -33,7 +33,9 @@
  *   - 拇指带高 ≤ 48px、无横向溢出、每个 .btn 视觉高 ≥ 44px（主操作 48）
  *
  * 用法：npm run build && node tools/tinytargetaudit.mjs
- *       （dev server 没在 127.0.0.1:5173 上跑就**自起** node tools/serve.mjs，结束时关掉）
+ *       · 未给 `--port` ⇒ **取空闲端口 + 进程内自起 `serve.mjs`**（`#164`：绝不复用可能已在跑的 5173），
+ *         进程退出时随之结束；`--port=<n>` 才是「连既有服务」。
+ *       · `--dist=<dir>` ⇒ 量**任意构建目录**（缺省 `<repo>/dist`，逐字不变）；首行打印「目录 + cwd + 指纹」。
  *       STRICT=1 node tools/tinytargetaudit.mjs   # 把「已知待办」(顶栏 C3/C4/换行) 也当硬断言
  * 退出码：0 = 全部达标；1 = 有不达标；2 = 环境没准备好（dist / Chrome 连不上 / app 起不来）。
  */
@@ -41,11 +43,15 @@ import { writeFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { argOf, distDir, printHeader, freePort, serveInProcess } from './_dist.mjs';
 
 const root = process.cwd();
-const dist = path.join(root, 'dist');
+/* 被测构建目录（`#164`）：`--dist=<dir>` > env `DIST_DIR` > 缺省 `<repo>/dist`（= 旧 `../dist`，逐字不变）。 */
+const dist = distDir();
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const APP_PORT = Number(process.env.PORT ?? 5173);
+/* `#164` 要求②：**自起服务不许复用可能已在跑的 5173**。
+ * `--port=<n>` 显式给了才用它（连既有服务）；否则取一个**空闲端口**自起（下面 `await freePort()`）。 */
+const PORT_ARG = argOf('port', null);
 // 每次用不同端口：固定端口下，如果上一轮 Chrome 没退干净，findTarget 会连到那个**陈旧**
 // 的实例上，量到的是旧 DOM（假 PASS/假 FAIL）。按 PID 派生端口，各跑各的，互不串台。
 const CDP_PORT = 9200 + (process.pid % 700);
@@ -58,8 +64,13 @@ const MOBILE = { w: 792, h: 320, dpr: 3 };
 // C3 等"已知待办"项默认只报不卡；STRICT=1 时升格为硬断言（顶栏重构批落地后已开）。
 const STRICT = process.env.STRICT === '1';
 
+/* ★ `#164` 要求③：**首行输出** = 「我服务的目录 + `cwd` + 指纹」。
+ * `serve.mjs` 端的是 `cwd/dist` ⇒ **`cwd` 也影响指哪**，故与解析出的 `dir` 并排打印，
+ * 让"到底服务的是哪份构建"从**靠人记得**变成**印在脸上**。 */
+printHeader(dist, 'gate=tinytargetaudit');
+
 if (!existsSync(path.join(dist, 'style.css'))) {
-  console.error('dist/style.css 不存在，请先 npm run build');
+  console.error(`✗ dist/style.css 不存在（dir=${dist}）—— 先 npm run build，或用 --dist=<dir> 指向隔离构建`);
   process.exit(2);
 }
 
@@ -153,22 +164,19 @@ const reachable = async () => {
   }
 };
 
-let serverProc = null;
-if (!(await reachable())) {
-  console.error(`[tiny] dev server 未响应 → 自起 node tools/serve.mjs（:${APP_PORT}）…`);
-  serverProc = spawn('node', ['tools/serve.mjs'], {
-    cwd: root,
-    env: { ...process.env, PORT: String(APP_PORT) },
-    stdio: ['ignore', 'ignore', 'ignore'],
-  });
-  for (let i = 0; i < 40 && !(await reachable()); i++) await wait(150);
-}
+/* `#164` 要求②：**自起服务必须取空闲端口**（不复用可能已在跑的 5173 —— 那会连到端**真 `dist`**
+ * 的陈旧实例 ⇒ 假读数）。`--port=<n>` 显式给了才连它。 */
+const APP_PORT = PORT_ARG != null ? Number(PORT_ARG) : await freePort();
 
+let serverProc = null; // 进程内自起：不再 spawn 子进程（spawn 会被信号组连坐杀，退出码 137）
 if (!(await reachable())) {
-  console.error(`[tiny] dev server 起不来（127.0.0.1:${APP_PORT}）—— 手工跑 node tools/serve.mjs 再看`);
-  serverProc?.kill('SIGKILL');
-  rmSync(PROBE, { force: true });
-  process.exit(2);
+  console.error(`[tiny] dev server 未响应 → **进程内**自起 serve.mjs（dir=${dist} :${APP_PORT}）…`);
+  const ok = await serveInProcess(dist, APP_PORT);
+  if (!ok) {
+    console.error(`[tiny] dev server 起不来（dir=${dist} :${APP_PORT}）—— 手工跑 node tools/serve.mjs 再看`);
+    rmSync(PROBE, { force: true });
+    process.exit(2);
+  }
 }
 
 /* ---------------- 起 headless Chrome + 连 CDP ---------------- */

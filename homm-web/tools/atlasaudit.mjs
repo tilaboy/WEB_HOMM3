@@ -25,6 +25,13 @@
  * 零新增依赖：只用到 node 内建 + 一份最小 canvas/DOM 垫片。
  */
 
+import { distDir, distUrl, printHeader } from './_dist.mjs';
+
+/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。 */
+const DIST = distDir();
+printHeader(DIST, 'gate=atlasaudit');
+const u = (rel) => distUrl(rel, DIST);
+
 /* ---------------- 最小 DOM 垫片 ---------------- */
 /* 图集只为打包几何而建：ctx 的绘制操作全是空实现，落点才是我们要量的东西。 */
 
@@ -81,9 +88,9 @@ let Atlas;
 let CombatAtlas;
 let shelfPack;
 try {
-  ({ Atlas } = await import('../dist/render/atlas.js'));
-  ({ CombatAtlas } = await import('../dist/render/combatAtlas.js'));
-  ({ shelfPack } = await import('../dist/render/atlas.js'));
+  ({ Atlas } = await import(u('render/atlas.js')));
+  ({ CombatAtlas } = await import(u('render/combatAtlas.js')));
+  ({ shelfPack } = await import(u('render/atlas.js')));
 } catch (e) {
   console.error('载入 dist/ 失败 —— 先跑 `npm run build`（dist/ 不入库）。');
   console.error(String(e && e.message));

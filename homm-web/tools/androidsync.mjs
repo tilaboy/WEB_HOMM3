@@ -27,10 +27,18 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { distDir, printHeader } from './_dist.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DIST = path.join(ROOT, 'dist');
+/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。
+ * ⚠️ 注意：`npx cap sync android` 复制的是 capacitor 配置里的 `webDir: 'dist'`（**仓内 `dist/`**），
+ *    不是 `--dist`。故 `--dist` 只改**比对源**；若它与仓内 `dist/` 不同 ⇒ 下面的逐文件 md5
+ *    比对会如实**不一致**（这正是"断言对象 ≠ 被测对象"该红的样子），不会假绿。 */
+const DIST = distDir({ base: ROOT });
 const ASSETS = path.join(ROOT, 'android', 'app', 'src', 'main', 'assets', 'public');
+
+/* ★ 首行打印「我比对的构建目录 + cwd + 指纹」（team-lead #164 要求③）。 */
+printHeader(DIST, 'gate=androidsync');
 
 /** 归档用：一组能代表"最近几轮工作"的标记（命中数应与 dist 相等）。 */
 const MARKERS = [

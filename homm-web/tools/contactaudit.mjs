@@ -29,16 +29,23 @@
  */
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { createGame } from '../dist/core/map/generator.js';
-import { computePaths } from '../dist/core/map/pathfinding.js';
-import { endDay } from '../dist/core/game/turn.js';
-import { SCENARIO_BY_ID } from '../dist/core/data/scenarios.js';
+import { distDir, distUrl, printHeader } from './_dist.mjs';
 
-const root = process.cwd();
-if (!existsSync(path.join(root, 'dist', 'core', 'map', 'generator.js'))) {
-  console.error('dist 不存在，请先 npm run build');
+/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164：
+ * 跑门不必覆盖共用 `dist/`。下面 `../dist/...` 一律经 `u()` 解析到被测目录。 */
+const DIST = distDir();
+printHeader(DIST, 'gate=contactaudit');
+const u = (rel) => distUrl(rel, DIST);
+
+if (!existsSync(path.join(DIST, 'core', 'map', 'generator.js'))) {
+  console.error(`dist 不存在，请先 npm run build（或 --dist=<dir> 指向隔离构建）：${DIST}`);
   process.exit(2);
 }
+
+const { createGame } = await import(u('core/map/generator.js'));
+const { computePaths } = await import(u('core/map/pathfinding.js'));
+const { endDay } = await import(u('core/game/turn.js'));
+const { SCENARIO_BY_ID } = await import(u('core/data/scenarios.js'));
 
 const SEEDS = [1000, 8717, 16434, 24151, 31868, 39585, 47302, 55019];
 const DAY = 1800; // 英雄基准移动力/天（BASE_MOVE_POINTS）

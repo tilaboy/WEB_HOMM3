@@ -25,7 +25,14 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
-import {
+import { distDir, distUrl, printHeader } from './_dist.mjs';
+
+/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。 */
+const DIST = distDir();
+printHeader(DIST, 'gate=b0audit');
+const u = (rel) => distUrl(rel, DIST);
+
+const {
   UNIT_FRAMES,
   B0_PALETTE,
   B0_SHADE_STEPS,
@@ -36,8 +43,8 @@ import {
   TIER_TARGET_PCT_MAP,
   setTierNormalizeEnabled,
   isTierNormalizeEnabled,
-} from '../dist/render/unitArt.js';
-import { shade } from '../dist/render/pixel.js';
+} = await import(u('render/unitArt.js'));
+const { shade } = await import(u('render/pixel.js'));
 
 /* ---------------------------------------------------------------- 参数 */
 

@@ -1,16 +1,25 @@
-import { Camera } from '../dist/render/camera.js';
-import { lightTintAt } from '../dist/render/lightLayer.js';
-import { BASE_MOVE_POINTS, createGame, monsterArmy } from '../dist/core/map/generator.js';
-import { maxMovePoints } from '../dist/core/game/hero.js';
-import { mulberry32 } from '../dist/core/rng.js';
-import { computePaths, buildPath } from '../dist/core/map/pathfinding.js';
-import { isRevealed } from '../dist/core/map/fog.js';
-import { lossRatio, quickBattle } from '../dist/core/combat/battle.js';
-import { previewInteraction, applyInteraction, battleSetup, enemyHeroAt, heroBattleSetup, applyHeroBattle, pendingObjectAt } from '../dist/core/game/interaction.js';
-import { isPassable, castleCells, footprintOf } from '../dist/core/map/grid.js';
-import { endDay } from '../dist/core/game/turn.js';
-import { factionIds } from '../dist/core/data/factions.js';
-import {
+import { distDir, distUrl, printHeader } from './_dist.mjs';
+
+/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164：
+ * 跑门不必覆盖共用 `dist/`。下面所有 `../dist/...` 一律经 `dimp()` 解析到被测目录；
+ * 静态 `import ... from '../dist/x.js'` → `await import(dimp('x'))`（顶层 await，`.mjs` 支持）。 */
+const DIST = distDir();
+printHeader(DIST, 'gate=smoke');
+const dimp = (rel) => distUrl(rel, DIST);
+
+const { Camera } = await import(dimp('render/camera.js'));
+const { lightTintAt } = await import(dimp('render/lightLayer.js'));
+const { BASE_MOVE_POINTS, createGame, monsterArmy } = await import(dimp('core/map/generator.js'));
+const { maxMovePoints } = await import(dimp('core/game/hero.js'));
+const { mulberry32 } = await import(dimp('core/rng.js'));
+const { computePaths, buildPath } = await import(dimp('core/map/pathfinding.js'));
+const { isRevealed } = await import(dimp('core/map/fog.js'));
+const { lossRatio, quickBattle } = await import(dimp('core/combat/battle.js'));
+const { previewInteraction, applyInteraction, battleSetup, enemyHeroAt, heroBattleSetup, applyHeroBattle, pendingObjectAt } = await import(dimp('core/game/interaction.js'));
+const { isPassable, castleCells, footprintOf } = await import(dimp('core/map/grid.js'));
+const { endDay } = await import(dimp('core/game/turn.js'));
+const { factionIds } = await import(dimp('core/data/factions.js'));
+const {
   NO_TOWN_GRACE_DAYS,
   advanceNoTownStreaks,
   eliminateFaction,
@@ -18,13 +27,13 @@ import {
   isEliminated,
   noTownDaysOf,
   outcomeSummary,
-} from '../dist/core/game/victory.js';
-import { BASE_TOWN_INCOME } from '../dist/core/data/buildings.js';
-import { HOME_MINE_RING, MINE_NAME, MINE_PER_DAY, RARE_RESOURCES } from '../dist/core/data/mines.js';
-import { MARKET_RATES, costText } from '../dist/core/game/town.js';
-import { FACTION_UNITS, LEGACY_UNIT_IDS, UNITS, getUnit, meleeStyleOf, normalizeLegacyUnitIds, unitIdForTier } from '../dist/core/data/units.js';
-import { bfs, distance, hexCenter, hexLine, hexList, inField, neighbors, pickHex, FIELD_H, FIELD_W } from '../dist/core/combat/hex.js';
-import {
+} = await import(dimp('core/game/victory.js'));
+const { BASE_TOWN_INCOME } = await import(dimp('core/data/buildings.js'));
+const { HOME_MINE_RING, MINE_NAME, MINE_PER_DAY, RARE_RESOURCES } = await import(dimp('core/data/mines.js'));
+const { MARKET_RATES, costText } = await import(dimp('core/game/town.js'));
+const { FACTION_UNITS, LEGACY_UNIT_IDS, UNITS, getUnit, meleeStyleOf, normalizeLegacyUnitIds, unitIdForTier } = await import(dimp('core/data/units.js'));
+const { bfs, distance, hexCenter, hexLine, hexList, inField, neighbors, pickHex, FIELD_H, FIELD_W } = await import(dimp('core/combat/hex.js'));
+const {
   actDefend,
   actFlee,
   actShoot,
@@ -43,10 +52,10 @@ import {
   shootTargets,
   toOutcome,
   unitSpeed,
-} from '../dist/core/combat/battle.js';
-import { SPELLS, SPELL_ORDER, spellsOfGuild } from '../dist/core/data/spells.js';
-import { canAdventureCast, castAdventure } from '../dist/core/game/spells.js';
-import {
+} = await import(dimp('core/combat/battle.js'));
+const { SPELLS, SPELL_ORDER, spellsOfGuild } = await import(dimp('core/data/spells.js'));
+const { canAdventureCast, castAdventure } = await import(dimp('core/game/spells.js'));
+const {
   build,
   buildStatus,
   canBuild,
@@ -62,17 +71,17 @@ import {
   recruitToGarrison,
   recruitToHero,
   townDailyIncome,
-} from '../dist/core/game/town.js';
-import { settingsForTier, classifyProbe, probeTier, allowedMapSizes, clampMapSize, TIER_ORDER, readCachedTier, cacheTier, clearCachedTier, PROBE_VERSION } from '../dist/render/quality.js';
-import {
+} = await import(dimp('core/game/town.js'));
+const { settingsForTier, classifyProbe, probeTier, allowedMapSizes, clampMapSize, TIER_ORDER, readCachedTier, cacheTier, clearCachedTier, PROBE_VERSION } = await import(dimp('render/quality.js'));
+const {
   shouldEdgeScroll,
   normalizePointerType,
   shouldHover,
   isDoubleTap,
   DOUBLE_TAP_MAX_MS,
   DOUBLE_TAP_MAX_DIST,
-} from '../dist/render/pointerIntent.js';
-import { bakeBytes } from '../dist/render/terrainLayer.js';
+} = await import(dimp('render/pointerIntent.js'));
+const { bakeBytes } = await import(dimp('render/terrainLayer.js'));
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -995,10 +1004,10 @@ function runTactical(attacker, defender, seed) {
     GATE_ROW,
     KEEP_COL,
     MOAT_COL,
-  } = await import('../dist/core/combat/siege.js');
+  } = await import(dimp('core/combat/siege.js'));
   const { actSiege, siegeTargets, towerPhase, estimateSiegeDamage, machinePhase } =
-    await import('../dist/core/combat/battle.js');
-  const { WAR_MACHINES } = await import('../dist/core/data/warmachines.js');
+    await import(dimp('core/combat/battle.js'));
+  const { WAR_MACHINES } = await import(dimp('core/data/warmachines.js'));
 
   const wallsOf = (s) => s.structures.filter((x) => x.kind === 'wall').length;
   const turretsOf = (s) => s.structures.filter((x) => x.kind === 'tower').length;
@@ -1058,7 +1067,7 @@ function runTactical(attacker, defender, seed) {
   ok(nb.hp < before, '一段墙塌了，相邻墙段跟着掉血（缺口会自己变宽）');
 
   // 5. 城门塌了会带塌两侧 —— 出现三格宽的口子（投石车的价值来源）
-  const { createBattle: cb2 } = await import('../dist/core/combat/battle.js');
+  const { createBattle: cb2 } = await import(dimp('core/combat/battle.js'));
   const bg = cb2(atk, def, 7, 3);
   const gate = gateOf(bg.siege);
   const gUp = wallAt(bg.siege, GATE_ROW - 1);

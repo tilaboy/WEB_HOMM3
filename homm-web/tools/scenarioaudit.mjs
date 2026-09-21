@@ -17,17 +17,17 @@
  * G-2（种子行 `input` **与** `reroll` 都真 disabled）、G-4（`aria-describedby`→`scenarioHint`）、
  * 教学清单只在教学场渲染（`教学 · 学会了吗 N/3` + 每行有文字「已学会/未学会」）。
  *
- * ## 用法
+ * ## 用法（`#164`：`--dist=<dir>` + **空闲端口自起** —— 跑门不必覆盖共用 `dist/`）
  *   npm run build
- *   node tools/serve.mjs                       # 另开一个终端（默认 5173）
- *   node tools/scenarioaudit.mjs
- *   node tools/scenarioaudit.mjs --url=http://127.0.0.1:5174 --port=5174
- *   NEG=1 node tools/scenarioaudit.mjs         # **可证伪负测**：只跑「故意弄坏」的三组，断言都变红
+ *   node tools/scenarioaudit.mjs                        # 缺省**自起**（free port，指向 <repo>/dist）
+ *   node tools/scenarioaudit.mjs --dist=/tmp/dist-137   # 量**任意构建目录**（自起也指向它）
+ *   node tools/scenarioaudit.mjs --port=5174            # 连既有服务（另核「服务中 == --dist」）
+ *   NEG=1 node tools/scenarioaudit.mjs                  # **可证伪负测**：只跑「故意弄坏」的三组，断言都变红
  *
- * 退出码：0 全过 / 1 有 FAIL / 2 前置不满足（无 Chrome 或 dev server 没起）
+ * 退出码：0 全过 / 1 有 FAIL / 2 前置不满足（无 Chrome / 构建不含 #137 / **服务中的构建 ≠ --dist**）
  *
- * ⚠️ 前置：本工具**不改**任何文件、只读页面；它读的是 `dist/`（`serve.mjs` 的根）。
- *    换构建请先改 `dist/`，别在测量窗口里跑错构建。
+ * ⚠️ 前置：本工具**不改**任何文件、只读页面；**首行**打印「所量目录 + `cwd` + 指纹」。
+ *    `--dist` 缺省 = `<repo>/dist`（**逐字不变**）；`--url`/`--port` 缺省时**自起**在空闲端口。
  *
  * ## ★ 可证伪负测（`NEG=1`）—— team-lead 新规矩「**门必须双向可证：能红也能绿**」
  * 正向跑一次全绿，**证明不了**门能红（它可能是**恒绿**：判据写错、永远命中）。
@@ -40,39 +40,79 @@
  * 负测**不进验收数**（它与正向套件互斥：`NEG=1` 时不跑正向）。
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withHeadlessChrome } from './_chrome.mjs';
+import { distDir, printHeader, freePort, serveInProcess } from './_dist.mjs';
 
 const arg = (k, d) => {
   const a = process.argv.find((x) => x.startsWith(`--${k}=`));
   return a ? a.slice(k.length + 3) : d;
 };
-const PROBE = Number(arg('port', '5173'));
-const URL0 = arg('url', `http://127.0.0.1:${PROBE}`);
 
 /* 「被测构建必须自证包含被测对象」（team-lead 新规矩，全仓适用）：
- * 本工具验的是 `#137`（「试玩场景」）⇒ 跑之前先断言 `dist/main.js` **含该标记**。
+ * 本工具验的是 `#137`（「试玩场景」）⇒ 跑之前先断言**被测构建**里含该标记。
  * 缺 ⇒ **读数作废**、exit(2)，而不是把 stale-dist 的 FAIL 记到 `#137` 头上
  * （2026-09-21 实战：dist 早 `#137` 20 分钟 ⇒ 曾产出 20 条假 FAIL）。 */
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-/* `--dist=<dir>`：被测构建目录（默认 `dist`）。用临时隔离构建（如 `dist-137ck`）时指定它，
- * 免得为了跑门控去覆盖真正的 `dist`（`dist` 是测量对象，重建须申报 / 单人一次）。
- * `path.resolve`（而非 `join`）⇒ **相对路径按 `ROOT` 解、绝对路径原样用**（负测 A 要传 tmpdir 绝对路径）。 */
-const DIST = path.resolve(ROOT, arg('dist', 'dist'));
+/* `--dist=<dir>`（`#164`）：被测构建目录。优先级 `--dist` > env `DIST_DIR` > 缺省 `<repo>/dist`
+ * （= 旧 `dist`，**逐字不变**）。相对路径按 `ROOT` 解、绝对路径原样用（负测 A 传 tmpdir 绝对路径）。 */
+const DIST = distDir({ base: ROOT });
+/* ★ `#164` 要求③：**首行输出** = 「我服务的目录 + `cwd` + 指纹」。 */
+printHeader(DIST, 'gate=scenarioaudit');
 /* ⚠️ 标记所在产物已核准：「试玩场景」（`#137` 的核心标记）编译进 **`ui/StartScreen.js`**，
  *  **不在 `main.js`**（roadmap 那句"main.js 命中 0"说的是旧 `dist` 的事实，但据此写守卫会误判 —— 
  *  本条按**实测**取 `ui/StartScreen.js`）。 */
 const START_JS = path.join(DIST, 'ui', 'StartScreen.js');
 if (!existsSync(START_JS)) {
-  console.error(`✗ 前置不满足：找不到 ${START_JS}（先 npm run build）`);
+  console.error(`✗ 前置不满足：找不到 ${START_JS}（先 npm run build，或用 --dist=<dir> 指向隔离构建）`);
   process.exit(2);
 }
 if (!readFileSync(START_JS, 'utf8').includes('试玩场景')) {
-  console.error(`✗ 前置不满足：${arg('dist', 'dist')}/ui/StartScreen.js 不含「试玩场景」⇒ 该构建早于 #137（读数作废）。请先重建。`);
+  console.error(`✗ 前置不满足：${DIST}/ui/StartScreen.js 不含「试玩场景」⇒ 该构建早于 #137（读数作废）。请先重建。`);
   process.exit(2);
+}
+
+/* ── `#164` 要求②：解析「连谁 / 自起」——自起一律用**空闲端口**（绝不复用可能已在跑的 5173）──
+ *   优先级：`--url=`  >  `--port=`  >  **自起**（free port + 进程内 `serve.mjs` 指向 `DIST`，进程退出即结束）。
+ * 连**外部**服务（给了 `--url` / `--port`）时另核「服务中的构建 == `--dist` 指定」——
+ * 否则"断言对象 ≠ 被测对象"，读数作废（`iaaccept.mjs` 立的 `checkServedMatchesDist` 同款）。 */
+const URL_ARG = arg('url', null);
+const PORT_ARG = arg('port', null);
+let URL0;
+let APP_PORT = null; // number | null（null ⇒ 已自起并验过就绪，不必再让 _chrome 探活）
+if (URL_ARG) {
+  URL0 = URL_ARG;
+} else if (PORT_ARG != null) {
+  APP_PORT = Number(PORT_ARG);
+  URL0 = `http://127.0.0.1:${APP_PORT}`;
+} else {
+  APP_PORT = await freePort();
+  URL0 = `http://127.0.0.1:${APP_PORT}`;
+  if (!(await serveInProcess(DIST, APP_PORT))) {
+    console.error(`✗ 前置不满足：进程内自起 dev server 失败（dir=${DIST} :${APP_PORT}）`);
+    process.exit(2);
+  }
+}
+if (URL_ARG || PORT_ARG != null) {
+  const rel = 'ui/StartScreen.js';
+  try {
+    const res = await fetch(`${URL0}/${rel}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const served = Buffer.from(await res.arrayBuffer());
+    const local = readFileSync(path.join(DIST, rel));
+    const sha = (b) => createHash('sha256').update(b).digest('hex').slice(0, 16);
+    if (sha(served) !== sha(local)) {
+      console.error(`✗ 前置不满足：服务中的 ${rel}(${sha(served)}) ≠ --dist 指定的(${sha(local)}) ⇒ 断言对象 ≠ 被测对象，读数作废。`);
+      process.exit(2);
+    }
+  } catch (e) {
+    console.error(`✗ 前置不满足：取不到 ${URL0}/${rel}（${e.message}）—— dev server 起了吗？`);
+    process.exit(2);
+  }
 }
 
 let bad = 0;
@@ -93,7 +133,12 @@ function negPrecondition() {
   const tmp = mkdtempSync(path.join(tmpdir(), 'neg-dist-'));
   try {
     mkdirSync(path.join(tmp, 'ui'), { recursive: true });
-    writeFileSync(path.join(tmp, 'ui', 'StartScreen.js'), '/* 故意不含「试玩场景」标记 */\n');
+    /* ⚠️ fixture **绝不能**写出那个标记串 —— 原 fixture 把标记串写进了**注释**里，
+     * 于是 `includes('试玩场景')` **命中**、前置根本没触发；旧版 NEG-A"通过"其实是绿在
+     * **别处**：那一刻 5173 上没有 dev server ⇒ `withHeadlessChrome` 抛 prerequisite ⇒ exit 2。
+     * 2026-09-21 `#164` 把默认改成「空闲端口自起」后，这条**假绿被拆穿**（实得 exit 1）。
+     * 故 fixture 只写"标记不在这里"的语义，**不写**那个串。 */
+    writeFileSync(path.join(tmp, 'ui', 'StartScreen.js'), '/* fixture: 该构建不含场景入口标记 */\n');
     const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--dist=${tmp}`], {
       encoding: 'utf8',
       timeout: 60000,
@@ -322,7 +367,7 @@ try {
 
       console.log(`\n${bad ? `★ ${bad} 项 FAIL` : '全部通过'}`);
     },
-    { devServerPort: PROBE },
+    { devServerPort: APP_PORT ?? undefined },
   );
 } catch (e) {
   console.error(e.message ?? e);
