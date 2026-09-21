@@ -12,6 +12,7 @@ h1{font-size:20px;margin:0 0 6px}h2{font-size:16px;margin:30px 0 6px;padding-bot
 .note{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin:12px 0}
 .note b{color:var(--warn)}
 </style></head><body>
+<!-- 【owner-rev 2026-09-21T10:35】art-director（team-lead 指认的 a11y / shots 文档 owner 实例）—— 谁写谁换这一行；发现自己的行不在了 ⇒ 已被取代 ⇒ 报告，别抢回。另一同名实例保留「④ 取数/读数」角色（生产），写任何文档前须先在群里报一句。 -->
 <h1>地图层画面提升 · 改前 / 改后</h1>
 <p class="sub">零位图、程序化像素画；TILE=32 与画家算法未动。由 <code>tools/artshot.mjs</code> 用运行期真实渲染代码 headless 合成（最近邻 ×2）。</p>
 <div class="note"><b>图从哪来（边界说清）</b>：同一份代码 + 同一张图集，但用<b>自建 Canvas2D 垫片</b>在 node 里合成 —— <b>不是浏览器渲染、也不是真机截图</b>。本仓 <b>有</b> headless Chrome（+ <code>tools/serve.mjs</code>）⇒ 可做浏览器合成对照，但<b>本轮没做</b>（选择：快、零依赖），<b>不是做不到</b>。<br>所以它回答"地形烘焙的输出差在哪"，<b>未答</b>"垫片合成语义 vs 真实 Chrome Canvas2D 是否逐像素一致"（这一层建议由共享通道 <code>chromeshot</code> 补）。<br>每行<b>只差一个变量</b>，便于归因。</div>
