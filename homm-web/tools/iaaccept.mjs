@@ -199,13 +199,16 @@ try {
       })()`);
       console.log(`  溢出实测: ${JSON.stringify(ov)}`);
       if (ov) {
-        PASS(ov.teachScroll <= ov.teachClient, `item16 教学块未溢出（scroll ${ov.teachScroll} ≤ client ${ov.teachClient}）⇒ 无折叠态`);
-        PASS(ov.hasCollapsed === false, 'item16 无折叠态「教学 N/3 ▸」（未溢出时不该有）');
+        /* 规格 §14.1 边缘情况：**溢出才折叠**。所以"未溢出"是**报数字**、不是"必须不溢出"；
+           若真出现折叠态，则改判"需再测折叠/展开两态"——**不把两种合法态之一写成 FAIL**。 */
+        if (ov.hasCollapsed) UNDECIDED(`item16 出现折叠态「教学 N/3 ▸」（溢出档）—— 需再测 折叠/展开 两态只读性`);
+        else PASS(ov.teachScroll <= ov.teachClient, `item16 教学块未溢出（scroll ${ov.teachScroll} ≤ client ${ov.teachClient}）⇒ 无折叠态，报实测数字`);
       }
-      /* item 15：3/3 banner —— 当前 src 里不存在（grep=0）⇒ 只能记"未落地"。 */
+      /* item 15：3/3 banner。规格要的是"**由假变真时一次性**、载入即 3/3 不重弹"——
+         那是**两阶段**行为，单次快照测不了 ⇒ 出现后也只能记「未判（机制已见、一次/重弹未测）」。 */
       const hasBanner = await evaluate(`/你学会了/.test(document.body.textContent || '')`);
       if (!hasBanner) UNDECIDED('item15 3/3 非阻断 banner —— DOM 里无「你学会了」⇒ 尚未落地（工程侧在加）');
-      else PASS(false, 'item15 出现 banner 文案（但本探针的"一次性/不重弹"判定需再补）');
+      else UNDECIDED('item15 banner 文案已出现；「一次性 / 载入即3/3不重弹」需两阶段测（本探针未实现）');
 
       /* ---- item 9（反面）：对决场 / 自由对局都**不**渲染教学块 ---- */
       await boot();
