@@ -125,26 +125,18 @@ const ORDER = ['草·亮', '草·中', '草·深', '沙/土(暖亮)', '水(蓝�
 const [afterF, beforeF, label, classRefF] = process.argv.slice(2);
 const A = decodePng(readFileSync(afterF));
 const B = decodePng(readFileSync(beforeF));
-/* ★ 分类帧（契约第 2 条「按地形逐类」· team-lead 钉死）
- * 「地形」是**身份**，不是"此刻看起来多亮" ⇒ 分类必须用**光照恒等帧**（正午 `none`），
- * 否则同一个像素正午落 `草·中`、夜里落 `草·深` ⇒ 两工具/两相位**同名桶不是同一批像素** ⇒ 拼表出事（`ff7db9c` 病根）。
- * 给定第 4 个参数（正午 `none` 底图）⇒ 用身份帧分类；不给 ⇒ 退回同相位 before 像素并**显式告警**。
- * 注意：**分类只用身份帧；测量仍逐相位** —— 这正是契约"每一类 × 每一相位 ≥3:1"要的。
- */
-const REF = classRefF ? decodePng(readFileSync(classRefF)) : null;
-if (REF && (REF.width !== A.width || REF.height !== A.height)) throw new Error('分类参考帧尺寸不同');
-const classOf = (i, b) => (REF ? band(...px(REF, i * REF.ch)) : band(...b));
 if (A.width !== B.width || A.height !== B.height) throw new Error('尺寸不同');
 const n = A.width * A.height;
 
 /* ★ 分类帧（契约第 2 条「`population` = **按地形**逐类」）-----------------------------------
- * 「地形」是**身份**、不是"此刻看起来多亮" ⇒ 分类必须在**光照恒等帧（正午 none）**上做，**测量仍按各相位**。
+ * 「地形」是**身份**、不是"此刻看起来多亮" ⇒ 分类必须在**光照恒等帧（正午 `none`）**上做，**测量仍按各相位**。
  * ⚠️ 若用**同相位底**分类：夜间 multiply 把底压到 L* < 55 ⇒「草·亮」塌成 n≈0（`-2` 实测 n=4–122）
  *    ⇒ 契约"每一类都必须 ≥3:1"会被"**该类在本相位不存在**"**真空通过** —— 这正是要防的死区洗白。
- * ⇒ 默认 = 同相位 before（**仅自洽、不可跨相位比**）；**要跨相位可比 ⇒ 必给 `REACH_CLASSREF=<正午 before 图>`**。
- *   （旧 7 行表「草·深 夜 1.42」就是**正午切桶、夜间测量** —— 现在这是**规定动作**，不是缺陷。）
+ * ⇒ **第 4 个参数 = 分类帧**（传**正午 `none` 的 before 底图**）。
+ *    不给 ⇒ 退回同相位 before：**仅自洽，不可跨相位比、不可与 `tintab` 拼表**（同名桶不是同一批像素）。
+ *   （旧 7 行表「草·深 夜 1.42」＝正午切桶、夜间测量 ⇒ 现在这是**规定动作**，不是缺陷。）
+ * 复算：`node tools/reachmeas.mjs <after> <before> <标签> <正午 before 底图>`
  */
-const classRefF = process.env.REACH_CLASSREF;
 const C = classRefF ? decodePng(readFileSync(classRefF)) : null;
 if (C && (C.width !== B.width || C.height !== B.height)) {
   throw new Error(`分类帧尺寸不同：${C.width}×${C.height} vs before ${B.width}×${B.height}`);
@@ -170,7 +162,7 @@ let darkEnd = 0;   // after 落在"暗端"= 墨像素特征（比精确色匹配
 for (const r of rows) {
   const c = ratio(r.a, r.b); all.push(c);
   if (r.a[0] < 80 && r.a[1] < 70) darkEnd++;
-  if (isInk(r.a)) { inkPx.push(c); perBand.get(classOf(r.i, r.b)).push(c); }
+  if (isInk(r.a)) { inkPx.push(c); perBand.get(classOf(r.i, r)).push(c); }
 }
 const stat = (s) => { s = s.slice().sort((x, y) => x - y); return { n: s.length, med: pctl(s, 0.5), p10: pctl(s, 0.1), p90: pctl(s, 0.9), ge3: s.length ? (100 * s.filter((c) => c >= 3).length) / s.length : NaN }; };
 
@@ -178,9 +170,9 @@ console.log(`\n[${label}]`);
 console.log(`  after = ${afterF.split('/').pop()}   before = ${beforeF.split('/').pop()}`);
 console.log(`  population = 变化像素（通道差 max|Δ| > 4）`);
 console.log(
-  REF
-    ? `  分类帧 = **身份帧（${classRefF.split('/').pop()}）** ✅ —— 同一个像素跨相位落同一个桶 ⇒ 与 tintab（受控场景=身份）同 population`
-    : `  ⚠️ 分类帧 = 同相位 before 像素（**未给第 4 参**）⇒ 与 tintab 的**同名桶不是同一批像素、不可拼表**；契约第 2 条要求"按地形"分类 ⇒ 请把正午 none 底图作为第 4 参传入`,
+  C
+    ? `  分类帧 = **身份帧（${classRefF.split('/').pop()}）** ✅ —— 同一像素跨相位落同一桶 ⇒ 与 tintab（受控场景=身份）同 population`
+    : `  ⚠️ 分类帧 = 同相位 before（**未给第 4 参**）⇒ 与 tintab 的**同名桶不是同一批像素、不可拼表**；且夜间「草·亮」可能塌成 n≈0 ⇒ **真空通过**。契约第 2 条要"按地形" ⇒ 请把正午 none 底图作为第 4 参传入`,
 );
 console.log(`  （★ 分类**只用身份帧**；**测量逐相位** —— 这正是契约"每一类 × 每一相位都必须 ≥3:1"要的）`);
 guardSameLadder();
@@ -190,9 +182,13 @@ console.log(`  暗端检查      : after 落在暗端(a[0]<80 且 a[1]<70) 占 $
 console.log(`  强墨像素(±3)  : n=${si.n}（受暗角/渐变影响会漏，**只作旁证**）  WCAG 中位 ${f2(si.med)}  ≥3:1 ${si.ge3.toFixed(1)}%`);
 console.log(`  ── 墨像素按"其底地形"分档（均值过 ≠ 全过）`);
 console.log(`     地形              |    n   | WCAG 中位 | ≥3:1`);
+const thin = [];
 for (const k of ORDER) {
   const s = stat(perBand.get(k));
-  if (!s.n) continue;
-  console.log(`     ${k.padEnd(16)} | ${String(s.n).padStart(6)} | ${f2(s.med).padStart(8)}  | ${s.ge3.toFixed(1)}%`);
+  if (!s.n) { thin.push(`${k}(n=0)`); continue; }
+  const bad = s.n < MIN_N;
+  if (bad) thin.push(`${k}(n=${s.n})`);
+  console.log(`     ${k.padEnd(16)} | ${String(s.n).padStart(6)} | ${f2(s.med).padStart(8)}  | ${s.ge3.toFixed(1)}%${bad ? `   ← ⚠️ n<${MIN_N} 样本不足，不得据此判过` : ''}`);
 }
+if (thin.length) console.log(`     ⚠️ 样本不足/不存在：${thin.join('、')} ⇒ 这些类**不能算"过"**（防真空通过）`);
 console.log(`     锚 = WCAG 1.4.11 非文本 3:1`);
