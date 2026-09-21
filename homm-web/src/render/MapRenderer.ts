@@ -8,6 +8,7 @@ import { TILE } from './ortho.js';
 import { getAtlas } from './atlas.js';
 import { hash2 } from './pixel.js';
 import { TerrainLayer } from './terrainLayer.js';
+import { SetDressingLayer } from './setDressing.js';
 import { currentLightTint, lightingOn } from './lightLayer.js';
 import { quality } from './quality.js';
 import {
@@ -88,6 +89,8 @@ export class MapRenderer {
   private dpr = 1;
   private atlas = getAtlas();
   private terrain = new TerrainLayer();
+  /** §6.1 喜剧布景层（A 组地面涂鸦）。低端 `setDressing==='off'` 时整层不烘、不画。 */
+  private dressing = new SetDressingLayer();
   /** 光照梯度按视口尺寸缓存：尺寸不变就复用，消除每帧 createXxxGradient 的 GC 压力。 */
   private warmGrad: CanvasGradient | null = null;
   private warmGradW = -1;
@@ -335,6 +338,12 @@ export class MapRenderer {
     /* --- 地形层：陆地/岸线/装饰整图烘焙，一帧一次 drawImage --- */
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.terrain.ensure(map), 0, 0);
+
+    /* --- §6.1 喜剧布景层 · A 组地面涂鸦：紧接地形之后、水面之前（§6.1.3）。
+       地面涂鸦永不遮挡单位 ⇒ 被后面所有图层（水 / 迷雾 / 路径 / 物件 / 英雄）自然盖住。 --- */
+    if (quality.setDressing !== 'off') {
+      ctx.drawImage(this.dressing.ensure(map), 0, 0);
+    }
 
     /* --- 水面：唯一会动的地形，按帧画（只占可见且已探索的格子） --- */
     // 高光带：一条沿对角线扫过整张地图的正弦波，只有波峰经过的格子

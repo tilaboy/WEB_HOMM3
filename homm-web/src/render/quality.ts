@@ -20,6 +20,8 @@ export type Tier = 'low' | 'mid' | 'high';
 export type QualityMode = 'auto' | Tier;
 /** 光照三态：off 完全关闭 / multiply 只叠色 / full 叠色+暖光+暗角。 */
 export type LightingMode = 'off' | 'multiply' | 'full';
+/** 喜剧布景层三态（§6.1.5）：off 整层关 / static 地面涂鸦+立体道具 / full 再加活动物。 */
+export type SetDressingMode = 'off' | 'static' | 'full';
 
 /** §4.4 降级开关清单。渲染层只读。 */
 export interface QualitySettings {
@@ -38,6 +40,8 @@ export interface QualitySettings {
   /** 悬停效果（触屏恒 false）。 */
   hoverEffects: boolean;
   selectionPulseHz: number;
+  /** 喜剧布景层（§6.1.5）：off / static / full。渲染层只读。 */
+  setDressing: SetDressingMode;
 }
 
 export const TIER_ORDER: Tier[] = ['low', 'mid', 'high'];
@@ -60,6 +64,7 @@ const TIER_TABLE: Record<Tier, Omit<QualitySettings, 'tier' | 'hoverEffects'>> =
     dprCap: 1.5,
     maxMapSize: 32,
     selectionPulseHz: 2,
+    setDressing: 'off',
   },
   mid: {
     lighting: 'multiply',
@@ -71,6 +76,7 @@ const TIER_TABLE: Record<Tier, Omit<QualitySettings, 'tier' | 'hoverEffects'>> =
     dprCap: 2,
     maxMapSize: 40,
     selectionPulseHz: 4,
+    setDressing: 'static',
   },
   high: {
     lighting: 'full',
@@ -82,6 +88,7 @@ const TIER_TABLE: Record<Tier, Omit<QualitySettings, 'tier' | 'hoverEffects'>> =
     dprCap: 3,
     maxMapSize: 48,
     selectionPulseHz: 4,
+    setDressing: 'full',
   },
 };
 

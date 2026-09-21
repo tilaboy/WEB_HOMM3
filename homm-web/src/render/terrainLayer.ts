@@ -5,6 +5,7 @@ import { TILE } from './ortho.js';
 import { getAtlas } from './atlas.js';
 import { hash2 } from './pixel.js';
 import { quality } from './quality.js';
+import { shadeOf, wetEdgeAlpha } from './terrainShade.js';
 
 /**
  * 地形过渡优先级：序号高的地形会向序号低的"漫"过去。
@@ -65,6 +66,13 @@ let warnedOversize = false;
 export class TerrainLayer {
   private canvas: HTMLCanvasElement | null = null;
   private bakedFor: GameMap | null = null;
+
+  /**
+   * 地貌层开关（`terrainShade.ts` 的地图尺度明暗）。默认 `true`。
+   * 与 `MapRenderer.badgesVisible` 同一种 dev 开关：仅供 `tools/artshot.mjs`
+   * 渲染"加/不加本层"的对照截图。**无人关闭 ⇒ 非生产路径**。
+   */
+  macroShade = true;
 
   /** 强制下一帧重烘（预留：未来有改变地形的机制时调用）。 */
   invalidate(): void {
@@ -142,8 +150,64 @@ export class TerrainLayer {
       }
     }
 
+    /* --- 地貌层：地图尺度的明暗（新，见 terrainShade.ts）——
+       在地形砖之后、抖动过渡带之前：先铺光，再让地形边界从光里穿出来 --- */
+    if (this.macroShade) this.bakeShade(ctx, map);
+
     /* --- 地形边缘抖动过渡：高优先级地形向低优先级"漫"一条疏密渐变的边 --- */
     this.bakeFringes(ctx, map);
+  }
+
+  /**
+   * 地貌层烘焙：按地图坐标叠一层低频明暗 + 近水湿边。
+   *
+   * 只作用于陆地格（水面走自己的动画通道、在水面那一趟绘制，这里不能给它上色，
+   * 否则会在水面格上留下一条不随波浪变化的"死带"）。
+   * 全部是一次性成本：这段代码只在地图加载时跑一次，运行时仍是每帧一次 drawImage。
+   */
+  private bakeShade(ctx: CanvasRenderingContext2D, map: GameMap): void {
+    const waterAt = (nx: number, ny: number): boolean =>
+      nx >= 0 && ny >= 0 && nx < map.width && ny < map.height &&
+      map.tiles[idx(map, nx, ny)].terrain === 'water';
+
+    const prevAlpha = ctx.globalAlpha;
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        if (map.tiles[idx(map, x, y)].terrain === 'water') continue;
+
+        // ① 大尺度明暗：亮部暖、暗部冷
+        const sh = shadeOf(x, y, map.height);
+        if (sh.alpha > 0.006) {
+          ctx.globalAlpha = sh.alpha;
+          ctx.fillStyle = sh.color;
+          ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+        }
+
+        // ② 近水湿边：朝水的每一条边压一条两段式冷暗带（外深内浅，免生硬直线）
+        let wn = 0;
+        if (waterAt(x, y - 1)) wn++;
+        if (waterAt(x, y + 1)) wn++;
+        if (waterAt(x - 1, y)) wn++;
+        if (waterAt(x + 1, y)) wn++;
+        const wa = wetEdgeAlpha(wn);
+        if (wa <= 0.006) continue;
+        const x0 = x * TILE;
+        const y0 = y * TILE;
+        const near = (wa * 1.15).toFixed(3);
+        const far = (wa * 0.5).toFixed(3);
+        ctx.fillStyle = `rgba(20,30,52,${near})`;
+        if (waterAt(x, y - 1)) ctx.fillRect(x0, y0, TILE, 2);
+        if (waterAt(x, y + 1)) ctx.fillRect(x0, y0 + TILE - 2, TILE, 2);
+        if (waterAt(x - 1, y)) ctx.fillRect(x0, y0, 2, TILE);
+        if (waterAt(x + 1, y)) ctx.fillRect(x0 + TILE - 2, y0, 2, TILE);
+        ctx.fillStyle = `rgba(20,30,52,${far})`;
+        if (waterAt(x, y - 1)) ctx.fillRect(x0, y0 + 2, TILE, 4);
+        if (waterAt(x, y + 1)) ctx.fillRect(x0, y0 + TILE - 6, TILE, 4);
+        if (waterAt(x - 1, y)) ctx.fillRect(x0 + 2, y0, 4, TILE);
+        if (waterAt(x + 1, y)) ctx.fillRect(x0 + TILE - 6, y0, 4, TILE);
+      }
+    }
+    ctx.globalAlpha = prevAlpha;
   }
 
   /**
