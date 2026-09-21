@@ -489,3 +489,28 @@ debug key 签名、7 档图标、`webContentsDebuggingEnabled=false`。
 | 2026-09-21（**工具归属更正 + G-18 关闭 + 单一 owner 裁定**） | ★ **工具归属**（art-director 报、主理人核过）：`tools/deviceshot.mjs`(+218) 与 `tools/imagecmp.mjs`(+309) **首次入库在 `e7f1df3`（09:07:09）**；`8cfd35b`（09:07:36）的**提交信息**提到「+ 真机视口对照」、但**其 `--stat` 不含这两个文件** ⇒ **后人读信息会记错作者。以本条为准。**★ **G-18 关闭**：`0.49 → 2.22`（相邻格平均 |ΔL\*|，受控图 `g_uniform_off/on.png`：1:1、1 格 = 32px、全草无物件）**已由 `artshot.mjs` 复算、逐位吻合** ⇒ **该数现在有量测脚本，不再是「出处存疑」**（`roadmap` 里先前那条挂账**到此关闭**）。★ **两份口径都对，不是矛盾**：`e7f1df3` 那组 `0.98` 量的是「盯着整屏看，画面挪了多少」；`g_uniform_*` 那组量的是「相邻格之间的空间对比」。art-director 已在 `21eb525` 写死此区分。★ **单一 owner 裁定（按目录切，不按变量切）**：`design/art-bible/shots/`（含 README / index.html / 全部 PNG）⇒ **`art-director` 单一写者**；`art-director-3` 守 `bitmap-asset-options.md`、**不再写 `shots/`**。理由：本次三方撞车正是「同一目录按变量分工」造成的。 |
 | 2026-09-21（**画面量测的噪声底数 + 元纪律「对照必须绑构建」+ 归属改记「未定」**） | ★★ **元纪律（art-director 发现，主理人采纳）**：**同一 URL、同一档位，只因为中途有人重跑了 `npm run build`，两次截图相差 平均 |ΔL\*| 2.08 / **61.6% 像素** —— 比这份表里任何一项「信号」都大。** ⇒ **任何「改前/改后」数字必须绑定构建指纹**（`dist/main.js` mtime / 构建时间）；复跑方式改为 **build → 立刻批抓 → 抓前抓后核 mtime 未变**。★ 它用 **零假设（同 URL 跑两遍）= 0.00 / 0.00 / 0.0%** 证明**抖动来自构建、不来自工具** ——这与「并列的两个数会被默认为同源」同族：**比较的前提没被写下来**。★★ **噪声底数表**（同一份 `dist`、真机视口 792×320@DPR3）：① **只改地形明暗** off→on：mean **1.41** / p95 5.32 / 22.8% ｜ ② **只改 `dprCap` 3→1.5**（同 high 档）：mean **1.26** / p95 5.54 / **11.9%** ｜ ③ **档位 low↔high**：mean **2.28** / p95 7.96 / 28.0% ｜ ④ **零假设**（同 URL 两遍）：**0.00 / 0.00 / 0.0%**。⇒ **②/③ ≈ 55%**：**「档位差」里锐度（渲染倍率）与氛围层各约一半** —— ★ **这不是美术的功劳/责任**：用户抱怨「画质」时，有一半是**渲染倍率**，不是画面层。**其设备判 high、`dprCap=3` 已在最高档 ⇒ 剩余差距不是「再叠一层色」能补的。**★ 先前那条「0.98」已被本表取代（口径不同，勿再引用）。★ **归因口径改记**：`c9d944e`（shimconsistency + 往 `bitmap-asset-options.md` 写「本档独立复跑」）**作者未定** —— 所有实例**共用同一 git author 身份**，git 分不出实例。**不记具体人。**★ **`src/render/quality.ts` 单一 owner ⇒ `art-director`**（政策内容属其域；G-15 为工程侧已完成的历史改动）。 |
 
+## 单一 owner 登记表（2026-09-21 立）
+
+> **为什么立这张表**：到今天为止，同一个文件被两个实例同时写、工作树被并行实例扫进别人的提交、
+> 同一任务被派给两个实例 —— **合计已发生 8 次以上**。
+> **根因有两条**：① **所有实例共用同一个 git author 身份** ⇒ `git log` 分不出作者；
+> ② **派工时没有"谁拥有这个文件"的登记** ⇒ 两个实例凭"我最相关"各自动手。
+> **⇒ 从今天起：动表里的文件前，先确认名字是自己的。**
+
+| 文件 / 目录 | 单一 owner | 备注 |
+|---|---|---|
+| `homm-web/src/render/MapRenderer.ts` | `engineering-lead` | ④ 可达染色所在；**测量方只读** |
+| `homm-web/src/main.ts` · `src/style.css` | `engineering-lead` | ④ 的 HUD 部分（顶栏/拇指带/菜单） |
+| `homm-web/src/render/quality.ts` | `art-director` | 档位政策（`TIER_TABLE` / `setDressing` / `dprCap`）；G-15 为工程侧已完成的历史改动 |
+| `homm-web/src/render/terrainLayer.ts` · `setDressing.ts` · `terrainShade.ts` · `lightLayer.ts` · `atlas.ts` | `art-director` | 画面层 |
+| `homm-web/tools/artshot.mjs` · `imagecmp.mjs` · `deviceshot.mjs` · `chromeshot.mjs` · `shimconsistency.mjs` | `art-director` | 美术取证工具链 |
+| `homm-web/tools/b0audit.mjs` · `atlasaudit.mjs` · `smoke.mjs` · `tinytargetaudit.mjs` 等门控探针 | `engineering-lead` | 门控；**改动须报主理人** |
+| `design/art-bible/shots/` | `art-director` | 按**目录**切（不按变量切） |
+| `design/art-bible/bitmap-asset-options.md` | `art-director-3` | |
+| `design/ux/in-game-ia.md` · `playtest-feedback.md` | `ux-ia` | |
+| `design/maps/` · `design/difficulty-spec.md` | `design-strategist` | |
+| `production/roadmap.md`（本文件） | **主理人** | 他人**只报不改** |
+| `design/gdd/races.md` | `ux-ia` | 既有写者 |
+
+**未列入的文件** ⇒ 动之前**先在群里报一句**（不要凭"我最相关"就动手）。
+
