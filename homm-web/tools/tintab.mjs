@@ -44,6 +44,21 @@
  *
  * ## population 必填（--pop=list 看选项）。覆盖判据按通道差 —— 不得用 |ΔL*| 阈值筛人口。
  *
+ * ## 视口 / DPR（2026-09-21 加，应 `art-director` 请 —— 供「通道独立腿」跑真机视口）
+ * `--vw`（默认 1280）/ `--vh`（默认 757）/ `--dpr`（默认 1），或便捷形 `--viewport=792x320@3`。
+ * `setDeviceMetricsOverride` 用它三个。**地图区**（避开顶/底栏）用 CSS 常量 `--maptop`（默认 42）/
+ *   `--mapbottom`（默认 37），**按 DPR 放大** —— ⚠️ 旧代码写死 `42..min(720,H)`，**只在 dpr1 对**；
+ *   直接 dpr3 会把顶栏算进地形（= 人口污染）。头部打印实际 `device y` 区间，可核。
+ * ⚠️ **画布分辨率 ≠ 截图分辨率**：画布 dpr = `min(devicePixelRatio, quality.dprCap)`（档位 clamps：
+ *   low1.5/mid2/high3）。`--dpr=3` 只让**截图** ×3；画布若被档位钳到 2 就会被**上采样**进截图（实测
+ *   mid ⇒ canvas `1584x480 dpr2` 塞进 `2376x960` 截图）。要画布真正 ×3 用 **`--devdpr=3`**（透传既有
+ *   `?devdpr`，只改 dprCap）。头部 `画布dpr` 行 + 每相位 `canvas ... dpr N` 会写明实际值。
+ * ⚠️ 换视口 = **换 population**（像素集合不同）⇒ 与桌面跑的**逐格数不可直接比**，只比**方向/判定**；
+ *   报告须写明视口 + dpr（与「指纹要写文件+算法+值」「population 必须写」同族）。
+ * ⚠️ **非桌面视口已知未决（2026-09-21，owner 实测）**：792×320@3 下 `dark`(雾/暗缝) 类的
+ *   `(a)并集/(b)全族` 在 **1548 ↔ 32607** 间**随帧序互换**，亮类（沙/草/水）不受影响 ⇒ 疑 **雾/揭图未 settle**
+ *   （`?devreveal`），**不是顺序能修**。⇒ 该视口下 **`dark` 数先别用**（先说清雾是否 settle）；桌面视口无此病。
+ *
  * ## 草亮度分层（2026-09-21 加，team-lead 裁 `ff7db9c`）
  * `grass` 曾是一个**不分层**的桶 —— 而 §15.4 的 (α) **失败格恰恰是「草·深」** ⇒ 并进 `grass`
  *   聚合会 **"均值掩盖死区"**（把仍不过的暗格洗成过）。故按 `L*` 切三桶，**阈值即本文件内的单一权威定义**：
@@ -110,7 +125,28 @@ const SEED = arg('seed', '20260917');
 const SIZE = arg('size', 'medium');
 const PORT = Number(arg('port', '5173'));
 const OUT = arg('out', '/tmp/tintab');
-const VH = Number(arg('vh', '757')); // Emulation 高；757 ⇒ 画布 1280x677
+let VH = Number(arg('vh', '757'));   // Emulation 高（CSS px）；757 ⇒ 画布 1280x677
+let VW = Number(arg('vw', '1280'));  // Emulation 宽（CSS px）
+let DPR = Number(arg('dpr', '1'));   // deviceScaleFactor
+/* 便捷形 `--viewport=792x320@3`（一次给 宽/高/dpr；覆盖 --vw/--vh/--dpr）—— art-director 的「通道独立腿」用真机视口。 */
+{
+  const vp = arg('viewport', '');
+  if (vp) {
+    const m = /^(\d+)x(\d+)@([\d.]+)$/.exec(vp.trim());
+    if (!m) { console.error('--viewport 形如 792x320@3'); process.exit(2); }
+    VW = Number(m[1]); VH = Number(m[2]); DPR = Number(m[3]);
+  }
+}
+/* 地图区 = [顶栏下, 底栏上]（**CSS px 常量**；源码原为 dpr1 下的 42..720 ⇒ 换 dpr 时必须 ×DPR）。
+ *   ⚠️ 原来是 `gy0=42, gy1=min(720,H)`，只在 dpr1 正确 —— 直接跑 dpr3 会把顶栏算进地形。
+ *   `--maptop`/`--mapbottom`（CSS px）可覆盖。 */
+const MAP_TOP_CSS = Number(arg('maptop', '42'));
+const MAP_BOTTOM_CSS = Number(arg('mapbottom', '37'));
+/* ⚠️ 画布 DPR 上限 = **画质档的 `dprCap`**（`quality.ts`：low1.5 / mid2 / high3），不是 deviceScaleFactor。
+ *   ⇒ 光设 `--dpr=3` 只让**截图**变 3 倍，画布仍可能被档位钳到 2（实测：mid ⇒ canvas 1584x480 dpr2）。
+ *   `--devdpr=<n>` 透传既有 `?devdpr`（只改 dprCap，隔离实验）⇒ 画布真正跑到 n 倍。 */
+const DEVDPR = arg('devdpr', '');
+const DEVDPR_Q = DEVDPR ? `&devdpr=${encodeURIComponent(DEVDPR)}` : '';
 
 /* ---------------------------------------------------- 指纹 & 常量解析 */
 
@@ -274,16 +310,20 @@ const HOOK = `(() => {
   };
 })();`;
 
+/* ⚠️ 抓帧**顺序**（保持既有：full 最先、none 次之、再各族）。**别随手重排** —— 实测 792@3 下
+ *   `dark`(雾) 类的 `(a)并集/(b)全族` 会随"哪一帧最早/最晚"在 **1548 ↔ 32607** 间**互换**：
+ *   疑为 `?devreveal` 的**雾/揭图未 settle**（亮地形不受影响 ⇒ 只 `dark` 出病）⇒ **非顺序能修**。
+ *   ⇒ 「真机视口独立腿」用 `dark` 前**须先证实雾已 settle**；桌面视口无此病（见 roadmap 记录）。 */
 const MODES = { full: Object.fromEntries(FAMILIES.map((f) => [f, false])), none: Object.fromEntries(FAMILIES.map((f) => [f, true])) };
 for (const f of FAMILIES) MODES[f] = Object.fromEntries(FAMILIES.map((g) => [g, g !== f]));
 
 async function captureAll() {
   return withHeadlessChrome(async ({ send, evaluate }) => {
     await send('Page.addScriptToEvaluateOnNewDocument', { source: HOOK });
-    await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: VH, deviceScaleFactor: 1, mobile: false });
+    await send('Emulation.setDeviceMetricsOverride', { width: VW, height: VH, deviceScaleFactor: DPR, mobile: false });
     const shots = {};
     for (const ph of PHASES) {
-      const url = `http://127.0.0.1:${PORT}/?devquick=0&devsize=${SIZE}&devseed=${SEED}&devreveal=1&devprobe=1&devlight=${ph}`;
+      const url = `http://127.0.0.1:${PORT}/?devquick=0&devsize=${SIZE}&devseed=${SEED}&devreveal=1&devprobe=1&devlight=${ph}${DEVDPR_Q}`;
       await send('Page.navigate', { url });
       for (let i = 0; i < 200; i++) {
         const ok = await evaluate('!!(window.__journey && window.__journey() && window.__journey().heroPos && document.querySelector("canvas") && window.__tintSkip)').catch(() => false);
@@ -291,7 +331,7 @@ async function captureAll() {
         await new Promise((r) => setTimeout(r, 50));
       }
       await evaluate('new Promise(r=>{let i=0;const s=()=>(++i>=30?r():requestAnimationFrame(s));requestAnimationFrame(s)})');
-      const meta = await evaluate('(()=>{const c=document.querySelector("canvas");const j=window.__journey();return {canvas:{w:c.width,h:c.height},dpr:c.width/c.clientWidth,hero:j.heroPos}})()');
+      const meta = await evaluate('(()=>{const c=document.querySelector("canvas");const j=window.__journey();return {canvas:{w:c.width,h:c.height},dpr:c.width/c.clientWidth,dprRaw:window.devicePixelRatio,hero:j.heroPos}})()');
       shots[ph] = { meta, modes: {} };
       for (const [mode, skip] of Object.entries(MODES)) {
         await evaluate(`window.__tintSkip = ${JSON.stringify(skip)}`);
@@ -309,7 +349,7 @@ async function captureAll() {
     if (shots[IDENTITY_PHASE]) {
       shots.identity = shots[IDENTITY_PHASE].modes.none;
     } else {
-      const url = `http://127.0.0.1:${PORT}/?devquick=0&devsize=${SIZE}&devseed=${SEED}&devreveal=1&devprobe=1&devlight=${IDENTITY_PHASE}`;
+      const url = `http://127.0.0.1:${PORT}/?devquick=0&devsize=${SIZE}&devseed=${SEED}&devreveal=1&devprobe=1&devlight=${IDENTITY_PHASE}${DEVDPR_Q}`;
       await send('Page.navigate', { url });
       for (let i = 0; i < 200; i++) {
         const ok = await evaluate('!!(window.__journey && window.__journey() && window.__journey().heroPos && document.querySelector("canvas") && window.__tintSkip)').catch(() => false);
@@ -339,7 +379,9 @@ async function analyze(ph, shot, identityBuf) {
   const I = await raw(identityBuf);       // 身份帧（分类用：恒正午底，不随相位变）
   const W = B.w, H = B.h, N = W * H, C4 = B.c;
   if (I.w !== W || I.h !== H) throw new Error(`身份帧 ${I.w}x${I.h} ≠ 相位帧 ${W}x${H} —— 分类与测量不在同一坐标系，拒绝出数。`);
-  const gy0 = 42, gy1 = Math.min(720, H);
+  /* 地图区（device y）：顶栏下 .. 底栏上；CSS 常量 ×DPR。原 `42..min(720,H)` 仅 dpr1 对。 */
+  const gy0 = Math.min(Math.round(MAP_TOP_CSS * DPR), H);
+  const gy1 = Math.max(gy0, Math.min(H, Math.round((VH - MAP_BOTTOM_CSS) * DPR)));
   const cls = new Uint8Array(N);
   const gb = new Int8Array(N);
   const CODE = { dark: 0, water: 1, grass: 2, sand: 3, rock: 4 };
@@ -455,7 +497,10 @@ async function analyze(ph, shot, identityBuf) {
   console.log(`HEAD   : ${headBefore}（测量前；跑完再核是否仍是当前 HEAD —— 防"历史读数"）`);
   console.log('src!=dist: 已核一致（不一致会 exit 2）');
   for (const f of FAMILIES) console.log(`族 ${LABEL[f]}: ${BY_FAMILY[f].map((t) => `${t.name}=${t.raw} => ${t.canon}`).join('  ')}`);
-  console.log(`场景   : seed=${SEED} size=${SIZE} devreveal=1 视口 1280x${VH}(emulation,dpr1) => 画布 1280x${VH - 80}`);
+  console.log(`场景   : seed=${SEED} size=${SIZE} devreveal=1 视口 ${VW}x${VH}@dpr${DPR}(emulation) => 截图 ${VW * DPR}x${VH * DPR}(device)`);
+  console.log(`画布dpr : ${DEVDPR ? `覆写 ?devdpr=${DEVDPR}（画布真正 ×${DEVDPR}）` : '⚠️ 未覆写 ⇒ 按画质档 dprCap（mid=2）—— 截图 ×dpr 但画布可能被档位钳小（见每相位头 canvas ... dpr N）'}`);
+  console.log(`URL    : http://127.0.0.1:${PORT}/?devquick=0&devsize=${SIZE}&devseed=${SEED}&devreveal=1&devprobe=1&devlight=<相位>${DEVDPR_Q}`);
+  console.log(`地图区 : device y [${Math.round(MAP_TOP_CSS * DPR)} .. ${Math.round((VH - MAP_BOTTOM_CSS) * DPR)}]（= CSS y [${MAP_TOP_CSS} .. ${VH - MAP_BOTTOM_CSS}] ×dpr${DPR}；顶/底栏各 ${MAP_TOP_CSS}/${MAP_BOTTOM_CSS} CSS px）—— 换 dpr 会随之缩放`);
   console.log(`相位   : ${PHASES.join(', ')}　（0.22=正午 0.5=黄昏 0.68=深夜）`);
   console.log(`population: ${requestedPops.join(', ')}`);
   console.log(`分类帧 : **身份帧 = 正午(0.22) none 底图**（不随相位变）—— 防"相位越暗、桶越塌 ⇒ 凭空通过"；与 reachmeas 第4参同帧`);
@@ -480,7 +525,7 @@ console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**�
     const shot = shots[ph];
     for (const [mode, buf] of Object.entries(shot.modes)) writeFileSync(path.join(OUT, `tint_${ph}_${mode}.png`), buf);
     const { meta, rowsOut, popTotal, popFull, popMulti, popZero, zeroSamples } = await analyze(ph, shot, shots.identity);
-    console.log(`########## devlight=${ph}  canvas ${meta.canvas.w}x${meta.canvas.h} dpr ${meta.dpr} hero(${meta.hero.x},${meta.hero.y})`);
+    console.log(`########## devlight=${ph}  canvas ${meta.canvas.w}x${meta.canvas.h} dpr ${meta.dpr}（window.devicePixelRatio=${meta.dprRaw}）hero(${meta.hero.x},${meta.hero.y})`);
     console.log(`  fillRect 命中：${FAMILIES.map((f) => `${f}x${shot.hits[f]}`).join('  ')}`);
     for (const f of FAMILIES) if (!shot.hits[f]) { missing = true; console.log(`  [!] 族「${LABEL[f]}」命中 0 —— 颜色/名字可能已改，该族无效，勿引用！`); }
     console.log('  族        | population      | 像素数 | ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG中位 | WCAG均值(参考) | 类总变化(a并集/b全族)');
