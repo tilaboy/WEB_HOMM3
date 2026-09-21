@@ -15,12 +15,14 @@
  * 用法：SEEDS=3 node tools/minesaudit.mjs [size]
  *   不带参数则遍历 small/medium/large/huge 四档 × 全部布局。
  */
-import { distDir, distUrl, printHeader } from './_dist.mjs';
+import { distDir, distUrl, printHeader, requireFile } from './_dist.mjs';
 
-/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。 */
+/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。
+ * `requireFile`：缺构建 ⇒ **exit 2 + 友好提示**（与 `smoke`/`b0audit` **同一种红**；不吐模块解析栈）。 */
 const DIST = distDir();
 printHeader(DIST, 'gate=minesaudit');
 const dimp = (rel) => distUrl(rel, DIST);
+requireFile(DIST, 'core/map/generator.js');
 
 const { createGame } = await import(dimp('core/map/generator.js'));
 const { HOME_MINE_RING } = await import(dimp('core/data/mines.js'));
@@ -120,6 +122,13 @@ function fmt(v) {
 function pad(s, n) {
   s = String(s);
   return s + ' '.repeat(Math.max(0, n - s.length));
+}
+
+/* ⚠️ 空跑守卫（与 `b0audit` 的 `nonEmpty` 同族）：**一局都没跑到 ⇒ 这次「通过」是空的**，
+ * 不许当成绿。起因：`--dist` 被当成尺寸那次，正是「**零局跑 + 打印全部通过 + exit 0**」。 */
+if (rows === 0) {
+  console.error('✗ 一局都没跑到 ⇒ 这次「通过」是空的（检查位置参数 / `--dist` 指向的构建）。');
+  process.exit(2);
 }
 
 console.log(

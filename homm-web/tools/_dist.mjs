@@ -55,30 +55,44 @@ export function distUrl(rel, dir) {
 }
 
 /**
- * 被测目录指纹：对 **存在** 的 `main.js` / `style.css` / `index.html` 求 `sha256`（短）。
- * 缺 `main.js`（构建不完整 / 指错目录）⇒ `sha256 = null`，便于**双击可证**（见 `printHeader`）。
+ * 被测目录指纹。
+ *   · **`md5` = `main.js` 的 md5** —— **台账 / 广播的绑定同口径**（例：`ff653bce…`）。★ 主键。
+ *   · **`sha256` = 对存在的 `main.js`/`style.css`/`index.html` 求的复合值**（短）—— 仅辅助。
+ * 缺 `main.js`（构建不完整 / 指错目录）⇒ 两值皆 `null`，便于**双击可证**（见 `printHeader`）。
+ * ⚠️ `mtime` 只作**信息**：`--dist=<副本>` 时**不携带**（真 `10:28:50` → 副本 `10:47:40`）
+ *   ⇒ **不是绑定量**（能绑的只有内容哈希）。
  */
 export function fingerprint(dir, files = ['main.js', 'style.css', 'index.html']) {
   const present = files.filter((f) => existsSync(path.join(dir, f)));
   const h = createHash('sha256');
   let mtime = null;
+  let md5 = null;
   for (const f of [...present].sort()) {
     const p = path.join(dir, f);
     h.update(f).update('\0').update(readFileSync(p));
-    if (f === 'main.js') mtime = statSync(p).mtime.toISOString();
+    if (f === 'main.js') {
+      mtime = statSync(p).mtime.toISOString();
+      md5 = createHash('md5').update(readFileSync(p)).digest('hex');
+    }
   }
-  return { dir, sha256: present.length ? h.digest('hex').slice(0, 16) : null, mtime, files: present };
+  return { dir, md5, sha256: present.length ? h.digest('hex').slice(0, 16) : null, mtime, files: present };
 }
 
 /**
  * **首行输出**：`dir`（我服务的目录）+ `cwd`（也影响指哪）+ 指纹。
  * ⚠️ 调用点必须在任何其它 `console.log` **之前**。返回指纹对象供后续复用。
+ *
+ * ★ **指纹口径（team-lead #164 要求③）**：主键改印 **`main.js.md5`** —— 与**台账 / 广播绑定同口径**；
+ *   `combo=` 另印**复合** sha256，且**写全"文件 + 算法"**。旧版只写 `fp=` 印复合值
+ *   ⇒ 与台账的 `main.js` md5 是**两个不同的量却共用一个词「指纹」**（今天反复在治的那族）。
+ * ⚠️ `mtime=` 标注为**非绑定量**：`--dist=<副本>` 不携带它。
  */
 export function printHeader(dir, extra = '') {
   const fp = fingerprint(dir);
   console.log(
-    `[dist] dir=${fp.dir} · cwd=${process.cwd()} · fp=${fp.sha256 ?? '(n/a)'}` +
-      `${fp.mtime ? ` · main.js.mtime=${fp.mtime}` : ''}${extra ? ` · ${extra}` : ''}`,
+    `[dist] dir=${fp.dir} · cwd=${process.cwd()} · main.js.md5=${fp.md5 ?? '(n/a)'}` +
+      ` · combo=sha256(index.html+main.js+style.css)@16:${fp.sha256 ?? '(n/a)'}` +
+      `${fp.mtime ? ` · mtime=${fp.mtime}(非绑定量)` : ''}${extra ? ` · ${extra}` : ''}`,
   );
   return fp;
 }

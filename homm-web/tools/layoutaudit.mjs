@@ -2,12 +2,14 @@
  * M8 布局审计：每种布局 × 每种尺寸 × N 个种子，检查生成是否"真的成立"。
  * 关心四件事：能不能生出来、四家走不走得到、地形比例是否合理、深处有没有宝贝。
  */
-import { distDir, distUrl, printHeader } from './_dist.mjs';
+import { distDir, distUrl, printHeader, requireFile } from './_dist.mjs';
 
-/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。 */
+/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。
+ * `requireFile`：缺构建 ⇒ **exit 2 + 友好提示**（与 `smoke`/`b0audit` **同一种红**；不吐模块解析栈）。 */
 const DIST = distDir();
 printHeader(DIST, 'gate=layoutaudit');
 const dimp = (rel) => distUrl(rel, DIST);
+requireFile(DIST, 'core/map/generator.js');
 
 const { createGame } = await import(dimp('core/map/generator.js'));
 const { isPassable } = await import(dimp('core/map/grid.js'));
@@ -108,3 +110,5 @@ for (const r of rows) {
   );
 }
 console.log(bad === 0 ? `\n全部通过（${LAYOUTS.length * SIZES.length * SEEDS} 局）` : `\n${bad} 档有问题`);
+/* 门控得有退出码：旧版 `bad>0` 也 `exit 0` ⇒ **对它自己的失败恒绿**（既不能「双向可证」，CI 也看不见）。 */
+process.exit(bad === 0 ? 0 : 1);
