@@ -368,7 +368,14 @@ const HOOK = `(() => {
     document.addEventListener('DOMContentLoaded', put, { once: true });
   } catch (e) {}
   const FAMILIES = ${JSON.stringify(FAMILIES)};
-  const COLORS = ${JSON.stringify(Object.fromEntries(FAMILIES.map((f) => [f, BY_FAMILY[f].map((t) => t.canon)])))};
+  /* ★ 族色窗 = **可变集合**（window.__tintWin），不再写死成常量：
+   *   缘由（team-lead A/B 口径「按 draw-time 族标记、不用颜色窗」+ 实测）：?devhalocomp=1（修法 2）
+   *   会把 halo 三条描边的色**光照反算**（lightCompColor）⇒ 与 dist 常量不再相等 ⇒
+   *   写死的色窗在**深夜**整族命中 **0**（实测：正午 10990 → 深夜 0，本工具据此 exit 1，不静默出假数）。
+   *   ⇒ 载入后**从运行中的 bundle 取 currentLightTint**（dist/render/lightLayer.js 有导出）算出
+   *   补偿色，**追加**进本窗（见 compensateWindows()）。常量集仍来自 dist ⇒ 族定义仍单一出处。
+   *   ⚠️ 补偿色算不出的相位 ⇒ 该族 0 命中 ⇒ 工具**硬失败**（不猜）。 */
+  window.__tintWin = ${JSON.stringify(Object.fromEntries(FAMILIES.map((f) => [f, BY_FAMILY[f].map((t) => t.canon)])))};
   const norm = (s) => {
     const h6 = /^#([0-9a-f]{6})$/i.exec(s);
     if (h6) { const n = parseInt(h6[1], 16); return 'rgb(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ')'; }
@@ -383,7 +390,7 @@ const HOOK = `(() => {
   proto.fillRect = function (...a) {
     const fs = norm((typeof this.fillStyle === 'string') ? this.fillStyle.replace(/\\s+/g, '') : '');
     let hit = null;
-    for (const f of FAMILIES) if (COLORS[f].includes(fs)) { hit = f; break; }
+    for (const f of FAMILIES) if (window.__tintWin[f].includes(fs)) { hit = f; break; }
     if (hit) { window.__tintHits[hit]++; if (window.__tintSkip[hit]) return; }
     return orig.apply(this, a);
   };
@@ -398,6 +405,37 @@ const HOOK = `(() => {
  *   ⇒ 「真机视口独立腿」现可放行 `dark`；桌面（dpr1）画布尺寸不随档位变 ⇒ 本无此病。 */
 const MODES = { full: Object.fromEntries(FAMILIES.map((f) => [f, false])), none: Object.fromEntries(FAMILIES.map((f) => [f, true])) };
 for (const f of FAMILIES) MODES[f] = Object.fromEntries(FAMILIES.map((g) => [g, g !== f]));
+
+/* ★ 光照补偿色（只在 `--extra=...devhalocomp...` 时启用）：
+ *   `?devhalocomp=1` 下 `MapRenderer` 把 halo 三条描边的色按 `lightCompColor(c, lightTint)` 反算。
+ *   ⇒ 从**运行中的 bundle**取 `currentLightTint(FROZEN_NOW)`（与页面同源，非抄公式），
+ *   在页面里对**该族的 raw 常量**跑同一个反算，把结果**追加**到 `window.__tintWin`。
+ *   ⚠️ `fill`（蓝填充）**不补偿**（`lightCompColor` 只作用于三条描边）⇒ 不动它。
+ *   ⚠️ 补偿色若与实际不符 ⇒ 该族 0 命中 ⇒ 工具 exit 1（不静默出假数）；头部会打印追加了哪些色。 */
+const FROZEN_NOW = 123456.789;
+const BAND_FAMS = FAMILIES.filter((f) => f !== 'fill');
+const COMP_JS = `(async () => {
+  try {
+    const raw = ${JSON.stringify(Object.fromEntries(BAND_FAMS.map((f) => [f, BY_FAMILY[f].map((t) => t.raw)])))};
+    const m = await import('/render/lightLayer.js');
+    const lt = m.currentLightTint(${FROZEN_NOW});
+    const f = (v) => (v > 0 ? v / 255 : 1);
+    const up = (v, k) => Math.max(0, Math.min(255, Math.round(v / k)));
+    const comp = (css) => {
+      const hex = /^#([0-9a-f]{6})$/i.exec(css);
+      if (hex) { const n = parseInt(hex[1], 16); return 'rgb(' + up((n >> 16) & 255, f(lt.r)) + ',' + up((n >> 8) & 255, f(lt.g)) + ',' + up(n & 255, f(lt.b)) + ')'; }
+      const mm = /^rgba?\\(([^)]+)\\)$/.exec(css);
+      if (mm) { const p = mm[1].split(',').map((s) => parseFloat(s.trim())); const a = p.length > 3 ? p[3] : 1;
+        return 'rgba(' + up(p[0], f(lt.r)) + ',' + up(p[1], f(lt.g)) + ',' + up(p[2], f(lt.b)) + ',' + a + ')'; }
+      return css;
+    };
+    const added = {};
+    for (const fam of Object.keys(raw)) { added[fam] = [];
+      for (const c of raw[fam]) { const cc = comp(c).replace(/\\s+/g, ''); if (!window.__tintWin[fam].includes(cc)) { window.__tintWin[fam].push(cc); added[fam].push(cc); } } }
+    return { lt, added };
+  } catch (e) { return { err: String((e && e.message) || e) }; }
+})()`;
+const USE_COMP = /devhalocomp/.test(EXTRA);
 
 /* ★ DOM 覆盖层门（2026-09-21 owner · 解 792「dark 的 (b)全族」虚高）：
  *   `src/main.ts:604 hint()` 的底部 toast（元素 `#hint`；新局时 `main.ts:1121` 触发
@@ -457,7 +495,10 @@ async function captureAll() {
        *   成本极低 ⇒ 留作保险。⚠️ 桌面 1280/dpr1 画布尺寸不随档位变（settle 被跳过），本丢弃近乎无操作。 */
       await send('Page.captureScreenshot', { format: 'png' });
       const meta = await evaluate('(()=>{const c=document.querySelector("canvas");const j=window.__journey();const h=document.getElementById("hint");return {canvas:{w:c.width,h:c.height},dpr:c.width/c.clientWidth,dprRaw:window.devicePixelRatio,hero:j.heroPos,hint:!!h,hintShown:!!(h&&h.classList&&h.classList.contains("show"))}})()');
-      shots[ph] = { meta, hintHidden, settle, modes: {} };
+      /* ★ 光照补偿色窗（仅 `--extra=...devhalocomp...`）：在**同一相位**、开录前算好并追加（见 `COMP_JS`）。 */
+      const comp = USE_COMP ? await evaluate(COMP_JS).catch((e) => ({ err: String(e) })) : null;
+      if (comp && comp.err) console.error(`  [!] 光照补偿色窗计算失败：${comp.err} —— ?devhalocomp 下三条描边可能 0 命中，本相位数勿引。`);
+      shots[ph] = { meta, hintHidden, settle, comp, modes: {} };
       for (const [mode, skip] of Object.entries(MODES)) {
         await evaluate(`window.__tintSkip = ${JSON.stringify(skip)}`);
         await evaluate('new Promise(r=>{let i=0;const s=()=>(++i>=3?r():requestAnimationFrame(s));requestAnimationFrame(s)})');
@@ -669,6 +710,11 @@ console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**�
     console.log(`  overlay门: #hint 注入隐藏 ${tst === true ? '已生效（computed display:none）✅' : tst === null ? '⚠️ 无 #hint 元素（未核）' : '❌ 未生效 ⇒ toast 可能在录制中占像素，读数存疑'} · 录制前已丢弃首帧 · classList.show=${meta.hintShown}（恒置位，非异常）`);
     { const st = shot.settle; console.log(`  画布settle: ${st ? `canvas=${st.key} @ ${st.ms}ms（${st.note}）` : '(未记)'}`); }
     console.log(`  fillRect 命中：${FAMILIES.map((f) => `${f}x${shot.hits[f]}`).join('  ')}`);
+    if (USE_COMP) {
+      const c = shot.comp;
+      console.log(`  光照补偿色窗: ${c && !c.err ? `lightTint=(${c.lt.r},${c.lt.g},${c.lt.b},warm=${c.lt.warm}) ⇒ 追加色 ${Object.entries(c.added).map(([f, a]) => `${f}:${a.length ? a.join(',') : '(无需追加)'}`).join(' | ')}` : `⚠️ 失败(${c && c.err})`}`);
+      console.log(`    ⇒ 三条描边的色窗 = 常量 ∪ 补偿色；若某族命中 0 说明补偿色未对上 ⇒ 本组勿引（不猜）。`);
+    }
     for (const f of FAMILIES) if (!shot.hits[f]) { missing = true; console.log(`  [!] 族「${LABEL[f]}」命中 0 —— 颜色/名字可能已改，该族无效，勿引用！`); }
     console.log('  族        | population      | 像素数 | ΔL*中位 | ΔE*ab中位 | 色盲ΔL*中位 | 色盲<2.22 | WCAG中位 | WCAG均值(参考) | 类总变化(a并集/b全族)');
     for (const r of rowsOut) {
