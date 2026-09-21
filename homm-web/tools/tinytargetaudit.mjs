@@ -412,8 +412,8 @@ const APP_THUMB = `(() => {
  * —— 这正是本次改动的语义资产（IA §3.2 #23 ①②③「信息只搬家不丢失」）。
  *
  * 读的是**真实 DOM**：点一下「菜单」，数 `.menu-item`，再 remove 复原以免污染后续阶段。
- * 说明：`count`（菜单一级项数）作**上限守卫**（≤7）**硬断言** —— 守卫的是「菜单不膨胀」
- * 这条要求，**不是当时的读数**（§7 收口后代码现为 6）。判据与理由见断言处注释。
+ * 说明：`count`（菜单一级项数）作**上限守卫**（≤ §7 上限，现为 6）**硬断言** —— 守卫的是
+ * 「菜单不膨胀」这条要求，**不是当时的读数**。判据与理由见断言处注释。
  */
 const APP_MENU = `(() => {
   const btns = [...document.querySelectorAll('#thumb .btn')];
@@ -852,11 +852,11 @@ if (!appMenu || appMenu.error) {
   const logInMenu = appMenu.items.includes('事件日志');
   const badgeMoved = appMenu.badgeOnMenu === true;
   const ariaOk = appMenu.menuAria.startsWith('菜单');
-  // 菜单「不膨胀」守卫：断言的是**上限**，**不是当时的读数** `=== 6`。
-  // 写死 `=== 6` ⇒ 菜单加一项**合法**项（例如日后加「帮助」）就变红 ⇒ 很快被当噪声关掉 = 没守卫
-  // （同 smoke 那个「X-Y=0」读数的坑）。要防的是「菜单膨胀」：用户 F-3.2/3.5/3.6 说的都是「减」。
-  // ⇒ 上限 = §7 现行 6 + 1 格余量 = 7。加合法项时**改这个上限并写明理由**，不要删断言。
-  const MENU_MAX = 7;
+  // 菜单「不膨胀」守卫：断言的是**规格上限**，不是随便一个当时读数。
+  // 写死 `=== 6` 是「固化读数」（菜单加一项就红，很快被当噪声关掉 = 没守卫）；
+  // 但上限**必须等于 §7 的值** —— 容忍到 7 就等于「别人加第 7 项时放行」，守不住「不膨胀」。
+  // ⇒ 判据 = §7 现行上限 **6**（design/ux/in-game-ia.md §7：一级 ≤ 6）。§7 改 ⇒ 只改这一处常量。
+  const MENU_MAX = 6;
   const countOk = typeof appMenu.count === 'number' && appMenu.count <= MENU_MAX;
   for (const ok of [noLogThumb, logInMenu, badgeMoved, ariaOk, countOk]) if (!ok) bad++;
   console.log(
@@ -868,7 +868,7 @@ if (!appMenu || appMenu.error) {
     `[${ariaOk ? 'PASS' : 'FAIL'}] 「菜单」按钮 aria-label 以「菜单」起（实测「${appMenu.menuAria}」，a11y §4.3 数字不得为唯一语义）`,
   );
   console.log(
-    `[${countOk ? 'PASS' : 'FAIL'}] 菜单一级项 ${appMenu.count} 项 ≤ ${MENU_MAX}（§7 现行 6 + 1 余量；守卫『不膨胀』而非当时读数）：${appMenu.items.join(' / ')}`,
+    `[${countOk ? 'PASS' : 'FAIL'}] 菜单一级项 ${appMenu.count} 项 ≤ ${MENU_MAX}（§7 上限=6；守卫『不膨胀』而非当时读数）：${appMenu.items.join(' / ')}`,
   );
 }
 

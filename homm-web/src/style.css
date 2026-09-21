@@ -207,6 +207,10 @@ body {
   height: 48px;
   display: flex;
   align-items: center;
+  /* F-3.6 撤掉移动力细条（原 `flex: 1 1 auto`，它把后面的按钮顶到右边）后，4 个按钮会
+     **左贴、右侧留空** —— 那是本次改动顺带引入的**布局回归**。`flex-end` 把它恢复
+     （右侧 0 安全区，右拇指更顺；此前一直被那条移动力条顶着）。 */
+  justify-content: flex-end;
   gap: 6px;
   padding: 0 8px;
   background: linear-gradient(0deg, #5a4326, #3a2a14);
