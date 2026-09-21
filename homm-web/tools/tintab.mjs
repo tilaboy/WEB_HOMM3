@@ -81,6 +81,14 @@
  *      **修法 = HOOK 注入 `#hint{display:none}`**（测量帧确定、可复现）；头部每相位打印
  *      「overlay门: #hint 注入隐藏 已生效（computed display:none）」（`getComputedStyle`）供核。
  *      ⚠️ 该 toast **与 canvas 渲染无关** —— 抑制它不改任何地图像素的绘制路径。
+ *      ⚠️⚠️ **但它不是"逐像素局部"改动（`art-director` 于 `deviceshot` 通道实测，2026-09-21）**：
+ *        「隐」vs「不隐」= **362308 px 差 / max|Δ|=182 / 差异 bbox 覆盖整帧 2376×960**（仅 38251 px 落
+ *        在那块 toast 内）；两跑画布几何**完全相同** ⇒ 形态与「**整幅地图位移 ≈1px**」一致；
+ *        **安慰剂对照**（只注入 inert 规则 `#__nope_never_exists{display:none}`）与"无注入" **0 px 差**
+ *        ⇒ 差异**不是**注入时序、而是**隐藏 toast 本身**。**故原注"隐藏不改布局"不成立，已撤回。**
+ *        ⇒ **① 本工具 A/B 一律"两侧对称隐藏"** ⇒ 比的是旗标、不是隐/不隐 ⇒ **旗标 A/B 仍有效**；
+ *          **② 修后的绝对数**（如 `dark Σ=1548`）**不得与任何"隐藏前"的历史读数并列**
+ *          （不是"构建换了"，是**画面整体位移了**）。`--nohidehint` 可关（则须自担 toast 污染）。
  *   ① 动画（水波/脉冲）由 `NOW_STUB` 冻结（见下）。
  *
  * ## 草亮度分层（2026-09-21 加，team-lead 裁 `ff7db9c`）
@@ -352,6 +360,16 @@ const NOW_STUB = FREEZE_ANIM
   ? `try{const F=function(){return 123456.789;};try{Object.defineProperty(Performance.prototype,'now',{value:F,configurable:true,writable:true});}catch(e){}try{performance.now=F;}catch(e){}}catch(e){}`
   : '';
 
+/* `--nohidehint`：不注入 `#hint{display:none}`（**接受 toast 可能污染**；用于需要"逐字节原样帧"时）。
+ * ⚠️ 一旦开了本项，A/B **两侧必须一致**，否则比的是"隐/不隐"而非旗标。 */
+const HINT_HIDE_JS = process.argv.includes('--nohidehint') ? '' : `try {
+    const st = document.createElement('style');
+    st.textContent = '#hint{display:none !important;}';
+    const put = () => { try { (document.head || document.documentElement).appendChild(st); } catch (e) {} };
+    put();
+    document.addEventListener('DOMContentLoaded', put, { once: true });
+  } catch (e) {}`;
+
 const HOOK = `(() => {
   ${NOW_STUB}
   /* ★ 抑制启动 toast（#hint；main.ts:604 hint()，文案 main.ts:1121）——
@@ -360,13 +378,7 @@ const HOOK = `(() => {
    *   （实测曾把 dark 的 (a)并集 抬高 31059：ink-only 帧被 toast 盖住 ⇒ "该带在变"是假信号）。
    *   ⇒ 注入 CSS 隐藏，使测量帧确定 —— 与 NOW_STUB 冻结动画**同族**：都是"移除非地形瞬态"。
    *   ⚠️ 这是**唯一**被动的 DOM 瞬态；#objBanner（§14.2 教学目标）"载入即 3/3 不弹"、不在此窗内。 */
-  try {
-    const st = document.createElement('style');
-    st.textContent = '#hint{display:none !important;}';
-    const put = () => { try { (document.head || document.documentElement).appendChild(st); } catch (e) {} };
-    put();
-    document.addEventListener('DOMContentLoaded', put, { once: true });
-  } catch (e) {}
+  ${HINT_HIDE_JS}
   const FAMILIES = ${JSON.stringify(FAMILIES)};
   /* ★ 族色窗 = **可变集合**（window.__tintWin），不再写死成常量：
    *   缘由（team-lead A/B 口径「按 draw-time 族标记、不用颜色窗」+ 实测）：?devhalocomp=1（修法 2）
