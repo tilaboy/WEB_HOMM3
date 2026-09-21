@@ -24,12 +24,14 @@
  *   tools/_aidiagnose.log    全部 AI 相关日志（按天）
  */
 import { writeFileSync } from 'node:fs';
-import { distDir, distUrl, printHeader } from './_dist.mjs';
+import { distDir, distUrl, printHeader, requireFile } from './_dist.mjs';
 
-/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。 */
+/* `--dist=<dir>`（缺省 `<repo>/dist` = 旧 `../dist`，**逐字不变**）—— team-lead #164。
+ * `requireFile`：缺构建 ⇒ **exit 2 + 友好提示**（与 `smoke`/`b0audit` **同一种红**；不吐模块解析栈）。 */
 const DIST = distDir();
 printHeader(DIST, 'gate=aidiagnose');
 const dimp = (rel) => distUrl(rel, DIST);
+requireFile(DIST, 'core/map/generator.js');
 
 const { createGame } = await import(dimp('core/map/generator.js'));
 const { endDay } = await import(dimp('core/game/turn.js'));
