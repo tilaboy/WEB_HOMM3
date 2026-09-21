@@ -510,9 +510,9 @@ debug key 签名、7 档图标、`webContentsDebuggingEnabled=false`。
 | `design/art-bible/shots/` | `art-director` | 按**目录**切（不按变量切） |
 | `design/art-bible/bitmap-asset-options.md` | `art-director-3` | |
 | `design/ux/in-game-ia.md` · `playtest-feedback.md` | `ux-ia` | |
-| `design/maps/` · `design/difficulty-spec.md` | `design-strategist` | |
+| `design/maps/` · `design/difficulty-spec.md` | **`design-strategist`** | ★ **2026-09-21 强化**：曾有第三方把「实现口径」写进 `design/maps/playtest-scenarios.md`（`a9a0ea1`）。**内容经核实正确、予以保留**，但**「把规格与实现对账」也必须先报一句** —— 单写者规则**不为"内容对"开例外**。 | |
 | `production/roadmap.md`（本文件） | **主理人** | 他人**只报不改** |
-| `design/gdd/races.md` | `ux-ia` | 既有写者 |
+| `design/gdd/races.md` | **`design-strategist`** | ★ **改判（2026-09-21）**：GDD 归设计单写者。`ux-ia` 在本文件上的收口（`§6.4.2` / `§7` / `§8` 交接清单，`9a31e40` / `633609d` / `aeeb69a`）**已完成**，⇒ **本文件此后归 `design-strategist`**；`ux-ia` 如再需改动，**报一句再动**。 |
 
 **未列入的文件** ⇒ 动之前**先在群里报一句**（不要凭"我最相关"就动手）。
 | 2026-09-21（**元纪律升级：任何门控/测量结果必须绑定它所依据的状态**） | ★ 起因一（构建）：art-director 实测 —— **同 URL 同档位、换另一份 `dist`，相差 平均 2.08 / 61.6% 像素**，比表内任何信号都大（触发：并行的人在两抓之间跑了一次 `npm run build`）。★ 起因二（工作树）：engineering-lead 报 —— **另一实例把 `MENU_MAX` 临时改成 5 跑负测、又改回 6，而它的审计恰好撞上那个中间态、误读到 `≤5`**。⇒ **共享工作树会被别人中途改，读数可能是「别人某一瞬间的状态」。**★★ **规矩**：**任何门控 / 测量结果，必须绑定它当时所依据的状态** —— **① 构建**：记 `dist/main.js` mtime 或构建时间；**② 工作树**：跑之前与跑之后各 `git status --porcelain` **比对一次**，**不一致则结果作废、重跑**。★ 与「并列的两个数会被默认为同源」「同一个量出了两个数 ⇒ 必须写 population」**同族**：**比较/测量的前提必须被写下来，否则「都对」的数会互相打架。** |
