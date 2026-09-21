@@ -165,8 +165,11 @@ let seenLog = 0;
 /** 刷新拇指带（移动力细条 / 结束一天可用性 / 日志未读角标）。 */
 function updateThumb(): void {
   const over = state.status !== 'playing';
-  const hasHero = state.heroOrder.some((id) => state.heroes[id]?.owner === 'p1');
-  endDayBtn.disabled = over || !hasHero;
+  // P0 软锁修复：出局判定是「无英雄 **且** 无城」（victory.ts isEliminated）。
+  // 原守卫 `over || !hasHero` 在「英雄全死、但还有城」时会灰掉按钮 ——
+  // 此时玩家并未出局，却既不能行动（没英雄）也不能结束一天 ⇒ 死锁。
+  // 禁用只看 `over`；`doEndDay` 本身已全程无英雄安全（recomputeField/refresh 都空守卫）。
+  endDayBtn.disabled = over;
   endDayBtn.textContent = over ? '对局结束' : '结束一天';
 
   const h = selected ? state.heroes[selected] : null;
@@ -479,9 +482,9 @@ const camera = new Camera();
 camera.mapW = state.map.width;
 camera.mapH = state.map.height;
 const renderer = new MapRenderer(canvas, camera);
-// 调试：?devnobadge=1 隐藏地图队伍徽标（真机 A/B 验证 D-64 接线用：同帧开/关只差徽标）。
+// 调试：?devbadge=1 重新打开地图队伍徽标（默认已撤，见用户试玩裁决）。
 // 与 ?devquick / ?devtown 同一套惯例 —— 查询参数驱动；无人传即不影响生产路径。
-if (bootParams.has('devnobadge')) renderer.badgesVisible = false;
+if (bootParams.has('devbadge')) renderer.badgesVisible = true;
 
 /** 打开城镇面板：城里有英雄就带上他，没有就远程管理（只能补驻军）。 */
 function openTownById(townId: string): void {

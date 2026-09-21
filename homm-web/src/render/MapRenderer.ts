@@ -105,11 +105,11 @@ export class MapRenderer {
   private silCache = new Map<string, { w: number; h: number; ax: number; ay: number; sil: BBox } | null>();
 
   /**
-   * 队伍徽标可见性（D-64 接线的 dev 开关）。默认 `true`。
-   * `?devnobadge` 置 `false` —— 供真机 A/B 验证：同一次会话、同一帧，开/关只差徽标，
-   * 从而把"看起来对"证成"除了徽标没有别的变了"。**不影响生产路径**（无人传该参数 ⇒ 恒 true）。
+   * 队伍徽标可见性。**默认 `false`** —— 用户试玩裁决：英雄后面跟队伍「点起来更麻烦、
+   * 反而增加页面复杂度、更难操作」⇒ 撤掉默认显示。帧（`u_*_map`）与 `audit:badge` 保留。
+   * `?devbadge` 置 `true` —— 保留因果 A/B 能力（同一次会话、同一帧，开/关只差徽标）。
    */
-  badgesVisible = true;
+  badgesVisible = false;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -273,7 +273,7 @@ export class MapRenderer {
    * 不随画质档：low/mid/high 一致（信息不能因档位缺失）。
    */
   private drawTeamBadge(vm: ViewModel, hid: string, owner: PlayerId, fx: number, fy: number): void {
-    if (!this.badgesVisible) return; // ?devnobadge：因果 A/B 用（默认 true ⇒ 非生产路径）
+    if (!this.badgesVisible) return; // 默认关；?devbadge 可开（因果 A/B 用）
     const hero = vm.state.heroes[hid];
     if (!hero) return;
     const cid = pickRepresentativeUnit(hero.army);
