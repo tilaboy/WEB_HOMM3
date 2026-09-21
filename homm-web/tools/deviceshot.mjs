@@ -28,6 +28,27 @@
  *
  * 环境变量：SHOT_W / SHOT_H / SHOT_DPR 覆盖视口（默认 792 / 320 / 3）。
  * 退出码：0 成功 / 2 前置不满足 / 1 其他失败
+ *
+ * ★ 抓帧免疫（2026-09-21 加 · 起因 = `engineering-lead-2` 在 `tintab` 上实测出**两个独立瞬态**，
+ *   两者都**不是被测画面**、却能污染像素差；本通道与它同属「CDP 截图」家族 ⇒ 必须一起治）：
+ *
+ *   ① **首张 `Page.captureScreenshot` 未 settle**（CDP 行为、与工具无关）：
+ *      `-2` 实测同会话同一 mode 连抓 3 张 ⇒ `#1 ≠ #2/#3`、**`#2 == #3` 逐位相同**，
+ *      且**谁先抓谁出格**（`none` 先则 `none#1` 出格）⇒ 本通道**每次调用只抓一张** ⇒ 必然吃这一枪。
+ *      **修法**：正式截图前**先空抓一帧丢弃**（与 G-15「预热帧丢弃」同族）。`SHOT_NOWARM=1` 关掉（不推荐）。
+ *
+ *   ② **`#hint` 启动 toast（DOM 覆盖层，**不是 canvas**）**：`main.ts:604 hint()`（新局
+ *      `main.ts:1121` 触发「〈玩家名〉的征程开始了」）在载入后**约 1.5s** 出现、约 2s+fade 消失，
+ *      **落在地图区下缘**（792@3 实测 bbox device `[982,699..1393,791]` = CSS `137×31`）。
+ *      本工具原等 `frames(45)` ≈ 0.75s ⇒ **单张大概率躲过，但这是"赛跑"、不是保证**：
+ *      页面就绪慢一点就撞上，而 **A/B 两张是两次调用、耗时不同** ⇒ 会**凭空差出 137×31 一块**。
+ *      （`-2` 侧它曾把 792 `dark` 的 `(a)并集` 抬高 `31059`。）
+ *      **修法**：新文档注入 `#hint{display:none !important}`（`#hint` 是 `position:absolute` +
+ *      `pointer-events:none` ⇒ **隐藏不改布局、不动 canvas**，只让那层 toast 不出现）。
+ *      `SHOT_KEEPHINT=1` 关掉（只有为了复现历史图才用）。
+ *
+ *   ⚠️ 两条都**只治"输入"**：`deviceshot` 仍**不冻帧**（要冻帧请给 `SHOT_FREEZE=1`），
+ *      本工具**不对"是否冻帧"作断言** —— 水波/选中脉冲仍会进差分。
  */
 
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -183,6 +204,49 @@ try {
     });
   }
 
+  // ④ 抓帧免疫①：把 `#hint` 启动 toast 从**渲染结果**里摘掉（DOM 覆盖层，默认开；`SHOT_KEEPHINT=1` 关）。
+  //    注入时机 = 新文档、`document` 一有根节点就插 `<style>` ⇒ 早于 `main.js` 跑，
+  //    因此 toast 元素**即使后来才被创建**也天然不带显示。**只影响那一层，不改布局**。
+  const keepHint = !!process.env.SHOT_KEEPHINT;
+  if (!keepHint) {
+    await send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `(() => {
+        const put = () => {
+          const root = document.documentElement;
+          if (!root) return false;
+          if (document.getElementById('__shot_hide_hint')) return true;
+          const st = document.createElement('style');
+          st.id = '__shot_hide_hint';
+          st.textContent = '#hint{display:none !important}';
+          (document.head || root).appendChild(st);
+          return true;
+        };
+        if (!put()) document.addEventListener('DOMContentLoaded', put, { once: true });
+      })()`,
+    });
+  }
+
+  // ④′ 可选：注入任意 CSS（`SHOT_CSS`）—— 也用于**安慰剂对照**：注入一条"inert"规则，
+  //     若画面仍与"无注入"不同 ⇒ 差异来自**注入/时序本身**，不是被测的那条规则
+  //     （否则会把"换了个注入"读成"修法有效"）。见头注「抓帧免疫」的 ⚠️。
+  if (process.env.SHOT_CSS) {
+    const css = process.env.SHOT_CSS;
+    await send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `(() => {
+        const put = () => {
+          const root = document.documentElement;
+          if (!root) return false;
+          const st = document.createElement('style');
+          st.id = '__shot_css';
+          st.textContent = ${JSON.stringify(css)};
+          (document.head || root).appendChild(st);
+          return true;
+        };
+        if (!put()) document.addEventListener('DOMContentLoaded', put, { once: true });
+      })()`,
+    });
+  }
+
   await send('Page.navigate', { url });
 
   // 等游戏挂载 + 渲染若干帧（等的是「画完了」，不是「固定时长」）
@@ -215,12 +279,20 @@ try {
     await evaluate(`new Promise((r) => { let i = 0; const s = () => (++i >= 20 ? r(true) : requestAnimationFrame(s)); requestAnimationFrame(s); })`);
   }
 
+  // ⑤ 抓帧免疫②：正式截图前**空抓一帧丢弃**（CDP 的首张截图不保证已 settle；`SHOT_NOWARM=1` 关）。
+  const warm = process.env.SHOT_NOWARM ? 0 : 1;
+  for (let i = 0; i < warm; i++) await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+
   const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(outFile, Buffer.from(shot.data, 'base64'));
+  // 画布 dpr 一律**按实际值打印**（`canvas.width / clientWidth`）—— 别自称"原生 dpr3"：
+  // 画质档会按 (视口 dpr × 档位) 选 dprCap，实测值可能不等于 `SHOT_DPR`。
+  const canvasDpr = waited.cssW > 0 ? (waited.w / waited.cssW) : NaN;
   console.log(
-    `OK  ${outFile}  (canvas ${waited.w}x${waited.h} @css ${waited.cssW}x${waited.cssH}` +
+    `OK  ${outFile}  (canvas ${waited.w}x${waited.h} @css ${waited.cssW}x${waited.cssH} dpr ${canvasDpr}` +
       ` · viewport ${VW}x${VH}@${VDPR}` +
-      ` · tierMode=${waited.mode ?? '(未注入)'})`,
+      ` · tierMode=${waited.mode ?? '(未注入)'}` +
+      ` · hint=${keepHint ? '保留⚠' : '隐藏'} · warmup=${warm ? '丢 1 帧' : '关⚠'})`,
   );
 } catch (e) {
   console.error(`失败：${e.message}`);
