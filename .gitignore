@@ -1,5 +1,8 @@
 node_modules/
 dist/
+# 临时构建目录（隔离验证用）：别让它们在版本库里、也别让它们被误服务
+# （"磁盘上第二个能被误服务的构建"已害过我们一次 —— 见 roadmap 2026-09-21）
+dist-*/
 .DS_Store
 *.log
 .workbuddy/
