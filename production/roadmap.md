@@ -499,8 +499,9 @@ debug key 签名、7 档图标、`webContentsDebuggingEnabled=false`。
 
 | 文件 / 目录 | 单一 owner | 备注 |
 |---|---|---|
-| `homm-web/src/render/MapRenderer.ts` | `engineering-lead` | ④ 可达染色所在；**测量方只读**。⚠️ **临时外借**：⑧(α)「墨色 `ink0` 边界描边」落地期间**借给 `art-director`**（时间盒 = 提到交付为止），落地即归还 —— 见下方「B1 撞车」行 |
-| `homm-web/src/core/**`（含 `core/data/scenarios.ts` · `core/map/generator.ts` · `core/game/ai.ts` · `core/types.ts`） | **`engineering-lead`**（B1 场景/AI 线） | **2026-09-21 补登**（撞车后）。**其它实例一律只读复核**，不得写入。见下方「B1 撞车」行 |
+| `homm-web/src/render/MapRenderer.ts` | `engineering-lead` | ④ 可达染色所在；**测量方只读**。⚠️ **临时外借已结束**：⑧(α)「墨色 `ink0` 边界描边」已落地 **`3e8084f`**（`NOGO_EDGE_INK='#2a1a12'` / `EDGE_W=2`），**归属已归还 `engineering-lead`**（2026-09-21） |
+| `homm-web/src/core/**`（含 `core/data/scenarios.ts` · `core/map/generator.ts` · `core/game/ai.ts` · `core/types.ts`） | **B1 执行实例**（未具名 —— 共用 git author，无法分辨） | **2026-09-21 补登**（撞车后）。**其它实例一律只读复核**。⚠️ **本条经主理人更正一次**：首版误判为 `engineering-lead`（依据是"它持有唯一一份 `scenarios.ts`"，该依据被新证据推翻 —— `ai.ts`/`types.ts`/`contactaudit.mjs` 均为另一实例所作且更连贯）⇒ **不换人，换人 = 第 2 次撞车** |
+| `homm-web/tools/contactaudit.mjs` | `engineering-lead` | 门控探针（B1 验收门）。**文件由另一实例建立、由 `engineering-lead` 按门控口径修** —— 分工不是抢活。修项：**对照组混淆**（control 不带 `scenario` ⇒ 与 rush **不是同一张图** ⇒ 接触日不可比）⇒ control 须用**同一次** `createGame({scenario:'duel'})` 生成后**仅清** `state.config.scenario`，并**加断言「两组地图同构」**（`tiles`+`objects[].pos` 全等），**不同构 ⇒ FAIL 且两组数字作废** |
 | `homm-web/src/main.ts` · `src/style.css` | `engineering-lead` | ④ 的 HUD 部分（顶栏/拇指带/菜单） |
 | `homm-web/src/render/quality.ts` | `art-director` | 档位政策（`TIER_TABLE` / `setDressing` / `dprCap`）；G-15 为工程侧已完成的历史改动 |
 | `homm-web/src/render/terrainLayer.ts` · `setDressing.ts` · `terrainShade.ts` · `lightLayer.ts` · `atlas.ts` | `art-director` | 画面层 |
