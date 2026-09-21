@@ -18,7 +18,9 @@
  *   差分口径 + population + ΔE*ab + 色盲 ⇒ 本文件；**WCAG 列降级为"参考"**，验收数不看它。
  *
  * ## 族（从 **dist** 解析，不写死）
- * `REACH_*` → `fill`；`NOGO_*INK*` → `ink`；其余 `NOGO_*` / `*EDGE*` → `edge`。
+ * `REACH_*` → `fill`；`*INK*` → `ink`；`*GLOW*` → `glow`；其余 `NOGO_*` / `*EDGE*` → `edge`。
+ * ⚠️ `glow` 是 2026-09-21 为 `(ii)`「双色 halo（亮芯 + 暗边）」新拆的族：**亮芯必须与红/墨分开量**，
+ *  否则"两极其一 ≥3:1"就被并成一个桶 ⇒ 又犯"均值掩盖"。该族名匹配 `/GLOW/i`（现网常量 `NOGO_EDGE_GLOW`）。
  * 颜色支持 rgba(...) 与 #hex。两条踩过的坑：
  *   (a) 只认 rgba 的正则会静默漏掉 #hex 的墨；
  *   (b) Chrome fillStyle getter 对不透明色回报 #hex（不是 rgb(...)）⇒ 比对前必须归一，
@@ -325,6 +327,8 @@ async function analyze(ph, shot) {
   console.log(`相位   : ${PHASES.join(', ')}　（0.22=正午 0.68=深夜）`);
   console.log(`population: ${requestedPops.join(', ')}`);
   console.log(`草分层 : grass-bright L*>=${GRASS_L_BRIGHT} ｜ grass-mid ${GRASS_L_MID}<=L*<${GRASS_L_BRIGHT} ｜ grass-dark 22<=L*<${GRASS_L_MID}（tintab 内单一权威定义，与 §15.4 (α) 基线表同切法）`);
+  console.log("分桶定义: classify() = { L*<22→dark ; b=max且b>r+12→water ; r=max且g≥b且r>120→sand ; g≥r且g>b→grass ; 其余→rock }（与 reachmeas.band() 逐字同条件）");
+  console.log(`          草三分 L*≥${GRASS_L_BRIGHT}/${GRASS_L_MID}–${GRASS_L_BRIGHT}/22–${GRASS_L_MID}；uniform-grass = 5×5 邻域 terrain 码一致；暗缝 = 「dark」桶（含物件/接缝，未再细分）`);
   console.log('口径   : 净贡献=同像素画/不画之差；覆盖判据=通道差；ΔE=CIE76；色盲=Machado deuteranopia(1.0)');
 console.log('统计量 : ΔL*/ΔE*ab/色盲 取**中位**；WCAG 取**均值**（列头已标）—— 与 reachmeas.mjs 口径不同，引用时须连统计量一起报');
   console.log('');
