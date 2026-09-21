@@ -406,6 +406,31 @@ const APP_THUMB = `(() => {
 })()`;
 
 /**
+ * **真实 app** 菜单体检（④ / F-3.6 / IA §15.4）：把「日志入口」从拇指带**搬进菜单一级项**、
+ * 「未读角标」迁到常驻的「菜单」按钮之后，**必须有一条会红的回归守卫**证明"搬过了、没搬丢"。
+ * 没有它的话，谁下次把「日志」按钮加回拇指带（或从菜单删掉「事件日志」）都能绿灯放行
+ * —— 这正是本次改动的语义资产（IA §3.2 #23 ①②③「信息只搬家不丢失」）。
+ *
+ * 读的是**真实 DOM**：点一下「菜单」，数 `.menu-item`，再 remove 复原以免污染后续阶段。
+ * 说明：`count`（菜单一级项数）**只报不卡** —— 它是 §7「一级 ≤ 6 项」的观测点，但
+ * 「存档/读档」该合该分属 UX 决定，不该由探针替 UX 拍板，故仅如实报出实测值。
+ */
+const APP_MENU = `(() => {
+  const btns = [...document.querySelectorAll('#thumb .btn')];
+  const menuBtn = btns.find((b) => (b.textContent || '').includes('菜单'));
+  if (!menuBtn) return { error: '拇指带无「菜单」按钮' };
+  const thumbLabels = btns.map((b) => (b.textContent || '').trim().replace(/\\s+/g, ' '));
+  const thumbHasLog = thumbLabels.some((t) => t.includes('日志'));
+  const badgeOnMenu = !!menuBtn.querySelector('.tb-badge');
+  const menuAria = menuBtn.getAttribute('aria-label') || '';
+  menuBtn.click();
+  const root = document.getElementById('menu');
+  const items = root ? [...root.querySelectorAll('.menu-item')].map((b) => (b.textContent || '').trim()) : [];
+  if (root) root.remove();
+  return { thumbLabels, thumbHasLog, badgeOnMenu, menuAria, items, count: items.length };
+})()`;
+
+/**
  * **真实 app** 城镇面板体检（D-66 / D-68）：把 P3 最重要的窗口**真的打开来量**。
  *
  * 为什么单列一段：本探针此前**从不打开城镇面板**（没有任何动作打开它），
@@ -564,6 +589,7 @@ let mobile;
 let mobileTall;
 let appTopbar = [];
 let appThumb = null;
+let appMenu = null;
 let townPanel = null;
 let a11y = null;
 try {
@@ -647,6 +673,8 @@ try {
   });
   await sleep(280);
   appThumb = await evaluate(APP_THUMB);
+  // ④ 守卫：同一页（?devquick=1、已复位到 792×320）点开菜单量一次，再复原。
+  appMenu = await evaluate(APP_MENU);
 
   // Phase D2（D-66 / D-68）：真打开城镇面板量内容窗。用 `?devtown=1` 直接开我方首座城镇，
   // 避开"合成 fixture 自证"的陷阱，也避开关窗文案依赖。视口沿用 792×320（真机自然横屏）。
@@ -812,6 +840,28 @@ if (!appThumb) {
   console.log(
     `        共 ${appThumb.count} 个按钮：${appThumb.btns.map((b) => `${b.t || '?'}(${Math.round(b.w)}×${Math.round(b.h)}${b.primary ? '*' : ''})`).join(' · ')}`,
   );
+}
+
+/* ---- ④（F-3.6 / IA §15.4）· 日志入口搬家 + 角标随迁 —— **始终硬断言**（已落地） ---- */
+console.log('\n── 真实 app（?devquick=1）· ④ 日志入口搬家（F-3.6 / §15.4） ──');
+if (!appMenu || appMenu.error) {
+  console.log(`[FAIL] 没能读到菜单：${appMenu?.error ?? '未测到'}`);
+  bad++;
+} else {
+  const noLogThumb = appMenu.thumbHasLog === false;
+  const logInMenu = appMenu.items.includes('事件日志');
+  const badgeMoved = appMenu.badgeOnMenu === true;
+  const ariaOk = appMenu.menuAria.startsWith('菜单');
+  for (const ok of [noLogThumb, logInMenu, badgeMoved, ariaOk]) if (!ok) bad++;
+  console.log(
+    `[${noLogThumb ? 'PASS' : 'FAIL'}] 拇指带已无「日志」入口（实测拇指带：${appMenu.thumbLabels.join(' / ')}）`,
+  );
+  console.log(`[${logInMenu ? 'PASS' : 'FAIL'}] 菜单一级项含「事件日志」（复用 openLogPanel，函数不变）`);
+  console.log(`[${badgeMoved ? 'PASS' : 'FAIL'}] 未读角标已迁到「菜单」按钮（.tb-badge 在 menuBtn 内）`);
+  console.log(
+    `[${ariaOk ? 'PASS' : 'FAIL'}] 「菜单」按钮 aria-label 以「菜单」起（实测「${appMenu.menuAria}」，a11y §4.3 数字不得为唯一语义）`,
+  );
+  console.log(`[信息] 菜单一级项 ${appMenu.count} 项（§7 上限 6）：${appMenu.items.join(' / ')}`);
 }
 
 /* ---- 城镇面板内容窗（D-66 / D-68）—— **始终硬断言**：P3 核心表面，回归过一次 ---- */
