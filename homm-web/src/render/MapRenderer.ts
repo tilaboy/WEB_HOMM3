@@ -10,6 +10,7 @@ import { hash2 } from './pixel.js';
 import { TerrainLayer } from './terrainLayer.js';
 import { SetDressingLayer } from './setDressing.js';
 import { currentLightTint, lightingOn } from './lightLayer.js';
+import type { LightTint } from './lightLayer.js';
 import { quality } from './quality.js';
 import {
   chooseBadgeSide,
@@ -137,6 +138,75 @@ const DEV_TINT = ((): boolean => {
   }
 })();
 
+/**
+ * 候选修法 (2)：`?devhalocomp=1` ⇒ 对 halo 的**描边色**按当前光照因子**反算**（默认关）。
+ *
+ * 机制（`art-director` 实测，非推测）：halo 画在 `applyLighting` **上游**（世界坐标），
+ * 整屏 `multiply` 把它与地面**一起**乘暗 ⇒ 同一对颜色「只因相位变暗就单调走低」
+ * （暗缝 4.00→3.46→2.77、岩石 3.18→2.83→2.36，**与画质档位无关**）。WCAG 比值带 `+0.05`
+ * 底 ⇒ 两侧同时被乘小 ⇒ 这是**管线产物**，不是配色问题。
+ *
+ * 口径：把描边色按因子反算（`目标屏色 ÷ 乘光因子`），使其**被乘光后落到标称亮度**；
+ * 结果 `clamp` 到 `[0,255]`（会被乘暗的相位下屏上上限是 `255*因子` ⇒ **只能救「亮极」**）。
+ * **只作用于 halo 的描边**：不碰地面、不碰其它覆盖层、**不改绘制顺序、不动 `applyLighting` 位置**。
+ *
+ * ⚠️ 硬条件 (i)：**不得嵌在 `tintEnabled` 守卫内部** —— 否则 `?devtint=0` 会连它一起关，
+ * 「量测仪器」与「被测对象」共用一个开关 ⇒ 永远说不清测到的是哪一层。故本开关在下面
+ * 与 tint 块**解耦**求值（见 `compOn`）。
+ */
+const HALO_COMP = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devhalocomp') === '1';
+  } catch {
+    return false;
+  }
+})();
+
+/**
+ * 候选修法 (1)：`?devhaloafter=1` ⇒ 把 halo 的**三条边带**推迟到 `applyLighting` **之后**再画
+ * （默认关）。结构性修法：让边带**免于整屏 multiply**，因此**与光照算子无关**（对比 (2) 的
+ * 天花板由算子决定）。绘制仍走**世界坐标 + 相机变换**，故坐标与遮挡关系与旧版一致；
+ * 唯一差别 = 这三条带不再被乘暗（也因此不再被 y 排序的实体遮挡 —— 原型阶段先量对比度）。
+ */
+const HALO_AFTER = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devhaloafter') === '1';
+  } catch {
+    return false;
+  }
+})();
+
+/** 单条（或四边）边带的绘制参数：世界坐标下的一个矩形 + 填充色。 */
+interface BandRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  c: string;
+}
+
+/**
+ * 把一个 CSS 颜色按光照因子**反算**：`目标屏色 ÷ 因子`，`clamp` 到 `[0,255]`。
+ * 支持 `#rrggbb` 与 `rgb()/rgba()`（alpha 原样保留）。解析不了就**原样返回**
+ * （宁可不补，不可改错色）。
+ */
+function lightCompColor(css: string, lt: LightTint): string {
+  const f = (v: number): number => (v > 0 ? v / 255 : 1);
+  const up = (v: number, k: number): number => Math.max(0, Math.min(255, Math.round(v / k)));
+  const hex = /^#([0-9a-f]{6})$/i.exec(css);
+  if (hex) {
+    const n = Number.parseInt(hex[1], 16);
+    return `rgb(${up((n >> 16) & 255, f(lt.r))},${up((n >> 8) & 255, f(lt.g))},${up(n & 255, f(lt.b))})`;
+  }
+  const m = /^rgba?\(([^)]+)\)$/.exec(css);
+  if (m) {
+    const p = m[1].split(',').map((s) => Number.parseFloat(s.trim()));
+    const a = p.length > 3 ? p[3] : 1;
+    return `rgba(${up(p[0], f(lt.r))},${up(p[1], f(lt.g))},${up(p[2], f(lt.b))},${a})`;
+  }
+  return css;
+}
+
 export class MapRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
@@ -179,6 +249,20 @@ export class MapRenderer {
    * `main.ts`，本开关是单文件改动。
    */
   tintEnabled = DEV_TINT;
+
+  /**
+   * 候选修法 (2)：halo 描边色**光照预补偿**（`?devhalocomp=1`）。**默认 `false`** ⇒
+   * 不补、描边色照旧 ⇒ 生产路径逐像素不变。开启时**只改 halo 三条描边的填充色**。
+   * ⚠️ 与 `tintEnabled` **解耦**（硬条件 i）—— 二者是两个独立旗标，不互相门控。
+   */
+  haloLightComp = HALO_COMP;
+
+  /**
+   * 候选修法 (1)：三条边带**改画在光照之后**（`?devhaloafter=1`）。**默认 `false`** ⇒
+   * 边走 old path（世界坐标、实体之前）⇒ 生产路径逐像素不变。开启时把三条边带的绘制
+   * 推迟到 `applyLighting` 之后（仍走世界坐标 + 相机变换）⇒ 免于整屏 multiply。
+   */
+  haloAfter = HALO_AFTER;
 
   /**
    * 调试：开关地形「地貌层」（`terrainShade.ts` 的地图尺度明暗），并立即重烘。
@@ -499,6 +583,25 @@ export class MapRenderer {
        不可走**只描格缘、不填色**（填色实测不可辨且面积巨大，见常量处注释）；
        格缘(红+墨)只画在**已揭开**、且外邻落在**可达区**（含英雄自身格）的那一侧。 --- */
     const cost = vm.reachable;
+    // halo 预补偿（`?devhalocomp=1`）—— **与 `tintEnabled` 解耦**（硬条件 i）：本开关不嵌在
+    // tint 守卫内，`?devtint=0` 不会连它一起关 ⇒ 「量测仪器」与「被测对象」互不门控。
+    // multiply 是**全屏均匀**的 ⇒ 三条描边色每帧只反算一次。`lighting==='off'` 时 `applyLighting`
+    // 提前 return（不乘光）⇒ 不能补，否则会把不乘光的画面错误提亮。
+    const compOn = this.haloLightComp && quality.lighting !== 'off';
+    const compLight: LightTint = compOn ? lightTint : { r: 255, g: 255, b: 255, warm: 0 };
+    const edgeRed = compOn ? lightCompColor(NOGO_EDGE, compLight) : NOGO_EDGE;
+    const edgeGlow = compOn ? lightCompColor(NOGO_EDGE_GLOW, compLight) : NOGO_EDGE_GLOW;
+    const edgeInk = compOn ? lightCompColor(NOGO_EDGE_INK, compLight) : NOGO_EDGE_INK;
+    // 候选修法 (1)（`?devhaloafter=1`）：边带**推迟到光照之后**画 ⇒ 先登记、不立即填充。
+    const afterBands: BandRect[] | null = this.haloAfter ? [] : null;
+    // 边带落笔：默认（`afterBands===null`）立即填充，与原实现逐像素一致；开启 (1) 时只登记。
+    const band = (c: string, bx: number, by: number, bw: number, bh: number): void => {
+      if (afterBands) afterBands.push({ x: bx, y: by, w: bw, h: bh, c });
+      else {
+        ctx.fillStyle = c;
+        ctx.fillRect(bx, by, bw, bh);
+      }
+    };
     // `?devtint=0` ⇒ `tintEnabled === false` ⇒ 整块跳过（染色层空操作）；
     // 不传旗标时 `tintEnabled === true` ⇒ `cost && true` ≡ `cost` ⇒ 与今天逐字节一致。
     if (cost && this.tintEnabled) {
@@ -528,21 +631,18 @@ export class MapRenderer {
           const bot = inRegion(x, y + 1);
           const lft = inRegion(x - 1, y);
           const rgt = inRegion(x + 1, y);
-          ctx.fillStyle = NOGO_EDGE; // ① 内侧红（色相锚，贴可达区一侧）
-          if (top) ctx.fillRect(px, py, TILE, EDGE_W);
-          if (bot) ctx.fillRect(px, py + TILE - EDGE_W, TILE, EDGE_W);
-          if (lft) ctx.fillRect(px, py, EDGE_W, TILE);
-          if (rgt) ctx.fillRect(px + TILE - EDGE_W, py, EDGE_W, TILE);
-          ctx.fillStyle = NOGO_EDGE_GLOW; // ② 亮芯（明度锚·亮极，不透明）
-          if (top) ctx.fillRect(px, py + EDGE_W, TILE, EDGE_W);
-          if (bot) ctx.fillRect(px, py + TILE - EDGE_W * 2, TILE, EDGE_W);
-          if (lft) ctx.fillRect(px + EDGE_W, py, EDGE_W, TILE);
-          if (rgt) ctx.fillRect(px + TILE - EDGE_W * 2, py, EDGE_W, TILE);
-          ctx.fillStyle = NOGO_EDGE_INK; // ③ 暗边墨（明度锚·暗极，不透明）
-          if (top) ctx.fillRect(px, py + EDGE_W * 2, TILE, EDGE_W);
-          if (bot) ctx.fillRect(px, py + TILE - EDGE_W * 3, TILE, EDGE_W);
-          if (lft) ctx.fillRect(px + EDGE_W * 2, py, EDGE_W, TILE);
-          if (rgt) ctx.fillRect(px + TILE - EDGE_W * 3, py, EDGE_W, TILE);
+          if (top) band(edgeRed, px, py, TILE, EDGE_W); // ① 内侧红（色相锚，贴可达区一侧）
+          if (bot) band(edgeRed, px, py + TILE - EDGE_W, TILE, EDGE_W);
+          if (lft) band(edgeRed, px, py, EDGE_W, TILE);
+          if (rgt) band(edgeRed, px + TILE - EDGE_W, py, EDGE_W, TILE);
+          if (top) band(edgeGlow, px, py + EDGE_W, TILE, EDGE_W); // ② 亮芯（明度锚·亮极，不透明）
+          if (bot) band(edgeGlow, px, py + TILE - EDGE_W * 2, TILE, EDGE_W);
+          if (lft) band(edgeGlow, px + EDGE_W, py, EDGE_W, TILE);
+          if (rgt) band(edgeGlow, px + TILE - EDGE_W * 2, py, EDGE_W, TILE);
+          if (top) band(edgeInk, px, py + EDGE_W * 2, TILE, EDGE_W); // ③ 暗边墨（明度锚·暗极，不透明）
+          if (bot) band(edgeInk, px, py + TILE - EDGE_W * 3, TILE, EDGE_W);
+          if (lft) band(edgeInk, px + EDGE_W * 2, py, EDGE_W, TILE);
+          if (rgt) band(edgeInk, px + TILE - EDGE_W * 3, py, EDGE_W, TILE);
         }
       }
     }
@@ -670,6 +770,21 @@ export class MapRenderer {
 
     /* --- 光照层（屏幕空间）：昼夜 multiply 叠色 + 暖光 + 暗角 --- */
     if (lightingOn()) this.applyLighting(now);
+
+    /* --- 候选修法 (1)：三条边带改画在光照**之后**（`?devhaloafter=1`，默认关） ---
+       仍走世界坐标 + 相机变换（`ctx.restore()` 后变换已回到 dpr 基准，`applyLighting`
+       内部自带 save/restore 不改它）⇒ 坐标与旧版一致；唯一差别 = 这三条带不再被上面的
+       multiply 乘暗。默认关时 `afterBands===null` ⇒ 本段空操作。 --- */
+    if (afterBands && afterBands.length > 0) {
+      ctx.save();
+      ctx.translate(cam.x, cam.y);
+      ctx.scale(cam.zoom, cam.zoom);
+      for (const b of afterBands) {
+        ctx.fillStyle = b.c;
+        ctx.fillRect(b.x, b.y, b.w, b.h);
+      }
+      ctx.restore();
+    }
   }
 
   /**
