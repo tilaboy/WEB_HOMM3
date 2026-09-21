@@ -23,6 +23,7 @@
     "assets:mobile": "node tools/mobile-assets.mjs && capacitor-assets generate --android --assetPath resources --iconBackgroundColor \"#3a2a14\" --splashBackgroundColor \"#1b1f24\"",
     "mobile:sync": "npm run build && node tools/androidsync.mjs",
     "audit:scenario": "node tools/scenarioaudit.mjs",
+    "audit:hpbudget": "node tools/hpbudget.mjs",
     "audit:androidsync": "node tools/androidsync.mjs"
   },
   "devDependencies": {
