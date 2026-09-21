@@ -187,7 +187,14 @@ const HALO_AFTER = ((): boolean => {
 })();
 
 /**
- * `#155`：`?devfogclose=1` ⇒ 让 ④ 的边界轮廓**在「可达区 × 未探索区」交界处也闭合**（默认关）。
+ * `#155`：让 ④ 的边界轮廓**在「可达区 × 未探索区」交界处也闭合**。
+ *
+ * ★ **2026-09-21 翻默认（`#155` 收口）**：本修法 **默认开**（生产路径即闭合版）；
+ *   **`?devfogclose=0` = 一条可复现的旧路径**（回到"未探索格不参与 ⇒ 逐像素与旧版一致"）。
+ *   **留旧路径不是可选项** —— 它是「默认 vs `?devfogclose=0`」这对对照臂能成立的前提：
+ *   若旧路径不存在或不等价 ⇒ 新臂退化成 `on vs on` ⇒ 又变回**「对照臂被吞」**。
+ *   （同 `#174` 的 `HALO_AFTER`。规矩由 team-lead 采纳：**凡把某开关翻成默认，
+ *   必须同时留一条可复现的旧路径**。）
  *
  * **缺陷（真缺陷，team-lead `368f68f` 判「要修」；`design/accessibility-requirements.md` §4.6 存证）**：
  * 一句话 = **同一个量在「可见性闸」与「可达性闸」上口径不一致** ——
@@ -202,16 +209,19 @@ const HALO_AFTER = ((): boolean => {
  * 这里画在「未探索格」）⇒ 轮廓仍是**包围**可达区、只是把缺的那一段补齐。**不改 `computePaths`、不改绘制顺序、
  * 不动光照管线**（与 `#154` 的「带画在光照哪一侧」正交 —— team-lead 特意把两条线的变量分开以便归因）。
  *
- * ⚠️ **默认 `false` ⇒ 生产路径逐像素不变**（未探索格仍走 `if (!rev) continue;`，与今天完全同路）。
+ * ⚠️ **`?devfogclose=0` ⇒ 生产路径逐像素回到旧版**（未探索格走 `if (!rev) continue;`）；
+ *    **默认（不传参）走闭合版**。旧路径随时可重跑 ⇒ A/B 的两臂都在。
  * ⚠️ **已知边界（如实记，不夸大）**：本修法只补「未探索交界」这一种洞；**地图外缘**（越界、无格承载）仍不开，
  * 且 `fog` 与图外底色同色 `#0b0d10`、像素上分不开 ⇒ 本旗标**不声称**"轮廓全局闭合"，
  * 只声称"**可达区贴雾那一侧**的那一段补上"，前后对比由 `closureprobe` + 同构建出（`art-director`）。
  */
 const DEV_FOG_CLOSE = ((): boolean => {
   try {
-    return new URLSearchParams(location.search).get('devfogclose') === '1';
+    /* ★ 翻默认：不传参 ⇒ 开；`?devfogclose=0` ⇒ 取回旧路径（可复现）。 */
+    return new URLSearchParams(location.search).get('devfogclose') !== '0';
   } catch {
-    return false;
+    /* 没有 `location.search`（非浏览器上下文）⇒ 取默认（开）。 */
+    return true;
   }
 })();
 
@@ -304,9 +314,9 @@ export class MapRenderer {
   haloAfter = HALO_AFTER;
 
   /**
-   * `#155`：把边界轮廓补满到「可达区 × 未探索区」交界（`?devfogclose=1`）。**默认 `false`** ⇒
-   * 未探索格仍不参与边界带 ⇒ 生产路径**逐像素不变**。开启时把未探索格也当候选，带画在
-   * **未探索格贴可达区那一侧**（沿用"带落在可达区之外那一格"的既有约定）⇒ 补齐贴雾的缺口。
+   * `#155`：把边界轮廓补满到「可达区 × 未探索区」交界（**默认开**；`?devfogclose=0` 取回旧路径）。
+   * 默认即把未探索格也当候选，带画在**未探索格贴可达区那一侧**（沿用"带落在可达区之外那一格"
+   * 的既有约定）⇒ 补齐贴雾的缺口。`?devfogclose=0` ⇒ 未探索格不参与 ⇒ 生产路径**逐像素回到旧版**。
    * ⚠️ 与 `tintEnabled` 同族门控（**属于 ④ 染色层内部**）——`?devtint=0` 会把它一起关，
    * 因为"未探索处要不要描边"本身就是染色层的语义，不是独立的量测仪器（对比 `haloLightComp`
    * 那种"仪器"必须**解耦**；这两类的区别见各自注释）。
@@ -631,8 +641,8 @@ export class MapRenderer {
        team-lead 的"夜间也要读得出"改用**对比度**解决（见常量处注释：红=色相锚、墨=明度锚），不改管线。
        不可走**只描格缘、不填色**（填色实测不可辨且面积巨大，见常量处注释）；
        格缘(红+墨)只画在**已揭开**、且外邻落在**可达区**（含英雄自身格）的那一侧。
-       `#155`（`?devfogclose=1`，默认关）：再补"未探索格贴可达区那一侧"⇒ 轮廓在贴雾处闭合
-       （默认关时未探索格仍不参与，逐像素与旧版一致；见 `DEV_FOG_CLOSE` 的缺陷存证）。 --- */
+       `#155`（**默认开**；`?devfogclose=0` 关）：再补"未探索格贴可达区那一侧"⇒ 轮廓在贴雾处闭合
+       （`?devfogclose=0` 时未探索格不参与，逐像素回到旧版；见 `DEV_FOG_CLOSE` 的缺陷存证）。 --- */
     const cost = vm.reachable;
     // halo 预补偿（`?devhalocomp=1`）—— **与 `tintEnabled` 解耦**（硬条件 i）：本开关不嵌在
     // tint 守卫内，`?devtint=0` 不会连它一起关 ⇒ 「量测仪器」与「被测对象」互不门控。
@@ -666,11 +676,12 @@ export class MapRenderer {
       for (let y = y0; y <= y1; y++) {
         for (let x = x0; x <= x1; x++) {
           const rev = isRevealed(state, player, x, y);
-          // `#155`：默认（`fogClose === false`）⇒ 未探索格在此 `continue`，与旧版**同路**（逐像素不变）；
-          // 开启时让未探索格继续往下走，只可能落在"贴可达区那一侧"的边界带上（见下方 `top/bot/lft/rgt`）。
-          if (!rev && !this.fogClose) continue; // 未探索不染色
+          // `#155`：**默认（不传参 ⇒ `fogClose === true`）让未探索格继续往下走**，只可能落在
+          // "贴可达区那一侧"的边界带上（见下方 `top/bot/lft/rgt`）；`?devfogclose=0` ⇒ 未探索格
+          // 在此 `continue` ⇒ 与旧版**同路**（逐像素回到旧版）。
+          if (!rev && !this.fogClose) continue; // `?devfogclose=0` 时未探索不染色
           const c = cost[idx(map, x, y)];
-          // `rev &&` 两道守卫：未探索格**永不填蓝、永不当英雄自身格** —— 即便 `?devfogclose=1`
+          // `rev &&` 两道守卫：未探索格**永不填蓝、永不当英雄自身格** —— 即便默认开
           // 且它在迷雾里其实可走（`computePaths` 不看 `isRevealed`，故 fog 格可能有有限 cost）。
           if (rev && isFinite(c) && c > 0) {
             ctx.fillStyle = REACH_TINT; // 可走：蓝填充
@@ -678,7 +689,7 @@ export class MapRenderer {
             continue;
           }
           if (rev && isFinite(c)) continue; // 英雄自身格（c===0）：在可达区内部，不填不描
-          // ↓ 未探索格（仅 `?devfogclose=1`）也会落到这里：`inRegion()` 要求相邻格**已揭开且可达**
+          // ↓ 未探索格（**默认开**时）也会落到这里：`inRegion()` 要求相邻格**已揭开且可达**
           //   ⇒ 只有"贴可达区的那一侧"为真 ⇒ 恰好补上贴雾的缺口，且不在雾内部乱描。
           // 不可走：紧邻可达区的那一侧画**三线 = 红（色相锚）+ 亮芯 + 暗墨（双色 halo）**。
           // 顺序（贴可达区 → 不可走侧）：红(0) → 亮芯(EDGE_W) → 暗墨(2*EDGE_W)；亮/暗两锚落在**同一格地形**
