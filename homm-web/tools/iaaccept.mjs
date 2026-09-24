@@ -154,11 +154,22 @@ if (!served.ok) {
 console.log(`[前置 0b] 服务中的构建 == --dist 指定 ✓（ui/StartScreen.js sha256 ${served.sha}）`);
 
 /* ---------------------------------------------------------------- 断言框架 */
+/* ★★ 三项必打印（team-lead 2026-09-21 立；起因 = 本探针 item16 在 `ov=null` 时**既不红也不绿、
+ *   连一行都不打** —— "静默跳过"，三种形态里最坏的一种）：
+ *     验收链上的每一项**必须正好打印 {PASS / FAIL / 未判} 三者之一**；
+ *     **"没打印"本身就是一处缺陷**；且**"跳过"必须计入「未判」、不得静默**。
+ *   实现：每条裁决消息以 `itemN` 起头 ⇒ 自动归账 ⇒ 结尾逐项核对账本（`silent` 计为缺陷）。 */
 let bad = 0;
 let undone = 0;
-const PASS = (c, m) => { if (!c) bad++; console.log(`[${c ? 'PASS' : 'FAIL'}] ${m}`); };
+const LEDGER = new Map();
+const RANK = { 'PASS': 0, '未判': 1, 'FAIL': 2 };
+const idOf = (m) => { const x = String(m).match(/item(\d+)/); return x ? `item${x[1]}` : '(unlabeled)'; };
+const record = (kind, m) => { const id = idOf(m); const prev = LEDGER.get(id); if (prev === undefined || RANK[kind] > RANK[prev]) LEDGER.set(id, kind); };
+const PASS = (c, m) => { record(c ? 'PASS' : 'FAIL', m); if (!c) bad++; console.log(`[${c ? 'PASS' : 'FAIL'}] ${m}`); };
+/** 显式失败 —— 用于"取不到对象 ⇒ 无法判定"这类**不许静默**的情形（跳过也要留一行）。 */
+const FAIL = (m) => { record('FAIL', m); bad++; console.log(`[FAIL] ${m}`); };
 /** 明确标"未判"的条目：**不凑 PASS、也不算 FAIL**，单独计数并在结尾列出。 */
-const UNDECIDED = (m) => { undone++; console.log(`[未判] ${m}`); };
+const UNDECIDED = (m) => { record('未判', m); undone++; console.log(`[未判] ${m}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* §14.1 表：卡文案（**逐字**，与规格原文对齐 —— 不复用 src 的常量，独立写死） */

@@ -15,3 +15,17 @@ homm-web/tools/_aidiagnose.json
 *.p8
 *.mobileprovision
 homm-web/android/local.properties
+
+# ---------------------------------------------------------------------------
+# 收尾（2026-09-24 项目停止开发）时裁定：**不进版本库的产物**
+# 原则：脚本 / 文档 / 小体积输入素材 入库（可复现）；**观感与调色的证据截图不入库**（可随时重跑，体积大）。
+# ---------------------------------------------------------------------------
+# 观感判定与调色实验的截图证据（36 MB，重跑即可得）
+homm-web/tools/probes/*.png
+homm-web/tools/probes/tintab/
+homm-web/tools/probes/p1_tier_norm/
+# 启动图管线的产出（out/ 26 档变体 + A/B 对照图；由 _pipeline 脚本可复算）
+homm-web/assets/_pipeline/out/
+homm-web/assets/_pipeline/deliver/
+# AI 生成的位图草稿 —— 授权状态不明（roadmap：位图线已停，**不得商用**）
+homm-web/assets/ai-drafts/

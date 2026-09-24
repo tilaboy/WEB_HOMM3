@@ -90,7 +90,7 @@
 | `#155` 雾侧轮廓闭合 | 已翻默认，但①地图外缘仍不开 ②闭合可读性交美术观感判（雾底上墨仅 `1.16:1`）→ **未判** |
 | `#154` 光照修法 | 现 2/3，⑤ 同构建 WCAG 重测**未做** |
 | `#156` 英雄栏 | 首次在真 dist 过门，剩 2 条（`hp-head` 128→≤96、段内可滚）转第三包 |
-| `#162` 启动图 | 母图未交，未赶上第二包 |
+| `#162` 启动图 | **自家管线已做到"26 档可复算缩放"**（`homm-web/assets/_pipeline/`：母图 land/port + 26 档 `drawable*/splash.png` + `variants_report.md`，最近邻 / PNG-8 ≤92 色），**只差交给工程接进 `android/.../res/`** —— 比 roadmap 原记的"母图未交"要进得多 |
 | `#173` 接触日重取 / `#142` `#147` 独立验收 | 需在新指纹构建上重绑 |
 | 暗缝类三选一 | 挂账未裁 |
 | 真机走查 | 装机成功，**走查本身未做** |
@@ -216,17 +216,17 @@ node tools/smoke.mjs   # 621 项核心逻辑断言
 
 ---
 
-## 9. 遗留物（未提交 / 未清理）
+## 9. 遗留物（2026-09-24 已裁定并清理）
 
-`git status` 截至 2026-09-24 存在未提交内容，**收尾时未擅自处理**：
+**已按「脚本/文档入库、证据截图不入库」处理**（用户选定方案 ①）：
 
-| 路径 | 性质 |
+| 处置 | 内容 |
 |---|---|
-| `homm-web/tools/iaaccept.mjs` | **已修改**（未提交） |
-| `homm-web/assets/_pipeline/`、`assets/ai-drafts/` | 未跟踪（AI 草稿与管线中间产物） |
-| `homm-web/tools/probes/*.png`、`p1_tier_norm/`、`tintab/` | 未跟踪（抓图/测量证据，约 16 个文件） |
+| ✅ **已提交** | `homm-web/tools/iaaccept.mjs`（门控"三项必打印"账本）+ `homm-web/assets/_pipeline/` 的 **10 个 .mjs 脚本 + `README.md` / `AUDIT.md` + 13 个 `splash-src/` 输入小图**（≈6 KB，合成启动图的原料） |
+| 🚫 **已加入 `.gitignore`** | `tools/probes/*.png` 与 `tintab/`、`p1_tier_norm/`（观感与调色证据截图，**36 MB**，可重跑）· `_pipeline/out/`（26 档变体 PNG，脚本可复算）· `_pipeline/deliver/`（A/B 对照图）· `assets/ai-drafts/`（**2 张 AI 生成位图，授权状态不明 —— 位图线已停，不得商用**） |
+| 📌 保留在磁盘 | 上面这些文件**一个都没删**，只是不再进版本库；想看证据照旧在 `homm-web/tools/probes/` 与 `homm-web/assets/_pipeline/out/` |
 
-建议：想留证据就 `git add` 提交；不想留就把 `tools/probes/` 与 `assets/ai-drafts/` 加进 `.gitignore`。**未代为删除任何文件。**
+清理后 `git status` 应为**干净**。`.gitignore` 里给这批规则写了注释说明理由，免得后来人误以为是随手加的。
 
 ---
 
