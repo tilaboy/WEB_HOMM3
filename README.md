@@ -1,4 +1,11 @@
-# 英雄之歌 · homm-web
+# 《骑士信条》(The Code of Chivalry) · homm-web
+
+> ## ⏸ 项目状态：**已停止开发**（2026-09-24）
+>
+> 最后一条生产记录：2026-09-21 16:37 —— 第二个包在真机（OPPO PMA110）安装成功并逐字节复核。
+> 停止原因：多轮迭代在**玩家侧不可感知**（用户原话 F-3.7「画面 / 可玩性 / 对手智力都没有什么提升」）。
+>
+> **接手者请先读 [`PROJECT-WRAPUP.md`](PROJECT-WRAPUP.md)** —— 做完了什么、没做完什么、重启该按什么顺序做，都在那一份里。
 
 A Heroes of Might and Magic II-style turn-based strategy game built from scratch in TypeScript and Canvas — zero runtime dependencies and zero art assets, with every terrain tile, building, unit and spell icon drawn procedurally into a sprite atlas at boot.
 
@@ -8,7 +15,7 @@ A Heroes of Might and Magic II-style turn-based strategy game built from scratch
 ```
 npm run dev     # 构建 + 起本地服务，打开 http://localhost:5173
 npm run build   # tsc 编译到 dist/
-node tools/smoke.mjs   # 跑 370 项核心逻辑断言
+node tools/smoke.mjs   # 跑 621 项核心逻辑断言（2026-09-24 实测：621 PASS / 0 FAIL）
 ```
 
 ## 它现在能玩什么
@@ -34,7 +41,7 @@ homm-web/
   src/core/     纯逻辑，不碰 DOM
     combat/       hex.ts 六边形坐标 · battle.ts 战术引擎（唯一规则源） · siege.ts 攻城结构
     game/         交互 · 城镇 · 英雄 · 回合 · 冒险魔法
-    data/         单位 8 · 建筑 14 · 法术 17 · 宝物 6 · 英雄模板 · 阵营与难度
+    data/         单位 28 · 建筑 15 · 法术 17 · 宝物 6 · 英雄模板 · 阵营与难度
     map/          生成（按尺寸参数化）· 寻路 · 迷雾
     game/ai.ts    电脑对手：经济 / 建造 / 征兵 / 探路推进 / 遭遇战
   src/render/   Canvas 渲染：pixel.ts 像素画布 · atlas.ts 程序化图集 · ortho.ts 正交投影
@@ -53,6 +60,11 @@ homm-web/
 ## 进度
 
 M1 探索 · M2 城建 · M3 六边形战斗 · M4 魔法 · **M5 开局设置 + 电脑对手 · M5.2 2×2 城堡 · M6 攻城战** 已完成（存档 v7）。设计决策与数值实测记录在 `homm-web/DESIGN.md`。
+
+> ⏸ **2026-09-24 停止开发。** 完整收尾清单（已完成 / 未完成 / 已知风险 / 重启顺序）见 **[`PROJECT-WRAPUP.md`](PROJECT-WRAPUP.md)**；
+> 逐日生产流水与 72 条决策见 [`production/roadmap.md`](production/roadmap.md)；用户试玩原话见 [`design/ux/playtest-feedback.md`](design/ux/playtest-feedback.md)。
+>
+> 三条最该知道的"未完成"：① **四族兵种树未接线**（20 兵种已定义、16 个已画好，但四族长出的兵一样）② **画质档误判 G-15 未修**（旗舰被判 low ⇒ 氛围层全关）③ **音乐整块缺失**。
 
 调试入口：`?devbattle=1` 直开战斗，`&devauto=1` 交给 AI，`&devinstant=1` 跳过动画，`&devspell=1` 展开法术面板，`?devarts=1` 展开宝物格，
 `?devquick=2&devseed=4242` 跳过设置页直接以 2 个对手开局，`&devdays=20` 空过 20 天，`&devreveal=1` 掀开全图，`&devzoom=0.5` 缩小看整图，
