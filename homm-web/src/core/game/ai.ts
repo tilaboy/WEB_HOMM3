@@ -62,6 +62,24 @@ const BUILD_ORDER = [
 const BASE_COMMIT = 200;
 
 /**
+ * ★ `aggression`（= `commit`）是**两处**门槛，缺一不可（2026-09-29 实测修）。
+ *
+ * 原先 `commit` **只**用在下面 `wounded`（"部队打残了就回家"）这一处 ⇒ 它实际是
+ * "被打得多惨才回家"，**从来没有拦过"敢不敢动手"**。而开局英雄 20 弓手 ≈ 220 战力，
+ * 三档阈值（easy 300 / normal 220 / hard 160）在**第 1 天就都不触发**，之后 AI 只会越攒越厚
+ * ⇒ 这条杠杆**全程空转**。
+ *
+ * 实测（图三 21 天 · 8 seeds · rush 与 norush 两组）：三档的
+ * **首次出击日逐颗种子完全相同**（全 2）、**接触日逐颗种子完全相同**、出城天数中位 20/20/20、
+ * 累计行军格 274/272/281（无序）⇒ `aggression` 在真实对局里**量不出任何有序差别**。
+ *
+ * 修法是补上它**本来的那一半**（`difficulty-spec.md §3` 杠杆 C 的原话：
+ * "AI **出击门槛**"、"兵力不足时不会主动出击"）：打**有主**的城、打**敌方英雄**
+ * 这两类真正的"出击"，兵力不到 `commit` 就压根不进候选表。
+ * 打**中立**城/野怪不算"出击"（那是发育，不是开战）⇒ 不加门槛，免得轻松档 AI 连发育都不会。
+ */
+
+/**
  * 场景 `rush` 的候选权重（图二）。**它不是"覆盖"，是"一个候选"** —— 和附近值得抢的矿、
  * 打得赢的怪同场竞争，但它**必须高到能压过"顺路打只怪 / 捡堆资源"**：否则 AI 一路开打、
  * 部队被磨光、到不了对面（实测：权重 ≤300 时接触日中位 >21 天，FAIL）。
@@ -391,6 +409,9 @@ function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate 
     if (obj.kind === 'town') {
       const town = state.towns[(obj.payload as { townId: string }).townId];
       if (!town || town.owner === player) continue;
+      // ★ 出击门槛（`aggression`）：打**有主**的城算开战，兵力不到 `commit` 就不进候选表。
+      //   中立城不算（那是扩张，不是开战），否则轻松档 AI 连发育都不会。
+      if (town.owner !== 'neutral' && power < commit) continue;
       const need = garrisonStrength(town.garrison) + townDefenseBonus(town) * 12;
       const odds = power / Math.max(60, need * 1.15);
       if (odds < 0.85) continue; // 打不过就别去
@@ -464,6 +485,8 @@ function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate 
     if (!seen(foe.pos)) continue;
     const cost = costAt(foe.pos);
     if (!isFinite(cost) || cost <= 0) continue;
+    // ★ 同上：打敌方英雄是最纯粹的"出击"，同样受 `commit` 门槛约束。
+    if (power < commit) continue;
     const odds = power / Math.max(60, heroPower(foe));
     if (odds < 1.15) continue;
     candidates.push({ pos: foe.pos, kind: 'monster', score: 820 * Math.min(1.5, odds) - cost * 0.05 });

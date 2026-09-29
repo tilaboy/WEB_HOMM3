@@ -42,7 +42,9 @@
 | `audit:atlas` | `atlasaudit.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | **未走统一 `requireFile`** |
 | `audit:ai-diag` | `aidiagnose.mjs` | **报表** | **恒 0** | ✗ | ✓ `requireFile` | — | **不判过否**；落盘 `_aidiagnose.json/.log` |
 | `audit:badge` | `mapbadgeaudit.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | |
-| `audit:contact` | `contactaudit.mjs` | 门 | ✓ | ✓ | ✓ 自带 | **✓** | **唯一用 3 的门**（`#173`） |
+| `audit:contact` | `contactaudit.mjs` | 门 | ✓ | ✓ | ✓ 自带 | **✓** | 首个用 3 的门（`#173`；**不是唯一** —— 见下 `grimscontact`） |
+| （无 npm script，直接 `node tools/grimscontact.mjs`） | `grimscontact.mjs` | 门 | ✓ | ✓ | ✓ 自带 | ✓ | 图三《破碎罗盘》40×40 · 16 seeds 接触日。**硬判据 = 中位 ≤8**；带**阳性对照**（AI 被冻结 ⇒ 必须 >8，否则判「门为假绿」并 FAIL）；另有 `norush` 信息组 |
+| （无 npm script，直接 `node tools/grimsdiff.mjs`） | `grimsdiff.mjs` | **报表** | **恒 0** | ✗ | ✓ 自带 | ✓ | **不判过否**；打印三档难度实测数字（起始资源 / 野怪 / 移动力 / `aggression` / 周增长） |
 | `audit:scenario` | `scenarioaudit.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | 含 `NEG=1` 反测模式（`#165`） |
 | `audit:androidsync` | `androidsync.mjs` | 工具 | ✓ 隐式 | ✓ | ✓ | — | 无显式 `0`；成功走自然退出 |
 | `audit:hpbudget` | `hpbudget.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | `#156` 英雄栏信息预算量尺 |
