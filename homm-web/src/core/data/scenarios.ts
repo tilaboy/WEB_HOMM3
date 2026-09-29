@@ -1,5 +1,12 @@
 import type { Difficulty, MapLayout, MapSize } from '../types.js';
 import type { GenOptions } from '../map/generator.js';
+import type { StaticMapData } from './static-maps/static-map.js';
+// 静态地形数据。为什么是 **生成的 .ts** 而不是直接 `import ... from './…json'`：
+//   ① tsconfig 没开 `resolveJsonModule`；② 就算开了，NodeNext/ESM 下 JSON import 需要
+//   import attributes，Android WebView 未必支持 ⇒ 真机上会直接模块解析失败。
+// 所以 `.ts` 是运行时唯一来源；同名的 `.json`（`tools/h3m-terrain.mjs` 一并产出）是
+// **同一份数据的规范镜像**，供人读与验收对账 —— 两边漂移由 `tools/verify-static-map.mjs` 拦。
+import { GRIMS_BROKEN_COMPASS } from './static-maps/grims-broken-compass.js';
 
 /**
  * 试玩场景（`design/maps/playtest-scenarios.md`）。
@@ -12,7 +19,8 @@ import type { GenOptions } from '../map/generator.js';
  *   - `config`  = 固定开局设置（进 `GameConfig`，随即存盘）；
  *   - `gen`     = **生成期**覆盖（在现有生成流程内改参数）；
  *   - `stamp`   = **生成后**盖章（唯一会"新增一次生成"的钩子 ⇒ 必须独立 rng）；
- *   - `aiIntent`= AI 初始倾向（图二 = `rush`）。
+ *   - `aiIntent`= AI 初始倾向（图二 = `rush`）；
+ *   - `staticMap`= 外部导入的固定地形（图三；与上面四项正交，见下）。
  *
  * **缺省（无 `scenario`）时本文件不参与任何分支** ⇒ 自由对局与今天逐字节一致。
  */
@@ -60,6 +68,15 @@ export interface ScenarioDef {
   stamp?: ScenarioStamp;
   aiIntent?: AiIntent;
   objectives?: ScenarioObjective[];
+  /**
+   * 外部导入的固定地形（图三《破碎罗盘》）。**只有这一条会替换掉程序生成的地形**，
+   * 物件（城 / 矿 / 野怪）仍然由现有生成器摆放。
+   *
+   * ★ 缺省 ⇒ `generator.ts` 里所有相关分支都取不到它 ⇒ **自由对局与引入前逐字节一致**。
+   * `size` 必须与 `staticMap.width/height` 对得上，对不上是**响亮报错**（`applyStaticTerrain`
+   * 直接抛），不是静默裁切。
+   */
+  staticMap?: StaticMapData;
 }
 
 /* ------------------------------------------------------------------ *
@@ -104,7 +121,28 @@ const DUEL: ScenarioDef = {
   stamp: { midGuard: { tier: 'mid', reward: { kind: 'gold', amount: [1800, 3200] } } },
 };
 
-export const SCENARIOS: ScenarioDef[] = [TUTORIAL, DUEL];
+/* ------------------------------------------------------------------ *
+ * 图三《破碎罗盘》—— **真实 HoMM3 地图的地表层**（`xGrims Broken Compass v3`）
+ * 大型 40×40 · 3 对手 · 普通 · seed 2175（取源地图目录名的后缀，好记）
+ *
+ * 与图一/图二的根本差别：**地形不是算出来的，是导入的**（`staticMap`）
+ * ⇒ 同一张图每一局长得一模一样，玩家可以认路、可以背"那条海峡在哪"。
+ * 这是"让用户在他自己熟悉的那张图上看到改进"的落点。
+ *
+ * `layout` 取 `'wild'`：程序地形随后会被静态地形**整片覆盖**，layout 只影响那段
+ * 被覆盖掉的高度场 ⇒ 取最中性的一档，别让它再给导入后的一切添一个变量。
+ * ------------------------------------------------------------------ */
+const GRIMS: ScenarioDef = {
+  id: 'grims-showcase',
+  name: '破碎罗盘',
+  sub: '大型 · 三个会主动打你的对手',
+  config: { size: 'large', layout: 'wild', seed: 2175, opponents: 3, difficulty: 'normal' },
+  // 与图二同一条理由：默认 AI 不会主动来找玩家，不 rush 就没有"对手智力"可看。
+  aiIntent: 'rush',
+  staticMap: GRIMS_BROKEN_COMPASS,
+};
+
+export const SCENARIOS: ScenarioDef[] = [TUTORIAL, DUEL, GRIMS];
 
 export const SCENARIO_BY_ID: Record<string, ScenarioDef> = Object.fromEntries(
   SCENARIOS.map((s) => [s.id, s]),

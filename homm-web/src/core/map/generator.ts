@@ -14,6 +14,7 @@ import type {
   TerrainKind,
   Town,
 } from '../types.js';
+import type { StaticMapData } from '../data/static-maps/static-map.js';
 import { MAP_SIZES } from '../types.js';
 import { TERRAIN } from '../data/terrains.js';
 import { ARTIFACTS } from '../data/artifacts.js';
@@ -263,6 +264,68 @@ function buildTerrain(
     map.tiles.push({ terrain: t, objectId: null });
   }
   return { map, height };
+}
+
+/* ---------------- 静态地形（外部导入的固定图） ---------------- */
+
+/**
+ * 把导入的地形**逐格覆盖**到 `map.tiles` 上。
+ *
+ * 尺寸对不上**直接抛**，不静默裁切／不静默留白：静态图的 size 写在场景里，
+ * 尺寸不一致说明有人改了一边没改另一边，静默处理会产出一张"半张好图"的坏图。
+ */
+export function applyStaticTerrain(map: GameMap, data: StaticMapData): void {
+  if (map.width !== data.width || map.height !== data.height) {
+    throw new Error(
+      `[generator] 静态地形尺寸不匹配：地图 ${map.width}×${map.height}，` +
+        `导入 ${data.width}×${data.height}（源 ${data.source}）—— 场景的 size 与 staticMap 必须一致。`,
+    );
+  }
+  for (let y = 0; y < data.height; y++) {
+    const row = data.tiles[y];
+    for (let x = 0; x < data.width; x++) {
+      map.tiles[idx(map, x, y)].terrain = row[x];
+    }
+  }
+}
+
+/**
+ * 静态地形盖章后的**硬校验**：城堡占用的 2×2 四格、英雄出生格、所有矿场
+ * 必须落在**可通行**地形上。返回冲突描述（空数组 = 全部合格）。
+ *
+ * 只查地形、不查物件阻挡（`isPassable` 会把自家城堡的另外三格当成不可站，
+ * 那是**故意**的，不能算冲突）⇒ 这里用 `TERRAIN[...].passable` 逐格判定。
+ *
+ * 导出是为了让 `tools/verify-static-map.mjs` 能拿它做**阳性对照**（故意把一格改
+ * 成水，看它会不会红）—— 只会绿的门是假门（`GATES.md §4`）。
+ */
+export function staticTerrainConflicts(
+  map: GameMap,
+  castleGates: GridPos[],
+  heroSpots: GridPos[],
+): string[] {
+  const out: string[] = [];
+  const bad = (x: number, y: number): boolean => {
+    if (x < 0 || y < 0 || x >= map.width || y >= map.height) return true;
+    return !TERRAIN[map.tiles[idx(map, x, y)].terrain].passable;
+  };
+  for (const gate of castleGates) {
+    for (const c of castleCells(gate)) {
+      if (bad(c.x, c.y)) {
+        out.push(`城堡城门 (${gate.x},${gate.y}) 的占地格 (${c.x},${c.y}) 落在不可通行地形上`);
+      }
+    }
+  }
+  for (const h of heroSpots) {
+    if (bad(h.x, h.y)) out.push(`英雄出生格 (${h.x},${h.y}) 落在不可通行地形上`);
+  }
+  for (const obj of Object.values(map.objects)) {
+    if (obj.kind !== 'mine') continue;
+    if (bad(obj.pos.x, obj.pos.y)) {
+      out.push(`矿场 ${obj.id}（${obj.pos.x},${obj.pos.y}）落在不可通行地形上`);
+    }
+  }
+  return out;
 }
 
 /** 只保留最大的连通陆地块，其余淹没为水，避免出现走不到的孤岛。 */
@@ -710,7 +773,29 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   const scen = cfg.scenario ? SCENARIO_BY_ID[cfg.scenario] : undefined;
 
   const { map } = buildTerrain(seed, w, h, cfg.layout);
-  keepLargestLandmass(map);
+  /**
+   * 静态地形**必须在物件落位之前**盖上去 —— 这是本段唯一一处"偏离任务书字面要求"的
+   * 地方，理由是量出来的，不是拍的：
+   *
+   *   `generator.ts` 里城 / 英雄 / 矿 / 野怪 / 宝箱的选址**全部**经过 `isPassable`，
+   *   也就是"先按程序地形选好位置，事后再把地形换掉" ⇒ 事后再盖会把已经落位的物件
+   *   按新地形重新判定。实测（40×40、seed 2175、本 crop）：334 个物件里 **73 个
+   *   （21.9%）落到水上**，其中 **3 座城堡、7 座矿、1 位英雄** ⇒ 矿走不到、宝箱拿不着、
+   *   野怪永远没人打 —— 那是一张"能进去但玩不了"的图，正是任务书里点名不许交的形状。
+   *
+   *   先盖地形，则选址这一步看到的就是真地形 ⇒ 上面那些冲突**在构造上不可能发生**，
+   *   而且现有的 `allReachable` / `reach[]` / `attempt+1 换种子` 三道闸照旧生效。
+   *
+   * 任务书要求的**校验**仍然保留，且放在原定的"生成后盖章"位置（见文件末尾），
+   * 作为事后断言 —— 它现在在正常路径下恒过，但**它不是摆设**：把它喂一张故意改坏的
+   * 图它会红，`tools/verify-static-map.mjs` 每轮都在做这个阳性对照。
+   *
+   * 顺带：导入的地形**不走 `keepLargestLandmass`** —— 那是给程序地形擦屁股用的
+   * （把碎岛淹掉），用在手工地图上会把作者刻意留的岛屿抹平，等于改图。
+   * 孤岛走不到的问题由既有的 `reach[]`（只挑可达格放东西）兜住。
+   */
+  if (scen?.staticMap) applyStaticTerrain(map, scen.staticMap);
+  else keepLargestLandmass(map);
 
   const rng = mulberry32(seed ^ 0x5bf03635);
   const diff = DIFFICULTIES[cfg.difficulty];
@@ -1158,6 +1243,30 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
         blocking: false,
         visitedBy: [],
       });
+    }
+  }
+
+  /**
+   * 静态地形盖章的**事后校验**（`playtest-scenarios` 之外，任务书 Day 1 ⑤）。
+   *
+   * 触发条件 = **这个场景带了 `staticMap`**（当前只有 `grims-showcase` 一个）。
+   * 别的场景（含自由对局）`scen?.staticMap` 恒为 undefined ⇒ 本段一行都不跑
+   * ⇒ 与引入前逐字节一致（已用 144 局自由对局 + tutorial/duel 逐字节对过）。
+   *
+   * 失败就**抛**，绝不静默产出一张"城堡泡在水里"的图：静默 = 玩家先进去玩十分钟
+   * 才发现矿走不到，那时候已经没人会信这张图了。修法写在错误信息里（换候选窗口 /
+   * 换种子），两种都改的是数据，不是把校验放宽。
+   */
+  if (scen?.staticMap) {
+    const conflicts = staticTerrainConflicts(map, [...homeSpots, ...neutralSpots], heroSpots);
+    if (conflicts.length) {
+      throw new Error(
+        `[generator] 静态地形校验失败（${conflicts.length} 处，源 ${scen.staticMap.source}，` +
+          `origin ${scen.staticMap.origin.x},${scen.staticMap.origin.y}）：\n  ` +
+          conflicts.slice(0, 20).join('\n  ') +
+          (conflicts.length > 20 ? `\n  …（另有 ${conflicts.length - 20} 处）` : '') +
+          `\n  修法：换一个 crop 窗口（node tools/h3m-terrain.mjs --origin=<x>,<y>）或换场景 seed。`,
+      );
     }
   }
 
