@@ -26,7 +26,8 @@ import {
   VAULTS,
   vaultRareBundle,
 } from '../data/mines.js';
-import { HERO_TEMPLATES, START_ARMY } from '../data/heroes.js';
+import { HERO_TEMPLATES, startArmyFor } from '../data/heroes.js';
+import { FACTION_UNITS } from '../data/units.js';
 import { DEFAULT_CONFIG, DIFFICULTIES, FACTIONS, FACTION_ORDER } from '../data/factions.js';
 import { mulberry32, randInt, shuffle, pick } from '../rng.js';
 import { maxMovePoints } from '../game/hero.js';
@@ -1311,7 +1312,7 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
       mana: tpl.primary.knowledge * 10,
       manaMax: tpl.primary.knowledge * 10,
       movePoints: BASE_MOVE_POINTS,
-      army: START_ARMY.map((s) => ({ ...s })),
+      army: startArmyFor(fid),
       artifacts: [],
       spells: [],
       pos: heroSpots[i],
@@ -1328,8 +1329,10 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
       footprint: castleCells(homeSpots[i]),
       owner: fid,
       buildings: ['tavern', 'dwell1', 'dwell2'],
-      garrison: [{ unitTypeId: 'archer', count: 10 }],
-      growthPool: { peasant: 10, archer: 5 },
+      // 段 2：驻军与预置存量都按**本族**的 canonical id 给（写死 archer/peasant
+      // 会让四族开局共用晨曦的兵、且存量键与兵营解析出的键对不上 ⇒ 第 1 天可招 0）。
+      garrison: [{ unitTypeId: FACTION_UNITS[fid][1], count: 10 }],
+      growthPool: { [FACTION_UNITS[fid][0]]: 10, [FACTION_UNITS[fid][1]]: 5 },
     };
   });
 

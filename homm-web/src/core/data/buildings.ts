@@ -70,45 +70,59 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     growthBonus: 0.25,
   },
 
+  /* ---------------- 兵营线：dwell1 → dwell5 ----------------
+   *
+   * `growth` **只写 `tier`，不写 `unitTypeId`**（段 2）。理由：
+   *   ① 同一座 `dwell3` 在四族里必须长出四种兵 —— 写死 id 会让四族共用一张表，
+   *      玩家就只看到配色差异（这正是「兵种都一样」抱怨的根因）；
+   *   ② `tier` 是与阵营**正交**的坐标，阵营差异全部收敛到 `FACTION_UNITS` 一张表
+   *      （`core/data/units.ts`），加第五个阵营时只改那一处，不用碰建筑树；
+   *   ③ 具体 id 在**运行时**由 `unitIdForTier(town.owner, tier)` 解析
+   *      —— owner 变了（城镇易主）兵种随之变，`growthPool` 的既有语义
+   *      （键 = canonical unit id）保持不变。
+   *
+   * ⇒ 因此 `desc` 也必须是**阵营中立**的写法（不写「解锁农民」，
+   *    那句话只对晨曦成立）。UI 若要显示具体兵名，调 `unitIdForTier` 自己取。
+   */
   dwell1: {
     id: 'dwell1',
     name: '农舍',
-    desc: '解锁农民，每周增长 +10。',
+    desc: '解锁本族 1 级兵，每周增长 +10。',
     cost: { gold: 300, wood: 5 },
     requires: ['tavern'],
-    growth: { unitTypeId: 'peasant', count: 10 },
+    growth: { tier: 1, count: 10 },
   },
   dwell2: {
     id: 'dwell2',
     name: '射箭场',
-    desc: '解锁弓手，每周增长 +5。',
+    desc: '解锁本族 2 级兵，每周增长 +5。',
     cost: { gold: 1000, wood: 5, ore: 5 },
     requires: ['dwell1'],
-    growth: { unitTypeId: 'archer', count: 5 },
+    growth: { tier: 2, count: 5 },
   },
   dwell3: {
     id: 'dwell3',
     name: '兵营',
-    desc: '解锁枪兵，每周增长 +4。',
+    desc: '解锁本族 3 级兵，每周增长 +4。',
     cost: { gold: 2500, ore: 10 },
     requires: ['dwell2'],
-    growth: { unitTypeId: 'pikeman', count: 4 },
+    growth: { tier: 3, count: 4 },
   },
   dwell4: {
     id: 'dwell4',
     name: '马厩',
-    desc: '解锁骑士，每周增长 +3。',
+    desc: '解锁本族 4 级兵，每周增长 +3。',
     cost: { gold: 5000, wood: 10, ore: 10 },
     requires: ['dwell3'],
-    growth: { unitTypeId: 'knight', count: 3 },
+    growth: { tier: 4, count: 3 },
   },
   dwell5: {
     id: 'dwell5',
     name: '圣殿',
-    desc: '解锁天使，每周增长 +2。',
+    desc: '解锁本族 5 级兵，每周增长 +2。',
     cost: { gold: 9000, wood: 10, ore: 20 },
     requires: ['dwell4'],
-    growth: { unitTypeId: 'angel', count: 2 },
+    growth: { tier: 5, count: 2 },
   },
 
   /* ---------------- 魔法线（M4）：guild1 → guild2 → guild3 ---------------- */

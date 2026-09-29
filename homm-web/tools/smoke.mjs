@@ -251,7 +251,9 @@ ok(canBuild(g, home, 'dwell3'), '兵营可建造（2500 金 10 矿）');
 ok(build(g, home, 'dwell3'), '建造兵营成功');
 ok(g.players.p1.resources.gold === goldBefore - 2500, '建造扣除金币');
 ok(home.buildings.includes('dwell3'), '兵营进入建筑列表');
-ok(home.growthPool.pikeman === 0, '新兵营初始存量为 0');
+// 段 2：兵营不再写死 unitTypeId ⇒ 增长池的键是本族该 tier 的 canonical id
+// （晨曦 T3 = p1_oathpike），不再是旧通用 id `pikeman`。
+ok(home.growthPool.p1_oathpike === 0, '新兵营初始存量为 0');
 ok(buildStatus(g, home, 'dwell4').unlocked === true, '马厩现已解锁');
 
 // 周增长
@@ -261,8 +263,8 @@ g.players.p1.resources.ore = 99;
 const poolBefore = { ...home.growthPool };
 for (let d = 0; d < 7; d++) endDay(g);
 ok(g.day === 8, `过了 7 天（当前第 ${g.day} 天）`);
-ok(home.growthPool.pikeman === (poolBefore.pikeman ?? 0) + 4, `枪兵周增长 +4（现 ${home.growthPool.pikeman}）`);
-ok(home.growthPool.archer === (poolBefore.archer ?? 0) + 5, `弓手周增长 +5（现 ${home.growthPool.archer}）`);
+ok(home.growthPool.p1_oathpike === (poolBefore.p1_oathpike ?? 0) + 4, `本族 T3 周增长 +4（现 ${home.growthPool.p1_oathpike}）`);
+ok(home.growthPool.p1_hornxbow === (poolBefore.p1_hornxbow ?? 0) + 5, `本族 T2 周增长 +5（现 ${home.growthPool.p1_hornxbow}）`);
 ok(
   g.players.p1.resources.gold > 99999 - 99999 + BASE_TOWN_INCOME * 7 - 1,
   '每日税收已发放',
@@ -271,12 +273,14 @@ ok(
 // 招募
 const hero = g.heroes.hero1;
 hero.pos = { ...home.pos };
-const archersBefore = countIn(hero.army, 'archer');
-const poolArchers = home.growthPool.archer;
-const r1 = recruitToHero(g, home, hero, 'archer', 3);
-ok(r1.taken === 3, `招募 3 弓手（${r1.reason || '成功'}）`);
-ok(countIn(hero.army, 'archer') === archersBefore + 3, '弓手进入英雄部队');
-ok(home.growthPool.archer === poolArchers - 3, '增长池相应减少');
+// 段 2：主城（p1）的 T2 现在是 `p1_hornxbow`，不再是旧通用 id `archer`。
+const HOME_T2 = 'p1_hornxbow';
+const archersBefore = countIn(hero.army, HOME_T2);
+const poolArchers = home.growthPool[HOME_T2];
+const r1 = recruitToHero(g, home, hero, HOME_T2, 3);
+ok(r1.taken === 3, `招募 3 名本族 T2（${r1.reason || '成功'}）`);
+ok(countIn(hero.army, HOME_T2) === archersBefore + 3, '招募的兵进入英雄部队');
+ok(home.growthPool[HOME_T2] === poolArchers - 3, '增长池相应减少');
 
 // 兵种槽位上限
 hero.army = [
@@ -289,16 +293,16 @@ hero.army = [
 home.growthPool.wolf = 5;
 const r2 = recruitToHero(g, home, hero, 'wolf', 1);
 ok(r2.taken === 0 && r2.reason.includes('5'), `第 6 个兵种被拒绝（${r2.reason}）`);
-hero.army = [{ unitTypeId: 'archer', count: 20 }];
+hero.army = [{ unitTypeId: HOME_T2, count: 20 }];
 
 // 驻军调度
-home.growthPool.archer = 10;
-recruitToGarrison(g, home, 'archer', 4);
-ok(countIn(home.garrison, 'archer') === 14, '驻军弓手 10 + 4');
-garrisonToHero(hero, home, 'archer', 4);
-ok(countIn(home.garrison, 'archer') === 10, '带走 4 名驻军');
-heroToGarrison(hero, home, 'archer', 2);
-ok(countIn(home.garrison, 'archer') === 12, '留守 2 名');
+home.growthPool[HOME_T2] = 10;
+recruitToGarrison(g, home, HOME_T2, 4);
+ok(countIn(home.garrison, HOME_T2) === 14, '驻军本族 T2 10 + 4');
+garrisonToHero(hero, home, HOME_T2, 4);
+ok(countIn(home.garrison, HOME_T2) === 10, '带走 4 名驻军');
+heroToGarrison(hero, home, HOME_T2, 2);
+ok(countIn(home.garrison, HOME_T2) === 12, '留守 2 名');
 
 // 市场
 ok(!build(g, home, 'market') || true, '市场建造不报错');
@@ -2274,6 +2278,213 @@ console.log('\n--- E3 无城 7 日出局 ---');
   ok(siegeMsg?.kind === 'siege' && siegeMsg.message.split('\n').length === 2, '③ 攻城框也压到两行');
   ok(!!siegeMsg && !/我方兵力|敌方兵力/.test(siegeMsg.message), '③ 攻城框无「我方兵力/敌方兵力」');
   ok(!!siegeMsg && /(可以攻下|难以攻克)/.test(siegeMsg.message), '③ 攻城框保留「打不打得过」结论');
+}
+
+/* ================= 段 2 · 四族分兵 ================= */
+/* 背景（P0 #1）：`dwell1~5` 曾把 `growth.unitTypeId` 写死成旧通用 id
+ * （peasant/archer/pikeman/knight/angel）⇒ 同一座兵营在四族里长出同一种兵。
+ * 段 2 改成按 `tier` 表达 + `unitIdForTier(owner, tier)` 现解析。
+ * 本节断言的就是"接线真的接上了"：四族产出的 id 必须互不相同。
+ *
+ * ⚠️ 阳性对照（防止"空集假绿"——本项目已在 b0audit 的 `.every(空数组)` 上踩过一次）：
+ * 本节的每一条断言都必须能在「故意把四族改回同一 unitTypeId」时翻红。
+ * 复核命令（默认关闭，只影响本节；上面 §17 用 FACTION_UNITS 的断言在它之前跑完）：
+ *
+ *   SEG2_NEGCTL=1 node tools/smoke.mjs
+ *
+ * 它做两件事：① 把 p2/p3/p4 的兵种行压成 p1 一行（= 退回收尾前的"四族同一种兵"）；
+ * ② 给 FACTION_UNITS 挂上 `neutral` 一行（= 把"中立方不 fallback"改成"静默当晨曦"）。
+ * 预期：①②③ 与 ④ 的头条断言全部翻红 —— 翻红才说明它们真的在测东西。
+ */
+console.log('\n--- 段 2 四族分兵 ---');
+{
+  const { applyWeeklyGrowth, recruitRows } = await import(dimp('core/game/town.js'));
+  const { BUILDINGS } = await import(dimp('core/data/buildings.js'));
+  const { pickRepresentativeUnit } = await import(dimp('render/mapBadge.js'));
+  const { START_ARMY_COUNT, startArmyFor, START_ARMY_TIER } = await import(dimp('core/data/heroes.js'));
+
+  if (process.env.SEG2_NEGCTL === '1') {
+    for (const f of ['p2', 'p3', 'p4']) FACTION_UNITS[f] = [...FACTION_UNITS.p1];
+    FACTION_UNITS.neutral = [...FACTION_UNITS.p1];
+    console.log('[NEGCTL] 四族已压成 p1 一行、并给 neutral 挂上 p1 行 ⇒ 本节头条断言应当翻红');
+  }
+
+  const g = createGame({ seed: 20260914, opponents: 3 });
+  const fids = factionIds(g);
+  const towns = fids.map((f) => g.towns[f === 'p1' ? 'town_home' : `town_${f}`]);
+  ok(fids.length === 4, `样本局有四个阵营（${fids.join(' / ')}）`);
+  ok(towns.length === 4 && towns.every((t) => !!t), '四族各有一座起始城');
+
+  // 期望值直接来自 FACTION_UNITS 的 T1/T2 列（这张表是段 2 的唯一真值源）
+  const T1 = { p1: 'p1_lampbearer', p2: 'p2_scavenger', p3: 'p3_dwarf', p4: 'p4_stoneimp' };
+  const T2 = { p1: 'p1_hornxbow', p2: 'p2_axethrower', p3: 'p3_thornarcher', p4: 'p4_fireapprentice' };
+  ok(fids.every((f) => unitIdForTier(f, 1) === T1[f] && unitIdForTier(f, 2) === T2[f]),
+    'unitIdForTier 与 FACTION_UNITS 一致（断言的期望值不是抄来的字面量）');
+
+  // 隔离：清掉生成器预置的建筑与存量，只留酒馆，保证下面每一步都是"兵营接线"单独造成的
+  for (const t of towns) {
+    t.buildings = ['tavern'];
+    t.growthPool = {};
+    t.growthRemainder = {};
+    t.builtDay = -1;
+    Object.assign(g.players[t.owner].resources,
+      { gold: 99999, wood: 99, ore: 99, gem: 99, crystal: 99, sulfur: 99, mercury: 99 });
+  }
+
+  /* ---- ③ build：同一张账单，四族开出的增长池键各不相同 ---- */
+  const goldBeforeBuild = {};
+  for (const t of towns) {
+    goldBeforeBuild[t.owner] = g.players[t.owner].resources.gold;
+    ok(build(g, t, 'dwell1', t.owner), `${t.owner}: 建成 dwell1`);
+  }
+  const openedKeys = towns.map((t) => Object.keys(t.growthPool).join(','));
+  ok(towns.every((t) => Object.keys(t.growthPool).length === 1),
+    `③ build dwell1 各开出一个增长池键（${openedKeys.join(' | ')}）`);
+  ok(towns.every((t) => t.growthPool[T1[t.owner]] === 0),
+    '③ 开出的键是本族 T1 的 canonical id，初始值 0');
+  ok(new Set(openedKeys).size === 4, `③ 四族 build dwell1 解析出的 unit 互不相同（${openedKeys.join(' / ')}）`);
+  // 账单与阵营无关（建筑造价是共用表）——变的只有产出
+  ok(towns.every((t) => goldBeforeBuild[t.owner] - g.players[t.owner].resources.gold === BUILDINGS.dwell1.cost.gold),
+    `③ 四族账单同一份（各扣 ${BUILDINGS.dwell1.cost.gold} 金），不同的只有产出兵种`);
+
+  /* ---- ① applyWeeklyGrowth：四族每周长出的兵互不相同 ---- */
+  applyWeeklyGrowth(g);
+  const grew = {};
+  for (const t of towns) {
+    const keys = Object.keys(t.growthPool).filter((k) => (t.growthPool[k] ?? 0) > 0);
+    ok(keys.length === 1, `${t.owner}: 周增长只产出 1 个兵种（${keys.join(',') || '空'}）`);
+    grew[t.owner] = keys[0];
+  }
+  const grewIds = fids.map((f) => grew[f]);
+  ok(grewIds.every((id) => !!id), `① 四族周增长都真的产了兵（${grewIds.join(' / ')}）`);
+  ok(new Set(grewIds).size === 4, `① 四族 dwell1 周增长产出的兵 id 互不相同（${grewIds.join(' / ')}）`);
+  ok(grewIds.join(',') === fids.map((f) => T1[f]).join(','),
+    `① 四族产出依次是 ${fids.map((f) => T1[f]).join(' / ')}`);
+  ok(grewIds.every((id) => getUnit(id).tier === 1), '① 产出的兵都是 T1（getUnit 不抛、tier 正确）');
+
+  /* ---- ② recruitRows：四族返回的招募项不同 ---- */
+  const rowSig = {};
+  for (const t of towns) {
+    const rows = recruitRows(g, t);
+    ok(rows.length === 1, `${t.owner}: recruitRows 返回 1 项（${rows.map((r) => r.unitTypeId).join(',') || '空'}）`);
+    ok(rows.length === 1 && rows[0].unitTypeId === T1[t.owner],
+      `${t.owner}: recruitRows 首项是本族 T1 ${T1[t.owner]}`);
+    ok(rows.length === 1 && rows[0].available === t.growthPool[T1[t.owner]],
+      `${t.owner}: available 取自本族的池子（${rows[0]?.available}）`);
+    rowSig[t.owner] = rows.map((r) => r.unitTypeId).sort().join(',');
+  }
+  ok(new Set(Object.values(rowSig)).size === 4, `② 四族 recruitRows 返回的招募项不同（${Object.values(rowSig).join(' / ')}）`);
+
+  /* ---- 再建一座 dwell2：确认每座兵营都按自己的 tier 解析 ---- */
+  for (const t of towns) {
+    t.builtDay = -1;
+    ok(build(g, t, 'dwell2', t.owner), `${t.owner}: 建成 dwell2`);
+  }
+  applyWeeklyGrowth(g);
+  const t2Keys = towns.map((t) => Object.keys(t.growthPool).filter((k) => k === T2[t.owner]).length);
+  ok(t2Keys.every((n) => n === 1), `dwell2 也按 tier 解析：四族各开出本族 T2（${towns.map((t) => T2[t.owner]).join(' / ')}）`);
+  ok(new Set(towns.map((t) => T2[t.owner])).size === 4, '四族 T2 互不相同');
+
+  /* ---- T5：数据结构上不报错（本次不画 T5 精灵，见报告） ---- */
+  const t5Ids = fids.map((f) => unitIdForTier(f, 5));
+  ok(new Set(t5Ids).size === 4 && t5Ids.every((id) => !!id && getUnit(id).tier === 5),
+    `T5 四族 id 各不相同且已登记（${t5Ids.join(' / ')}）`);
+  // 渲染侧：`pickRepresentativeUnit` 会解析出 T5 的 canonical id，但 unitArt 只有 T1~T4 的帧
+  // （TIER_OF 只登记 16 个）⇒ MapRenderer 的 `if (!g) return;` 会跳过、不画。此处只证明**不抛**。
+  ok(pickRepresentativeUnit([{ unitTypeId: t5Ids[0], count: 1 }]) === t5Ids[0],
+    `T5 能被解析成 canonical id（渲染层随后取不到帧 ⇒ 跳过，不抛错）`);
+  {
+    let threw = null;
+    try {
+      const t5t = towns[0];
+      t5t.buildings = ['tavern', 'dwell1', 'dwell2', 'dwell3', 'dwell4', 'dwell5'];
+      t5t.growthPool = {};
+      t5t.growthRemainder = {};
+      applyWeeklyGrowth(g);
+      recruitRows(g, t5t);
+    } catch (e) { threw = e; }
+    ok(!threw, `T5 兵营的周增长 / 招募不抛错（${threw ? threw.message : 'ok'}）`);
+  }
+
+  /* ---- ④ 中立城：不崩、不产生 p1 兵（units.ts:255-258 规则 5） ---- */
+  ok(unitIdForTier('neutral', 1) === null, '④ 规则 5：unitIdForTier(neutral, 1) 返回 null（不 fallback 到 p1）');
+  const nt = g.towns.town_n1;
+  ok(!!nt && nt.owner === 'neutral', '④ 取到中立城');
+  nt.buildings = ['tavern', 'dwell1'];
+  nt.growthPool = {};
+  nt.growthRemainder = {};
+  // 给中立城一份资源，好让 build 真的走到 dwellUnitId 那条分支（否则会先在"资源不足"短路）
+  g.players.neutral = { ...g.players.p1, resources: { ...g.players.p1.resources } };
+  const warns = [];
+  const origWarn = console.warn;
+  console.warn = (...a) => { warns.push(a.map(String).join(' ')); };
+  let threw = null;
+  try {
+    applyWeeklyGrowth(g);
+    const nRows = recruitRows(g, nt);
+    ok(nRows.length === 0, `④ 中立城 recruitRows 返回空（${nRows.length} 项）`);
+    build(g, nt, 'dwell2', 'neutral');
+  } catch (e) { threw = e; }
+  console.warn = origWarn;
+  ok(!threw, `④ 中立城三条路径都不抛错（${threw ? threw.message : 'ok'}）`);
+  ok(Object.keys(nt.growthPool).length === 0,
+    `④ 中立城不产生任何兵（池子 ${JSON.stringify(nt.growthPool)}）`);
+  ok(!Object.keys(nt.growthPool).some((k) => k.startsWith('p1_')),
+    '④ 中立城不产生 p1 兵（没被静默当成晨曦）');
+  ok(warns.length === 2 && warns.some((w) => w.includes('recruitRows')) && warns.some((w) => w.includes('build')),
+    `④ 解析失败时记日志而不是静默跳过（${warns.length} 条：${warns.map((w) => w.slice(0, 24)).join(' | ')}）`);
+
+  /* ---- ⑤ 第 1 天：四座城的可招数量必须 > 0，且四族互不相同 ---- */
+  /* 这条盯的是 `generator.ts` 的**起始存量**：它曾写死 `{peasant:10, archer:5}`，
+   * 兵营改成按 tier 解析后那些键就成了孤儿 ⇒ 第 1 天四座城的可招数全是 0。
+   * `rows.length > 0` 是空集守卫（`.reduce(空数组)` 得 0，会掩盖"根本没有招募项"）。 */
+  const g2 = createGame({ seed: 20260915, opponents: 3 });
+  const homes = fids.map((f) => g2.towns[f === 'p1' ? 'town_home' : `town_${f}`]);
+  const dayOne = {};
+  for (const t of homes) {
+    const rows = recruitRows(g2, t);
+    const total = rows.reduce((s, r) => s + r.available, 0);
+    ok(rows.length > 0, `⑤ ${t.owner}: 第 1 天就有招募项（${rows.length} 项）`);
+    ok(total > 0, `⑤ ${t.owner}: 第 1 天可招总数 > 0（现 ${total}）`);
+    dayOne[t.owner] = rows.map((r) => `${r.unitTypeId}:${r.available}`).join(',');
+  }
+  ok(new Set(Object.values(dayOne)).size === 4,
+    `⑤ 第 1 天四族的可招项互不相同（${Object.values(dayOne).join(' / ')}）`);
+  ok(homes.every((t) => t.growthPool[T1[t.owner]] === 10 && t.growthPool[T2[t.owner]] === 5),
+    '⑤ 起始存量落在**本族** T1/T2 的 canonical 键上（10 / 5）');
+  const gar = homes.map((t) => t.garrison.map((s) => s.unitTypeId).join(','));
+  ok(homes.every((t) => t.garrison.length === 1) && new Set(gar).size === 4,
+    `⑤ 第 1 天四族驻军互不相同（${gar.join(' / ')}）`);
+
+  /* ---- ⑥ 起始英雄部队按 owner 不同（heroes.ts 的 startArmyFor） ---- */
+  const armyOf = {};
+  for (const f of fids) {
+    const h = g2.heroes[f === 'p1' ? 'hero1' : `hero_${f}`];
+    const sig = h ? h.army.map((s) => `${s.unitTypeId}×${s.count}`).join(',') : '';
+    ok(!!h && h.army.length === 1 && h.army[0].count === START_ARMY_COUNT,
+      `⑥ ${f}: 起始英雄 ${START_ARMY_COUNT} 人（${sig || '无'}）`);
+    armyOf[f] = h?.army[0]?.unitTypeId;
+    ok(armyOf[f] === FACTION_UNITS[f][START_ARMY_TIER - 1],
+      `⑥ ${f}: 带的是本族 T${START_ARMY_TIER} ${FACTION_UNITS[f][START_ARMY_TIER - 1]}（现 ${armyOf[f]}）`);
+  }
+  ok(Object.values(armyOf).every((id) => !!id) && new Set(Object.values(armyOf)).size === 4,
+    `⑥ 四族起始英雄带的兵互不相同（${Object.values(armyOf).join(' / ')}）`);
+
+  /* ---- ⑦ 中立 / 未知 owner：按 heroes.ts 注释里的契约**返回空部队** ---- */
+  ok(unitIdForTier('neutral', START_ARMY_TIER) === null, `⑦ 规则 5：中立解析不出 T${START_ARMY_TIER}`);
+  const armyWarns = [];
+  const origArmyWarn = console.warn;
+  console.warn = (...a) => { armyWarns.push(a.map(String).join(' ')); };
+  const neutralArmy = startArmyFor('neutral');
+  const unknownArmy = startArmyFor('__no_such_owner__');
+  const zeroArmy = startArmyFor('p1', 0);
+  console.warn = origArmyWarn;
+  ok(neutralArmy.length === 0, `⑦ startArmyFor('neutral') 返回空部队（${JSON.stringify(neutralArmy)}）`);
+  ok(unknownArmy.length === 0, `⑦ 未知 owner 同样返回空（${JSON.stringify(unknownArmy)}）`);
+  ok(zeroArmy.length === 0, `⑦ count<=0 返回空、也不记日志（${JSON.stringify(zeroArmy)}）`);
+  ok(![...neutralArmy, ...unknownArmy].some((s) => s.unitTypeId.startsWith('p1_')),
+    '⑦ 中立 / 未知 owner 拿不到 p1 兵（不静默 fallback）');
+  ok(armyWarns.length === 2, `⑦ 两次解析失败各记一次日志（${armyWarns.length} 条）`);
 }
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);

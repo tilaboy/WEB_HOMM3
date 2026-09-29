@@ -14,8 +14,8 @@ import { BASE_TOWN_INCOME, BUILDINGS, HERO_HIRE_COST } from '../data/buildings.j
 import { WAR_MACHINES } from '../data/warmachines.js';
 import { DIFFICULTIES, factionIds, factionName } from '../data/factions.js';
 import { getSpell, spellsOfGuild } from '../data/spells.js';
-import { MAX_STACKS, getUnit } from '../data/units.js';
-import { HERO_TEMPLATES } from '../data/heroes.js';
+import { MAX_STACKS, getUnit, unitIdForTier } from '../data/units.js';
+import { HERO_TEMPLATES, startArmyFor } from '../data/heroes.js';
 import { addResources, maxMovePoints } from './hero.js';
 import { isNewWeek, weekOf } from './calendar.js';
 import { pushLog } from './log.js';
@@ -223,13 +223,38 @@ export function canBuild(state: GameState, town: Town, id: string, actor: Player
   return !s.built && s.unlocked && s.affordable && !s.spentToday;
 }
 
+/**
+ * 兵营增长 → 这座城**实际**长出的兵种 id（段 2）。
+ *
+ * `buildings.ts` 的 `growth` 只记 `tier`（阵营无关），具体 id 必须按**城镇 owner**
+ * 现解析：同一座 `dwell3` 在四族里长出四种兵；城镇易主后产的兵也随之改变。
+ *
+ * ⚠️ **中立方返回 `null`，绝不 fallback 到 p1**（`races.md §6.4.2` 规则 5）：
+ * 静默 fallback 会把「中立城被当成晨曦」这类 bug 藏起来。调用方拿到 `null`
+ * 必须**跳过并记日志**。这条路径当前实际不可达（中立城 `buildings: []`，
+ * 且全项目没有任何一处把 `owner` 改回 `'neutral'`），所以显式失败是安全的。
+ */
+function dwellUnitId(town: Town, tier: number, where: string): string | null {
+  const id = unitIdForTier(town.owner, tier);
+  if (!id) {
+    console.warn(
+      `[town] ${where}: 城镇 ${town.id}（owner=${town.owner}）解析不出 tier${tier} 的兵种，已跳过（按规则 5 不 fallback 到 p1）`,
+    );
+  }
+  return id;
+}
+
 export function build(state: GameState, town: Town, id: string, actor: PlayerId = 'p1'): boolean {
   if (!canBuild(state, town, id, actor)) return false;
   if (!pay(state, actor, BUILDINGS[id]!.cost)) return false;
   town.buildings.push(id);
   town.builtDay = state.day;
   const g = BUILDINGS[id]!.growth;
-  if (g && !town.growthPool[g.unitTypeId]) town.growthPool[g.unitTypeId] = 0;
+  if (g) {
+    // 兵种按 owner 现解析：四族各建各的 dwell1，池子里开出来的键也必须各不相同。
+    const uid = dwellUnitId(town, g.tier, 'build');
+    if (uid && !town.growthPool[uid]) town.growthPool[uid] = 0;
+  }
   pushLog(state, `${town.name} 建成了「${BUILDINGS[id]!.name}」`);
   if (BUILDINGS[id]!.feature === 'guild') spreadGuildSpells(state, town);
   return true;
@@ -344,18 +369,21 @@ export function applyWeeklyGrowth(state: GameState): void {
       for (const id of town.buildings) {
         const g = BUILDINGS[id]?.growth;
         if (!g) continue;
+        // 段 2：兵种按 owner × tier 现解析（中立方 → null ⇒ 跳过，不 fallback）。
+        const unitTypeId = dwellUnitId(town, g.tier, 'applyWeeklyGrowth');
+        if (!unitTypeId) continue;
         const exact = g.count * mult;
         const whole = Math.floor(exact);
         const frac = exact - whole;
-        let pool = (town.growthPool[g.unitTypeId] ?? 0) + whole;
-        let rem = (town.growthRemainder[g.unitTypeId] ?? 0) + frac;
+        let pool = (town.growthPool[unitTypeId] ?? 0) + whole;
+        let rem = (town.growthRemainder[unitTypeId] ?? 0) + frac;
         if (rem >= 1) {
           const carry = Math.floor(rem);
           pool += carry;
           rem -= carry;
         }
-        town.growthPool[g.unitTypeId] = pool;
-        town.growthRemainder[g.unitTypeId] = rem;
+        town.growthPool[unitTypeId] = pool;
+        town.growthRemainder[unitTypeId] = rem;
       }
     }
   }
@@ -404,10 +432,13 @@ export function recruitRows(state: GameState, town: Town): RecruitRow[] {
   for (const id of town.buildings) {
     const g = BUILDINGS[id]?.growth;
     if (!g) continue;
-    const available = town.growthPool[g.unitTypeId] ?? 0;
-    const cost = getUnit(g.unitTypeId).cost;
+    // 段 2：兵种按 owner × tier 现解析（中立方 → null ⇒ 跳过，不 fallback）。
+    const unitTypeId = dwellUnitId(town, g.tier, 'recruitRows');
+    if (!unitTypeId) continue;
+    const available = town.growthPool[unitTypeId] ?? 0;
+    const cost = getUnit(unitTypeId).cost;
     rows.push({
-      unitTypeId: g.unitTypeId,
+      unitTypeId,
       available,
       cost,
       affordable: maxAffordable(state, town.owner, cost, available),
@@ -562,7 +593,7 @@ export function hireHero(state: GameState, town: Town): Hero | null {
     mana: tpl.primary.knowledge * 10,
     manaMax: tpl.primary.knowledge * 10,
     movePoints: BASE_MOVE_POINTS,
-    army: tpl.startArmy.map((s) => ({ ...s })),
+    army: startArmyFor(town.owner, tpl.startArmyCount),
     artifacts: [],
     spells: [],
     pos: spot,

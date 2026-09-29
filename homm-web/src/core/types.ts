@@ -295,8 +295,19 @@ export interface BuildingDef {
   dailyGold?: number;
   /** 驻军防御加成（取已建城墙中的最大值） */
   defenseBonus?: number;
-  /** 该兵营解锁的兵种与周增长 */
-  growth?: { unitTypeId: string; count: number };
+  /**
+   * 该兵营解锁的兵种与周增长。**按 `tier` 表达，不写死 `unitTypeId`**（段 2）。
+   *
+   * 为什么是 `tier` 而不是 `unitTypeId`：`dwell3` 在晨曦/赤焰/翠林/紫晶里该长出
+   * **四种不同的兵**；写死一个 id 就等于让四族共用同一张兵种表 —— 这正是
+   * 「四族兵种都一样」抱怨的根因。`tier` 是唯一与阵营无关的坐标，具体 id 由
+   * `unitIdForTier(owner, tier)` 在**运行时**按城镇 owner 解析
+   * （`races.md §6.4.2` 规则 3）。
+   *
+   * ⚠️ 因此 `growth` 只在**有 owner 的语境**下有意义：`unitIdForTier` 对中立方
+   * 返回 `null`（规则 5），调用方必须跳过并记日志，**不得 fallback 到 p1**。
+   */
+  growth?: { tier: number; count: number };
   /** 全局周增长比例加成 */
   growthBonus?: number;
   /** 解锁的城镇功能 */
