@@ -161,6 +161,59 @@ body {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5) inset;
 }
 
+/* ---------- 展示图目标清单（F-3.6：顶部**只剩这一条**） ---------- */
+
+/**
+ * `state.config.scenario === 'grims-showcase'` 时 `#topbar` 加 `.showcase`：
+ * 资源 / 日期 / 阵营点**整条让位**，顶上只剩 3 条目标（F-3.2 / F-3.5 / F-3.6）。
+ * 自由对局 / tutorial / duel **不加这个类** ⇒ 顶栏仍是既有形态（既有路径零改动）。
+ * 资源不是"丢了"：城镇面板的建造行与市场页「我的资源」逐项可见（按需，非常驻）。
+ */
+#topbar.showcase .res,
+#topbar.showcase .date,
+#topbar.showcase .who-dot,
+#topbar.showcase .spacer {
+  display: none;
+}
+
+#objectives {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  /* 顶栏整条 `pointer-events:none`（R7）⇒ 目标清单**只读**、零可点目标。 */
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.obj-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--gold);
+}
+
+.obj-row.done {
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+
+/* 勾选标记 = **纯 CSS 方块**（9px 描边 / 达成填金）—— 不引字形，不碰 G-17 的图标口径。 */
+.obj-mark {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border: 1px solid var(--gold-dim);
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.obj-row.done .obj-mark {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
 .btn {
   background: linear-gradient(180deg, #6b5230, #46331c);
   color: var(--parchment);
@@ -2190,5 +2243,155 @@ body.in-battle #thumb {
   }
   .ss-brand h1 {
     font-size: 30px;
+  }
+}
+
+/* ---------- 一键进图按钮（F-3.7 / G-13） ---------- */
+
+/* 「试这张图」：与「开始新游戏」同级，但**更显眼** —— 金边描一圈 + 字距拉开。
+   不降级 `开始新游戏` 的既有外观（既有路径的视觉不受影响）。 */
+.ss-quick {
+  letter-spacing: 3px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 170, 0.22),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.28),
+    0 0 0 2px rgba(240, 212, 136, 0.4);
+}
+
+/* ---------- 横屏矮屏（真机 792×320 / 探针 792×360）：开局页不许滚 ---------- */
+
+/**
+ * G-13 实测：开局页在 792×360 下 `scrollHeight 1667 / clientHeight 360` = **4.6 屏**
+ * （`max-width:900px` 那档把左右两栏**竖着堆起来** ⇒ 直接翻倍）。
+ * 横屏最缺的是**竖轴**（§4.1：可用内容区 752×264）⇒ 矮屏**保持两栏**、并把竖轴压紧：
+ *   · 表单改 **2 列网格**（7 行 → 4 行）；
+ *   · 全部 `.ss-hint` 说明文字撤掉（F-3.5：能不显示就不显示；`aria-describedby` 仍指向它，
+ *     读屏仍能读到 —— 隐藏元素作为描述目标是被允许的）；
+ *   · 广告语 `<p>` 撤掉；卡片副行 `.s` 压到 9px 单行省略；
+ *   · 预览图收进 148px 高；动作行改**横排**（「试这张图」与「开始新游戏」并排）。
+ * ⚠️ 只在 `orientation:landscape` + `max-height:560px` 生效 ⇒ 桌面 / 竖屏形态不变。
+ */
+@media (orientation: landscape) and (max-height: 560px) {
+  #start-screen {
+    /* `minmax(0, …)` 而不是裸 `…fr`：网格项的 `min-width:auto`（= min-content）会把左栏
+       顶到 691px、把右栏挤成 101px（实测）⇒ 必须显式允许收缩到 0。 */
+    grid-template-columns: minmax(0, 1.22fr) minmax(0, 1fr);
+  }
+
+  .ss-panel {
+    padding: 10px 12px;
+    gap: 8px;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .ss-brand h1 {
+    font-size: 20px;
+    letter-spacing: 2px;
+  }
+
+  .ss-brand p {
+    display: none;
+  }
+
+  .ss-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 12px;
+    align-content: start;
+  }
+
+  .ss-field > label {
+    margin-bottom: 1px;
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+
+  .ss-field input[type='text'] {
+    padding: 4px 6px;
+    font-size: 12px;
+  }
+
+  .ss-hint {
+    display: none;
+  }
+
+  .ss-seg {
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+
+  .ss-seg-item {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 3px 2px;
+    font-size: 11px;
+    gap: 1px;
+  }
+
+  .ss-seg-item .t {
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ss-seg-item .s {
+    font-size: 9px;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ss-preview {
+    padding: 10px 12px;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .ss-field {
+    min-width: 0;
+  }
+
+  #ss-map {
+    max-height: 128px;
+    max-width: 100%;
+    /* `drawPreview` 会写 inline `width`（内联样式优先于样式表）⇒ 这里必须用 !important
+       把宽度放开，让 canvas 按固有 1:1 比例被 `max-height` 收住；否则只收高度会横向拉变形。 */
+    width: auto !important;
+  }
+
+  .ss-summary {
+    padding: 4px 0;
+  }
+
+  .ss-line {
+    padding: 0;
+    font-size: 10px;
+    line-height: 1.4;
+  }
+
+  .ss-actions {
+    flex-flow: row wrap;
+    align-items: stretch;
+    gap: 8px;
+    margin-top: 0;
+  }
+
+  .ss-actions .btn.big {
+    padding: 8px 10px;
+    font-size: 13px;
+    letter-spacing: 1px;
+    flex: 1 1 0;
+  }
+
+  .ss-actions .ss-quick {
+    flex: 1.3 1 0;
+  }
+
+  .ss-note {
+    flex: 1 1 100%;
+    font-size: 10px;
   }
 }

@@ -341,6 +341,40 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   const actions = document.createElement('div');
   actions.className = 'ss-actions';
 
+  /* 一键进图（F-3.7「可玩性没提升」/ G-13「开局页要滚 3.4 屏」）：
+   * **一次点击**直开展示图，尺寸 / 布局 / 对手 / 难度 / 种子全按场景固定，不经任何设置项。
+   * ★ 必须走 `scenarioGenOptions(...)` 取全 5 个固定值 —— `createGame({ scenario: id })`
+   *   会因缺省 size（32×32）与静态地形 40×40 不符而**抛**（见 `scenarios.ts`）。
+   * ★ 不写回 `cfg`：左栏那份自由对局设置保持原样（既有路径不受影响）。 */
+  const SHOWCASE_ID = 'grims-showcase';
+  const showcaseDef = SCENARIO_BY_ID[SHOWCASE_ID];
+  if (showcaseDef) {
+    const quickBtn = document.createElement('button');
+    quickBtn.className = 'btn primary big ss-quick';
+    quickBtn.id = 'ss-quick';
+    quickBtn.textContent = '试这张图';
+    quickBtn.title = `${showcaseDef.name} · ${showcaseDef.sub}（跳过全部设置，直接开）`;
+    quickBtn.setAttribute('aria-label', `试这张图：${showcaseDef.name}，跳过全部设置直接开始`);
+    // 场景尺寸超出本机画质档上限 ⇒ 真禁用（与场景卡同一道门：clampMapSize 会静默改小尺寸）。
+    const ok = allowedMapSizes(quality.maxMapSize).includes(showcaseDef.config.size);
+    quickBtn.disabled = !ok;
+    if (!ok) quickBtn.title = '本机画质档不支持该尺寸';
+    quickBtn.addEventListener('click', () => {
+      const o = scenarioGenOptions(showcaseDef);
+      close();
+      opts.onStart({
+        size: o.size ?? cfg.size,
+        layout: o.layout ?? cfg.layout,
+        seed: o.seed ?? cfg.seed,
+        opponents: o.opponents ?? cfg.opponents,
+        difficulty: o.difficulty ?? cfg.difficulty,
+        playerName: cfg.playerName,
+        scenario: o.scenario,
+      });
+    });
+    actions.appendChild(quickBtn);
+  }
+
   const startBtn = document.createElement('button');
   startBtn.className = 'btn primary big';
   startBtn.textContent = '开始新游戏';

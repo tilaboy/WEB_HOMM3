@@ -24,7 +24,9 @@ import { getSpell } from './core/data/spells.js';
 import { manaMaxOf, maxMovePoints } from './core/game/hero.js';
 import type { BattleOutcome } from './core/combat/battle.js';
 import { LAYOUTS } from './core/data/layouts.js';
+import type { ScenarioObjective } from './core/data/scenarios.js';
 import { SCENARIO_BY_ID, scenarioGenOptions } from './core/data/scenarios.js';
+import { ownedMines } from './core/game/town.js';
 import { endDay } from './core/game/turn.js';
 import { evaluateOutcome, outcomeSummary } from './core/game/victory.js';
 import { Camera } from './render/camera.js';
@@ -165,6 +167,109 @@ function showObjBanner(): void {
 /** 关闭 banner / 切换世界时隐藏。 */
 function hideObjBanner(): void {
   objBanner.hidden = true;
+}
+
+/* ---------------- §F-3.6 展示图目标清单：顶部**只剩这一条** ---------------- */
+
+/**
+ * 展示图（`grims-showcase`）顶部**唯一**的一条信息条（F-3.2 / F-3.5 / F-3.6）：
+ * 顶栏的资源 / 日期与底部常驻条在**本场景**下让位给这 3 条目标 ⇒ 打开就知道"现在该干什么"。
+ *
+ * ★ **红线**：只在 `state.config.scenario === 'grims-showcase'` 时创建 / 显示；
+ *   自由对局 / `tutorial` / `duel` 不做任何分支（DOM 里连这个元素都不存在）。
+ *
+ * ★ **不新造任务系统**：数据优先取 `ScenarioDef.objectives`（`scenarios.ts` 的既有机制，
+ *   `ScenarioObjective` 接口），取不到才用下面这份兜底；判定是**只读 `GameState`** 的
+ *   一句布尔表达式，与 `HeroPanel.objectiveSection`（§14.2）同一套「达成即锁存」形态。
+ */
+const SHOWCASE_ID = 'grims-showcase';
+
+/** 开局实测（seed 2175 / 40×40=1600 格）：已揭 83 格 = 5.2% ⇒ 阈值必须显著高于开局值。 */
+const SHOWCASE_OBJECTIVES: ScenarioObjective[] = [
+  { id: 'explore', text: '探索 20%', check: '已揭开格数 ≥ 全图 20%（开局 5.2%，走 3~4 天可达）' },
+  { id: 'mines', text: '占 2 座矿', check: 'ownedMines(p1).length ≥ 2（开局 0，图上 20 座矿）' },
+  { id: 'foe', text: '击败 1 名敌将', check: '敌方英雄数 < 本局峰值（开局 3 名）' },
+];
+
+/** 敌方英雄数（只读 `GameState`）。 */
+function foeHeroCount(s: GameState): number {
+  let n = 0;
+  for (const id of s.heroOrder) if (s.heroes[id] && s.heroes[id].owner !== 'p1') n += 1;
+  return n;
+}
+
+/**
+ * 逐条判定。**全部只读 `GameState`**，零新系统。
+ * `foe` 用"敌方英雄数跌破本局峰值" ⇒ 不需要给 `GameState` 加任何"击败过谁"的字段。
+ */
+const SHOWCASE_CHECK: Record<string, (s: GameState, foePeak: number) => boolean> = {
+  explore: (s) => revealedCells(s) * 100 >= 20 * s.map.width * s.map.height,
+  mines: (s) => ownedMines(s, 'p1').length >= 2,
+  foe: (s, foePeak) => foeHeroCount(s) < foePeak,
+};
+
+/** 已揭开的格数：`revealed` 是定长 0/1 掩码 ⇒ 必须数 1，**不能**取 `.length`。 */
+function revealedCells(s: GameState): number {
+  const r = s.players.p1?.revealed ?? [];
+  let n = 0;
+  for (const v of r) if (v === 1) n += 1;
+  return n;
+}
+
+/** 目标清单元素（**仅在展示图存在**；其余场景不进 DOM ⇒ 既有路径 DOM 逐字节不变）。 */
+let objStripEl: HTMLElement | null = null;
+/** 达成即保持（英雄阵亡 / 失城都不倒退，与 §14.2 同一形态）。 */
+let objDone: Record<string, boolean> = {};
+/** 本局敌方英雄数峰值（`foe` 条的基线）。 */
+let objFoePeak = 0;
+/** 锁存属于哪一局：`state` 对象身份变了 ⇒ 重播种。 */
+let objOwner: GameState | null = null;
+
+function updateObjectives(): void {
+  const on = state.config.scenario === SHOWCASE_ID;
+  if (!on) {
+    // 非展示图：元素整个摘掉 + 撤掉顶栏的 `showcase` 类 ⇒ 顶栏恢复既有形态。
+    if (objStripEl) {
+      objStripEl.remove();
+      objStripEl = null;
+    }
+    topbar.classList.remove('showcase');
+    return;
+  }
+  topbar.classList.add('showcase');
+  if (state !== objOwner) {
+    objOwner = state;
+    objDone = {};
+    objFoePeak = 0;
+  }
+  const objs = SCENARIO_BY_ID[SHOWCASE_ID]?.objectives ?? SHOWCASE_OBJECTIVES;
+  // 峰值**先**刷新再判定：`foe` 比较的是"当前值 vs 峰值"。
+  objFoePeak = Math.max(objFoePeak, foeHeroCount(state));
+  for (const o of objs) if (SHOWCASE_CHECK[o.id]?.(state, objFoePeak)) objDone[o.id] = true;
+
+  if (!objStripEl) {
+    objStripEl = document.createElement('div');
+    objStripEl.id = 'objectives';
+    objStripEl.setAttribute('role', 'list');
+    topbar.appendChild(objStripEl);
+  }
+  const strip = objStripEl;
+  strip.textContent = '';
+  for (const o of objs) {
+    const got = objDone[o.id] === true;
+    const row = document.createElement('span');
+    row.className = 'obj-row' + (got ? ' done' : '');
+    row.setAttribute('role', 'listitem');
+    row.setAttribute('data-obj-row', '1');
+    row.setAttribute('data-obj-done', got ? '1' : '0');
+    row.setAttribute('aria-label', `${got ? '已达成' : '未达成'}：${o.text}`);
+    // 勾选标记是**纯 CSS 方块**（9px 描边 / 达成则填金），不引字形 ⇒ 不碰 G-17 的图标口径。
+    const mark = document.createElement('i');
+    mark.className = 'obj-mark';
+    mark.setAttribute('aria-hidden', 'true');
+    row.append(mark, document.createTextNode(o.text));
+    strip.appendChild(row);
+  }
 }
 
 function tbButton(label: string, cls: string, onClick: () => void): HTMLButtonElement {
@@ -635,6 +740,7 @@ function refresh(): void {
   hud.update(state);
   panel.update(state, selected);
   updateThumb();
+  updateObjectives();
 }
 
 /**
@@ -1698,7 +1804,36 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
 
 /* ---------------- 启动：先给开局设置页 ---------------- */
 
+/**
+ * 调试：?devshowcase=1 直接开展示图 —— 与开始页「试这张图」那颗按钮**同一条路径**
+ * （同样走 `scenarioGenOptions`，同样跳过设置页），只是起点换成查询参数，好让
+ * 截图 / 回归脚本不必先点一下页才能进图。与 `?devquick` 同一套惯例：无人传即不影响生产路径。
+ */
+if (bootParams.has('devshowcase')) {
+  const def = SCENARIO_BY_ID[SHOWCASE_ID];
+  const o = def ? scenarioGenOptions(def) : null;
+  if (
+    o &&
+    o.size !== undefined &&
+    o.layout !== undefined &&
+    o.seed !== undefined &&
+    o.opponents !== undefined &&
+    o.difficulty !== undefined
+  ) {
+    startNewGame({
+      size: o.size,
+      layout: o.layout,
+      seed: o.seed,
+      opponents: o.opponents,
+      difficulty: o.difficulty,
+      playerName: state.config.playerName,
+      scenario: o.scenario,
+    });
+  }
+}
+
 // 调试：?devquick=2 直接以 2 个电脑对手开局并跳过设置页（截图/回归用）
+// `devshowcase=1` 已在上文直接开展示图；两者都**跳过**开始页（与 `?devquick` 同一套惯例）。
 if (bootParams.has('devquick')) {
   const n = Number.parseInt(bootParams.get('devquick') ?? '1', 10);
   const sz = bootParams.get('devsize');
@@ -1711,7 +1846,7 @@ if (bootParams.has('devquick')) {
     opponents: Number.isFinite(n) ? Math.max(0, Math.min(3, n)) : 1,
     seed: Number.parseInt(bootParams.get('devseed') ?? '', 10) || loadConfig()?.seed || Math.floor(Math.random() * 1e9),
   });
-} else {
+} else if (!bootParams.has('devshowcase')) {
   openStart();
 }
 
