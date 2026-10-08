@@ -151,10 +151,63 @@ function devDprCapOverride(): number | null {
 }
 const DEV_DPR_CAP = devDprCapOverride();
 
+/* ---------------- 展示图氛围基线（G-15 · 画质腿） ---------------- */
+
+/**
+ * 需要"氛围基线"的场景 id。**只有这一个**场景会被抬档，其余场景逐字节不变。
+ *
+ * 起因：`grims-showcase`（破碎罗盘）是拿出去给人看的展示图，而 `TIER_TABLE.low`
+ * 把 `vignette` / `warmOverlay` / `waterGlint` / `townGlow` 全关、`setDressing` 关；
+ * 自动档一旦判成 low（G-15），这张图看到的正是"氛围层全灭"的版本 —— 也就是
+ * F-3.7 那句"画面没有什么提升"。展示图不能赌探测结果，故在**该场景启动**时把
+ * 这几层强制打开，作为画质基线。
+ *
+ * 为什么是"改单例"而不是改 `TIER_TABLE`：分档表是三档设备的共同契约，动它会把
+ * 低端机一起抬起来（掉帧风险）。这里只在**这一个场景**上叠一层，范围可控。
+ */
+export const AMBIENT_BASELINE_SCENARIO = 'grims-showcase';
+
+/** 基线要抬起来的开关（`lighting: 'full'` 是 `warmOverlay` 真正生效的前提，见 `MapRenderer.applyLighting`）。 */
+const AMBIENT_BASELINE = {
+  lighting: 'full' as LightingMode,
+  vignette: true,
+  warmOverlay: true,
+  waterGlint: true,
+  townGlow: true,
+};
+
+/** 当前处于基线状态的场景 id；null = 无基线（自由对局 / tutorial / duel 恒为此值）。 */
+let baselineScenario: string | null = null;
+
+/** 基线是否生效（只读，给渲染层/诊断用）。 */
+export function ambientBaselineActive(): boolean {
+  return baselineScenario !== null;
+}
+
+/**
+ * 按**当前场景**同步氛围基线。`MapRenderer.draw` 每帧调一次（内部做了"值没变就不动"的短路）。
+ *
+ * - `scenario === 'grims-showcase'` ⇒ 抬到 `AMBIENT_BASELINE`；
+ * - 其它任何值（含 `undefined` = 自由对局）⇒ 不做任何事；若上一帧还在基线里，
+ *   按当前档位**重放一次**档位表，逐字节回到无基线状态。
+ */
+export function syncAmbientBaseline(scenario?: string): void {
+  const want = scenario === AMBIENT_BASELINE_SCENARIO ? AMBIENT_BASELINE_SCENARIO : null;
+  if (want === baselineScenario) return;
+  baselineScenario = want;
+  applyTier(quality.tier); // 重放档位表：带基线 / 不带基线（档位没变 ⇒ 不通知监听器）
+}
+
 /** 应用某一档（原地改写单例；档位变化时通知监听器）。返回生效档位。 */
 export function applyTier(tier: Tier, hoverEffects: boolean = quality.hoverEffects): Tier {
   const changed = quality.tier !== tier;
   Object.assign(quality, settingsForTier(tier, hoverEffects));
+  // 展示图基线：档位表落完之后再叠一层（切档 / 重放都不会把基线洗掉）。
+  if (baselineScenario !== null) {
+    Object.assign(quality, AMBIENT_BASELINE);
+    // setDressing 只往上抬不往下压：'off' → 'static'（烘焙层，low 也是这个档），不追 'full'（每帧多活动物）。
+    if (quality.setDressing === 'off') quality.setDressing = 'static';
+  }
   // `?devdpr` 只动 dprCap，其余保持该档位的正常值（见 DEV_DPR_CAP 注释）；不传时为 null、整段不发生。
   if (DEV_DPR_CAP !== null) quality.dprCap = DEV_DPR_CAP;
   if (changed) {
@@ -209,6 +262,8 @@ export function hoverCapable(): boolean {
 
 const TIER_KEY = 'homm.tier';
 const MODE_KEY = 'homm.tierMode';
+/** 缓存为 low 时已沿用的启动次数（见 `LOW_CACHE_MAX_BOOTS`）。 */
+const LOW_BOOT_KEY = 'homm.tierLowBoots';
 
 /**
  * 探测逻辑版本。**采样语义一变就 +1** —— 否则老用户升包后仍吃旧版探测写下的缓存，
@@ -232,10 +287,11 @@ export function readCachedTier(): Tier | null {
   return v;
 }
 
-/** 写入探测档位 + 当前探测版本。 */
+/** 写入探测档位 + 当前探测版本（并清掉"沿用 low 的启动计数"，见 `LOW_CACHE_MAX_BOOTS`）。 */
 export function cacheTier(tier: Tier): void {
   writeLS(TIER_KEY, tier);
   writeLS(VER_KEY, String(PROBE_VERSION));
+  writeLS(LOW_BOOT_KEY, '0');
 }
 
 /** 清除探测缓存（设置页"重新检测"用）。 */
@@ -244,10 +300,32 @@ export function clearCachedTier(): void {
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(TIER_KEY);
       localStorage.removeItem(VER_KEY);
+      localStorage.removeItem(LOW_BOOT_KEY);
     }
   } catch {
     /* 同上 */
   }
+}
+
+/**
+ * **缓存为 low 时最多沿用多少次启动**（G-15 修复 · 自愈）。
+ *
+ * 为什么只有 low 要限次：low 是"氛围层全关"那一档（暗角/暖光/水面高光/城镇灯火全灭），
+ * **错判的代价最大且最容易被玩家读成"画面没提升"**。而一次探测只要赶上后台装包 / 冷启动拥堵 /
+ * 瞬时降频，就会被写成 low；此后**只要缓存命中就永不重测**（`initQuality` 见到缓存直接返回），
+ * 一次坏测量把机器**永久钉在 low**。故：low 沿用 N 次启动后强制重测一次，
+ * mid/high 照旧无限沿用（它们的错判代价是掉帧，且探测本身也要花 40 帧）。
+ *
+ * 成本：每 N 次启动多 40 帧（≈0.7 s，异步、不阻塞首帧）。
+ */
+export const LOW_CACHE_MAX_BOOTS = 3;
+
+/** 沿用一个 low 缓存：计数 +1 并返回新值；读写失败（无痕模式）时返回 Infinity ⇒ 视作未到期。 */
+function bumpLowBoots(): number {
+  const cur = Number.parseInt(readLS(LOW_BOOT_KEY) ?? '', 10);
+  const next = Number.isFinite(cur) ? cur + 1 : 1;
+  writeLS(LOW_BOOT_KEY, String(next));
+  return next;
 }
 
 /** 读取用户模式：默认 auto。 */
@@ -298,24 +376,118 @@ export function clampMapSize(size: MapSize, cap: number): MapSize {
 export const PROBE_WARMUP_FRAMES = 10;
 /** 采样帧数。 */
 export const PROBE_FRAMES = 30;
-/** p95 超过此值判低端（33 ms 预算，留余量）。 */
+/** 单帧超此值算"超低端预算"（33 ms 预算，留余量）。 */
 export const PROBE_LOW_MS = 20;
-/** p95 超过此值判中端。 */
+/** 单帧超此值算"超中端预算"。 */
 export const PROBE_MID_MS = 12;
+/**
+ * **超预算帧占比**超过此值才降档（G-15 修复）。
+ *
+ * 为什么不再"p95 一票否决"：样本只有 30 个时 `percentile95` 取的是**第 29 个**
+ * （= 次大值，见 `percentile95`）——**30 帧里只要 2 帧**超预算（6.7% 的帧），整档就从
+ * high 掉到 low，而 low 正是"氛围层全关"那一档（F-3.7「画面没提升」的观感来源）。
+ * 两次 GC / 后台抢占 / 瞬时降频的尖刺在移动端并不罕见。改成"有多少比例的帧超预算"后：
+ *   · 真慢的设备（多数帧超预算）→ 照样落 low，护栏没被拆；
+ *   · 偶发尖刺（30 帧里 ≤3 帧）→ 不再把整档打下去。
+ * 取值 0.1 = 30 帧里容忍 3 帧（第 4 帧起降档）——受控对照见 `classify_check` 的 ⑤/⑤b。
+ */
+export const PROBE_SLOW_RATIO = 0.1;
 
-/** 纯分类器：p95 帧时间 + DPR → 档位。抽出来单测。 */
-export function classifyProbe(p95ms: number, dprValue: number): Tier {
-  if (p95ms > PROBE_LOW_MS) return 'low';
-  if (p95ms > PROBE_MID_MS) return 'mid';
+/**
+ * 纯分类器：**样本数组** + DPR → 档位。抽出来单测。
+ *
+ * 判据 = 超预算帧的**占比**（理由见 `PROBE_SLOW_RATIO`），两档预算各判一次：
+ * 先问"有没有持续超低端预算"，再问"有没有持续超中端预算"，都不超才按 DPR 决定
+ * 是否升到 high（DPR<2 不冒进——high 会把 `dprCap` 抬到 3，低密度屏拿不到收益）。
+ */
+export function classifySamples(samples: number[], dprValue: number): Tier {
+  if (samples.length === 0) return 'mid';
+  const overLow = samples.filter((s) => s > PROBE_LOW_MS).length / samples.length;
+  if (overLow > PROBE_SLOW_RATIO) return 'low';
+  const overMid = samples.filter((s) => s > PROBE_MID_MS).length / samples.length;
+  if (overMid > PROBE_SLOW_RATIO) return 'mid';
   return dprValue >= 2 ? 'high' : 'mid';
+}
+
+/**
+ * 单值形式（= `classifySamples([ms], dpr)`）：给"已知一个代表值"的调用方与既有单测用。
+ * 分档语义**只有 `classifySamples` 一处**；本函数不复制规则，避免两处漂移。
+ */
+export function classifyProbe(frameMs: number, dprValue: number): Tier {
+  return classifySamples([frameMs], dprValue);
 }
 
 /** 计算升序样本数组的 p95（与文档 `t[floor(len*0.95)]` 一致，越界保护）。 */
 export function percentile95(samples: number[]): number {
+  return percentile(samples, 0.95);
+}
+
+/** 分位数（0~1），升序取 `floor(len*q)`，越界夹到末位；空样本回 +∞。 */
+export function percentile(samples: number[], q: number): number {
   if (samples.length === 0) return Number.POSITIVE_INFINITY;
   const sorted = [...samples].sort((a, b) => a - b);
-  const i = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95));
+  const i = Math.min(sorted.length - 1, Math.max(0, Math.floor(sorted.length * q)));
   return sorted[i];
+}
+
+/**
+ * 最近一次探测的**可读数**（G-15 取证用）。
+ *
+ * 为什么要有它：分档判错时，"用户被判成了哪一档"此前只能靠档位开关间接反推，
+ * 而同一档位在不同设备上的**成因不同**（预热拥堵 / GPU 同步开销 / 真的慢）。
+ * 这里把分类器实际吃到的那几个数原样留下来，供 `?devprobe` 类脚本与真机 CDP 读出，
+ * 使"判成 low"这条结论能被复核、而不是靠猜。
+ *
+ * 纯内存、不写 localStorage、不影响任何分档路径 ⇒ 生产行为不变。
+ */
+export interface ProbeDiagnostic {
+  /** 样本 p95（ms）——留作对比：旧判据用的就是它；样本不足时为 NaN。 */
+  p95: number;
+  /** 同批样本的中位数——用来分辨「整体慢」与「个别尖刺」。 */
+  median: number;
+  /** 同批样本的最大值。 */
+  max: number;
+  /** **判据输入**：超 `PROBE_LOW_MS` 的帧占比（> `PROBE_SLOW_RATIO` 即降 low）。 */
+  overLowRatio: number;
+  /** **判据输入**：超 `PROBE_MID_MS` 的帧占比。 */
+  overMidRatio: number;
+  /** 参与统计的样本数（不含预热帧）。 */
+  samples: number;
+  /** 采样前丢弃的预热帧数。 */
+  warmup: number;
+  /** 分类器拿到的 DPR。 */
+  dpr: number;
+  /** 分档结果（含 fail-safe 的 'mid'）。 */
+  tier: Tier;
+  /** true = 走的是 fail-safe（异常 / 有效样本不足），不是真测出来的档位。 */
+  failSafe: boolean;
+}
+
+let lastProbeDiagnostic: ProbeDiagnostic | null = null;
+
+/** 取最近一次探测的读数；从未探测过时为 null。 */
+export function probeDiagnostic(): ProbeDiagnostic | null {
+  return lastProbeDiagnostic;
+}
+
+/** 把一批样本折算成诊断读数（样本为 null = 没量到，统计项取 NaN）。 */
+function diag(
+  samples: number[] | null,
+  count: number,
+  warmup: number,
+  dpr: number,
+  tier: Tier,
+  failSafe: boolean,
+): ProbeDiagnostic {
+  const s = samples ?? [];
+  return {
+    p95: s.length ? percentile95(s) : Number.NaN,
+    median: s.length ? percentile(s, 0.5) : Number.NaN,
+    max: s.length ? s.reduce((a, b) => Math.max(a, b), 0) : Number.NaN,
+    overLowRatio: s.length ? s.filter((v) => v > PROBE_LOW_MS).length / s.length : Number.NaN,
+    overMidRatio: s.length ? s.filter((v) => v > PROBE_MID_MS).length / s.length : Number.NaN,
+    samples: count, warmup, dpr, tier, failSafe,
+  };
 }
 
 export interface ProbeDeps {
@@ -375,9 +547,15 @@ export async function probeTier(deps: ProbeDeps): Promise<Tier> {
     }
 
     // 有效样本不足（画不出来 / 时钟不可用）时保守居中，不冒进到 high。
-    if (samples.length < Math.max(3, Math.floor(frames / 2))) return 'mid';
-    return classifyProbe(percentile95(samples), dpr);
+    if (samples.length < Math.max(3, Math.floor(frames / 2))) {
+      lastProbeDiagnostic = diag(null, samples.length, warmup, dpr, 'mid', true);
+      return 'mid';
+    }
+    const tier = classifySamples(samples, dpr);
+    lastProbeDiagnostic = diag(samples, samples.length, warmup, dpr, tier, false);
+    return tier;
   } catch {
+    lastProbeDiagnostic = diag(null, 0, deps.warmupFrames ?? PROBE_WARMUP_FRAMES, deps.dpr ?? 0, 'mid', true);
     return 'mid';
   }
 }
@@ -401,7 +579,11 @@ export async function initQuality(opts: InitQualityOptions): Promise<Tier> {
   if (mode !== 'auto') return applyTier(mode, hover); // 手动覆盖优先，不探测
 
   const cached = readCachedTier();
-  if (cached) return applyTier(cached, hover); // 命中缓存，省掉 30 帧
+  // 命中缓存 ⇒ 省掉 30 帧；但 **low 不永久沿用**（见 `LOW_CACHE_MAX_BOOTS`）：
+  // 到期的 low 落下去重测，让"一次坏测量把机器钉在 low"能自己好。
+  if (cached && (cached !== 'low' || bumpLowBoots() < LOW_CACHE_MAX_BOOTS)) {
+    return applyTier(cached, hover);
+  }
 
   const tier = await probeTier({
     draw: opts.draw,

@@ -11,7 +11,7 @@ import { TerrainLayer } from './terrainLayer.js';
 import { SetDressingLayer } from './setDressing.js';
 import { currentLightTint, lightingOn } from './lightLayer.js';
 import type { LightTint } from './lightLayer.js';
-import { quality } from './quality.js';
+import { quality, syncAmbientBaseline } from './quality.js';
 import {
   chooseBadgeSide,
   pickRepresentativeUnit,
@@ -535,6 +535,9 @@ export class MapRenderer {
     const cam = this.camera;
     const { state, player } = vm;
     const map = state.map;
+    // 画质基线（G-15 画质腿）：展示图 `grims-showcase` 强制开氛围层。
+    // 其余场景（自由对局 / tutorial / duel）传 undefined ⇒ 函数内部短路，一个字节都不改。
+    syncAmbientBaseline(state.config?.scenario);
     const now = performance.now();
     // 水面翻页动画：4 帧一循环。260ms/帧比原来的 520ms 顺滑，
     // 再叠加下面连续移动的高光带，肉眼基本感觉不到跳帧
