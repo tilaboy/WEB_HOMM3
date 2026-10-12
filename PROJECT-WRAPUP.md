@@ -243,3 +243,41 @@ node tools/smoke.mjs   # 621 项核心逻辑断言
 用户决定再试一次：**希望在这张 HoMM3 地图（`grims_broken_compass_2175`）上同时看到画质、可玩性、兵种差异、AI 战斗四项提升**。
 
 已做完可行性探针：h3m 地形可读，并已渲染预览。详细 3 天 MVP 计划见 **`production/showcase-plan.md`**。
+
+## 11. 2026-10-08 ~ 2026-10-12「最后一轮」实测结果
+
+这一轮按 `production/showcase-plan.md` 的 3 天 MVP 执行，目标是**在同一张地图上同时验证**画质、可玩性、兵种、AI 四项提升。执行后代码未推（SSH 反复 reset），但本地提交与测量已完成。
+
+### 11.1 已落地 ✅
+
+| 项 | 改动 | 证据 |
+|---|---|---|
+| 静态地图导入 | `grims-showcase` 40×40 地表导入为固定场景 | `homm-web/src/core/data/static-maps/grims-broken-compass.json`；`verify-static-map.mjs` 24 PASS / 0 FAIL |
+| 四族兵种真正分家 | `buildings.ts` growth 改 `tier`；`town.ts` 用 `unitIdForTier(owner, tier)`；无静默 fallback | 开局存档：p1 灯兵/弩手、p2 拾荒者/投斧手、p3 矮人/荆棘弓、p4 石魔/火学徒；中立城狼/野猪；`smoke.mjs` 695 PASS |
+| AI 接触日与 aggression | `RUSH_BIAS=600` + `commit` 乘 `aggression` 用于攻敌城/敌英雄 | `grimscontact.mjs` rush 中位 3 天、0/16 不接触；`grimsdiff.mjs` 三档难度资源差异可测 |
+| 展示图可玩性 | 顶部目标清单 ≤3 条；开始页「试这张图」一键入口；首屏化 | `showcasegate.mjs` 15 PASS / NEG 全过 |
+| 画质档分类器 G-15 | 修复「两帧 spike 把整档误判为 low」的 bug：用「超预算帧占比 >10%」降级 | `src/render/quality.ts`；`showcasegate.mjs` N4 负测通过 |
+| grims 氛围基线 | 该场景强制开启 vignette/warmOverlay/waterGlint/townGlow/setDressing（与画质档解耦） | `src/render/MapRenderer.ts` |
+| 两个阻塞修复 | ① low 档不再把 40×40 静态图夹成 32×32（`main.ts` `staticSized`）；② 展示图难度可改（`difficultyEditable`），教学/对决仍锁定 | `showcasegate.mjs` E-low/mid/high 全 40×40；F1/F2/F3 轻松/普通/困难可选且存档生效 |
+| 截图证据 | 开始页（难度行可点）、正午/黄昏/深夜三态地图 | `homm-web/screenshots/day3-showcase-start-difficulty.png` / `day3-showcase-map-{noon,dusk,night}.png` |
+
+### 11.2 仍未实测 / 仍红 ⚠️
+
+| 项 | 状态 | 说明 |
+|---|---|---|
+| 真机画质档位 | **未实测** | `adb devices` 为空，无法复现用户那台旗舰机被判 `low` 的现场；只能证明浏览器端分类器逻辑已修、grims 氛围基线已强开 |
+| `scenarioaudit.mjs` | 仍 exit 1（3 FAIL） | 已适配 4 张场景卡、修复 boot 轮询，但**教学场面板 `.hp-teach` 文字未渲染**，属既有 UI 问题，非本轮改动引入；其余断言已绿 |
+
+### 11.3 构建健康度（当前）
+
+| 检查 | 结果 |
+|---|---|
+| `npx tsc --noEmit` | ✅ exit 0 |
+| `node tools/smoke.mjs` | ✅ **695 PASS / 0 FAIL / exit 0** |
+| `node tools/showcasegate.mjs` | ✅ 15 PASS / NEG=1 全过 |
+| `node tools/verify-static-map.mjs` | ✅ 24 PASS / 0 FAIL |
+| `node tools/scenarioaudit.mjs` | ⚠️ 3 FAIL（教学面板文字），exit 1 |
+
+### 11.4 本轮结论
+
+**单图 MVP 的代码侧已跑通**：同一张 40×40 图上可以看到四族不同兵种、AI 3 天内接触、三档难度真的生效、氛围层在黄昏/深夜可见。未闭环的只剩**真机复测**（需要手机连上 adb）和 `scenarioaudit` 里一个既有面板渲染失败。

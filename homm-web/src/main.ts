@@ -1,4 +1,4 @@
-import type { Army, GameConfig, GameState, GridPos, GuardReward, MapObject, MinePayload } from './core/types.js';
+import type { Army, GameConfig, GameState, GridPos, GuardReward, MapObject, MapSize, MinePayload } from './core/types.js';
 import { MAP_SIZES } from './core/types.js';
 import { HERO_SIGHT, createGame } from './core/map/generator.js';
 import { buildPath, computePaths, stepCost } from './core/map/pathfinding.js';
@@ -1203,12 +1203,37 @@ function openStart(): void {
   });
 }
 
+/**
+ * 场景若带**静态地形**（`ScenarioDef.staticMap`），它的尺寸是场景自带的、不可钳制
+ * ⇒ 返回场景自己的 `size`；否则返回 `null`（= 照旧参与 `clampMapSize`）。
+ *
+ * 为什么单独抽一个函数：钳制点的判据必须**一处权威** —— 开始页的「试这张图」按钮和
+ * 场景卡也各自需要"这个场景会不会被夹小"（否则 low 档上卡片会被错误地置灰），
+ * 三处各写一遍 `?? staticMap` 就是同值多址。
+ */
+function staticSized(config: GameConfig): MapSize | null {
+  const def = config.scenario ? SCENARIO_BY_ID[config.scenario] : null;
+  if (!def?.staticMap) return null;
+  return def.config.size;
+}
+
 function startNewGame(config: GameConfig): void {
   clearSave();
   saveConfig(config);
-  // §M-02：地图尺寸按当前画质上限夹紧（低端 32 / 中端 40 / 高端 48），
-  // 从源头掐掉超预算的地形烘焙面。原始偏好照常保存，切到高档后即可恢复。
-  state = createGame({ ...config, size: clampMapSize(config.size, quality.maxMapSize) });
+  /* §M-02：地图尺寸按当前画质上限夹紧（低端 32 / 中端 40 / 高端 48），
+   * 从源头掐掉超预算的地形烘焙面。原始偏好照常保存，切到高档后即可恢复。
+   *
+   * ★ 例外：**带静态地形的场景不参与钳制**（`grims-showcase`，导入地表 40×40）。
+   *   为什么不能钳：静态地形的尺寸是**场景自带的**，不是玩家选的 —— 把它夹小只会让
+   *   `applyStaticTerrain` 抛「静态地形尺寸不匹配：地图 32×32，导入 40×40」（low 档
+   *   `maxMapSize = 32` ⇒ `clampMapSize('large', 32)` 得 `'medium'`），**点开即崩**。
+   *   这不是"绕过画质档"，而是"这个尺寸不是可选项"：图三的乐趣本来就在"同一张图、
+   *   每次都长得一样、可以认路"，缩一半就把这张图毁了。
+   *   （代价：low 档机器上会跑 40×40。渲染开销由画质档其余开关承担，不在本函数内处理。）
+   *
+   * ★ 红线：只有 `staticMap` 存在的场景走这条分支；自由对局 / tutorial / duel
+   *   （都没有 `staticMap` ⇒ `staticSized()` 返回 null）仍走原钳制，逐字节不变。 */
+  state = createGame({ ...config, size: staticSized(config) ?? clampMapSize(config.size, quality.maxMapSize) });
   selected = state.heroOrder[0] ?? null;
   camera.mapW = state.map.width;
   camera.mapH = state.map.height;

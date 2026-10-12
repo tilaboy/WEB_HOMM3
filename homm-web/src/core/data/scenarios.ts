@@ -67,6 +67,16 @@ export interface ScenarioDef {
   gen?: ScenarioGen;
   stamp?: ScenarioStamp;
   aiIntent?: AiIntent;
+  /**
+   * 该场景是否允许玩家**自己改难度**（`true` ⇒ 开始页难度行不锁、且不被场景值覆盖）。
+   *
+   * 缺省（`undefined`）= **锁定**，与本次改动之前完全一致：教学场「轻松」、对决场「普通」
+   * 都是**设计的一部分**（难度同时决定起始资源与野怪强度，锁住才能保证那张图的教学节奏）。
+   * 只有图三（展示图）放开 —— AI 侧已实测三档难度在引擎里真的生效，若 UI 上选不到等于白做。
+   *
+   * ★ 缺省即不参与分支 ⇒ 自由对局 / tutorial / duel 的行为**逐字节不变**。
+   */
+  difficultyEditable?: boolean;
   objectives?: ScenarioObjective[];
   /**
    * 外部导入的固定地形（图三《破碎罗盘》）。**只有这一条会替换掉程序生成的地形**，
@@ -139,6 +149,9 @@ const GRIMS: ScenarioDef = {
   config: { size: 'large', layout: 'wild', seed: 2175, opponents: 3, difficulty: 'normal' },
   // 与图二同一条理由：默认 AI 不会主动来找玩家，不 rush 就没有"对手智力"可看。
   aiIntent: 'rush',
+  // 唯一放开难度的一张图：展示图是给玩家"随便打一局"的，难度该由玩家定。
+  // （教学场 / 对决场不写这一项 ⇒ 仍锁定，行为与本次改动前一致。）
+  difficultyEditable: true,
   staticMap: GRIMS_BROKEN_COMPASS,
 };
 

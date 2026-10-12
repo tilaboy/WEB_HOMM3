@@ -42,9 +42,9 @@
  *
  * 退出码：0 全过 / 1 有 FAIL / 2 前置不满足（无 Chrome / 构建不含开始页 / 服务没起）
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { distDir, printHeader, requireFile, freePort, serveInProcess } from './_dist.mjs';
+import { distDir, distUrl, printHeader, requireFile, freePort, serveInProcess } from './_dist.mjs';
 import { withHeadlessChrome, chromeAvailable } from './_chrome.mjs';
 
 const DIST = distDir();
@@ -55,6 +55,12 @@ const H = Number(process.env.SHOT_H ?? 360);
 const DPR = Number(process.env.SHOT_DPR ?? 3);
 const NEG = process.env.NEG === '1';
 const DUMP = process.env.DUMP === '1';
+/**
+ * `SHOT=<路径>`：顺手抓一张**开始页（已选「破碎罗盘」、难度行可点）**的截图。
+ * 为什么要长在本门里：开始页那张"难度行现在可以点了"的状态**必须先点一下场景卡**才存在，
+ * `deviceshot` / `chromeshot` 只做导航、不点击 ⇒ 抓不到这个状态。
+ */
+const SHOT = process.env.SHOT ?? null;
 
 requireFile(DIST, 'ui/StartScreen.js');
 if (!readFileSync(path.join(DIST, 'ui', 'StartScreen.js'), 'utf8').includes('start-screen')) {
@@ -141,6 +147,38 @@ const PROBE_OBJ = `(() => {
   };
 })()`;
 
+/**
+ * 真存档读数（`localStorage['homm-save-v1']`）：**实际生效**的 config + 地图实际尺寸 + p1 起始资源。
+ * 为什么要读存档而不是读 UI：UI 上"选了困难"不等于"困难进了 `createGame`" ——
+ * 只有存档里的 `config.difficulty` 与 `players.p1.resources.gold` 能证明它真的生效了。
+ */
+const PROBE_SAVE = `(() => {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem('homm-save-v1')); } catch (e) { s = null; }
+  if (!s) return null;
+  const cfg = s.config || {};
+  const res = ((s.players || {}).p1 || {}).resources || {};
+  return {
+    scenario: cfg.scenario || null,
+    size: cfg.size || null,
+    difficulty: cfg.difficulty || null,
+    mapW: s.map ? s.map.width : null,
+    mapH: s.map ? s.map.height : null,
+    gold: typeof res.gold === 'number' ? res.gold : null,
+    wood: typeof res.wood === 'number' ? res.wood : null,
+    ore: typeof res.ore === 'number' ? res.ore : null,
+  };
+})()`;
+
+/** 开局页某一行（`label` 文本匹配）的可点项与其 disabled 状态。 */
+const diffRowProbe = (label) => `(() => {
+  const row = [...document.querySelectorAll('#start-screen .ss-field')]
+    .find((r) => { const l = r.querySelector('label'); return !!l && l.textContent === ${JSON.stringify(label)}; });
+  if (!row) return null;
+  const items = [...row.querySelectorAll('.ss-seg-item')];
+  return { labels: items.map((b) => (b.textContent || '').trim()), disabled: items.map((b) => b.disabled === true) };
+})()`;
+
 /** DUMP 用：开局页两栏与各块的实测高度（定位"是谁把屏撑高了"）。 */
 const PROBE_PARTS = `(() => {
   const pick = ['.ss-panel', '.ss-preview', '#ss-map', '.ss-legend', '.ss-summary', '.ss-actions', '.ss-form'];
@@ -189,6 +227,24 @@ const clickText = (evaluate, sel, text) =>
 
 const clickSel = (evaluate, sel) =>
   evaluate(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); if (!b || b.disabled) return false; b.click(); return true; })()`);
+
+/** 等"页面真的起来了"：轮询而不是死等固定毫秒 —— 40×40 静态图的开局在真机上不算快。 */
+const waitInGame = async (evaluate, tries = 80) => {
+  for (let i = 0; i < tries; i++) {
+    await sleep(150);
+    try {
+      if (
+        await evaluate(
+          `document.readyState === 'complete' && !document.querySelector('#start-screen') && !!document.querySelector('#map')`,
+        )
+      )
+        return i * 150;
+    } catch {
+      /* 导航中，evaluate 会抛 */
+    }
+  }
+  return null;
+};
 
 const waitStart = async (evaluate) => {
   for (let i = 0; i < 80; i++) {
@@ -288,7 +344,43 @@ try {
         `N3 滚动比判据可红：撑高 1200px ⇒ ratio ${before3.ratio} → ${after3.ratio}（阈值 1.10）`,
       );
 
-      console.log(`\n${negBad ? `★ ${negBad} 项 NEG-FAIL —— 判据可能**恒绿**（门坏了，必须修）` : '负测全部通过：N1/N2/N3 三类判据**都能红**（门不是恒绿）'}`);
+      /* N4（node 级，同一份 dist）：**把修复撤掉** ⇒ low 档必须**崩**；带着修复 ⇒ 三档都能开。
+       * 这是"修复真的修了东西"的直接证据 —— 否则 E 组的绿可能只是"从来就没崩过"。 */
+      const dimp = (rel) => distUrl(rel, DIST);
+      const { createGame } = await import(dimp('core/map/generator.js'));
+      const { scenarioGenOptions, SCENARIO_BY_ID } = await import(dimp('core/data/scenarios.js'));
+      const { applyTier, clampMapSize, quality } = await import(dimp('render/quality.js'));
+      const def = SCENARIO_BY_ID['grims-showcase'];
+      const cfg = scenarioGenOptions(def);
+      const oldRes = {};
+      const newRes = {};
+      for (const tier of ['low', 'mid', 'high']) {
+        applyTier(tier);
+        const clamped = clampMapSize(cfg.size, quality.maxMapSize);
+        // 旧行为：一律钳制（不豁免静态地形）
+        try {
+          const g = createGame({ ...cfg, size: clamped });
+          oldRes[tier] = `${g.map.width}×${g.map.height}`;
+        } catch (e) {
+          oldRes[tier] = `THROW: ${String(e.message).slice(0, 40)}`;
+        }
+        // 新行为：`staticSized()` —— 带静态地形的场景不参与钳制
+        const fixed = def.staticMap ? def.config.size : clamped;
+        try {
+          const g = createGame({ ...cfg, size: fixed });
+          newRes[tier] = `${g.map.width}×${g.map.height}`;
+        } catch (e) {
+          newRes[tier] = `THROW: ${String(e.message).slice(0, 40)}`;
+        }
+      }
+      console.log(`  旧（一律钳制）: ${JSON.stringify(oldRes)}`);
+      console.log(`  新（豁免静态地形）: ${JSON.stringify(newRes)}`);
+      NEGPASS(
+        /^THROW/.test(oldRes.low) && ['low', 'mid', 'high'].every((t) => newRes[t] === '40×40'),
+        `N4 静态地形豁免可红：撤掉修复 ⇒ low 档崩（${oldRes.low}）；带修复 ⇒ 三档都是 40×40`,
+      );
+
+      console.log(`\n${negBad ? `★ ${negBad} 项 NEG-FAIL —— 判据可能**恒绿**（门坏了，必须修）` : '负测全部通过：N1/N2/N3/N4 四类判据**都能红**（门不是恒绿）'}`);
       return;
     }
 
@@ -299,6 +391,16 @@ try {
     const fit = await evaluate(PROBE_FIT);
     console.log(`[读数] #start-screen scrollHeight=${fit.sh} · clientHeight=${fit.ch} · ratio=${fit.ratio}`);
     PASS(fit.ratio <= 1.1, `B 开局页滚动比 ≤ 1.10（实测 ${fit.ratio}）`);
+
+    /* 取证截图：开始页 + 已选「破碎罗盘」⇒ 难度行处于可点状态 */
+    if (SHOT) {
+      const picked = await clickText(evaluate, '#start-screen .ss-seg-item', '破碎罗盘');
+      await sleep(900);
+      const row = await evaluate(diffRowProbe('难度'));
+      const shot = await send('Page.captureScreenshot', { format: 'png' });
+      writeFileSync(SHOT, Buffer.from(shot.data, 'base64'));
+      console.log(`[截图] ${SHOT}（开始页 · 选中「破碎罗盘」=${picked} · 难度行 ${JSON.stringify(row)} · ${W}×${H}@${DPR}）`);
+    }
 
     /* A. 一键进图：点几次 */
     let clicks = 0;
@@ -342,6 +444,75 @@ try {
     const freeBars = await evaluate(PROBE_BARS);
     PASS(!freeObj.present || !freeObj.visible, 'D1 自由对局：顶上无目标清单（减法只在展示图生效）');
     PASS(freeBars.slots['topbar-hud'].count > 0, 'D2 自由对局：顶栏资源条照旧在场（既有路径未被动过）');
+
+    /* ---- E. 三档画质下展示图都要能开起来 ----
+     * 为什么单列一组：low 档 `maxMapSize = 32`，而展示图的静态地形是 40×40 ——
+     * 只要 `startNewGame` 还对它做 `clampMapSize`，low 档就是**一点就崩**。
+     * 判据 = 「真进了对局」+「地图真的是 40×40」+「目标清单在场」（证明进的是展示图）。 */
+    for (const tier of ['low', 'mid', 'high']) {
+      await boot(send, evaluate);
+      // 手动覆盖画质档（`quality.ts`：`homm.tierMode !== 'auto'` ⇒ 直接 `applyTier`，不探测）
+      await evaluate(`(() => { localStorage.setItem('homm.tierMode', ${JSON.stringify(tier)}); return true; })()`);
+      await send('Page.navigate', { url: URL0 + '?devshowcase=1' });
+      const waited = await waitInGame(evaluate);
+      const started = waited !== null;
+      const obj = await evaluate(PROBE_OBJ);
+      const sv = await evaluate(PROBE_SAVE);
+      const where = await evaluate(`({ href: location.href, ready: document.readyState, ss: !!document.querySelector('#start-screen'), map: !!document.querySelector('#map'), tier: localStorage.getItem('homm.tierMode') })`);
+      console.log(
+        `[读数] E-${tier}：进图=${started}（等待 ${waited === null ? '超时' : waited + 'ms'}） · 存档 ${sv ? `${sv.size} ${sv.mapW}×${sv.mapH} difficulty=${sv.difficulty}` : 'null'} · 目标清单=${obj.visible} · ${JSON.stringify(where)}`,
+      );
+      PASS(
+        started && !!sv && sv.mapW === 40 && sv.mapH === 40 && obj.visible,
+        `E-${tier} 档下展示图能开起来：地图 ${sv ? sv.mapW + '×' + sv.mapH : '?'}（静态地形 40×40，不得被 clamp）`,
+      );
+      // 复原手动档 ⇒ 后面的检查仍在默认（auto）档上跑
+      await evaluate(`(() => { localStorage.setItem('homm.tierMode', 'auto'); return true; })()`);
+    }
+
+    /* ---- F. 展示图难度可选，且真的进 `createGame` ----
+     * 判据不是"能点"，是"点完开出来的局资源真的变了"（引擎侧实测 easy 3000 / hard 1750）。 */
+    const pickDifficulty = async (card, label) => {
+      await boot(send, evaluate);
+      await clickText(evaluate, '#start-screen .ss-seg-item', card);
+      await sleep(400);
+      const row = await evaluate(diffRowProbe('难度'));
+      const clicked = await clickText(evaluate, '#start-screen .ss-seg-item', label);
+      await sleep(300);
+      await clickText(evaluate, '#start-screen button', '开始新游戏');
+      await sleep(3000);
+      return { row, clicked, save: await evaluate(PROBE_SAVE) };
+    };
+
+    const showEasy = await pickDifficulty('破碎罗盘', '轻松');
+    console.log(`[读数] 展示图难度行 = ${JSON.stringify(showEasy.row)}`);
+    PASS(!!showEasy.row && showEasy.row.disabled.every((d) => d === false), `F1 展示图：难度行 ${showEasy.row ? showEasy.row.labels.join('/') : '?'} 全可点`);
+    console.log(`[读数] 选「轻松」开局 = ${JSON.stringify(showEasy.save)}`);
+    PASS(
+      !!showEasy.save && showEasy.save.difficulty === 'easy' && showEasy.save.gold === 3000 && showEasy.save.wood === 12,
+      `F2 选「轻松」⇒ 存档 difficulty=${showEasy.save ? showEasy.save.difficulty : '?'} 资源 金${showEasy.save ? showEasy.save.gold : '?'}/木${showEasy.save ? showEasy.save.wood : '?'}/矿${showEasy.save ? showEasy.save.ore : '?'}（预期 easy / 3000 / 12 / 12）`,
+    );
+
+    const showHard = await pickDifficulty('破碎罗盘', '困难');
+    console.log(`[读数] 选「困难」开局 = ${JSON.stringify(showHard.save)}`);
+    PASS(
+      !!showHard.save && showHard.save.difficulty === 'hard' && showHard.save.gold === 1750 && showHard.save.wood === 7,
+      `F3 选「困难」⇒ 存档 difficulty=${showHard.save ? showHard.save.difficulty : '?'} 资源 金${showHard.save ? showHard.save.gold : '?'}/木${showHard.save ? showHard.save.wood : '?'}/矿${showHard.save ? showHard.save.ore : '?'}（预期 hard / 1750 / 7 / 7）`,
+    );
+
+    /* ---- G. 红线：教学场 / 对决场的难度仍锁定（它们的难度是设计的一部分）---- */
+    for (const [name, card, want] of [['tutorial', '教学场', 'easy'], ['duel', '对决场', 'normal']]) {
+      await boot(send, evaluate);
+      await clickText(evaluate, '#start-screen .ss-seg-item', card);
+      await sleep(400);
+      const row = await evaluate(diffRowProbe('难度'));
+      await clickText(evaluate, '#start-screen button', '开始新游戏');
+      await sleep(2500);
+      const sv = await evaluate(PROBE_SAVE);
+      console.log(`[读数] G-${name} 难度行 = ${JSON.stringify(row)}`);
+      PASS(!!row && row.disabled.every((d) => d === true), `G1-${name}：难度行仍**全锁定**（${row ? row.labels.join('/') : '?'}）`);
+      PASS(!!sv && sv.difficulty === want, `G2-${name}：难度仍是场景固定值 ${sv ? sv.difficulty : '?'}（预期 ${want}）`);
+    }
 
     /* D3/D4：tutorial / duel 两条既有路径同样不得被本轮的减法碰到 */
     for (const [name, card] of [['tutorial', '教学场'], ['duel', '对决场']]) {

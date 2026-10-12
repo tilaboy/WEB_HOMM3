@@ -218,7 +218,10 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
       ...SCENARIOS.map((s): SegItem<string | null> => {
         // 边缘情况 1：场景尺寸 > 本机画质档上限 ⇒ 该卡禁用并附理由。
         // 因为 startNewGame 的 clampMapSize 会**静默**改小尺寸 ⇒ 场景就"不固定"了。
-        const ok = allowedMapSizes(quality.maxMapSize).includes(s.config.size);
+        // ★ 例外：**带静态地形的场景不参与这道门** —— 它的尺寸是场景自带的，
+        //   `main.ts` 的 `staticSized()` 已跳过钳制（夹小只会让 `applyStaticTerrain` 抛错）。
+        //   ⇒ low 档上展示图仍必须可选，否则用户那台旗舰机点不动这张图。
+        const ok = s.staticMap ? true : allowedMapSizes(quality.maxMapSize).includes(s.config.size);
         return {
           value: s.id,
           title: s.name,
@@ -245,25 +248,38 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
     seed: number;
   } | null = null;
 
-  /** 锁定 / 解锁被场景接管的 5 行（G-2：种子行是 input+reroll，须**两个都**禁）。 */
+  /** 本场景是否把难度留给玩家（图三 = `difficultyEditable`）。缺省 = 锁定。 */
+  let difficultyEditable = false;
+
+  /**
+   * 锁定 / 解锁被场景接管的 5 行（G-2：种子行是 input+reroll，须**两个都**禁）。
+   *
+   * `difficultyEditable` 为真时**只有难度行**保持可用（其余 4 行照旧锁）——
+   * 判据写在**同一个函数里**（不是复制一份"锁 4 行"的平行实现），
+   * 否则"到底锁了哪几行"会有两个真相。
+   */
   function setRowsLocked(locked: boolean): void {
+    const diffLocked = locked && !difficultyEditable;
     sizeSeg.setDisabled(locked);
     layoutSeg.setDisabled(locked);
     oppSeg.setDisabled(locked);
-    diffSeg.setDisabled(locked);
+    diffSeg.setDisabled(diffLocked);
     seedInput.disabled = locked;
     reroll.disabled = locked;
-    const setDesc = (el: Element): void => {
-      if (locked) el.setAttribute('aria-describedby', SCENARIO_HINT_ID);
+    const setDesc = (el: Element, on: boolean): void => {
+      if (on) el.setAttribute('aria-describedby', SCENARIO_HINT_ID);
       else el.removeAttribute('aria-describedby');
     };
-    // G-4：5 行都挂 `aria-describedby` 指到 scenarioHint。**行容器 + 行内每个可点项**都挂
+    // G-4：被接管的行都挂 `aria-describedby` 指到 scenarioHint。**行容器 + 行内每个可点项**都挂
     //（禁用项不可聚焦时，读屏按"组"播报容器上的描述；可聚焦时逐项也能读到）。
-    for (const row of [sizeSeg.el, layoutSeg.el, oppSeg.el, diffSeg.el]) {
-      setDesc(row);
-      for (const b of row.querySelectorAll('.ss-seg-item')) setDesc(b);
+    // 难度行在 `difficultyEditable` 下**不挂** —— 它不是"被场景接管"，挂上会误导读屏。
+    for (const row of [sizeSeg.el, layoutSeg.el, oppSeg.el]) {
+      setDesc(row, locked);
+      for (const b of row.querySelectorAll('.ss-seg-item')) setDesc(b, locked);
     }
-    for (const el of [seedInput, reroll]) setDesc(el);
+    setDesc(diffSeg.el, diffLocked);
+    for (const b of diffSeg.el.querySelectorAll('.ss-seg-item')) setDesc(b, diffLocked);
+    for (const el of [seedInput, reroll]) setDesc(el, locked);
   }
 
   function applyScenario(v: string | null): void {
@@ -274,7 +290,10 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
         cfg.size = freeSnapshot.size;
         cfg.layout = freeSnapshot.layout;
         cfg.opponents = freeSnapshot.opponents;
-        cfg.difficulty = freeSnapshot.difficulty;
+        // 难度：场景把它留给玩家时（`difficultyEditable`），**保留玩家刚选的值** ——
+        // 否则"在展示图上选了困难 → 切回自由对局"会把这一下选择丢回旧快照。
+        // 教学场 / 对决场（不写该字段）仍原样恢复快照 ⇒ 与改动前逐字节一致。
+        if (!difficultyEditable) cfg.difficulty = freeSnapshot.difficulty;
         cfg.seed = freeSnapshot.seed;
         sizeSeg.setValue(cfg.size);
         layoutSeg.setValue(cfg.layout);
@@ -284,6 +303,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
         layoutHint.textContent = LAYOUTS[cfg.layout].desc;
       }
       delete cfg.scenario;
+      difficultyEditable = false;
       setRowsLocked(false);
       scenarioHint.textContent = FREE_HINT;
     } else {
@@ -300,10 +320,12 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
         };
       }
       const o = scenarioGenOptions(def);
+      difficultyEditable = def.difficultyEditable === true;
       cfg.size = o.size ?? cfg.size;
       cfg.layout = o.layout ?? cfg.layout;
       cfg.opponents = o.opponents ?? cfg.opponents;
-      cfg.difficulty = o.difficulty ?? cfg.difficulty;
+      // 难度：只有**没**放开给玩家的场景才用场景值覆盖（图一/图二的难度是设计的一部分）。
+      if (!difficultyEditable) cfg.difficulty = o.difficulty ?? cfg.difficulty;
       cfg.seed = o.seed ?? cfg.seed;
       cfg.scenario = def.id;
       sizeSeg.setValue(cfg.size);
@@ -355,10 +377,10 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
     quickBtn.textContent = '试这张图';
     quickBtn.title = `${showcaseDef.name} · ${showcaseDef.sub}（跳过全部设置，直接开）`;
     quickBtn.setAttribute('aria-label', `试这张图：${showcaseDef.name}，跳过全部设置直接开始`);
-    // 场景尺寸超出本机画质档上限 ⇒ 真禁用（与场景卡同一道门：clampMapSize 会静默改小尺寸）。
-    const ok = allowedMapSizes(quality.maxMapSize).includes(showcaseDef.config.size);
-    quickBtn.disabled = !ok;
-    if (!ok) quickBtn.title = '本机画质档不支持该尺寸';
+    /* ★ 不再按画质档上限禁用：展示图带静态地形（40×40），`main.ts` 的 `staticSized()`
+     *   已让它不参与 `clampMapSize` ⇒ low 档也能开。若这里仍按 `maxMapSize` 置灰，
+     *   用户那台被判 low 的旗舰机上这颗按钮就是死的（而它正是"一键进图"的入口）。
+     *   难度沿用左栏当前值（`difficultyEditable` ⇒ 玩家可先在难度行选好再点）。 */
     quickBtn.addEventListener('click', () => {
       const o = scenarioGenOptions(showcaseDef);
       close();
@@ -367,7 +389,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
         layout: o.layout ?? cfg.layout,
         seed: o.seed ?? cfg.seed,
         opponents: o.opponents ?? cfg.opponents,
-        difficulty: o.difficulty ?? cfg.difficulty,
+        difficulty: cfg.difficulty,
         playerName: cfg.playerName,
         scenario: o.scenario,
       });

@@ -159,7 +159,23 @@ try {
     async ({ send, evaluate }) => {
       await send('Emulation.setDeviceMetricsOverride', { width: 792, height: 320, deviceScaleFactor: 3, mobile: true });
 
-      const boot = async () => { await send('Page.navigate', { url: URL0 + '/' }); await sleep(1800); };
+      const boot = async () => {
+        await send('Page.navigate', { url: URL0 + '/' });
+        for (let i = 0; i < 80; i++) {
+          await sleep(150);
+          try {
+            if (
+              await evaluate(
+                `document.readyState === 'complete' && !!document.querySelector('#start-screen') && !!document.querySelector('#start-screen .ss-seg[role="radiogroup"]')`,
+              )
+            )
+              return i * 150;
+          } catch {
+            /* 导航中 evaluate 可能抛 */
+          }
+        }
+        throw new Error('开始页未在 12s 内就绪');
+      };
       const clickText = (sel, text) =>
         evaluate(`(() => {
           const el = [...document.querySelectorAll(${JSON.stringify(sel)})].find(b => (b.textContent || '').includes(${JSON.stringify(text)}));
@@ -203,15 +219,18 @@ try {
       const iScen = order.indexOf('试玩场景');
       const iSize = order.indexOf('地图尺寸');
       PASS(iScen >= 0 && iSize >= 0 && iScen < iSize, `「试玩场景」在「地图尺寸」之上（index ${iScen} < ${iSize}）`);
-      const cards = await evaluate(`[...document.querySelectorAll('#start-screen .ss-seg-item')].slice(0, 3).map(b => b.querySelector('.t').textContent).join('/')`);
-      PASS(cards === '教学场/对决场/自由对局', `3 张卡 = 教学场/对决场/自由对局（实为 ${cards}）`);
+      const cards = await evaluate(`[...document.querySelectorAll('#start-screen .ss-seg[role="radiogroup"] .ss-seg-item')].map(b => (b.querySelector('.t')?.textContent || '').trim()).filter(Boolean)`);
+      console.log(`  场景卡: ${JSON.stringify(cards)}`);
+      PASS(Array.isArray(cards) && cards.length === 4, `场景卡 = 4 张（教学场/对决场/破碎罗盘/自由对局，实为 ${cards?.length ?? 'N/A'} 张）`);
+      PASS(Array.isArray(cards) && /教学场/.test(cards[0]) && /对决场/.test(cards[1]) && /自由对局/.test(cards[3]), `场景卡顺序：教学场、对决场、…、自由对局`);
+      PASS(Array.isArray(cards) && cards.some((c) => /破碎/.test(c)), `场景卡含「破碎罗盘」`);
       const a11y = await evaluate(`(() => {
         const row = document.querySelector('#start-screen .ss-seg[role="radiogroup"]');
         if (!row) return 'NO_RADIOGROUP';
         const rs = [...row.querySelectorAll('[role="radio"]')];
         return rs.length + ':' + rs.every(r => r.hasAttribute('aria-checked'));
       })()`);
-      PASS(/^3:true$/.test(a11y), `3 卡 = 一个 radiogroup（role=radio + aria-checked）→ ${a11y}`);
+      PASS(/^4:true$/.test(a11y), `4 卡 = 一个 radiogroup（role=radio + aria-checked）→ ${a11y}`);
 
       /* 1) 自由对局（默认）：config 不得有 scenario 键 */
       await clickText('#start-screen button', '开始新游戏');
