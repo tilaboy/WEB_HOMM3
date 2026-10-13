@@ -90,6 +90,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export function launchHeadless({ port, profilePrefix = 'chrome-' } = {}) {
   const cdp = port ?? cdpPort();
   const profile = mkdtempSync(path.join(tmpdir(), profilePrefix));
+  /* ★ 2026-10-13：加一组「关遥测/更新/崩溃上报」的 flags。
+   * 起因：每次跑门，沙箱都会弹一批 delete 权限请求，用户反复被要求确认：
+   *   · `~/Library/Application Support/Google/RLZ/RlzStore.plist`（Chrome 的推荐/品牌状态）
+   *   · `~/Library/Preferences/com.apple.LaunchServices.QuarantineEventsV2-journal`（macOS 下载隔离记录）
+   *   · `/var/folders/…/com.google.Chrome.code_sign_clone/…`（Chrome 自签校验时克隆自身 bundle）
+   *   · `~/Library/Application Support/Google/GoogleUpdater/updater.log.old`（**系统 Google 更新器**）
+   * ⚠️ **这些都不是本仓文件、也不是门要删的东西** —— 是 Chrome / macOS 自己的 housekeeping。
+   *    ⚠️⚠️ 已实测（同命令连跑多次）：**这组 flags 并不能稳定消除弹窗** —— 同样带 flags，
+   *    有的跑次弹、有的不弹，是 Chrome 内部的时序行为。⇒ **不要**在注释里写"加了就不弹"。
+   *    真正有用的只有两点：① flags 本身对 headless 门控是纯收益（无遥测/无更新检查/崩溃不外传）；
+   *    ② 它让我们能对用户说清"弹的是谁"。
+   * ⇒ 要彻底不弹，得用户在沙箱里放行 `~/Library/Application Support/Google/**` 与
+   *    `com.apple.LaunchServices.*`，或换一个非 Google 内核的浏览器。**未获批准前不动系统设置。**
+   * ⚠️ crash dumps 指到临时 profile 里：否则它往系统崩溃目录写，`cleanup()` 管不到。 */
   const proc = spawn(
     CHROME_PATH,
     [
@@ -100,6 +114,18 @@ export function launchHeadless({ port, profilePrefix = 'chrome-' } = {}) {
       `--user-data-dir=${profile}`,
       `--remote-debugging-port=${cdp}`,
       '--remote-allow-origins=*',
+      /* ---- 以下为"别碰用户目录"组（见上注） ---- */
+      '--disable-rlz',
+      '--disable-rlz-lock',
+      '--no-default-browser-check',
+      '--disable-component-update',
+      '--disable-background-networking',
+      '--disable-sync',
+      '--disable-breakpad',
+      '--no-crashpad',
+      `--crash-dumps-dir=${path.join(profile, 'crashes')}`,
+      '--disable-features=Rlz,OptimizationHints,MediaRouter,Translate',
+      /* ---- 以上 ---- */
       'about:blank', // 先 about:blank：这样"注入脚本/改视口"能抢在导航之前
     ],
     { stdio: ['ignore', 'ignore', 'ignore'] },

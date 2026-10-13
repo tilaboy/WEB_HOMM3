@@ -2165,12 +2165,12 @@ body.in-battle #thumb {
   border: 1px solid rgba(255, 255, 255, 0.75);
 }
 
+/* ★ 2026-10-13：去掉上下两条分隔线 —— 四行统计不需要盒子，纯文字就够。
+ * （保留类名：`showcasegate` 的 DUMP 探针量 `.ss-summary` 的高度。） */
 .ss-summary {
   width: 100%;
   max-width: 420px;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  padding: 8px 0;
+  padding: 2px 0;
 }
 
 .ss-line {
@@ -2230,16 +2230,17 @@ body.in-battle #thumb {
  * 所以这张卡不是"一行设置"，是**这一页唯一的内容** —— 给它一个羊皮纸框，
  * 让它看起来像"被摆在桌上的一张图"，而不是表单里的一个字段。
  */
+/* ★ 2026-10-13：从"一张描边卡片"退成**纯文字层级**。
+ * 用户反馈「一个大的破碎罗盘在一个文本框里边……可能不需要这么多文本框」。
+ * 一页原先有五层框：地图卡 / 难度三小盒 / 摘要上下线 / 开始按钮 / 地图画框。
+ * 现在只留**地图画框**（那是画，该有）与**开始按钮**（那是个动作，该突出）。
+ * ⚠️ 类名 `.ss-mapcard` **保留**：`scenarioaudit` / `iaaccept` 断言它的存在，
+ *    删类名会让那两门红。它现在是个视觉上不存在的透明容器。 */
 .ss-mapcard {
-  padding: 14px 16px;
-  border: 1px solid var(--frame);
-  border-radius: 6px;
-  background:
-    linear-gradient(rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0.28)),
-    linear-gradient(160deg, #3a2a14 0%, #241809 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 232, 170, 0.14),
-    0 2px 0 rgba(0, 0, 0, 0.3);
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
 }
 
 .ss-mapcard-name {
@@ -2252,6 +2253,44 @@ body.in-battle #thumb {
   margin-top: 3px;
   font-size: 12px;
   color: var(--parchment);
+}
+
+/* ★ 难度行 = **三个文字档位 + 当前档一条下划线**（2026-10-13）。
+ * 为什么不用基类 `.ss-seg-item`：那套样式与英雄面板 `.hp-tabs` **共用**
+ * （`style.css` 注释：分段复用 `.ss-seg` 控件语言），改基类会一起改了英雄栏 ⇒
+ * 必须用修饰类 `.ss-diff` 在**这一行**上覆盖。
+ * 三个描边小盒 → 三个字：少两层框，"难度"这条唯一可改的设置也不再看起来像表单。
+ * ⚠️ 不改 DOM 结构、不改 `role=radio`/`aria-checked` ⇒ 读屏语义与门控断言不变。 */
+.ss-diff {
+  gap: 18px;
+  flex-wrap: nowrap;
+}
+
+.ss-diff .ss-seg-item {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 2px 0 5px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--text-dim);
+  font-size: 14px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition:
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.ss-diff .ss-seg-item:hover {
+  background: none;
+  color: var(--parchment);
+}
+
+.ss-diff .ss-seg-item.on {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
 }
 
 /* ---------- 横屏矮屏（真机 792×320 / 探针 792×360）：开局页不许滚 ---------- */
@@ -2329,6 +2368,26 @@ body.in-battle #thumb {
     padding: 3px 2px;
     font-size: 11px;
     gap: 1px;
+  }
+
+  /* ★ 难度行在横屏下**仍要保持"文字档位"形态**：上面 `.ss-diff .ss-seg-item` 的
+   * 特异性与这条媒体查询里的 `.ss-seg-item` 相同（都是 0,2,0），而媒体查询出现在
+   * 文件更后面 ⇒ **后者赢**，会把文字档位改回描边小盒。故这里必须再覆盖一次。
+   * （`!important` 不用：同特异性下靠源码顺序就能赢，且不留硬解码。） */
+  .ss-diff .ss-seg-item {
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 2px 0 5px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: none;
+    font-size: 13px;
+    letter-spacing: 1px;
+  }
+
+  .ss-diff {
+    gap: 16px;
   }
 
   .ss-seg-item .t {

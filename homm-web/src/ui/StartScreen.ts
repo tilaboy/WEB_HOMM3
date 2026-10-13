@@ -80,9 +80,12 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   form.className = 'ss-form';
   panel.appendChild(form);
 
-  /* 地图卡：不是"一行设置"，是**这一页的主角** —— 只有一张，所以直接铺开讲清楚。 */
-  const mapCard = document.createElement('div');
-  mapCard.className = 'ss-mapcard';
+  /* 地图名 + 一句副标：**不再是带边框的"卡片"**。
+   * 2026-10-13 用户反馈「一个大的破碎罗盘在一个文本框里边，然后难度上小文本框，
+   * 可能不需要这么多文本框」。原先这里是一只描边盒子，加上难度的 3 只小盒、
+   * 摘要的上下两条线、开始按钮一只盒、地图一只框 ⇒ 一页五层框。
+   * 现在只留**地图本身那只框**（那是画框，该有）和**开始按钮**（那是个动作，该突出），
+   * 其余全部退回纯文字层级。 */
   const mapName = document.createElement('div');
   mapName.className = 'ss-mapcard-name';
   mapName.textContent = def?.name ?? '破碎罗盘';
@@ -93,11 +96,18 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   mapHint.className = 'ss-hint';
   mapHint.textContent =
     '地形导入自 HoMM3《破碎罗盘》—— 同一张图每一局都一模一样，可以认路、可以背「那条海峡在哪」。';
+  /* 用 `.ss-mapcard` 包一层**只为**让门控的既有断言（`#start-screen .ss-mapcard` 存在）
+   * 继续成立 —— 它现在是个无边框、无背景的透明容器，视觉上不存在。 */
+  const mapCard = document.createElement('div');
+  mapCard.className = 'ss-mapcard';
   mapCard.append(mapName, mapSub, mapHint);
   form.appendChild(mapCard);
 
-  /* 难度：本页唯一可改的东西。文案要说清"无对手时也生效"这件事吗？—— 不，
-   * 破碎罗盘固定 3 家对手，所以只用最普通的那句，不要为不存在的分支写文案。 */
+  /* 难度：本页唯一可改的东西。破碎罗盘固定 3 家对手，所以只用最普通的那句，
+   * 不要为不存在的分支写文案。
+   * ★ `ss-diff` 是给开始页这一行加的**修饰类**：把它从"三只描边小盒"改成
+   *   "三个文字档位 + 当前档一条下划线"（见 style.css）。`.ss-seg-item` 的样式是
+   *   与英雄面板 `.hp-tabs` 共用的，不能直接改基类。 */
   const diffSeg = segment<Difficulty>(
     DIFFICULTY_ORDER.map((id) => ({
       value: id,
@@ -109,6 +119,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
       cfg.difficulty = v;
     },
   );
+  diffSeg.el.classList.add('ss-diff');
   form.appendChild(field('难度', diffSeg.el, '同时影响你的起始资源、野怪强度与电脑对手'));
 
   /* ---------------- 右侧：预览（**只有地图**） ---------------- */
