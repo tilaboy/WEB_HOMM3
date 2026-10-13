@@ -5,6 +5,8 @@
 > **本文件是「做完了什么 / 没做完什么」的权威清单。** 接手者（人或 AI）请先读这一份，再决定去读 `production/roadmap.md`（逐日流水）与 `design/` 下的规格。
 >
 > ⚠️ **2026-10-08 之后用户又回来做了两轮**（§11 单图 MVP / §12 开局页精简）。两轮的代码都已提交并推送到 `origin/main`。**"停开发"的判断以 §11/§12 的实测为准，不再以本文开头那句为准。**
+>
+> 📌 **要接着做？直接读 §13** —— 那里是 2026-10-13 复核过的开工清单，每条带文件:行号，不用重新调查。
 
 ---
 
@@ -57,11 +59,14 @@
 
 ### P0 · 结构性问题（有数据、没接线）
 
+> ⚠️ **2026-10-13 复核订正**：#1 **已修**（见 §11.1）；#3 的**后果比原描述严重**（见 §13.2）。
+> 本表保留原文以便对账，但**以 §13 的复核结论为准**。
+
 | # | 问题 | 证据 | 后果 |
 |---|---|---|---|
-| **1** | **四族共用同一套兵种树** —— 20 个阵营兵种已定义、16 个已画好精灵，但建筑表仍写死旧通用 id，所以四族长出来的兵完全一样 | `units.ts:240-243` 自陈「段 2 会把 `dwell1~5` 的 `growth.unitTypeId` 换成 `tier`……否则同一座 `dwell3` 在四族里长出的都是同一种兵」；`town.ts:350/357/358/407/410` 仍直接取 `g.unitTypeId`；`buildings.ts` growth 硬编码 `peasant/archer/pikeman/knight/angel` | **四族只差配色和名字** —— 这是"内容差异"最大的单点缺口 |
-| **2** | **画质档误判（G-15）** —— 旗舰机被自动探测判成 `low` 档，而 `low` 档把 vignette / 暖色叠层 / 水面反光 / 城镇辉光 / 布景全部关掉、`dprCap=1.5` | `render/quality.ts` `TIER_TABLE`；roadmap G-15「误判已 A/B 坐实，**修复从未排期**」 | **用户"画面没提升"的机制性原因**：他看到的正是"全都关掉"那一档 |
-| **3** | **T5 单位只存在于数据表** —— `p1_overangel` / `p2_lavatroll` / `p3_unicorn` / `p4_colossus` 各只被 1 个文件引用（数据表自身），无精灵、无代码路径 | `MapRenderer.ts:510` `if (!g) return; // T5 等无帧 ⇒ 跳过不画` | 每族最高阶兵种不可达 |
+| **1** | ~~**四族共用同一套兵种树**~~ → **✅ 已修（2026-10-12）** | `buildings.ts` 的 `growth` 现在只写 `tier`（`dwell1~5` → tier 1..5）；`units.ts:259` `unitIdForTier(owner, tier)` 运行时按城镇 owner 解析；`town.ts:238` 接进 build / 周增长 / 征兵 | 四族只差配色和名字 —— 这是"内容差异"最大的单点缺口 |
+| **2** | **画质档误判（G-15）** —— 旗舰机被自动探测判成 `low` 档，而 `low` 档把 vignette / 暖色叠层 / 水面反光 / 城镇辉光 / 布景全部关掉、`dprCap=1.5` | `render/quality.ts` `TIER_TABLE`；roadmap G-15「误判已 A/B 坐实，**修复从未排期**」 | **用户"画面没提升"的机制性原因**：他看到的正是"全都关掉"那一档。**2026-10-12 分类器已修，但真机档位仍未实测**（`adb devices` 空）⇒ 修了一半 |
+| **3** | **T5 单位只存在于数据表** —— `p1_overangel` / `p2_lavatroll` / `p3_unicorn` / `p4_colossus` 各只被 1 个文件引用（数据表自身），无精灵、无代码路径 | `MapRenderer.ts:510` `if (!g) return; // T5 等无帧 ⇒ 跳过不画` | 每族最高阶兵种不可达。**⚠️ 2026-10-13 订正：实际后果是"招了 T5 的英雄从地图上消失"，比"不可达"严重 —— 见 §13.2 ①** |
 
 ### P1 · 内容缺失
 
@@ -246,6 +251,9 @@ node tools/smoke.mjs   # 621 项核心逻辑断言
 
 已做完可行性探针：h3m 地形可读，并已渲染预览。详细 3 天 MVP 计划见 **`production/showcase-plan.md`**。
 
+> ✅ **该计划已执行完**，结果见 §11；随后又按用户裁定做了 §12 的开局页精简与版式重整。
+> 📌 **下一轮要做的事在 §13。**
+
 ## 11. 2026-10-08 ~ 2026-10-12「最后一轮」实测结果
 
 这一轮按 `production/showcase-plan.md` 的 3 天 MVP 执行，目标是**在同一张地图上同时验证**画质、可玩性、兵种、AI 四项提升。执行后代码未推（SSH 反复 reset），但本地提交与测量已完成。
@@ -333,3 +341,92 @@ node tools/smoke.mjs   # 621 项核心逻辑断言
 ### 12.4 一处有意的设计权衡
 
 教学模式完成后的 banner 按钮从「去对决场」改成「**去破碎罗盘**」——教程之后只剩这一个目的地。`duel` 场景**定义仍留在 `scenarios.ts`**（代码路径没删），但从 UI 下线，只能靠 `?devscenario=duel` 进门做回归。
+
+---
+
+## 13. 下一 session 开工清单（2026-10-13 复核，带证据，免重新调查）
+
+> 本节是**已复核**的结论：每条都给了文件:行号，可直接动手，不必再查一遍。
+> 复核方式 = 读代码 + 跑门，不依赖本文档旧描述（旧描述有三处已过期，见 §3 订正）。
+
+### 13.1 复核对账：这三条**已经修了，别重做**
+
+| 项 | 证据 |
+|---|---|
+| 四族兵种分家（P0#1） | `buildings.ts:93-125` `growth` 只写 `tier`；`units.ts:259` `unitIdForTier`；`town.ts:238` 已接进 build/周增长/征兵；`smoke` 有"中立/未知 owner 不 fallback 到 p1"断言 |
+| 开局页滚 3.4 屏（P2#9） | `showcasegate` B 组实测 `scrollRatio = 1` |
+| AI 从不接触 / 难度形同虚设 | `grimscontact` rush 中位 3 天、0/16 不接触；`showcasegate` F2/F3 实测 easy 金3000/木12/矿12、hard 金1750/木7/矿7 真进存档 |
+
+### 13.2 待办（按"玩家会撞见 × 修起来值不值"排序）
+
+#### ① 【最优先】T5 一招募，英雄从地图上消失 —— 真 bug，不是缺内容
+
+**证据链（四步，已逐行读过）**：
+```
+buildings.ts:125    growth: { tier: 5, count: 2 }        ← dwell5 真能招 T5（可达！）
+units.ts:61-166     p1_overangel 等在 UNITS 表内         ← pickRepresentativeUnit 认它
+mapBadge.ts:129     cand.tier > best.tier ⇒ T5 恒赢      ← 代表兵种选中的就是 T5
+MapRenderer.ts:508  frameName = `u_${cid}_map`
+MapRenderer.ts:510  silOf(...) = null ⇒ return，不画     ← 英雄不画了
+```
+**后果**：玩家建 dwell5、招「加班天使」⇒ 他的英雄在地图上**直接不见了**。正常游玩必然撞见，不是边角情况。
+原文档写"不可达"是**错的**——可达，且后果更重。
+**修法**：给 4 个 T5 补程序化精灵帧（`u_*_map` 32×44 + `cu_*` 44×56 + `cu_*_atk` 44×56），
+**参照 `src/render/unitArt.ts`**（B0/B1 已立好的范式：结构、命名、绘制辅助函数照抄，别另起一套）。
+补完 `MapRenderer.ts:510` 自然生效，无需改渲染逻辑。
+**不依赖任何外部条件**（不需要手机、不需要用户决策）⇒ 可立即开工。
+
+#### ② 真机画质档位仍未实测 —— G-15 只修了一半，且只有用户能解
+
+`render/quality.ts` 分类器 bug 已修（浏览器端验证过），grims-showcase 的氛围层也强开。
+但**用户那台 OPPO PMA110 到底被判成哪一档，至今无人知道**（`adb devices` 为空）。
+这是用户原话「画面也没有什么提升」的机制根源 ⇒ 在测到之前，修复对他是否生效是未知的。
+**前置**：手机连 USB + 开开发者模式/USB调试。连上后：`adb devices` → 重测档位 →
+`npm run mobile:sync` → 出包装回 → **从手机拉回包对 md5**（项目既有纪律）。
+
+#### ③ keystore 从未生成 + APK 里混着测试页与 sourcemap
+
+- `find . -name "*.keystore" -o -name "*.jks"` = **0** ⇒ 没有签名密钥就不能正式发版/更新
+- `dist/main.js.map` 67 KB + `dist/_battle.html` / `_hoverprobe.html` / `_map.html` / `_siege.html`
+  四个测试页，仍会被 `cap sync` 打进 APK（`dist/` 整个被复制）
+不影响继续装 debug 包测试；想正经发布才是硬阻塞。
+
+#### ④ 音乐与环境音整块缺失（用户要过"可玩性/氛围"）
+
+规格 `design/audio-direction.md`（38,960 B）已写好、基调已拍板，**实现 0**（`src/` 下 0 个音频文件）。
+现有 `src/ui/sfx.ts` 是 10 种程序化 WebAudio 音效 —— 管线是现成的，扩成 BGM + 环境音即可。
+**动手前先读 `sfx.ts` 确认现状**，别凭假设写方案。
+
+#### ⑤ 喜剧布景层未落盘（用户明确要过：「人物和地图有点搞笑风格」）
+
+`design/` 下 `喜剧布景` / `comedy set` **零命中**。两个 art-director 队友被派过，
+都因额度/网络耗尽没产出 ⇒ 任务实质未开始。
+已知口径（D-17）三选一，**待用户选定**：① 只做单位 ② 新增布景层不动地形砖（推荐）③ 解冻环境层。
+注意 `cartoon-style.md §3.1` 把环境层列为「不动（容差 ≤10%）」⇒ 选 ②/③ 都要先改那条规格。
+
+#### ⑥ 教学模式跳过之后回不去（2026-10-13 用户提问引出）
+
+用户问「现在哪里选教学模式？」才发现：跳过/有存档后，UI 上**再无教学入口**。
+唯一入口是 `main.ts` 首次启动自动进入分支；菜单里只有「跳过教学」没有「重玩教学」。
+三个方案（我推荐 A，**用户尚未选定**）：
+A. 菜单加「重玩教学」——开始页保持极简，符合 IA「低频项归菜单」
+B. 开始页加第二张卡——违背用户"不要这么多选项"的方向
+C. 保持现状——只有首次能玩到
+
+### 13.3 环境坑（跑门前必读，已在 `tools/GATES.md` §五 同步）
+
+| 坑 | 正确做法 |
+|---|---|
+| `iaaccept.mjs` 打不到本地服务 | 必须 `NO_PROXY='*' no_proxy='*' node tools/iaaccept.mjs`（shell 有 `HTTP_PROXY`，Node undici 不绕过 127.0.0.1） |
+| macOS **没有 `timeout`** | 别写 `timeout 400 npm run audit:x` ⇒ 每门 rc=127 |
+| `audit:androidsync` 会清空 assets | 第 1 步就是 `npx cap sync android` ⇒ 删 `android/app/src/main/assets/public/`（133 文件/2.1M，gitignore 的 dist 拷贝、可重生）。**跑前先跟用户说清会删什么** |
+| Chrome delete 权限弹窗 | **不是门要删文件**。`RLZ/RlzStore.plist` / `QuarantineEventsV2-journal` / `code_sign_clone/**` / `GoogleUpdater/updater.log.old`（后者是 2026-07-27 装好的系统 launchd 服务，与本项目无关）。**间歇性出现，flags 不能稳定消除** —— 别在注释里声称能消 |
+| 查代码/规则别用 shell `grep 'A\|B'` | BSD grep 静默返回空。**今天连踩三次**。一律用 Grep 工具 / `rg` |
+
+### 13.4 当前健康度（2026-10-13 实测，可直接作为回归基线）
+
+`npx tsc --noEmit` exit 0 · `smoke` **695 PASS / 0 FAIL** · `showcasegate` **23 PASS** ·
+`scenarioaudit` **31** · `tutorialgate` **6** · `iaaccept` **38** · `hpbudget` **14** ·
+`panelgate` **10** · `androidsync` 133 文件逐 md5 一致 · `verify-static-map` **24**
+`audit:hover` 偶发 rc=2（CDP 竞态，连跑 3/3 绿）⇒ **既有抖动，未修，别声称修好了**。
+工作树干净、与 `origin/main` 同步（HEAD = `8acc7d7`）。
