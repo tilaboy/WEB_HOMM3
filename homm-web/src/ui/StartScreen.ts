@@ -111,7 +111,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   );
   form.appendChild(field('难度', diffSeg.el, '同时影响你的起始资源、野怪强度与电脑对手'));
 
-  /* ---------------- 右侧：预览 ---------------- */
+  /* ---------------- 右侧：预览（**只有地图**） ---------------- */
 
   const preview = document.createElement('div');
   preview.className = 'ss-preview';
@@ -120,13 +120,18 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   canvas.id = 'ss-map';
   preview.appendChild(canvas);
 
+  /* ---------------- 左栏续：图例 + 摘要（2026-10-13 从右栏搬来） ----------------
+   * 为什么要搬：实测（DUMP 探针）右栏 357px 宽，而地图被**垂直**顶死在 196px
+   * （上方 35 + 图例 16 + 摘要 66 + 间隙 ≈ 129）⇒ 两侧各空 80px，地图永远是邮票。
+   * 把图例和摘要搬到左栏后，右栏整块归地图 ⇒ 地图放大到 ~300px，
+   * 且"这是什么图 / 上面有什么"这类文字信息与地图卡、难度同在一条阅读动线上。 */
   const legend = document.createElement('div');
   legend.className = 'ss-legend';
-  preview.appendChild(legend);
+  panel.appendChild(legend);
 
   const summary = document.createElement('div');
   summary.className = 'ss-summary';
-  preview.appendChild(summary);
+  panel.appendChild(summary);
 
   /* ---------------- 底部按钮 ---------------- */
 
@@ -171,7 +176,13 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   note.textContent = opts.hasSave ? '开始会覆盖当前存档' : '进度会自动保存在本机浏览器里';
   actions.appendChild(note);
 
-  preview.appendChild(actions);
+  /* ★ 按钮区挂**左栏**（`panel`），不挂右栏预览。
+   * 2026-10-13 版式重整的理由：开局页精简后左栏只剩「地图卡 + 难度」两件，
+   * 按七行时代的版式排 ⇒ 左栏**下面一大片空棕色**；而右栏的地图预览又被
+   * `max-height:128px` 压成邮票、白剩一倍空间。
+   * 把「开始」移到左栏底部后：左栏读下来是 标题→地图卡→难度→开始（一条完整动线），
+   * 右栏整块归地图 ⇒ 两栏都满，且按钮离"刚设好的难度"更近。 */
+  panel.appendChild(actions);
 
   root.append(panel, preview);
   host.appendChild(root);

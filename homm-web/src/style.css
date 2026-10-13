@@ -2017,6 +2017,9 @@ body.in-battle #thumb {
   flex-direction: column;
   gap: 22px;
   max-width: 560px;
+  /* 2026-10-13：内容从 7 行砍到 2 件后，左栏不再"自然填满" ⇒ 让内容**垂直居中**，
+     剩下的空白均分到上下两端，而不是全部堆在底部（那一片空棕色正是用户指出的问题）。 */
+  justify-content: center;
 }
 
 .ss-brand h1 {
@@ -2257,19 +2260,22 @@ body.in-battle #thumb {
  * G-13 实测：开局页在 792×360 下 `scrollHeight 1667 / clientHeight 360` = **4.6 屏**
  * （`max-width:900px` 那档把左右两栏**竖着堆起来** ⇒ 直接翻倍）。
  * 横屏最缺的是**竖轴**（§4.1：可用内容区 752×264）⇒ 矮屏**保持两栏**、并把竖轴压紧：
- *   · 表单改 **2 列网格**（原 7 行 → 4 行；2026-10-12 后只剩 1 行，网格仍然保留 ——
- *     加地图时不至于又竖着爆出去）；
+ *   · 表单改 **2 列网格**（原 7 行 → 2 件；网格仍保留，加地图时不至于又竖着爆出去）；
  *   · 全部 `.ss-hint` 说明文字撤掉（F-3.5：能不显示就不显示；`aria-describedby` 仍指向它，
  *     读屏仍能读到 —— 隐藏元素作为描述目标是被允许的）；
  *   · 广告语 `<p>` 撤掉；卡片副行 `.s` 压到 9px 单行省略；
- *   · 预览图收进 148px 高；动作行改**横排**（「试这张图」与「开始新游戏」并排）。
+ *   · **地图预览放大到 196px**（2026-10-13：原 128px 是"邮票"，右栏白剩一倍空间；
+ *     它是"看到什么就玩到什么"的唯一载体，压成邮票这条承诺就废了）；
+ *   · **「开始」按钮移进左栏底部**（2026-10-13：原来在右栏 ⇒ 左栏下面一大片空棕色）。
  * ⚠️ 只在 `orientation:landscape` + `max-height:560px` 生效 ⇒ 桌面 / 竖屏形态不变。
  */
 @media (orientation: landscape) and (max-height: 560px) {
   #start-screen {
     /* `minmax(0, …)` 而不是裸 `…fr`：网格项的 `min-width:auto`（= min-content）会把左栏
-       顶到 691px、把右栏挤成 101px（实测）⇒ 必须显式允许收缩到 0。 */
-    grid-template-columns: minmax(0, 1.22fr) minmax(0, 1fr);
+       顶到 691px、把右栏挤成 101px（实测）⇒ 必须显式允许收缩到 0。
+       2026-10-13：右栏收窄到 ≈330px（原 357）—— 地图是正方形，栏宽超过地图高度时
+       多出来的宽度全是白条；左栏相应放宽，图例/摘要/按钮都需要横向。 */
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   }
 
   .ss-panel {
@@ -2277,6 +2283,8 @@ body.in-battle #thumb {
     gap: 8px;
     max-width: none;
     min-width: 0;
+    /* 内容垂直居中：空白均分到上下，不堆在底部（用户指出的"下面大片空白"）。 */
+    justify-content: center;
   }
 
   .ss-brand h1 {
@@ -2349,11 +2357,14 @@ body.in-battle #thumb {
   }
 
   #ss-map {
-    max-height: 128px;
+    /* ~300px：图例/摘要搬去左栏后，右栏整块归地图 ⇒ 地图从 196px（被垂直顶死）
+       放大到接近栏高。仍受 `width: auto !important` 保护：`drawPreview` 写的内联
+       width 不参与，canvas 按固有 1:1 被 `max-height` 收住，不会横向拉变形。 */
+    max-height: 300px;
     max-width: 100%;
-    /* `drawPreview` 会写 inline `width`（内联样式优先于样式表）⇒ 这里必须用 !important
-       把宽度放开，让 canvas 按固有 1:1 比例被 `max-height` 收住；否则只收高度会横向拉变形。 */
     width: auto !important;
+    /* 地图是右栏唯一的主角 ⇒ 水平 + 垂直都居中。 */
+    margin: auto;
   }
 
   .ss-summary {
@@ -2366,22 +2377,27 @@ body.in-battle #thumb {
     line-height: 1.4;
   }
 
+  /* 「开始」现在在**左栏**（2026-10-13 从右栏预览移来）⇒ 改成纵向堆叠、
+     按钮通栏，读法是 标题→地图卡→难度→开始 一条动线走完。
+     原横排是给"试这张图 + 开始新游戏"两颗并排用的，现在只有一颗，横排会拉成一长条。 */
   .ss-actions {
-    flex-flow: row wrap;
+    flex-flow: column nowrap;
     align-items: stretch;
-    gap: 8px;
-    margin-top: 0;
+    gap: 6px;
+    margin-top: 2px;
   }
 
   .ss-actions .btn.big {
-    padding: 8px 10px;
+    padding: 9px 10px;
     font-size: 13px;
-    letter-spacing: 1px;
-    flex: 1 1 0;
+    letter-spacing: 2px;
+    flex: 0 0 auto;
+    width: 100%;
   }
 
   .ss-note {
-    flex: 1 1 100%;
+    flex: 0 0 auto;
     font-size: 10px;
+    text-align: center;
   }
 }
