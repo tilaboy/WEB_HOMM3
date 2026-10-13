@@ -43,7 +43,11 @@ import { withHeadlessChrome, chromeAvailable } from './_chrome.mjs';
 const DIST = distDir();
 const LABEL = argOf('label', '');
 const SCEN = argOf('scenario', '教学场');
-printHeader(DIST, `gate=hpbudget${LABEL ? ` · label=${LABEL}` : ''} · 场景=${SCEN}`);
+/* 场景名 → 场景 id（`scenarios.ts`）。2026-10-12 起开局页没有场景卡了，
+ * 本门改用 `?devscenario=<id>` 进门 ⇒ 必须把**人话名字**翻成 id。
+ * 缺省映射保持旧行为：`--scenario=教学场` 与从前量的同一张图。 */
+const SCEN_ID = { 教学场: 'tutorial', 对决场: 'duel', 破碎罗盘: 'grims-showcase' }[SCEN] ?? SCEN;
+printHeader(DIST, `gate=hpbudget${LABEL ? ` · label=${LABEL}` : ''} · 场景=${SCEN}(${SCEN_ID})`);
 
 /* ---------------------------------------------------------------- 前置 */
 requireFile(DIST, 'ui/HeroPanel.js');
@@ -146,12 +150,16 @@ function row(label, m) {
 try {
   await withHeadlessChrome(async ({ send, evaluate }) => {
     await send('Emulation.setDeviceMetricsOverride', { width: 792, height: 320, deviceScaleFactor: 3, mobile: true });
+    /* ★ 2026-10-12：开局页精简后场景卡整行没了 ⇒ 不再"点场景卡 + 点开始"，
+     *   改用 `?devscenario=<id>` 直接开门（与 `showcasegate` / `scenarioaudit` 同一套）。
+     *   顺带修掉一个老问题：原来 boot 等不到 `#start-screen` 就死等 12s 再继续，
+     *   现在直接进对局，那 12s 空等整个消失。 */
     const boot = async () => {
-      await send('Page.navigate', { url: URL0 });
+      await send('Page.navigate', { url: `${URL0}?devscenario=${encodeURIComponent(SCEN_ID)}` });
       for (let i = 0; i < 50; i++) {
         await sleep(150);
         try {
-          if (await evaluate(`document.readyState === 'complete' && !!document.querySelector('#start-screen')`)) return;
+          if (await evaluate(`document.readyState === 'complete' && !document.querySelector('#start-screen') && !!document.querySelector('#map')`)) return;
         } catch { /* 导航中 */ }
       }
       await sleep(1200);
@@ -166,9 +174,6 @@ try {
       })()`);
 
     await boot();
-    await clickText('#start-screen .ss-seg-item', SCEN);
-    await sleep(200);
-    await clickText('#start-screen button', '开始新游戏');
     await sleep(1500);
     const opened = await clickText('#thumb button', '英雄');
     await sleep(800);

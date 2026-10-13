@@ -1,43 +1,40 @@
 #!/usr/bin/env node
 /**
- * scenarioaudit.mjs —— 两张试玩地图入口（#137）的**端到端门控**。
+ * scenarioaudit.mjs —— **开局页 + 教学模式**的端到端门。
  *
  * ## 为什么用"真 UI + 真存档"而不是单测
- * `scenarioGenOptions()` / `objectives` 的正确性**不在数据层**，而在**接线**：
- * 卡片点了没有、5 行锁没锁、快照回没回、`cfg.scenario` 有没有真的落到生成配置里。
- * 这些只有走一遍真页面才验得到。所以本工具：真 Chrome → **点真卡片** → 读回
- * `localStorage['homm-save-v1']`（`saveGame` 写的**真存档**）与真 DOM 来断言。
+ * 「开始页长什么样」「点了之后开出来的到底是什么局」这些正确性**不在数据层**，
+ * 而在**接线**：只有走一遍真页面、读回 `localStorage['homm-save-v1']`（`saveGame`
+ * 写的**真存档**）才验得到。
  *
- * ## 四条底线（规范权威 = `design/ux/in-game-ia.md §14.1 / §14.2`）
- *   ① 教学场：`scenario='tutorial'` · `opponents=0` · 野怪 ≤5 · **无中立城 · 无宝库**
- *   ② 对决场：`scenario='duel'` · `opponents=1` · **中线有 `midGuard`**（`tier==='mid'` 且带 `guard`）
- *   ③ 自由对局：`config` **没有 `scenario` 键**（不是 `'free'`）
- *   ④ **快照回滚**：自定义 → 进场景 → 切回自由 ⇒ 5 行**原样恢复**（A1「自由对局逐字节一致」底线）
- * 另附：字段顺序（试玩场景在地图尺寸**之上**）、3 卡文案、`radiogroup/aria-checked`、
- * G-2（种子行 `input` **与** `reroll` 都真 disabled）、G-4（`aria-describedby`→`scenarioHint`）、
- * 教学清单只在教学场渲染（`教学 · 学会了吗 N/3` + 每行有文字「已学会/未学会」）。
+ * ## ★ 2026-10-12 整篇重写（用户裁定，不是修 bug）
+ * 旧版验的是「试玩场景」那一行 4 张卡（教学场 / 对决场 / 破碎罗盘 / 自由对局）
+ * + 5 行设置 + 种子行 + 快照回滚。用户裁定：
+ *   > 「开局页面还是显得有点繁琐……地图种子就不用要了，试玩场景也不用要吧」
+ *   > 「现阶段我更倾向于删除随机地图的选项，只保留教学模式和破碎罗盘」
+ *   > 「第一次进入直接进入教学场景，除非选择跳过，后面不用再有教学场选项」
+ * ⇒ **被测对象整个变了**。旧断言不是"红"，是"尺子量错了东西"。
+ *    所以整篇重写：旧的场景行 / 种子行 / 快照回滚断言全部删除，
+ *    换成新结构的断言（见下）。旧版的历史读数留在 git 里，不在这里留坟。
  *
- * ## 用法（`#164`：`--dist=<dir>` + **空闲端口自起** —— 跑门不必覆盖共用 `dist/`）
+ * ## 新结构的四条底线
+ *   ① 开始页**只剩**：一张地图卡（破碎罗盘）+ 一个难度 + 「开始」（+ 有存档时的「继续」）。
+ *      不该有的：种子行、场景行、尺寸 / 布局 / 对手行、领主名字。
+ *   ② 教学模式（`scenario='tutorial'`）仍是那条**设计好的减法路径**：无中立城 / 无宝库 /
+ *      ≤5 只野怪，且英雄面板渲染教学清单（「教学 · 学会了吗 0/3」+ 每行有文字）。
+ *   ③ §14.2 的 3/3 非阻断 banner 与「由假变真」转移逻辑**不变**（本轮没碰它们）。
+ *   ④ 教学模式与展示图**互不串味**：教学局没有目标清单、顶栏不带 `showcase` 类。
+ *
+ * ## 用法（`#164`：`--dist=<dir>` + **空闲端口自起**）
  *   npm run build
- *   node tools/scenarioaudit.mjs                        # 缺省**自起**（free port，指向 <repo>/dist）
- *   node tools/scenarioaudit.mjs --dist=/tmp/dist-137   # 量**任意构建目录**（自起也指向它）
+ *   node tools/scenarioaudit.mjs                        # 正向（自起服务，量 <repo>/dist）
+ *   node tools/scenarioaudit.mjs --dist=/tmp/dist-137   # 量**任意构建目录**
  *   node tools/scenarioaudit.mjs --port=5174            # 连既有服务（另核「服务中 == --dist」）
- *   NEG=1 node tools/scenarioaudit.mjs                  # **可证伪负测**：只跑「故意弄坏」的三组，断言都变红
+ *   NEG=1 node tools/scenarioaudit.mjs                  # **可证伪负测**：只跑「故意弄坏」的三组
  *
- * 退出码：0 全过 / 1 有 FAIL / 2 前置不满足（无 Chrome / 构建不含 #137 / **服务中的构建 ≠ --dist**）
+ * 退出码：0 全过 / 1 有 FAIL / 2 前置不满足（无 Chrome / 构建不含开始页 / 服务没起）
  *
  * ⚠️ 前置：本工具**不改**任何文件、只读页面；**首行**打印「所量目录 + `cwd` + 指纹」。
- *    `--dist` 缺省 = `<repo>/dist`（**逐字不变**）；`--url`/`--port` 缺省时**自起**在空闲端口。
- *
- * ## ★ 可证伪负测（`NEG=1`）—— team-lead 新规矩「**门必须双向可证：能红也能绿**」
- * 正向跑一次全绿，**证明不了**门能红（它可能是**恒绿**：判据写错、永远命中）。
- * 故本工具带一个**负测模式**：把三类判据**各故意弄坏一次**，断言它们**都变红**：
- *   A. **前置**（「被测构建必须自证含被测对象」）—— 指一个**不含**「试玩场景」的 dist ⇒ 必须 `exit 2`；
- *   B. **结构判据**（DOM）—— 现场 `remove()` 掉 `#obj-banner` ⇒ 存在性判据必须 `true → false`；
- *   C. **数据判据**（真存档）—— 把自由对局真存档的 `config.scenario` 篡改成 `'tutorial'` ⇒
- *      「自由对局无 `scenario` 键」必须 `true → false`。
- * `NEG-PASS` = 该判据**确实会红**；`NEG-FAIL` = 它是**恒绿**（门坏了，必须修）。
- * 负测**不进验收数**（它与正向套件互斥：`NEG=1` 时不跑正向）。
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -54,36 +51,28 @@ const arg = (k, d) => {
 };
 
 /* 「被测构建必须自证包含被测对象」（team-lead 新规矩，全仓适用）：
- * 本工具验的是 `#137`（「试玩场景」）⇒ 跑之前先断言**被测构建**里含该标记。
- * 缺 ⇒ **读数作废**、exit(2)，而不是把 stale-dist 的 FAIL 记到 `#137` 头上
- * （2026-09-21 实战：dist 早 `#137` 20 分钟 ⇒ 曾产出 20 条假 FAIL）。 */
+ * 本工具验的是开局页的新形态 ⇒ 跑之前先断言**被测构建**里含本轮新加的标记。
+ * 缺 ⇒ **读数作废**、exit(2)，而不是把 stale-dist 的 FAIL 记到本轮头上。
+ * 2026-10-12：标记从「试玩场景」换成 `ss-mapcard`（开局页唯一那张地图卡的 class）。 */
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-/* `--dist=<dir>`（`#164`）：被测构建目录。优先级 `--dist` > env `DIST_DIR` > 缺省 `<repo>/dist`
- * （= 旧 `dist`，**逐字不变**）。相对路径按 `ROOT` 解、绝对路径原样用（负测 A 传 tmpdir 绝对路径）。 */
 const DIST = distDir({ base: ROOT });
-/* ★ `#164` 要求③：**首行输出** = 「我服务的目录 + `cwd` + 指纹」。 */
 printHeader(DIST, 'gate=scenarioaudit');
-/* ⚠️ 标记所在产物已核准：「试玩场景」（`#137` 的核心标记）编译进 **`ui/StartScreen.js`**，
- *  **不在 `main.js`**（roadmap 那句"main.js 命中 0"说的是旧 `dist` 的事实，但据此写守卫会误判 —— 
- *  本条按**实测**取 `ui/StartScreen.js`）。 */
+
 const START_JS = path.join(DIST, 'ui', 'StartScreen.js');
 if (!existsSync(START_JS)) {
   console.error(`✗ 前置不满足：找不到 ${START_JS}（先 npm run build，或用 --dist=<dir> 指向隔离构建）`);
   process.exit(2);
 }
-if (!readFileSync(START_JS, 'utf8').includes('试玩场景')) {
-  console.error(`✗ 前置不满足：${DIST}/ui/StartScreen.js 不含「试玩场景」⇒ 该构建早于 #137（读数作废）。请先重建。`);
+if (!readFileSync(START_JS, 'utf8').includes('ss-mapcard')) {
+  console.error(`✗ 前置不满足：${DIST}/ui/StartScreen.js 不含 \`ss-mapcard\` ⇒ 该构建早于 2026-10-12 开局页精简（读数作废）。请先重建。`);
   process.exit(2);
 }
 
-/* ── `#164` 要求②：解析「连谁 / 自起」——自起一律用**空闲端口**（绝不复用可能已在跑的 5173）──
- *   优先级：`--url=`  >  `--port=`  >  **自起**（free port + 进程内 `serve.mjs` 指向 `DIST`，进程退出即结束）。
- * 连**外部**服务（给了 `--url` / `--port`）时另核「服务中的构建 == `--dist` 指定」——
- * 否则"断言对象 ≠ 被测对象"，读数作废（`iaaccept.mjs` 立的 `checkServedMatchesDist` 同款）。 */
+/* ── `#164` 要求②：解析「连谁 / 自起」── */
 const URL_ARG = arg('url', null);
 const PORT_ARG = arg('port', null);
 let URL0;
-let APP_PORT = null; // number | null（null ⇒ 已自起并验过就绪，不必再让 _chrome 探活）
+let APP_PORT = null;
 if (URL_ARG) {
   URL0 = URL_ARG;
 } else if (PORT_ARG != null) {
@@ -125,20 +114,17 @@ let negBad = 0;
 const NEGPASS = (c, m) => { if (!c) negBad++; console.log(`[${c ? 'NEG-PASS' : 'NEG-FAIL'}] ${m}`); };
 
 /**
- * 负测 A：给一个**不含**「试玩场景」标记的 dist 目录 ⇒ 前置必须 `exit 2`。
- * 这正是 2026-09-21 实战那次的**该红要红**：前置写错文件时它必须挡下读数，
- * 而不是把 stale-dist 的 FAIL 记到 `#137` 头上。
+ * 负测 A：给一个**不含** `ss-mapcard` 标记的 dist 目录 ⇒ 前置必须 `exit 2`。
+ * 这正是"该红要红"：前置写错文件 / 构建太旧时它必须挡下读数，
+ * 而不是把 stale-dist 的 FAIL 记到本轮头上。
  */
 function negPrecondition() {
   const tmp = mkdtempSync(path.join(tmpdir(), 'neg-dist-'));
   try {
     mkdirSync(path.join(tmp, 'ui'), { recursive: true });
-    /* ⚠️ fixture **绝不能**写出那个标记串 —— 原 fixture 把标记串写进了**注释**里，
-     * 于是 `includes('试玩场景')` **命中**、前置根本没触发；旧版 NEG-A"通过"其实是绿在
-     * **别处**：那一刻 5173 上没有 dev server ⇒ `withHeadlessChrome` 抛 prerequisite ⇒ exit 2。
-     * 2026-09-21 `#164` 把默认改成「空闲端口自起」后，这条**假绿被拆穿**（实得 exit 1）。
-     * 故 fixture 只写"标记不在这里"的语义，**不写**那个串。 */
-    writeFileSync(path.join(tmp, 'ui', 'StartScreen.js'), '/* fixture: 该构建不含场景入口标记 */\n');
+    /* ⚠️ fixture **绝不能**写出那个标记串 —— 否则 `includes('ss-mapcard')` 命中、
+     * 前置根本不触发，负测绿在别处。 */
+    writeFileSync(path.join(tmp, 'ui', 'StartScreen.js'), '/* fixture: 该构建早于开局页精简 */\n');
     const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--dist=${tmp}`], {
       encoding: 'utf8',
       timeout: 60000,
@@ -151,7 +137,7 @@ function negPrecondition() {
 }
 if (NEG) {
   const a = negPrecondition();
-  NEGPASS(a.ok, `A 前置可红：不含「试玩场景」的 dist ⇒ 期待 exit 2，实得 ${a.status}`);
+  NEGPASS(a.ok, `A 前置可红：不含 \`ss-mapcard\` 的 dist ⇒ 期待 exit 2，实得 ${a.status}`);
 }
 
 try {
@@ -159,23 +145,6 @@ try {
     async ({ send, evaluate }) => {
       await send('Emulation.setDeviceMetricsOverride', { width: 792, height: 320, deviceScaleFactor: 3, mobile: true });
 
-      const boot = async () => {
-        await send('Page.navigate', { url: URL0 + '/' });
-        for (let i = 0; i < 80; i++) {
-          await sleep(150);
-          try {
-            if (
-              await evaluate(
-                `document.readyState === 'complete' && !!document.querySelector('#start-screen') && !!document.querySelector('#start-screen .ss-seg[role="radiogroup"]')`,
-              )
-            )
-              return i * 150;
-          } catch {
-            /* 导航中 evaluate 可能抛 */
-          }
-        }
-        throw new Error('开始页未在 12s 内就绪');
-      };
       const clickText = (sel, text) =>
         evaluate(`(() => {
           const el = [...document.querySelectorAll(${JSON.stringify(sel)})].find(b => (b.textContent || '').includes(${JSON.stringify(text)}));
@@ -189,7 +158,21 @@ try {
         evaluate(`(() => [...document.querySelectorAll('#start-screen .ss-seg')]
           .map(s => { const on = s.querySelector('.ss-seg-item.on'); return on ? on.querySelector('.t').textContent : '(none)'; }).join(' | '))()`);
 
-      /* ── `NEG=1`：只跑「故意弄坏」的结构/数据两类，断言都变红，然后收工（不跑正向套件）── */
+      /* ★ 必须带 `?devstart=1`：门跑在全新 Chrome profile ⇒ localStorage 为空 ⇒
+       *   生产路径会"首次启动直接进教学模式"，开始页根本不出现（下面全部断言假红）。
+       *   这个口子专为测试路径开，不影响生产（见 `main.ts` 启动段注释）。 */
+      const boot = async () => {
+        await send('Page.navigate', { url: URL0 + '?devstart=1' });
+        for (let i = 0; i < 80; i++) {
+          await sleep(150);
+          try {
+            if (await evaluate(`document.readyState === 'complete' && !!document.querySelector('#start-screen')`)) return true;
+          } catch { /* 导航中 */ }
+        }
+        throw new Error('开始页未在 12s 内就绪');
+      };
+
+      /* ── `NEG=1`：只跑「故意弄坏」的结构/数据两类，断言都变红，然后收工 ── */
       if (NEG) {
         // B 结构判据（DOM）：把 `#obj-banner` 摘掉 ⇒ 存在性判据必须 true→false
         await boot();
@@ -198,135 +181,74 @@ try {
         await evaluate(`(() => { const b = document.querySelector('#obj-banner'); if (b) b.remove(); })()`);
         const bAfter = await bProbe();
         NEGPASS(bBefore === true && bAfter === false, `B 结构判据可红：#obj-banner 在/默认隐藏时判据=true，remove() 后=false（before=${bBefore} after=${bAfter}）`);
-        // C 数据判据（真存档）：把自由对局真存档的 config.scenario 篡改成 'tutorial' ⇒ 判据必须 true→false
+        // C 数据判据（真存档）：把展示图真存档的 `config.scenario` 删掉 ⇒ 判据必须 true→false
         await boot();
-        await clickText('#start-screen button', '开始新游戏');
-        await sleep(1200);
-        const cProbe = () => evaluate(`(() => { let s = null; try { s = JSON.parse(localStorage.getItem('homm-save-v1')); } catch { s = null; } return !!s && !Object.prototype.hasOwnProperty.call(s.config, 'scenario'); })()`);
+        await clickText('#start-screen button', '开始');
+        await sleep(2500);
+        const cProbe = () => evaluate(`(() => { let s = null; try { s = JSON.parse(localStorage.getItem('homm-save-v1')); } catch { s = null; } return !!s && s.config.scenario === 'grims-showcase'; })()`);
         const cBefore = await cProbe();
-        await evaluate(`(() => { const s = JSON.parse(localStorage.getItem('homm-save-v1')); s.config.scenario = 'tutorial'; localStorage.setItem('homm-save-v1', JSON.stringify(s)); })()`);
+        await evaluate(`(() => { const s = JSON.parse(localStorage.getItem('homm-save-v1')); delete s.config.scenario; localStorage.setItem('homm-save-v1', JSON.stringify(s)); })()`);
         const cAfter = await cProbe();
-        NEGPASS(cBefore === true && cAfter === false, `C 数据判据可红：自由对局真存档无 scenario 键=true，篡改后=false（before=${cBefore} after=${cAfter}）`);
+        NEGPASS(cBefore === true && cAfter === false, `C 数据判据可红：展示图存档 scenario=grims-showcase=true，删键后=false（before=${cBefore} after=${cAfter}）`);
         console.log(`\n${negBad ? `★ ${negBad} 项 NEG-FAIL —— 判据可能**恒绿**（门坏了，必须修）` : '负测全部通过：A/B/C 三类判据**都能红**（门不是恒绿）'}`);
         return;
       }
 
-      /* 0) 开始页结构 */
+      /* ① 开始页只剩「一张地图卡 + 一个难度」 */
       await boot();
-      const order = await evaluate(`[...document.querySelectorAll('#start-screen .ss-field > label')].map(l => l.textContent).join(' | ')`);
-      console.log(`  字段顺序: ${order}`);
-      PASS(/试玩场景/.test(order), '开始页有「试玩场景」字段');
-      const iScen = order.indexOf('试玩场景');
-      const iSize = order.indexOf('地图尺寸');
-      PASS(iScen >= 0 && iSize >= 0 && iScen < iSize, `「试玩场景」在「地图尺寸」之上（index ${iScen} < ${iSize}）`);
-      const cards = await evaluate(`[...document.querySelectorAll('#start-screen .ss-seg[role="radiogroup"] .ss-seg-item')].map(b => (b.querySelector('.t')?.textContent || '').trim()).filter(Boolean)`);
-      console.log(`  场景卡: ${JSON.stringify(cards)}`);
-      PASS(Array.isArray(cards) && cards.length === 4, `场景卡 = 4 张（教学场/对决场/破碎罗盘/自由对局，实为 ${cards?.length ?? 'N/A'} 张）`);
-      PASS(Array.isArray(cards) && /教学场/.test(cards[0]) && /对决场/.test(cards[1]) && /自由对局/.test(cards[3]), `场景卡顺序：教学场、对决场、…、自由对局`);
-      PASS(Array.isArray(cards) && cards.some((c) => /破碎/.test(c)), `场景卡含「破碎罗盘」`);
+      const fields = await evaluate(`[...document.querySelectorAll('#start-screen .ss-field > label')].map(l => l.textContent)`);
+      console.log(`  开始页字段: ${JSON.stringify(fields)}`);
+      PASS(fields.length === 1 && fields[0] === '难度', `开始页只剩一个设置行「难度」（实测 ${fields.length} 行：${fields.join('/')}）`);
+      PASS(await evaluate(`!!document.querySelector('#start-screen .ss-mapcard')`), '开始页有那张地图卡（`.ss-mapcard`）');
+      PASS(await evaluate(`/破碎罗盘/.test((document.querySelector('#start-screen .ss-mapcard-name') || {}).textContent || '')`), '地图卡就是「破碎罗盘」');
+      PASS(await evaluate(`!document.querySelector('#start-screen .ss-seed') && ![...document.querySelectorAll('#start-screen button')].some(b => (b.textContent||'').includes('换一个'))`), '种子行与「换一个」都已不在');
+      for (const gone of ['试玩场景', '地图尺寸', '地图布局', '电脑对手', '领主名字']) {
+        PASS(!fields.includes(gone), `「${gone}」行已下线`);
+      }
       const a11y = await evaluate(`(() => {
         const row = document.querySelector('#start-screen .ss-seg[role="radiogroup"]');
         if (!row) return 'NO_RADIOGROUP';
         const rs = [...row.querySelectorAll('[role="radio"]')];
         return rs.length + ':' + rs.every(r => r.hasAttribute('aria-checked'));
       })()`);
-      PASS(/^4:true$/.test(a11y), `4 卡 = 一个 radiogroup（role=radio + aria-checked）→ ${a11y}`);
+      PASS(/^3:true$/.test(a11y), `难度行 = 一个 radiogroup（role=radio + aria-checked）→ ${a11y}`);
+      PASS(await clickText('#start-screen button', '开始') === 'OK', '有「开始」按钮且可点');
+      await sleep(2500);
+      const g = await readSave();
+      PASS(!!g && g.config.scenario === 'grims-showcase', `点「开始」开出来的就是破碎罗盘（scenario=${g ? g.config.scenario : '?'}）`);
+      PASS(!!g && g.map.width === 40 && g.map.height === 40, `地图是静态导入的 40×40（${g ? g.map.width + '×' + g.map.height : '?'}）`);
 
-      /* 1) 自由对局（默认）：config 不得有 scenario 键 */
-      await clickText('#start-screen button', '开始新游戏');
-      await sleep(1200);
-      const free = await readSave();
-      PASS(!!free, '自由对局：能读回真存档');
-      PASS(!!free && !Object.prototype.hasOwnProperty.call(free.config, 'scenario'), '自由对局：config **没有** scenario 键（不是 \'free\'）');
-
-      /* 2) 教学场 */
-      await boot();
-      PASS((await clickText('#start-screen .ss-seg-item', '教学场')) === 'OK', '能点中「教学场」卡');
-      await sleep(300);
-      const lock = JSON.parse(await evaluate(`(() => {
-        const segs = [...document.querySelectorAll('#start-screen .ss-seg')];
-        return JSON.stringify({
-          disabledItems: segs.reduce((n, s) => n + [...s.querySelectorAll('.ss-seg-item')].filter(b => b.disabled).length, 0),
-          seedDisabled: !!document.querySelector('#start-screen .ss-seed')?.disabled,
-          rerollDisabled: !!([...document.querySelectorAll('#start-screen button')].find(b => b.textContent.includes('换一个'))?.disabled),
-          described: document.querySelectorAll('[aria-describedby="ss-scenario-hint"]').length,
-          hint: document.querySelector('#ss-scenario-hint')?.textContent,
-        });
-      })()`));
-      console.log(`  锁定态: ${JSON.stringify(lock)}`);
-      PASS(lock.seedDisabled && lock.rerollDisabled, 'G-2：种子行 input 与 reroll **都**真 disabled');
-      PASS(lock.disabledItems >= 4, `被接管的行真 disabled（${lock.disabledItems} 个可点项）`);
-      PASS(lock.described >= 8, `G-4：${lock.described} 个元素 aria-describedby→scenarioHint`);
-      PASS(typeof lock.hint === 'string' && lock.hint.length > 0, `scenarioHint 有文案：${lock.hint}`);
-      // ③（team-lead 裁定）：hint 行 = 说明 + **预期时长**；`sub` 的时长仍在卡片上（两列）。
-      PASS(/分钟/.test(lock.hint ?? ''), `③ hint 行含「预期时长」：${lock.hint}`);
-      await clickText('#start-screen button', '开始新游戏');
-      await sleep(1200);
+      /* ② 教学模式仍是那条设计好的减法路径（靠 `?devscenario=` 进门，UI 已不给选） */
+      await send('Page.navigate', { url: URL0 + '?devscenario=tutorial' });
+      for (let i = 0; i < 80; i++) {
+        await sleep(150);
+        try {
+          if (await evaluate(`document.readyState === 'complete' && !document.querySelector('#start-screen') && !!document.querySelector('#map')`)) break;
+        } catch { /* 导航中 */ }
+      }
+      await sleep(600);
       const t = await readSave();
-      const tObjs = Object.values(t.map.objects);
-      PASS(t.config.scenario === 'tutorial', `教学场：scenario=${t.config.scenario}`);
-      PASS(t.config.opponents === 0, `教学场：opponents=${t.config.opponents}（应 0）`);
-      PASS(t.config.size === 'small' && t.config.seed === 247944, `教学场：size/seed = ${t.config.size}/${t.config.seed}`);
-      PASS(tObjs.filter((o) => o.kind === 'wanderingMonster').length <= 5, `教学场：野怪 ${tObjs.filter((o) => o.kind === 'wanderingMonster').length} ≤ 5`);
-      PASS(Object.values(t.towns).filter((x) => x.owner === 'neutral').length === 0, '教学场：无中立城');
-      PASS(tObjs.filter((o) => o.kind === 'vault').length === 0, '教学场：无宝库');
-      const teach = await panelText();
-      PASS(!!teach && /教学 · 学会了吗 0\/3/.test(teach), '教学场：面板渲染「教学 · 学会了吗 0/3」');
-      PASS(!!teach && /未学会/.test(teach), '教学场：每行同时给文字（☐ 非唯一语义载体）');
-
-      /* ② 溢出兜底：**先实测**（内容高 vs 可用高）；溢出才折，不溢出就不折（team-lead 裁定）。
-       * 展开英雄栏后才量得到真实布局（收起态 `#side.collapsed > div{display:none}`）。 */
+      PASS(!!t && t.config.scenario === 'tutorial', `教学模式能开起来（scenario=${t ? t.config.scenario : '?'}）`);
+      const tObjs = t ? Object.values(t.map.objects) : [];
+      PASS(tObjs.filter((o) => o.kind === 'wanderingMonster').length <= 5, `教学图野怪 ≤5（实测 ${tObjs.filter((o) => o.kind === 'wanderingMonster').length}）`);
+      PASS(Object.values(t.towns).filter((x) => x.owner === 'neutral').length === 0, '教学图无中立城');
+      PASS(tObjs.filter((o) => o.kind === 'vault').length === 0, '教学图无宝库');
+      // 教学清单在英雄面板的**「属性」段**（`HeroPanel.ts:156`：`seg==='attr'` 才 `appendChild(teach)`；
+      // `seg` 默认 `'army'` ⇒ 直接找 `.hp-teach` 必然 null —— 这正是旧版这两条恒 FAIL 的原因，
+      // 是**门的 bug**，不是产品不渲染）。所以必须先展开面板、再切到「属性」段。
       await clickText('#thumb button', '英雄');
-      await sleep(250);
-      const ov = await evaluate(`(() => {
-        const side = document.querySelector('#side');
-        const body = document.querySelector('#side > div');
-        const teach = document.querySelector('.hp-teach');
-        return {
-          avail: side ? side.clientHeight : null,
-          content: body ? body.scrollHeight : null,
-          overflow: side ? side.scrollHeight - side.clientHeight : null,
-          teachH: teach ? teach.offsetHeight : null,
-        };
-      })()`);
-      console.log(`  教学场面板竖向实测（792×320 视口）: ${JSON.stringify(ov)}`);
-
-      /* 3) 对决场 */
-      await boot();
-      PASS((await clickText('#start-screen .ss-seg-item', '对决场')) === 'OK', '能点中「对决场」卡');
+      await sleep(400);
+      await clickText('.hp-tab', '属性');
       await sleep(300);
-      const duelHint = await evaluate(`document.querySelector('#ss-scenario-hint') ? document.querySelector('#ss-scenario-hint').textContent : null`);
-      PASS(/20[–-]30 分钟/.test(duelHint ?? ''), `③ 对决场 hint 行含预期时长：${duelHint}`);
-      await clickText('#start-screen button', '开始新游戏');
-      await sleep(1500);
-      const d = await readSave();
-      const midGuard = Object.values(d.map.objects).filter((o) => o.kind === 'wanderingMonster' && o.payload && o.payload.tier === 'mid' && o.payload.guard).length;
-      PASS(d.config.scenario === 'duel', `对决场：scenario=${d.config.scenario}`);
-      PASS(d.config.opponents === 1, `对决场：opponents=${d.config.opponents}（应 1）`);
-      PASS(d.config.size === 'medium' && d.config.seed === 170774, `对决场：size/seed = ${d.config.size}/${d.config.seed}`);
-      PASS(midGuard >= 1, `对决场：中线门控 midGuard 存在（${midGuard} 只 tier=mid 且带 guard）`);
-      PASS((await panelText()) === null, '对决场：面板**不**渲染教学清单');
+      const teach = await panelText();
+      PASS(!!teach && /教学 · 学会了吗 0\/3/.test(teach), '教学局：面板渲染「教学 · 学会了吗 0/3」');
+      PASS(!!teach && /未学会/.test(teach), '教学局：每行同时给文字（☐ 非唯一语义载体）');
+      // ④ 教学局不吃展示图的减法
+      const tObj = await evaluate(`(() => { const e = document.querySelector('#objectives'); return !!e && !e.hidden && e.getClientRects().length > 0; })()`);
+      const tCls = await evaluate(`document.querySelector('#topbar').classList.contains('showcase')`);
+      PASS(!tObj && !tCls, '④ 教学局：无目标清单、顶栏不带 showcase 类（互不串味）');
 
-      /* 4) 快照回滚 */
-      await boot();
-      PASS((await clickText('#start-screen .ss-seg-item', '困难')) === 'OK', '能把难度改成「困难」');
-      PASS((await clickText('#start-screen .ss-seg-item', '3 家')) === 'OK', '能把对手改成「3 家」');
-      await sleep(250);
-      const before = await readOns();
-      await clickText('#start-screen .ss-seg-item', '教学场');
-      await sleep(250);
-      await clickText('#start-screen .ss-seg-item', '自由对局');
-      await sleep(250);
-      const after = await readOns();
-      console.log(`  自定义: ${before}\n  切回后: ${after}`);
-      PASS(after === before, '切回自由对局后 5 行**原样恢复**（不是重置默认）');
-      await clickText('#start-screen button', '开始新游戏');
-      await sleep(1500);
-      const rs = await readSave();
-      PASS(rs.config.difficulty === 'hard' && rs.config.opponents === 3, `恢复值真进配置（difficulty=${rs.config.difficulty} opponents=${rs.config.opponents}）`);
-      PASS(!Object.prototype.hasOwnProperty.call(rs.config, 'scenario'), '恢复后打的是自由对局（无 scenario 键）');
-
-      /* 5) §14.2 教学 3/3 非阻断 banner —— ① 补做（team-lead 裁定） */
+      /* ③ §14.2 教学 3/3 非阻断 banner（本轮没碰它，红线继续证） */
       await boot();
       const banner = await evaluate(`(() => {
         const b = document.querySelector('#obj-banner');
@@ -350,11 +272,11 @@ try {
       PASS(banner.hidden === true, '默认隐藏（非 3/3 不打扰）');
       PASS(banner.role === 'status', 'role="status"（非阻断 / 不夺焦）');
       PASS(banner.text === '你学会了。下一张图有人会来打你。', `banner 文案为 §14.2 逐字句：${banner.text}`);
-      PASS((banner.btns || []).indexOf('去对决场') >= 0 && (banner.btns || []).indexOf('关闭') >= 0, `banner 两个动作（去对决场 / 关闭）：${JSON.stringify(banner.btns)}`);
+      PASS((banner.btns || []).indexOf('去破碎罗盘') >= 0 && (banner.btns || []).indexOf('关闭') >= 0, `banner 两个动作（去破碎罗盘 / 关闭）：${JSON.stringify(banner.btns)}`);
       PASS(banner.h === 48, `banner 高 ≤48px（实为 ${banner.h}）`);
       PASS(banner.gap === 0 && banner.aboveThumb === true, 'banner 紧贴拇指带上方');
 
-      /* 6) 3/3 **转移**触发（组件级：驱动真 `HeroPanel` 的"由假变真"，会话内一次性） */
+      /* ③ 3/3 **转移**触发（组件级：驱动真 `HeroPanel` 的"由假变真"，会话内一次性） */
       const objtest = await evaluate(`(async () => {
         const HeroPanel = (await import('/ui/HeroPanel.js')).HeroPanel;
         const rev = new Array(576).fill(0);

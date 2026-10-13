@@ -31,6 +31,14 @@
  *   node tools/iaaccept.mjs --url=http://127.0.0.1:5174 --port=5174
  *   node tools/iaaccept.mjs --dist=/tmp/dist-137   # 断言"这份"构建（**须让 server 也服务它**）
  *
+ * ## ⚠️ 必须带 `NO_PROXY='*'`（2026-10-13 实测，一个纯环境的假红）
+ * 本机 shell 里有 `HTTP_PROXY=http://127.0.0.1:52448`（沙箱代理）。Node 的 `fetch`
+ * （undici）**不会**因为目标是 `127.0.0.1` 就自动绕过代理 ⇒ 前置 0b 的
+ * 「服务中的构建 == --dist」核对会 `fetch failed` ⇒ 整门 `exit(2)`，
+ * 而**服务其实是好的**（`curl` 直连 200）。这是"门没跑成"，不是"门判不过"。
+ * 正确跑法：`NO_PROXY='*' no_proxy='*' node tools/iaaccept.mjs`
+ * （其余门用进程内 `serveInProcess` 自起服务，不走这条路径，不受影响。）
+ *
  * 退出码：0 全过 / 1 有 FAIL / 2 前置不满足（无 Chrome / 无服务 / **构建不含 #137** / **服务中的构建 ≠ --dist**）
  */
 import { readFileSync, statSync } from 'node:fs';
@@ -52,17 +60,22 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const DISTDIR = path.resolve(arg('dist', path.join(here, '..', 'dist')));
 
 /**
- * #137 的标志串 —— **零打包器**工程：每个 `.ts` 各自转译到同名 `.js`，
+ * 构建标志串 —— **零打包器**工程：每个 `.ts` 各自转译到同名 `.js`，
  * ⇒ 标记**散落在各自的模块文件里**，**不在 `main.js`**。
- * （照抄 `scenarioaudit.mjs` 已修正的正确形态：按「文件 + 标志」逐条断言。
- *   本探针最初把 4 个标记都压 `dist/main.js` ⇒ 门**恒红**、`exit(2)` 永久 —— 已修。）
+ *
+ * ★ 2026-10-12 更新（开局页精简，用户裁定）：旧标记 `试玩场景` / `对决场` 随场景卡
+ *   整行下线 ⇒ 若不改，本探针的**前置**会恒 `exit(2)`（"构建早于 #137"），
+ *   而真正的原因是"被测对象改名了"。⇒ 标记换成本轮真的新进 `StartScreen.js` 的东西。
+ *   ⚠️ 这正是本文件头记的那个教训的**同型复发**：门先得能绿，否则它是墙不是门。
  */
 const BUILD_MARKERS = [
-  { file: 'ui/StartScreen.js', marker: '试玩场景',        what: 'item1 场景行' },
-  { file: 'ui/StartScreen.js', marker: 'scenario-hint',  what: 'item4③/8/18 hint 容器' },
-  { file: 'ui/HeroPanel.js',   marker: '教学 · 学会了吗', what: 'item9/13 教学块标题' },
-  { file: 'ui/StartScreen.js', marker: '对决场',         what: 'item2 卡文案' },
-  { file: 'main.js',           marker: 'obj-banner',     what: 'item15 banner 容器（注意：**无 `#`** —— 源码是 `objBanner.id = \'obj-banner\'`）' },
+  { file: 'ui/StartScreen.js', marker: 'ss-mapcard',       what: '开局页唯一的地图卡（本轮新增）' },
+  { file: 'ui/StartScreen.js', marker: 'ss-start',         what: '开局页「开始」按钮 id（本轮新增）' },
+  { file: 'ui/HeroPanel.js',   marker: '教学 · 学会了吗',  what: 'item9/13 教学块标题' },
+  { file: 'ui/HeroPanel.js',   marker: 'objectiveSection', what: '教学块容器' },
+  { file: 'main.js',           marker: 'obj-banner',       what: 'item15 banner 容器（注意：**无 `#`** —— 源码是 `objBanner.id = \'obj-banner\'`）' },
+  { file: 'main.js',           marker: '跳过教学',         what: '教学模式专属菜单项（本轮新增）' },
+  { file: 'main.js',           marker: 'devstart',         what: '跳过首次自动教学的调试入口（本轮新增，**在 main.ts 不在 StartScreen.ts**）' },
 ];
 
 function checkBuild() {
@@ -181,12 +194,14 @@ try {
     async ({ send, evaluate }) => {
       await send('Emulation.setDeviceMetricsOverride', { width: 792, height: 320, deviceScaleFactor: 3, mobile: true });
 
-      /** 导航到应用并**等到可用** —— 不再用固定 `sleep`：服务器冷启动 / 重载慢时，固定 `sleep`
+      /** 导航到**开始页**并等到可用 —— 不再用固定 `sleep`：服务器冷启动 / 重载慢时，固定 `sleep`
        *  会让后续 `evaluate` 落在 `about:blank` 的**不透明源**上 ⇒ 读 `localStorage` 抛
        *  "Access is denied for this document"（2026-09-21 实测：共享 server 重启后必现）。
-       *  就绪判据：`readyState==='complete'` **且** `#start-screen` 已在 DOM（有档/无档都会 overlay 起始页）。 */
+       *  就绪判据：`readyState==='complete'` **且** `#start-screen` 已在 DOM。
+       *  ★ 2026-10-12：必须带 `?devstart=1` —— 生产路径"首次启动直接进教学模式"会让
+       *    开始页根本不出现（本探针跑在全新 profile 上，localStorage 恒空）。 */
       const boot = async () => {
-        await send('Page.navigate', { url: URL0 + '/' });
+        await send('Page.navigate', { url: URL0 + '/?devstart=1' });
         for (let i = 0; i < 50; i++) {
           await sleep(150);
           try {
@@ -194,6 +209,18 @@ try {
           } catch { /* 导航中 / 不透明源：重试 */ }
         }
         await sleep(1200); // 兜底：仍不满足也往下走，让后续断言自己报错
+      };
+      /** 直接进某个场景的对局（`?devscenario=<id>`）。
+       *  2026-10-12 起场景卡整行没了，原来"点场景卡 + 点开始新游戏"的两步合成一步。 */
+      const bootGame = async (id) => {
+        await send('Page.navigate', { url: `${URL0}/?devscenario=${encodeURIComponent(id)}` });
+        for (let i = 0; i < 60; i++) {
+          await sleep(150);
+          try {
+            if (await evaluate(`document.readyState === 'complete' && !document.querySelector('#start-screen') && !!document.querySelector('#map')`)) return;
+          } catch { /* 导航中 */ }
+        }
+        await sleep(1200);
       };
       const clickText = (sel, text) =>
         evaluate(`(() => {
@@ -206,42 +233,34 @@ try {
       const readSave = () => evaluate(`(() => { const raw = localStorage.getItem('homm-save-v1'); return raw ? JSON.parse(raw) : null; })()`);
       const teachText = () => evaluate(`(() => { const e = document.querySelector('.hp-teach'); return e ? e.textContent : null; })()`);
 
-      /* ---- item 1：字段顺序（规格 = 领主名字 → 试玩场景 → 地图尺寸 → …） ---- */
+      /* ---- item 1（2026-10-12 重写）：开始页只剩「一张地图卡 + 一个难度」 ----
+       * 旧断言（场景行在地图尺寸之上、三卡顺序、sub 逐字）随场景卡整行下线作废。
+       * 新断言保持**同一份独立性**：本探针仍按 `in-game-ia.md` 原文自己写，
+       * 不复用 `scenarioaudit.mjs` 的写法 —— 但量的对象换成了精简后的开局页。 */
       await boot();
-      const order = await evaluate(`[...document.querySelectorAll('#start-screen .ss-field > label')].map(l => l.textContent).join(' | ')`);
-      console.log(`  字段顺序: ${order}`);
-      const iScen = order.split(' | ').indexOf('试玩场景');
-      const iSize = order.split(' | ').indexOf('地图尺寸');
-      PASS(iScen >= 0 && iSize >= 0 && iScen < iSize, `item1 场景行在「地图尺寸」之上（index ${iScen} < ${iSize}）`);
-
-      /* ---- item 2：3 卡 + 标题顺序 + sub 逐字（**只取「试玩场景」那一行**——
-         整屏 `.ss-seg-item` 会把尺寸/布局/对手/难度一起抓 ⇒ 比对恒假红） ---- */
-      const cards = await evaluate(`(() => {
-        const row = [...document.querySelectorAll('#start-screen .ss-field')]
-          .find(f => (f.querySelector('label')?.textContent || '').trim() === '试玩场景');
-        if (!row) return null;
-        return [...row.querySelectorAll('.ss-seg-item')].map(b => (b.querySelector('.t')?.textContent || '') + '␟' + (b.querySelector('.s')?.textContent || ''));
-      })()`);
-      const titleList = (cards ?? []).map((c) => c.split('␟')[0]);
-      const subList = Object.fromEntries((cards ?? []).map((c) => c.split('␟')));
-      PASS(titleList.join('/') === '教学场/对决场/自由对局', `item2 场景行三卡顺序 = 教学场/对决场/自由对局（实为 ${titleList.join('/') || '(取不到行)'}）`);
-      for (const [t, want] of Object.entries(CARD_SUB)) {
-        PASS(subList[t] === want, `item2 「${t}」sub 逐字 = 「${want}」（实为「${subList[t] ?? '(无)'}」）`);
+      const fields = await evaluate(`[...document.querySelectorAll('#start-screen .ss-field > label')].map(l => l.textContent)`);
+      console.log(`  字段顺序: ${JSON.stringify(fields)}`);
+      PASS(fields.length === 1 && fields[0] === '难度', `item1 开始页只剩一个设置行「难度」（实为 ${JSON.stringify(fields)}）`);
+      PASS(await evaluate(`!!document.querySelector('#start-screen .ss-mapcard')`), 'item1 开始页有那张地图卡');
+      for (const gone of ['试玩场景', '地图尺寸', '地图布局', '电脑对手', '领主名字', '地图种子']) {
+        PASS(!fields.includes(gone) && !(await evaluate(`!!document.querySelector('#start-screen .ss-seed')`)), `item1 「${gone}」已下线`);
       }
+      const segs = await evaluate(`[...document.querySelectorAll('#start-screen .ss-seg[role="radiogroup"]')].map(r => [...r.querySelectorAll('[role="radio"]')].length + ':' + [...r.querySelectorAll('[role="radio"]')].every(x => x.hasAttribute('aria-checked')))`);
+      PASS(segs.length === 1 && segs[0] === '3:true', `item1 难度行 = 一个 radiogroup、3 项都带 aria-checked（实为 ${JSON.stringify(segs)}）`);
 
-      /* ---- item 3：默认自由 ⇒ **实测** cfg 无 scenario 键（不是 'free'） ---- */
-      await clickText('#start-screen button', '开始新游戏');
-      await sleep(1200);
-      const free = await readSave();
-      PASS(!!free, 'item3 自由对局：读回真存档');
-      PASS(!!free && !('scenario' in free.config), `item3 自由对局：config **无** scenario 键（不是 'free'）`);
+      /* ---- item 3（改写）：点「开始」⇒ 开出来的就是破碎罗盘 40×40 ---- */
+      await clickText('#start-screen button', '开始');
+      await sleep(2500);
+      const g = await readSave();
+      PASS(!!g && g.config.scenario === 'grims-showcase', `item3 点「开始」开出来的是破碎罗盘（scenario=${g ? g.config.scenario : '?'}）`);
+      PASS(!!g && g.map.width === 40 && g.map.height === 40, `item3 地图是静态导入的 40×40（${g ? g.map.width + '×' + g.map.height : '?'}）`);
 
-      /* ---- items 4 / 7 / 8 / 17：选教学场后的锁定态 + hint ---- */
+      /* ---- items 4 / 7 / 8 / 17 / 18（2026-10-12 重写）----
+       * 旧断言量的东西（场景卡接管 4 行 + 种子行锁定 + scenario-hint 容器）**全部随
+       * 场景行下线**。替换成同一意图的新形态：难度行**不被任何东西锁定**（它现在是
+       * 唯一设置行，且 grims 有 `difficultyEditable`），且新元素的 id 仍守 `ss-` 前缀。 */
       await boot();
-      PASS((await clickText('#start-screen .ss-seg-item', '教学场')) === 'OK', 'item4 能点中「教学场」');
-      await sleep(300);
       const lock = await evaluate(`(() => {
-        const segs = [...document.querySelectorAll('#start-screen .ss-seg')];
         const fields = [...document.querySelectorAll('#start-screen .ss-field')];
         const labelOf = (row) => (row.querySelector('label')?.textContent || '').trim();
         const segRows = fields.filter(f => f.querySelector('.ss-seg')).map(f => ({
@@ -249,34 +268,25 @@ try {
           on: f.querySelector('.ss-seg-item.on')?.querySelector('.t')?.textContent || '',
           allDisabled: [...f.querySelectorAll('.ss-seg-item')].every(b => b.disabled),
         }));
-        const seedRow = fields.find(f => f.querySelector('.ss-seed'));
         return {
           segRows,
-          seedDisabled: !!document.querySelector('#start-screen .ss-seed')?.disabled,
-          rerollDisabled: !!([...document.querySelectorAll('#start-screen button')].find(b => (b.textContent || '').includes('换一个'))?.disabled),
-          described: document.querySelectorAll('[aria-describedby="ss-scenario-hint"]').length,
-          hintId: document.querySelector('#ss-scenario-hint')?.id ?? null,
-          hintText: document.querySelector('#ss-scenario-hint')?.textContent ?? null,
-          seedRowLabel: seedRow ? labelOf(seedRow) : null,
+          seedPresent: !!document.querySelector('#start-screen .ss-seed'),
+          rerollPresent: [...document.querySelectorAll('#start-screen button')].some(b => (b.textContent || '').includes('换一个')),
+          hintId: document.querySelector('#start-screen .ss-hint')?.id ?? null,
+          startId: document.querySelector('#start-screen .ss-actions .btn.primary')?.id ?? null,
+          mapcardId: document.querySelector('#start-screen .ss-mapcard')?.className ?? null,
         };
       })()`);
-      console.log(`  锁定态: ${JSON.stringify({ rows: lock.segRows.map((r) => `${r.label}=${r.on}${r.allDisabled ? '(锁)' : ''}`), seedDisabled: lock.seedDisabled, rerollDisabled: lock.rerollDisabled, described: lock.described, hintId: lock.hintId })}`);
-      /* item 4②：被场景接管的 **4 个配置行**（「试玩场景」行本身是"控制器"、不锁）整行真 disabled。
-         注：#137 后 seg 行共 **5** 个（试玩场景 + 尺寸/布局/对手/难度）⇒ 先剔掉"试玩场景"再数。 */
-      const cfgRows = lock.segRows.filter((r) => r.label !== '试玩场景');
-      const segOk = cfgRows.length === 4 && cfgRows.every((r) => r.allDisabled);
-      PASS(segOk, `item4② 4 个配置行**整行**真 disabled（${cfgRows.filter((r) => r.allDisabled).length}/4；seg 行共 ${lock.segRows.length}）`);
-      PASS(lock.seedDisabled && lock.rerollDisabled, `item7 G-2：种子行 input(${lock.seedDisabled}) 与 reroll(${lock.rerollDisabled}) **都**真 disabled`);
-      PASS(lock.described >= 5, `item8 G-4：${lock.described} 个元素 aria-describedby→scenario-hint（≥5：4 行容器 + 种子相关）`);
-      /* item 4③ / 17：hint **含时长**（scenarioaudit 只断言 length>0 —— 这里补上） */
-      PASS(typeof lock.hintText === 'string' && lock.hintText.includes(HINT_NEED['教学场']),
-        `item4③/17 教学场 hint 含时长「${HINT_NEED['教学场']}」：${lock.hintText}`);
-      /* item 18：新加元素的 id 前缀（规格约定 ss-） */
-      PASS(String(lock.hintId).startsWith('ss-'), `item18 场景 hint 的 id 带 \`ss-\` 前缀（实为「${lock.hintId}」）`);
+      console.log(`  开局页结构: ${JSON.stringify(lock)}`);
+      PASS(lock.segRows.length === 1 && lock.segRows[0].label === '难度' && !lock.segRows[0].allDisabled,
+        `item4② 唯一的设置行「难度」**不**被锁定（${lock.segRows.length} 行；锁=${lock.segRows[0]?.allDisabled}）`);
+      PASS(!lock.seedPresent && !lock.rerollPresent, `item7 种子行（input=${lock.seedPresent}）与「换一个」（${lock.rerollPresent}）**都已不存在**（不是"存在但锁着"）`);
+      /* item 18：新加元素的 id / class 前缀（规格约定 `ss-`） */
+      PASS(String(lock.mapcardId).includes('ss-mapcard'), `item18 地图卡 class 带 \`ss-\` 前缀（实为「${lock.mapcardId}」）`);
 
-      /* ---- item 13（★假守卫）+ item 9 + item 16（溢出实测）：开教学场进游戏 ---- */
-      await clickText('#start-screen button', '开始新游戏');
-      await sleep(1400);
+      /* ---- item 13（★假守卫）+ item 9 + item 16（溢出实测）：进教学模式 ---- */
+      await bootGame('tutorial');
+      await sleep(800);
       const t = await readSave();
       const objs = Object.values(t.map.objects);
       PASS(t.config.scenario === 'tutorial', `item14 教学场：scenario=${t.config.scenario}`);
@@ -285,16 +295,20 @@ try {
       PASS(Object.values(t.towns).filter((x) => x.owner === 'neutral').length === 0, 'item14 教学场：无中立城');
       PASS(objs.filter((o) => o.kind === 'vault').length === 0, 'item14 教学场：无宝库');
 
-      /* 打开英雄面板（拇指带「英雄」）→ 读教学块 */
+      /* 打开英雄面板（拇指带「英雄」）→ 读教学块。
+       * ⚠️ 教学块落在「属性」段（`HeroPanel.ts:156`），默认段是「部队」⇒ 必须先切段，
+       *    否则 `.hp-teach` 恒 null —— 这是**探针的 bug**，不是产品不渲染。 */
       const opened = await clickText('#thumb button', '英雄');
       await sleep(600);
+      await clickText('.hp-tab', '属性');
+      await sleep(400);
       const teach = await teachText();
       console.log(`  教学块: ${JSON.stringify(teach)} / 点开英雄=${opened}`);
       /* item 13 ★假守卫：开局三条必须全 false ⇒ 面板必须显示 0/3（**不是** 3/3） */
       PASS(!!teach && /教学 · 学会了吗 0\/3/.test(teach), `item13 ★假守卫：开局 = 0/3（实为 ${teach ? teach.slice(0, 22) : 'null'}）`);
       PASS(!!teach && !/3\/3/.test(teach), 'item13 ★假守卫：开局**不是** 3/3（防"恒真/预置"）');
       UNDECIDED('item13 的更强形式（改动 GameState 后由 0→3）—— 需驱动一次"走够 140 格 / 打赢 / 占 2 矿"，本探针不做');
-      /* item 9：教学块存在（tutorial）；free/duel 不渲染见下两次导航 */
+      /* item 9：教学块存在（tutorial）；duel / 展示图不渲染见下两次导航 */
       PASS(!!teach, 'item9 教学场：教学块渲染');
       /* item 11：firstwin 锁存 —— 需要"打赢后再阵亡"的场景 */
       UNDECIDED('item11 `firstwin` 锁存（hero1.exp>0 后阵亡仍显示已学会）—— 需构造战斗+阵亡，本探针不做（构造不出）');
@@ -332,11 +346,8 @@ try {
          正确做法：把改好的档**注入到"新文档启动前"**（`addScriptToEvaluateOnNewDocument`），抢在 app 之前落盘；
          本工程 Web 下 `hydratePersistence` 是空操作（无 `window.Capacitor`），不会再覆盖。 */
       const craftLoad = async (mode) => {
-        await boot();
-        await clickText('#start-screen .ss-seg-item', '教学场');
-        await sleep(200);
-        await clickText('#start-screen button', '开始新游戏');
-        await sleep(1300);
+        await bootGame('tutorial');
+        await sleep(800);
         const raw = await evaluate(`localStorage.getItem('homm-save-v1')`);
         if (!raw) return { c: { err: 'NO_SAVE' }, cont: null, teach: null, bv: { visible: null } };
         const s = JSON.parse(raw);
@@ -357,6 +368,11 @@ try {
         await sleep(1300);
         await clickText('#thumb button', '英雄');
         await sleep(600);
+        /* ★ 必须切到「属性」段：教学块只落在那一格（`HeroPanel.ts:156`），默认段是「部队」
+         *   ⇒ 不切段 `.hp-teach` 恒 null。这是**探针的 bug**（与 item9 那两处同根），
+         *     2026-10-12 才被发现 —— 之前这几条一直是假红。 */
+        await clickText('.hp-tab', '属性');
+        await sleep(400);
         return { c, cont, teach: await teachText(), bv: await bannerVis() };
       };
       const L3 = await craftLoad('three');
@@ -370,11 +386,8 @@ try {
        * 以 `?devprobe=1` 载入，借 `__journeyGo` 走**真 `tryMove`** 路径（自备机制，不复用 `scenarioaudit`）。
        * ⚠️ **驱动方式声明**：本格经 **`?devprobe=1` 暴露的 `__journeyGo`** 驱动 —— 走的是 **UI 同一个 `tryMove`**
        *   （游戏逻辑路径），**非真实触摸输入**。⇒ 结论是「**UI 逻辑路径级**」，**不是「触摸输入级」**；**不许写成"触摸驱动"**。 */
-      await boot();
-      await clickText('#start-screen .ss-seg-item', '教学场');
-      await sleep(200);
-      await clickText('#start-screen button', '开始新游戏');
-      await sleep(1300);
+      await bootGame('tutorial');
+      await sleep(800);
       const craftStep = await evaluate(`(() => {
         const raw = localStorage.getItem('homm-save-v1');
         if (!raw) return { err: 'NO_SAVE' };
@@ -421,6 +434,8 @@ try {
         await sleep(1200);
         await clickText('#thumb button', '英雄');
         await sleep(600);
+        await clickText('.hp-tab', '属性'); // 同 craftLoad：教学块只在「属性」段
+        await sleep(400);
         const tBefore = await teachText();
         const bBefore = await bannerVis();
         PASS(/教学 · 学会了吗 2\/3/.test(tBefore || ''), `item15 转移前置：载入为 2/3（walk 差 1 格；实为「${tBefore ? tBefore.slice(0, 24) : 'null'}」；craft=${JSON.stringify({ walkSum: craftStep.walkSum, exp: craftStep.exp, mines: craftStep.mines })}）`);
@@ -443,26 +458,27 @@ try {
         }
       }
 
-      /* ---- item 9（反面）：对决场 / 自由对局都**不**渲染教学块 ---- */
-      await boot();
-      await clickText('#start-screen .ss-seg-item', '对决场');
-      await sleep(300);
-      await clickText('#start-screen button', '开始新游戏');
-      await sleep(1500);
+      /* ---- item 9（反面）：对决场 / 展示图都**不**渲染教学块 ----
+       * 2026-10-12：自由对局已从 UI 下线，对照面换成 duel + 展示图（两者都仍可达）。 */
+      await bootGame('duel');
+      await sleep(800);
       const d = await readSave();
       PASS(d.config.scenario === 'duel', `item14 对决场：scenario=${d.config.scenario}`);
       const midGuard = Object.values(d.map.objects).filter((o) => o.kind === 'wanderingMonster' && o.payload && o.payload.tier === 'mid' && o.payload.guard).length;
       PASS(midGuard >= 1, `item14 对决场：中线 midGuard 存在（${midGuard}）`);
       await clickText('#thumb button', '英雄');
       await sleep(600);
+      await clickText('.hp-tab', '属性');
+      await sleep(400);
       PASS((await teachText()) === null, 'item9 对决场：教学块**不**渲染');
 
-      await boot();
-      await clickText('#start-screen button', '开始新游戏');
-      await sleep(1400);
+      await bootGame('grims-showcase');
+      await sleep(800);
       await clickText('#thumb button', '英雄');
       await sleep(600);
-      PASS((await teachText()) === null, 'item9 自由对局：教学块**不**渲染');
+      await clickText('.hp-tab', '属性');
+      await sleep(400);
+      PASS((await teachText()) === null, 'item9 展示图：教学块**不**渲染');
 
       /* ---- item 10：与 #51「本族被动」同族组件 ---- */
       UNDECIDED('item10 与 §3.3 #51「本族被动」同一族组件 —— **#51 在 src/ 尚不存在**（abi_/passive 零消费者）⇒ 无从比对');

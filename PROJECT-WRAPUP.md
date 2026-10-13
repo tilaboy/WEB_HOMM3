@@ -3,6 +3,8 @@
 > **状态：停止开发** —— 2026-09-24 由项目所有者决定停止。
 > **最后一条生产记录**：2026-09-21 16:37 —— 第二个包在真机（OPPO PMA110）安装成功，并从手机拉回 `base.apk` 逐字节复核通过。
 > **本文件是「做完了什么 / 没做完什么」的权威清单。** 接手者（人或 AI）请先读这一份，再决定去读 `production/roadmap.md`（逐日流水）与 `design/` 下的规格。
+>
+> ⚠️ **2026-10-08 之后用户又回来做了两轮**（§11 单图 MVP / §12 开局页精简）。两轮的代码都已提交并推送到 `origin/main`。**"停开发"的判断以 §11/§12 的实测为准，不再以本文开头那句为准。**
 
 ---
 
@@ -266,7 +268,7 @@ node tools/smoke.mjs   # 621 项核心逻辑断言
 | 项 | 状态 | 说明 |
 |---|---|---|
 | 真机画质档位 | **未实测** | `adb devices` 为空，无法复现用户那台旗舰机被判 `low` 的现场；只能证明浏览器端分类器逻辑已修、grims 氛围基线已强开 |
-| `scenarioaudit.mjs` | 仍 exit 1（3 FAIL） | 已适配 4 张场景卡、修复 boot 轮询，但**教学场面板 `.hp-teach` 文字未渲染**，属既有 UI 问题，非本轮改动引入；其余断言已绿 |
+| `scenarioaudit.mjs` | ✅ **已修（见 §12）** | 原 3 FAIL 的根因是**探针的 bug**：教学块落在英雄面板「属性」段，而探针只开了默认的「部队」段就去找 `.hp-teach` ⇒ 恒 null。不是产品不渲染 |
 
 ### 11.3 构建健康度（当前）
 
@@ -276,8 +278,58 @@ node tools/smoke.mjs   # 621 项核心逻辑断言
 | `node tools/smoke.mjs` | ✅ **695 PASS / 0 FAIL / exit 0** |
 | `node tools/showcasegate.mjs` | ✅ 15 PASS / NEG=1 全过 |
 | `node tools/verify-static-map.mjs` | ✅ 24 PASS / 0 FAIL |
-| `node tools/scenarioaudit.mjs` | ⚠️ 3 FAIL（教学面板文字），exit 1 |
+| `node tools/scenarioaudit.mjs` | ✅ 31 PASS / 0 FAIL / NEG=1 全过 |
+| `node tools/tutorialgate.mjs` | ✅ 6 PASS / 0 FAIL / NEG=1 全过（§12 新增） |
+| `node tools/iaaccept.mjs` | ✅ 38 PASS / 0 FAIL（3 项「未判」为探针自陈能力边界） |
+| `node tools/hpbudget.mjs` | ✅ 14 PASS / 0 FAIL |
+| `node tools/panelgate.mjs` | ✅ 10 PASS / 0 FAIL |
+| `node tools/androidsync.mjs` | ✅ 133 文件逐 md5 一致 + 8 标记命中数相等，「可以出包」 |
+| `audit:hover` | ⚠️ **偶发 rc=2**（CDP `Execution context was destroyed`）。加载的是独立 `_hoverprobe.html`，与开局页无关；连跑 3/3 全绿 ⇒ **既有抖动，非本轮引入，也未修** |
 
 ### 11.4 本轮结论
 
-**单图 MVP 的代码侧已跑通**：同一张 40×40 图上可以看到四族不同兵种、AI 3 天内接触、三档难度真的生效、氛围层在黄昏/深夜可见。未闭环的只剩**真机复测**（需要手机连上 adb）和 `scenarioaudit` 里一个既有面板渲染失败。
+**单图 MVP 的代码侧已跑通**：同一张 40×40 图上可以看到四族不同兵种、AI 3 天内接触、三档难度真的生效、氛围层在黄昏/深夜可见。未闭环的只剩**真机复测**（需要手机连上 adb）。
+
+---
+
+## 12. 2026-10-12/13「开局页精简」—— 用户裁定后整篇重写
+
+用户原话：
+
+> 「开局页面还是显得有点繁琐。可能只要只需要地图尺寸，地图布局，几个对手，还有难度就可以了。地图种子就不用要了，试玩场景也不用要吧，你不选了没有对手，就是教学场景是不是，它是自动的，然后选了这些之后就可以点击开始新游戏。」
+
+追问后进一步裁定：**「现阶段我更倾向于删除随机地图的选项，只保留教学模式和破碎罗盘，后续我们会增加更多地图」**，并确认最终形态 = **首次启动直接进教学（可跳过）+ 开始页只剩一张地图卡 + 一个难度**。
+
+### 12.1 开局页：7 行 + 1 按钮 → 1 张卡 + 1 行 + 1 按钮
+
+| 下线 | 去向 |
+|---|---|
+| 「领主名字」 | 用 `DEFAULT_CONFIG.playerName` |
+| 「试玩场景」4 张卡 | 教学模式改**首次自动进入**（可跳过）；破碎罗盘成为开始页唯一那张卡 |
+| 「地图尺寸」「地图布局」「电脑对手」 | 整条随机地图线从 UI 下线，只留 `?devquick=` 调试入口 |
+| 「地图种子」+「换一个」 | 静态图每局同一张，种子失去意义 |
+| 「试这张图」按钮 | 并入「开始」 |
+
+新增：`?devstart=1`（跳过首次自动教学，**门控专用**——否则门跑在全新 profile 上会被生产路径直接带去教学局，开始页永不出现 ⇒ 成片假红）。
+
+### 12.2 连带废掉 / 改写的门（**被测对象变了，尺子也得换**）
+
+| 门 | 处置 |
+|---|---|
+| `scenarioaudit.mjs` | **整篇重写**：旧断言量的东西（场景卡 / 种子行 / 快照回滚）全部随场景行下线。新断言 = 开始页只剩难度行 + 地图卡、教学模式仍是那条减法路径、§14.2 banner 与 3/3 转移逻辑不变 |
+| `showcasegate.mjs` | A 组从「证明减法生效」改为「证明没倒退回 2 次点击」；G 组对照面从「自由对局」换成 `?devscenario=tutorial/duel` |
+| `tutorialgate.mjs` | **新增**。证首次自动教学的三环节：自动进 / 菜单能跳过 / **跳过之后不再回来**（③ 最易漏 —— 靠 `localStorage['homm-tutorial-done']`，不随存档走） |
+| `hpbudget.mjs` | 场景卡没了 ⇒ 改走 `?devscenario=<id>`；顺带消掉原来 12s 空等 |
+| `panelgate.mjs` | 入口 `?devstart=1`、按钮文案「开始新游戏」→「开始」 |
+| `iaaccept.mjs` | 定点修（保留独立性）：入口换成 `?devscenario=` / `?devstart=1`；**构建标记换成本轮新 token** |
+| `androidsync.mjs` | 标记「试玩场景」换成 `ss-mapcard` + `devstart` |
+
+### 12.3 本轮抓到并修掉的三个**探针自身**的 bug（都不是产品缺陷）
+
+1. **教学块只在「属性」段**（`HeroPanel.ts:156`），默认段是「部队」⇒ 不切段 `.hp-teach` 恒 null。这一个 bug 让 `scenarioaudit` 的 2 条、`iaaccept` 的 4 条**长期假红**。
+2. **标记放错文件**：`devstart` 在 `main.ts` ⇒ 编译进 `main.js`，**不在** `ui/StartScreen.js`。第一版放错 ⇒ `androidsync` 阳性对照失败、恒红。这与该文件头自己记的「把标记全压 main.js」是**同型错误的镜像** —— 放错文件比不写更糟。
+3. **`NO_PROXY`**：本机 shell 有 `HTTP_PROXY`，Node 的 undici 不因目标是 `127.0.0.1` 就绕过 ⇒ `iaaccept` 前置核对 `fetch failed` ⇒ 整门 `exit(2)`，而服务其实是好的。
+
+### 12.4 一处有意的设计权衡
+
+教学模式完成后的 banner 按钮从「去对决场」改成「**去破碎罗盘**」——教程之后只剩这一个目的地。`duel` 场景**定义仍留在 `scenarios.ts`**（代码路径没删），但从 UI 下线，只能靠 `?devscenario=duel` 进门做回归。

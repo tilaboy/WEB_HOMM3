@@ -91,14 +91,18 @@ const isClosed = (s) => s && s.ok && (s.collapsed || !s.headVisible);
 try {
   await withHeadlessChrome(async ({ send, evaluate }) => {
     await send('Emulation.setDeviceMetricsOverride', { width: 792, height: 320, deviceScaleFactor: 3, mobile: true });
-    await send('Page.navigate', { url: URL0 });
+    /* ★ 带 `?devstart=1`：门控跑在全新 Chrome profile ⇒ localStorage 为空 ⇒ 生产路径
+       会"首次启动直接进教学模式"，开始页不出现（下面这颗按钮就点不到）。
+       `?devstart=1` 跳过自动教学（见 main.ts 启动段注释）。
+       ★ 按钮文本随 2026-10-12 开局页精简从「开始新游戏」改成「开始」。 */
+    await send('Page.navigate', { url: URL0 + '?devstart=1' });
     for (let i = 0; i < 60; i++) {
       await sleep(150);
       try {
         if (await evaluate(`document.readyState === 'complete' && !!document.querySelector('#start-screen')`)) break;
       } catch { /* 导航中 */ }
     }
-    await evaluate(`(() => { const b = [...document.querySelectorAll('#start-screen button')].find(x => (x.textContent||'').includes('开始新游戏')); if (b) b.click(); return true; })()`);
+    await evaluate(`(() => { const b = [...document.querySelectorAll('#start-screen button')].find(x => (x.textContent||'').trim() === '开始'); if (b) b.click(); return true; })()`);
     await sleep(1800);
 
     const s0 = await evaluate(STATE);

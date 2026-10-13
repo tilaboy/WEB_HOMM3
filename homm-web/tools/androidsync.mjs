@@ -50,12 +50,21 @@ printHeader(DIST, 'gate=androidsync');
 
 /** 归档用：一组能代表"最近几轮工作"的标记（命中数应与 dist 相等）。 */
 const MARKERS = [
-  ['ui/StartScreen.js', '试玩场景'], //        #137 入口（编译进 ui/StartScreen.js，**不在 main.js**）
+  /* 2026-10-12：开局页精简后「试玩场景」这一行 4 张卡已从 UI 下线 ⇒ 原标记
+     `['ui/StartScreen.js', '试玩场景']` 永远 0 命中，会把 `audit:androidsync`
+     变成"恒红"（读数是真红、但红的原因是被测对象改名，不是包旧了）。
+     换成**这一轮真的新加**的两个标记。
+     ⚠️ 文件必须放对：`devstart` 是 `main.ts` 里的启动参数，编译进 **`main.js`**，
+        **不在** `ui/StartScreen.js`（第一版放错 ⇒ 阳性对照失败、恒红；
+        这与本文件头记的"把标记全压 main.js"是同型错误的镜像 —— 放错文件比不写更糟）。 */
+  ['main.js', 'devstart'], //                   跳过首次自动教学的调试入口（本轮新增）
+  ['ui/StartScreen.js', 'ss-mapcard'], //        开局页唯一的地图卡（本轮新增）
   ['ui/HeroPanel.js', 'objectiveSection'], //  #137/#52 教学块
   ['main.js', 'obj-banner'], //                 3/3 非阻断 banner
+  ['main.js', '跳过教学'], //                    教学模式专属菜单项（本轮新增）
   ['render/MapRenderer.js', 'NOGO_EDGE_INK'], //  ④(ii) 暗边墨
   ['render/MapRenderer.js', 'NOGO_EDGE_GLOW'], // ④(ii) 亮芯
-  ['core/data/scenarios.js', 'tutorial'], //    试玩场景载体存在
+  ['core/data/scenarios.js', 'tutorial'], //    教学模式载体存在
 ];
 
 const sha1 = (buf) => createHash('sha1').update(buf).digest('hex').slice(0, 12);

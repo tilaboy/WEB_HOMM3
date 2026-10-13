@@ -146,10 +146,10 @@ objBanner.appendChild(objBannerText);
 
 const objBannerGo = document.createElement('button');
 objBannerGo.className = 'btn tb-btn primary';
-objBannerGo.textContent = '去对决场';
+objBannerGo.textContent = '去破碎罗盘';
 objBannerGo.addEventListener('click', () => {
   hideObjBanner();
-  goDuel(); // 内部已有"覆盖当前存档"的确认弹窗（§14.2）
+  goShowcase(); // 内部已有"覆盖当前存档"的确认弹窗（§14.2）
 });
 objBanner.appendChild(objBannerGo);
 
@@ -440,6 +440,12 @@ function openMenu(): void {
     // 日志入口：F-3.6 从拇指带搬来（复用 openLogPanel，函数不变；IA §3.2 #23 ①）
     button('', '事件日志', () => { closer(); openLogPanel(); });
     button('', '设置', () => { closer(); openSetup(); });
+    /* 教学模式专属项：只在教学局里出现（2026-10-12 用户裁定「除非选择跳过」）。
+     * 不进 §7 一级 6 项的常态计数 —— 它像「事件日志」一样是**情境项**，
+     * 只在教学模式这一局存在，且放在「回到开始页」之前 = 更靠近"退出这条路"。 */
+    if (inTutorial() && !tutorialDone()) {
+      button('', '跳过教学', () => { closer(); skipTutorial(); });
+    }
     button('', '回到开始页', () => { closer(); openStart(); });
     button('danger', '新游戏', () => { closer(); confirmNewGame(); });
   }
@@ -700,7 +706,7 @@ const panel = new HeroPanel(
   },
   { onLocate: locateTown, onOpen: openTownById },
   (id) => openSpellBook(id),
-  () => goDuel(),
+  () => goShowcase(),
   () => showObjBanner(),
 );
 
@@ -1180,18 +1186,16 @@ function showOutcome(): void {
   });
 }
 
-/** 打开开局设置页；有存档时它会额外提供"继续上次存档"。 */
+/** 打开开局页；有存档时它会额外提供"继续上次存档"。 */
 function openStart(): void {
-  const initial: GameConfig = { ...DEFAULT_CONFIG, ...(loadConfig() ?? {}), ...state.config };
-  // 调试：?devopp=3&devsize=large 让设置页直接停在指定选项上（截图/回归用）
-  const opp = Number.parseInt(bootParams.get('devopp') ?? '', 10);
-  if (Number.isFinite(opp)) initial.opponents = Math.max(0, Math.min(3, opp));
-  const size = bootParams.get('devsize');
-  if (size && size in MAP_SIZES) initial.size = size as GameConfig['size'];
-  const seed = Number.parseInt(bootParams.get('devseed') ?? '', 10);
-  if (Number.isFinite(seed) && seed > 0) initial.seed = seed;
-  const layout = bootParams.get('devlayout');
-  if (layout && layout in LAYOUTS) initial.layout = layout as GameConfig['layout'];
+  /* 2026-10-12：开局页只剩「破碎罗盘 + 难度」，所以这里只需要把**难度**透传下去
+   * （存档里的 `config.difficulty`，即玩家上一局在开始页选的那一档）。
+   * 尺寸 / 布局 / 种子 / 对手 / 名字那些调试入口全部作废 —— 它们对应的行已经不在 UI 里，
+   * 留着只会让人以为还能选。随机地图仍可靠 `?devquick=` 进（见 boot 段）。 */
+  const initial: Partial<GameConfig> = {
+    difficulty: state.config.difficulty,
+    playerName: state.config.playerName,
+  };
 
   openStartScreen(app, {
     initial,
@@ -1215,6 +1219,77 @@ function staticSized(config: GameConfig): MapSize | null {
   const def = config.scenario ? SCENARIO_BY_ID[config.scenario] : null;
   if (!def?.staticMap) return null;
   return def.config.size;
+}
+
+/* ---------------- 教学模式（2026-10-12：首次自动进入，之后不再有入口）---------------- */
+
+/**
+ * 「这个人还教不教」的标记。**故意不放进 `persistence.ts`**：它不是对局数据、
+ * 不该随存档读写迁移，只是一个本地布尔。隐私模式下写不进去 ⇒ 每次启动都进教学，
+ * 这比"悄悄永不再教"可接受。
+ */
+const TUTORIAL_KEY = 'homm-tutorial-done';
+
+function tutorialDone(): boolean {
+  try {
+    return localStorage.getItem(TUTORIAL_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markTutorialDone(): void {
+  try {
+    localStorage.setItem(TUTORIAL_KEY, '1');
+  } catch {
+    /* 见上：写不进去就每次都教 */
+  }
+}
+
+/** 当前这一局是不是教学模式。菜单里的「跳过教学」只在这一局出现。 */
+function inTutorial(): boolean {
+  return state.config.scenario === 'tutorial';
+}
+
+/** 跳过教学：记标记 + 回开始页（那里现在只剩破碎罗盘 + 难度）。 */
+function skipTutorial(): void {
+  markTutorialDone();
+  openStart();
+}
+
+/**
+ * 直接开一个场景、跳过开始页。
+ *
+ * 三个调用方共用它，所以"展开 config"的逻辑只有一份：
+ *   ① 教学模式首次自动进入（`boot` 段：无存档且未教过 ⇒ 进教学）；
+ *   ② `?devscenario=<id>`（调试/回归；`duel` 从 UI 下线后就靠它进）；
+ *   ③ `?devshowcase=1`（截图/回归直开展示图）。
+ */
+function startScenario(id: string): void {
+  const def = SCENARIO_BY_ID[id];
+  if (!def) {
+    openStart();
+    return;
+  }
+  const o = scenarioGenOptions(def);
+  if (
+    o.size === undefined ||
+    o.layout === undefined ||
+    o.seed === undefined ||
+    o.opponents === undefined ||
+    o.difficulty === undefined
+  ) {
+    return;
+  }
+  startNewGame({
+    size: o.size,
+    layout: o.layout,
+    seed: o.seed,
+    opponents: o.opponents,
+    difficulty: o.difficulty,
+    playerName: state.config.playerName,
+    scenario: o.scenario,
+  });
 }
 
 function startNewGame(config: GameConfig): void {
@@ -1256,22 +1331,30 @@ function startNewGame(config: GameConfig): void {
   renderLog();
   saveGame(state);
   hideObjBanner(); // 新局 ⇒ 3/3 banner 归零
-  hint(`${state.config.playerName} 的征程开始了`);
+  /* 教学模式：首句提示要告诉玩家"怎么出去"—— 它是自动进来的，没有人点过任何按钮，
+   * 不说清楚"菜单 → 跳过教学"的话，玩家会以为这一局没有退出路径。 */
+  if (inTutorial()) {
+    hint('教学模式：跟着目标清单走，想跳过就在「菜单 → 跳过教学」');
+  } else {
+    hint(`${state.config.playerName} 的征程开始了`);
+  }
 }
 
 /**
- * §14.2：教学 3/3 后「去对决场」= 开新局（`scenario='duel'`）。
+ * §14.2：教学 3/3 后「去破碎罗盘」= 开新局（`scenario='grims-showcase'`）。
  * 会**覆盖当前存档** ⇒ 触发前先用既有确认弹窗确认（两个入口、同一动作）。
- * 注：`§14.2` 原文写作 `scenario='arena'`，但代码里没有 `arena` 这个 id
- *（`scenarios.ts` 的对决场 id = `'duel'`）—— 以数据为准取 `'duel'`。
+ *
+ * 2026-10-12 起这里是**教程之后唯一的目的地**：开局页已砍掉随机地图与试玩场景行，
+ * 只剩教学模式（首次自动进入）+ 破碎罗盘。对决场（`duel`）随之从 UI 下线，
+ * 定义仍留在 `scenarios.ts`（`?devscenario=duel` 可进，见 boot 段）。
  */
-function goDuel(): void {
+function goShowcase(): void {
   if (isModalOpen() || isBattleOpen()) return;
-  const def = SCENARIO_BY_ID['duel'];
+  const def = SCENARIO_BY_ID[SHOWCASE_ID];
   if (!def) return;
   showModal(stage, {
-    title: '去对决场',
-    body: ['会开一局新的对决场，当前进度（含本机存档）会被覆盖。'],
+    title: '去破碎罗盘',
+    body: ['会开一局新的破碎罗盘，当前进度（含本机存档）会被覆盖。'],
     actions: [
       { label: '取消', onClick: (c) => c() },
       {
@@ -1827,38 +1910,43 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
   });
 }
 
-/* ---------------- 启动：先给开局设置页 ---------------- */
+/* ---------------- 启动 ---------------- */
 
 /**
- * 调试：?devshowcase=1 直接开展示图 —— 与开始页「试这张图」那颗按钮**同一条路径**
+ * 调试：`?devstart=1` 强制打开开始页，**跳过首次教学的自动进入**。
+ *
+ * 为什么必须有它：门控跑在**每次全新的 Chrome profile** 里（`_chrome.mjs` 用
+ * `mkdtempSync` 临时目录）⇒ localStorage 永远是空的 ⇒ `!hasSave() && !tutorialDone()`
+ * 恒真 ⇒ 一进 `/` 就直接开教学局，**开始页永远不出现**，所有断言开始页的门会成片假红。
+ * 这个参数把"自动进教学"这条生产路径和"我要看开始页"这条测试路径分开，
+ * 且它**不影响生产**（无人传即走原逻辑）。
+ */
+const devStart = bootParams.has('devstart');
+
+/**
+ * 调试：`?devscenario=<id>` 直接开指定场景（跳过开始页）。
+ * 与 `?devquick` 同一套惯例：无人传即不影响生产路径。
+ *
+ * 2026-10-12 起它的主要用途是**从 UI 下线的那几个场景**：开局页现在只有教学模式
+ * （首次自动进入）和破碎罗盘，`duel` 这类"还在但不给玩家选"的图靠它进门做回归。
+ */
+const devScenario = bootParams.get('devscenario');
+if (devScenario) {
+  startScenario(devScenario);
+}
+
+/**
+ * 调试：`?devshowcase=1` 直接开展示图 —— 与开始页「开始」那颗按钮**同一条路径**
  * （同样走 `scenarioGenOptions`，同样跳过设置页），只是起点换成查询参数，好让
- * 截图 / 回归脚本不必先点一下页才能进图。与 `?devquick` 同一套惯例：无人传即不影响生产路径。
+ * 截图 / 回归脚本不必先点一下页才能进图。
  */
 if (bootParams.has('devshowcase')) {
-  const def = SCENARIO_BY_ID[SHOWCASE_ID];
-  const o = def ? scenarioGenOptions(def) : null;
-  if (
-    o &&
-    o.size !== undefined &&
-    o.layout !== undefined &&
-    o.seed !== undefined &&
-    o.opponents !== undefined &&
-    o.difficulty !== undefined
-  ) {
-    startNewGame({
-      size: o.size,
-      layout: o.layout,
-      seed: o.seed,
-      opponents: o.opponents,
-      difficulty: o.difficulty,
-      playerName: state.config.playerName,
-      scenario: o.scenario,
-    });
-  }
+  startScenario(SHOWCASE_ID);
 }
 
 // 调试：?devquick=2 直接以 2 个电脑对手开局并跳过设置页（截图/回归用）
-// `devshowcase=1` 已在上文直接开展示图；两者都**跳过**开始页（与 `?devquick` 同一套惯例）。
+// `devshowcase=1` / `devscenario=` 已在上文直接开场景；三者都**跳过**开始页。
+// ★ 随机地图整条线已从 UI 下线（用户 2026-10-12 裁定），本参数是它**唯一**的入口。
 if (bootParams.has('devquick')) {
   const n = Number.parseInt(bootParams.get('devquick') ?? '1', 10);
   const sz = bootParams.get('devsize');
@@ -1871,8 +1959,16 @@ if (bootParams.has('devquick')) {
     opponents: Number.isFinite(n) ? Math.max(0, Math.min(3, n)) : 1,
     seed: Number.parseInt(bootParams.get('devseed') ?? '', 10) || loadConfig()?.seed || Math.floor(Math.random() * 1e9),
   });
-} else if (!bootParams.has('devshowcase')) {
-  openStart();
+} else if (!bootParams.has('devshowcase') && !devScenario) {
+  /* ★ 首次启动**直接进教学模式**（用户 2026-10-12 裁定：「第一次进入直接进入教学场景，
+   *   除非选择跳过，后面不用再有教学场选项」）。判据 = 没有存档 且 没跳过过教学。
+   *   有存档 / 已教过 ⇒ 回开始页（那里现在只剩破碎罗盘 + 难度）。
+   *   `?devstart=1` 跳过这条自动进入（门控专用，见上）。 */
+  if (!devStart && !hasSave() && !tutorialDone()) {
+    startScenario('tutorial');
+  } else {
+    openStart();
+  }
 }
 
 // 调试：?devreveal=1 直接掀开全图（用于检查敌方英雄/城镇的配色与可见性）

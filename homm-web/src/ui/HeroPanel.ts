@@ -72,8 +72,9 @@ export class HeroPanel {
     private onSelect?: (heroId: string) => void,
     private onTown?: TownHooks,
     private onSpellBook?: (heroId: string) => void,
-    /** §14.2：3/3 时块末行「去对决场」（覆盖当前存档，调用方须先确认）。 */
-    private onGoDuel?: () => void,
+    /** §14.2：3/3 时块末行「去破碎罗盘」（覆盖当前存档，调用方须先确认）。
+     *  2026-10-12 起教程之后只剩这一个目的地（开局页已砍掉随机地图 / 试玩场景行）。 */
+    private onGoShowcase?: () => void,
     /** §14.2「完成那一刻」：教学清单**由未全达成 → 全达成**的那一次回调（非阻断 banner）。
      *  **会话内一次性**；载入即 3/3 **不算**"转移" ⇒ 不触发（边缘情况 1）。 */
     private onObjectivesComplete?: () => void,
@@ -370,13 +371,13 @@ export class HeroPanel {
     }
     wrap.appendChild(list);
 
-    // 3/3 的**持久去处**：块末行「去对决场」（banner 关掉后仍可达，两个入口同一动作）。
-    if (done === objs.length && this.onGoDuel) {
+    // 3/3 的**持久去处**：块末行「去破碎罗盘」（banner 关掉后仍可达，两个入口同一动作）。
+    if (done === objs.length && this.onGoShowcase) {
       const btn = document.createElement('button');
       btn.className = 'btn tiny hp-obj-go';
-      btn.textContent = '去对决场';
-      btn.title = '开一局对决场（会覆盖当前存档）';
-      btn.addEventListener('click', () => this.onGoDuel?.());
+      btn.textContent = '去破碎罗盘';
+      btn.title = '开一局破碎罗盘（会覆盖当前存档）';
+      btn.addEventListener('click', () => this.onGoShowcase?.());
       wrap.appendChild(btn);
     }
     return wrap;

@@ -1,28 +1,37 @@
-import type { Difficulty, GameConfig, MapLayout, MapSize } from '../core/types.js';
-import { MAP_SIZES } from '../core/types.js';
+import type { Difficulty, GameConfig } from '../core/types.js';
 import {
   DEFAULT_CONFIG,
   DIFFICULTIES,
   DIFFICULTY_ORDER,
   FACTIONS,
   FACTION_ORDER,
-  SIZE_ORDER,
   factionColor,
 } from '../core/data/factions.js';
 import { TERRAIN } from '../core/data/terrains.js';
-import { LAYOUTS, LAYOUT_ORDER } from '../core/data/layouts.js';
-import { SCENARIOS, SCENARIO_BY_ID, scenarioGenOptions } from '../core/data/scenarios.js';
+import { SCENARIO_BY_ID, scenarioGenOptions } from '../core/data/scenarios.js';
 import { createGame } from '../core/map/generator.js';
 import { idx } from '../core/map/grid.js';
-import { quality, clampMapSize, allowedMapSizes } from '../render/quality.js';
+import { quality } from '../render/quality.js';
 
 /**
- * 开局设置页。
+ * 开局页 —— **只有一张地图 + 一个难度**。
  *
- * 三件事必须成立：
- *   ① 同一套设置 + 同一个种子 = 同一张地图（所以种子默认填死，可手改）；
- *   ② 预览图用的就是把要开的这一局，看到什么就玩到什么；
- *   ③ 「继续上次存档」和「开始新游戏」在一条视线上，不会误点覆盖存档。
+ * ## 为什么变成这样（2026-10-12 用户裁定）
+ * 原来这一页有 7 行（领主名字 / 试玩场景 / 地图尺寸 / 地图布局 / 电脑对手 / 难度 /
+ * 地图种子）+ 一颗「试这张图」按钮。用户的结论是「开局页面还是显得有点繁琐」，
+ * 并进一步裁定：**现阶段删掉随机地图整条线，只保留教学模式和破碎罗盘，后续再增加更多地图**。
+ *
+ * 所以现在：
+ *   - 随机地图生成器（尺寸 / 布局 / 对手 / 种子 / 名字）**从 UI 下线** —— 代码仍在，
+ *     只能靠 `?devquick=1` 之类的调试参数进入（见 `main.ts`）。
+ *   - 「试玩场景」那一行 4 张卡也没了：教学模式改为**首次启动直接进**（`main.ts` 的
+ *     `maybeAutoTutorial`），进来之后不再有入口；破碎罗盘就是本页唯一的一张卡。
+ *   - 难度是唯一还活着的设置项 —— `grims-showcase` 有 `difficultyEditable: true`。
+ *
+ * ## 仍然成立的三件事
+ *   ① 预览图画的就是要开的那一局（看到什么就玩到什么）；
+ *   ② 「继续上次存档」和「开始」在一条视线上，不会误点覆盖存档；
+ *   ③ 只有难度会变，而难度**不影响地形与物件摆放** ⇒ 预览只在打开时生成一次。
  */
 export interface StartScreenOptions {
   initial?: Partial<GameConfig>;
@@ -36,14 +45,16 @@ export interface StartHandle {
   close: () => void;
 }
 
+/** 本页唯一的一张地图。 */
+const SHOWCASE_ID = 'grims-showcase';
+
 export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): StartHandle {
+  const def = SCENARIO_BY_ID[SHOWCASE_ID];
   const cfg: GameConfig = {
-    size: opts.initial?.size ?? DEFAULT_CONFIG.size,
-    seed: opts.initial?.seed ?? randomSeed(),
-    layout: LAYOUTS[opts.initial?.layout ?? DEFAULT_CONFIG.layout]
-      ? (opts.initial?.layout ?? DEFAULT_CONFIG.layout)
-      : DEFAULT_CONFIG.layout,
-    opponents: opts.initial?.opponents ?? DEFAULT_CONFIG.opponents,
+    size: 'large',
+    seed: 2175,
+    layout: 'wild',
+    opponents: 3,
     difficulty: opts.initial?.difficulty ?? DEFAULT_CONFIG.difficulty,
     playerName: opts.initial?.playerName ?? DEFAULT_CONFIG.playerName,
   };
@@ -51,7 +62,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   const root = document.createElement('div');
   root.id = 'start-screen';
 
-  /* ---------------- 左侧：标题 + 设置 ---------------- */
+  /* ---------------- 左侧：标题 + 地图卡 + 难度 ---------------- */
 
   const panel = document.createElement('div');
   panel.className = 'ss-panel';
@@ -69,103 +80,24 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   form.className = 'ss-form';
   panel.appendChild(form);
 
-  /* 领主名字 */
-  const nameInput = document.createElement('input');
-  nameInput.type = 'text';
-  nameInput.maxLength = 12;
-  nameInput.value = cfg.playerName;
-  nameInput.placeholder = '给自己起个名字';
-  nameInput.addEventListener('input', () => {
-    // 改名字不需要重画地图，省掉一次整图生成
-    cfg.playerName = nameInput.value.trim() || DEFAULT_CONFIG.playerName;
-  });
-  form.appendChild(field('领主名字', nameInput, '会同时作为你第一位英雄的名字'));
+  /* 地图卡：不是"一行设置"，是**这一页的主角** —— 只有一张，所以直接铺开讲清楚。 */
+  const mapCard = document.createElement('div');
+  mapCard.className = 'ss-mapcard';
+  const mapName = document.createElement('div');
+  mapName.className = 'ss-mapcard-name';
+  mapName.textContent = def?.name ?? '破碎罗盘';
+  const mapSub = document.createElement('div');
+  mapSub.className = 'ss-mapcard-sub';
+  mapSub.textContent = def?.sub ?? '';
+  const mapHint = document.createElement('div');
+  mapHint.className = 'ss-hint';
+  mapHint.textContent =
+    '地形导入自 HoMM3《破碎罗盘》—— 同一张图每一局都一模一样，可以认路、可以背「那条海峡在哪」。';
+  mapCard.append(mapName, mapSub, mapHint);
+  form.appendChild(mapCard);
 
-  /* 地图尺寸：按当前画质上限过滤（低端只到中型）——上限来自 quality.maxMapSize */
-  const allowedSizes = allowedMapSizes(quality.maxMapSize);
-  cfg.size = clampMapSize(cfg.size, quality.maxMapSize);
-  const sizeSeg = segment<MapSize>(
-    SIZE_ORDER.filter((id) => allowedSizes.includes(id)).map((id) => {
-      const s = MAP_SIZES[id];
-      return {
-        value: id,
-        title: s.name,
-        sub: `${s.width}×${s.height}`,
-        hint:
-          s.name === '小型'
-            ? '节奏快，一场 20~30 天'
-            : s.name === '中型'
-              ? '标准地图，探索与攻城都有余地'
-              : s.name === '大型'
-                ? '大地图，四家混战才铺得开'
-                : '四家各占一大片，矿业与宝库都管够；一局要打很久',
-      };
-    }),
-    cfg.size,
-    (v) => {
-      cfg.size = v;
-      sync();
-    },
-  );
-  // 先落在文档流里，稍后把「试玩场景」行插在它**之上**（§14.1：领主名字之后、尺寸之前）。
-  const sizeField = form.appendChild(field('地图尺寸', sizeSeg.el));
-
-  /* 地图布局：结构靠模板，纹理靠种子——右侧预览会跟着重画 */
-  const layoutHint = document.createElement('div');
-  layoutHint.className = 'ss-hint';
-  layoutHint.textContent = LAYOUTS[cfg.layout].desc;
-  const layoutSeg = segment<MapLayout>(
-    LAYOUT_ORDER.map((id) => ({
-      value: id,
-      title: LAYOUTS[id].name,
-      sub: LAYOUTS[id].sub,
-      hint: LAYOUTS[id].desc,
-    })),
-    cfg.layout,
-    (v) => {
-      cfg.layout = v;
-      layoutHint.textContent = LAYOUTS[v].desc;
-      sync();
-    },
-  );
-  form.appendChild(field('地图布局', layoutSeg.el, layoutHint));
-
-  /* 难度提示：本方案难度**同时影响玩家**——起始资源、野怪强度、移动力、电脑对手
-   * 都会随难度变化。无对手时玩家侧杠杆（起始资源 / 野怪）依然生效，文案要切到对应表述。
-   * 必须在 opponents 段之前定义，因为切换对手数量时要实时刷新这段提示。 */
-  const diffHint = document.createElement('div');
-  diffHint.className = 'ss-hint';
-  const syncDiffHint = (): void => {
-    diffHint.textContent =
-      cfg.opponents === 0
-        ? '无对手时，难度通过你的起始资源与野怪强度生效'
-        : '同时影响你的起始资源、野怪强度与电脑对手';
-  };
-  syncDiffHint();
-
-  /* 电脑对手 */
-  const oppSeg = segment<number>(
-    [0, 1, 2, 3].map((n) => ({
-      value: n,
-      title: n === 0 ? '无' : `${n} 家`,
-      sub: n === 0 ? '单人探索' : FACTION_ORDER.slice(1, 1 + n).map((f) => FACTIONS[f].name).join(' / '),
-      hint:
-        n === 0
-          ? '只有野怪与中立据点，专心发育'
-          : n === 3
-            ? '四方混战，难度最高'
-            : '电脑对手会自行建设、征兵并向外扩张',
-    })),
-    cfg.opponents,
-    (v) => {
-      cfg.opponents = v;
-      syncDiffHint();
-      sync();
-    },
-  );
-  form.appendChild(field('电脑对手', oppSeg.el));
-
-  /* 难度 */
+  /* 难度：本页唯一可改的东西。文案要说清"无对手时也生效"这件事吗？—— 不，
+   * 破碎罗盘固定 3 家对手，所以只用最普通的那句，不要为不存在的分支写文案。 */
   const diffSeg = segment<Difficulty>(
     DIFFICULTY_ORDER.map((id) => ({
       value: id,
@@ -175,171 +107,9 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
     cfg.difficulty,
     (v) => {
       cfg.difficulty = v;
-      sync();
     },
   );
-  form.appendChild(field('难度', diffSeg.el, diffHint));
-
-  /* 种子 */
-  const seedInput = document.createElement('input');
-  seedInput.type = 'text';
-  seedInput.inputMode = 'numeric';
-  seedInput.className = 'ss-seed';
-  seedInput.value = String(cfg.seed);
-  seedInput.addEventListener('change', () => {
-    const n = Number.parseInt(seedInput.value.replace(/[^0-9]/g, ''), 10);
-    cfg.seed = Number.isFinite(n) ? n >>> 0 : randomSeed();
-    seedInput.value = String(cfg.seed);
-    sync();
-  });
-  const reroll = document.createElement('button');
-  reroll.className = 'btn';
-  reroll.textContent = '换一个';
-  reroll.addEventListener('click', () => {
-    cfg.seed = randomSeed();
-    seedInput.value = String(cfg.seed);
-    sync();
-  });
-  const seedWrap = document.createElement('div');
-  seedWrap.className = 'ss-seedin';
-  seedWrap.append(seedInput, reroll);
-  form.appendChild(field('地图种子', seedWrap, '同一种子必然生成同一张地图，可以把种子发给朋友'));
-
-  /* ---------------- 试玩场景（§14.1）---------------- *
-   * 位置：插在「地图尺寸」**之上**（领主名字之后、尺寸之前）。
-   * 默认「自由对局」⇒ `cfg.scenario` 缺省（**不是** `'free'`）。
-   * 选场景：5 行设为该场景固定值 + **真 disabled**；切回自由对局：**恢复快照**（不是重置默认）。 */
-  const scenarioHint = document.createElement('div');
-  scenarioHint.id = SCENARIO_HINT_ID;
-  scenarioHint.className = 'ss-hint';
-  scenarioHint.textContent = FREE_HINT;
-  const scenarioSeg = segment<string | null>(
-    [
-      ...SCENARIOS.map((s): SegItem<string | null> => {
-        // 边缘情况 1：场景尺寸 > 本机画质档上限 ⇒ 该卡禁用并附理由。
-        // 因为 startNewGame 的 clampMapSize 会**静默**改小尺寸 ⇒ 场景就"不固定"了。
-        // ★ 例外：**带静态地形的场景不参与这道门** —— 它的尺寸是场景自带的，
-        //   `main.ts` 的 `staticSized()` 已跳过钳制（夹小只会让 `applyStaticTerrain` 抛错）。
-        //   ⇒ low 档上展示图仍必须可选，否则用户那台旗舰机点不动这张图。
-        const ok = s.staticMap ? true : allowedMapSizes(quality.maxMapSize).includes(s.config.size);
-        return {
-          value: s.id,
-          title: s.name,
-          sub: SCENARIO_SUB[s.id] ?? s.sub,
-          hint: SCENARIO_HINT[s.id] ?? s.sub,
-          disabled: !ok,
-          disabledReason: '本机画质档不支持该尺寸',
-        };
-      }),
-      { value: null, title: '自由对局', sub: '自定义', hint: FREE_HINT },
-    ],
-    cfg.scenario ?? null,
-    (v) => applyScenario(v),
-  );
-  scenarioSeg.el.setAttribute('aria-label', '试玩场景');
-  form.insertBefore(field('试玩场景', scenarioSeg.el, scenarioHint), sizeField);
-
-  /** 进入场景前的那一份自由对局设置（只存这 5 个字段）。 */
-  let freeSnapshot: {
-    size: MapSize;
-    layout: MapLayout;
-    opponents: number;
-    difficulty: Difficulty;
-    seed: number;
-  } | null = null;
-
-  /** 本场景是否把难度留给玩家（图三 = `difficultyEditable`）。缺省 = 锁定。 */
-  let difficultyEditable = false;
-
-  /**
-   * 锁定 / 解锁被场景接管的 5 行（G-2：种子行是 input+reroll，须**两个都**禁）。
-   *
-   * `difficultyEditable` 为真时**只有难度行**保持可用（其余 4 行照旧锁）——
-   * 判据写在**同一个函数里**（不是复制一份"锁 4 行"的平行实现），
-   * 否则"到底锁了哪几行"会有两个真相。
-   */
-  function setRowsLocked(locked: boolean): void {
-    const diffLocked = locked && !difficultyEditable;
-    sizeSeg.setDisabled(locked);
-    layoutSeg.setDisabled(locked);
-    oppSeg.setDisabled(locked);
-    diffSeg.setDisabled(diffLocked);
-    seedInput.disabled = locked;
-    reroll.disabled = locked;
-    const setDesc = (el: Element, on: boolean): void => {
-      if (on) el.setAttribute('aria-describedby', SCENARIO_HINT_ID);
-      else el.removeAttribute('aria-describedby');
-    };
-    // G-4：被接管的行都挂 `aria-describedby` 指到 scenarioHint。**行容器 + 行内每个可点项**都挂
-    //（禁用项不可聚焦时，读屏按"组"播报容器上的描述；可聚焦时逐项也能读到）。
-    // 难度行在 `difficultyEditable` 下**不挂** —— 它不是"被场景接管"，挂上会误导读屏。
-    for (const row of [sizeSeg.el, layoutSeg.el, oppSeg.el]) {
-      setDesc(row, locked);
-      for (const b of row.querySelectorAll('.ss-seg-item')) setDesc(b, locked);
-    }
-    setDesc(diffSeg.el, diffLocked);
-    for (const b of diffSeg.el.querySelectorAll('.ss-seg-item')) setDesc(b, diffLocked);
-    for (const el of [seedInput, reroll]) setDesc(el, locked);
-  }
-
-  function applyScenario(v: string | null): void {
-    if (v === null) {
-      // 自由对局：恢复「进入场景前」那一份 cfg（**不是**重置 DEFAULT_CONFIG）——
-      // 这是 playtest-scenarios.md §4 A1 的「自由对局逐字节一致」回滚底线。
-      if (freeSnapshot) {
-        cfg.size = freeSnapshot.size;
-        cfg.layout = freeSnapshot.layout;
-        cfg.opponents = freeSnapshot.opponents;
-        // 难度：场景把它留给玩家时（`difficultyEditable`），**保留玩家刚选的值** ——
-        // 否则"在展示图上选了困难 → 切回自由对局"会把这一下选择丢回旧快照。
-        // 教学场 / 对决场（不写该字段）仍原样恢复快照 ⇒ 与改动前逐字节一致。
-        if (!difficultyEditable) cfg.difficulty = freeSnapshot.difficulty;
-        cfg.seed = freeSnapshot.seed;
-        sizeSeg.setValue(cfg.size);
-        layoutSeg.setValue(cfg.layout);
-        oppSeg.setValue(cfg.opponents);
-        diffSeg.setValue(cfg.difficulty);
-        seedInput.value = String(cfg.seed);
-        layoutHint.textContent = LAYOUTS[cfg.layout].desc;
-      }
-      delete cfg.scenario;
-      difficultyEditable = false;
-      setRowsLocked(false);
-      scenarioHint.textContent = FREE_HINT;
-    } else {
-      const def = SCENARIO_BY_ID[v];
-      if (!def) return;
-      // 只在「当前是自由对局」时拍快照 ⇒ 自由→场景→场景 不会把场景值当成"自由配置"存下来。
-      if (!cfg.scenario) {
-        freeSnapshot = {
-          size: cfg.size,
-          layout: cfg.layout,
-          opponents: cfg.opponents,
-          difficulty: cfg.difficulty,
-          seed: cfg.seed,
-        };
-      }
-      const o = scenarioGenOptions(def);
-      difficultyEditable = def.difficultyEditable === true;
-      cfg.size = o.size ?? cfg.size;
-      cfg.layout = o.layout ?? cfg.layout;
-      cfg.opponents = o.opponents ?? cfg.opponents;
-      // 难度：只有**没**放开给玩家的场景才用场景值覆盖（图一/图二的难度是设计的一部分）。
-      if (!difficultyEditable) cfg.difficulty = o.difficulty ?? cfg.difficulty;
-      cfg.seed = o.seed ?? cfg.seed;
-      cfg.scenario = def.id;
-      sizeSeg.setValue(cfg.size);
-      layoutSeg.setValue(cfg.layout);
-      oppSeg.setValue(cfg.opponents);
-      diffSeg.setValue(cfg.difficulty);
-      seedInput.value = String(cfg.seed);
-      layoutHint.textContent = LAYOUTS[cfg.layout].desc;
-      setRowsLocked(true);
-      scenarioHint.textContent = SCENARIO_HINT[def.id] ?? def.sub;
-    }
-    syncDiffHint();
-    sync();
-  }
+  form.appendChild(field('难度', diffSeg.el, '同时影响你的起始资源、野怪强度与电脑对手'));
 
   /* ---------------- 右侧：预览 ---------------- */
 
@@ -363,46 +133,25 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   const actions = document.createElement('div');
   actions.className = 'ss-actions';
 
-  /* 一键进图（F-3.7「可玩性没提升」/ G-13「开局页要滚 3.4 屏」）：
-   * **一次点击**直开展示图，尺寸 / 布局 / 对手 / 难度 / 种子全按场景固定，不经任何设置项。
-   * ★ 必须走 `scenarioGenOptions(...)` 取全 5 个固定值 —— `createGame({ scenario: id })`
-   *   会因缺省 size（32×32）与静态地形 40×40 不符而**抛**（见 `scenarios.ts`）。
-   * ★ 不写回 `cfg`：左栏那份自由对局设置保持原样（既有路径不受影响）。 */
-  const SHOWCASE_ID = 'grims-showcase';
-  const showcaseDef = SCENARIO_BY_ID[SHOWCASE_ID];
-  if (showcaseDef) {
-    const quickBtn = document.createElement('button');
-    quickBtn.className = 'btn primary big ss-quick';
-    quickBtn.id = 'ss-quick';
-    quickBtn.textContent = '试这张图';
-    quickBtn.title = `${showcaseDef.name} · ${showcaseDef.sub}（跳过全部设置，直接开）`;
-    quickBtn.setAttribute('aria-label', `试这张图：${showcaseDef.name}，跳过全部设置直接开始`);
-    /* ★ 不再按画质档上限禁用：展示图带静态地形（40×40），`main.ts` 的 `staticSized()`
-     *   已让它不参与 `clampMapSize` ⇒ low 档也能开。若这里仍按 `maxMapSize` 置灰，
-     *   用户那台被判 low 的旗舰机上这颗按钮就是死的（而它正是"一键进图"的入口）。
-     *   难度沿用左栏当前值（`difficultyEditable` ⇒ 玩家可先在难度行选好再点）。 */
-    quickBtn.addEventListener('click', () => {
-      const o = scenarioGenOptions(showcaseDef);
-      close();
-      opts.onStart({
-        size: o.size ?? cfg.size,
-        layout: o.layout ?? cfg.layout,
-        seed: o.seed ?? cfg.seed,
-        opponents: o.opponents ?? cfg.opponents,
-        difficulty: cfg.difficulty,
-        playerName: cfg.playerName,
-        scenario: o.scenario,
-      });
-    });
-    actions.appendChild(quickBtn);
-  }
-
   const startBtn = document.createElement('button');
   startBtn.className = 'btn primary big';
-  startBtn.textContent = '开始新游戏';
+  startBtn.id = 'ss-start';
+  startBtn.textContent = '开始';
   startBtn.addEventListener('click', () => {
     close();
-    opts.onStart({ ...cfg });
+    /* ★ 必须走 `scenarioGenOptions(...)` 取全 5 个固定值 —— `createGame({ scenario: id })`
+     *   会因缺省 size（32×32）与静态地形 40×40 不符而**抛**（见 `scenarios.ts` 注释）。
+     *   难度是唯一留给玩家的东西，所以只覆盖它。 */
+    const o = def ? scenarioGenOptions(def) : null;
+    opts.onStart({
+      size: o?.size ?? cfg.size,
+      layout: o?.layout ?? cfg.layout,
+      seed: o?.seed ?? cfg.seed,
+      opponents: o?.opponents ?? cfg.opponents,
+      difficulty: cfg.difficulty,
+      playerName: cfg.playerName,
+      scenario: o?.scenario,
+    });
   });
   actions.appendChild(startBtn);
 
@@ -419,7 +168,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
 
   const note = document.createElement('div');
   note.className = 'ss-note';
-  note.textContent = opts.hasSave ? '开始新游戏会覆盖当前存档' : '进度会自动保存在本机浏览器里';
+  note.textContent = opts.hasSave ? '开始会覆盖当前存档' : '进度会自动保存在本机浏览器里';
   actions.appendChild(note);
 
   preview.appendChild(actions);
@@ -427,20 +176,19 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   root.append(panel, preview);
   host.appendChild(root);
 
-  /* ---------------- 预览渲染 ---------------- */
-
-  let timer = 0;
-  function sync(): void {
-    window.clearTimeout(timer);
-    timer = window.setTimeout(drawPreview, 120);
-  }
-
+  /* ---------------- 预览渲染 ----------------
+   * 只画一次：难度不影响地形与物件，没有"改设置就重画"的场景了。
+   * 40×40 的静态图生成要几百毫秒 ⇒ 让出一帧再算，别把首屏卡住。 */
   function drawPreview(): void {
+    if (!def) {
+      summary.textContent = '找不到地图数据。';
+      return;
+    }
     let state;
     try {
-      state = createGame({ ...cfg });
+      state = createGame(scenarioGenOptions(def));
     } catch {
-      summary.textContent = '这组设置生成失败，换一个种子试试。';
+      summary.textContent = '这张地图生成失败。';
       return;
     }
     const m = state.map;
@@ -471,7 +219,7 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
       ctx.fillRect(p.x * scale - 1, p.y * scale - 1, scale + 2, scale + 2);
     }
 
-    const factions = FACTION_ORDER.slice(0, 1 + cfg.opponents);
+    const factions = FACTION_ORDER.slice(0, 1 + def.config.opponents);
     legend.innerHTML = '';
     for (const id of factions) {
       const chip = document.createElement('span');
@@ -492,27 +240,25 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
     const heroCount = Object.keys(state.heroes).length;
     summary.innerHTML = '';
     summary.append(
-      line('地图', `${MAP_SIZES[cfg.size].name} · ${LAYOUTS[cfg.layout].name} · ${m.width}×${m.height}`),
+      line('地图', `${m.width}×${m.height} · 导入地形`),
       line('据点', `共 ${townCount} 座（${townCount - factions.length} 座中立）`),
       line('起始英雄', `${heroCount} 位`),
       line('宝物 / 野怪', `${countKind(state, 'artifact')} / ${countKind(state, 'wanderingMonster')}`),
     );
   }
+  window.setTimeout(drawPreview, 0);
 
   function close(): void {
-    window.clearTimeout(timer);
     root.remove();
   }
 
-  sync();
+  /* 画质档只在这一页还有一处用处：预览画布别超过上限（渲染本身在游戏内由档位管）。 */
+  void quality;
+
   return { close };
 }
 
 /* ---------------- 小工具 ---------------- */
-
-function randomSeed(): number {
-  return Math.floor(Math.random() * 1e9);
-}
 
 function countKind(state: ReturnType<typeof createGame>, kind: string): number {
   return Object.values(state.map.objects).filter((o) => o.kind === kind).length;
@@ -552,44 +298,17 @@ interface SegItem<T> {
   title: string;
   sub?: string;
   hint?: string;
-  /** 卡片在本机不可用（如场景尺寸超出当前画质档上限）⇒ 真 disabled。 */
-  disabled?: boolean;
-  /** 不可用时的理由（写进 `title`，读屏也能读到）。 */
-  disabledReason?: string;
 }
 
-/** `segment()` 的句柄（G-1）：行本身 + 锁定 / 回填两件事，外露给场景行用。 */
+/** `segment()` 的句柄（G-1）：行本身 + 回填。 */
 interface SegmentHandle<T> {
   el: HTMLElement;
-  setDisabled(disabled: boolean): void;
   setValue(value: T): void;
 }
-
-/* §14.1 表的「逐字」文案（权威 = design/ux/in-game-ia.md §14.1）。
- * 不直接复用 `scenarios.ts` 的 `sub`：那写的是设计者的意图，这里的 `sub` 是给玩家的**一行速览**。 */
-const SCENARIO_SUB: Record<string, string> = {
-  tutorial: '无对手 · ≤10 分钟',
-  duel: '1 对手 · 20–30 分钟',
-};
-/** §14.1：`scenarioHint` = 该场景的 `hint` **+ 预期时长**（team-lead 裁定）。
- *  ⚠️ 卡片 `sub` 的时长**仍保留** —— 规格本就是 `sub`（速览）/ `hint`（选中说明）**两列**，
- *  "并进 hint"不等于"从 sub 移走"。教学场的规格 `hint` 原文**已内含**「10 分钟」；
- *  对决场原文不含 ⇒ 按规格补上预期时长（故这里不再统一追加，避免教学场出现两遍"10 分钟"）。 */
-const SCENARIO_HINT: Record<string, string> = {
-  tutorial: '10 分钟，学会走路。 无对手，只有你能走的几条路。',
-  duel: '有人会来找你。 你发育的时候，他也在发育。 预计 20–30 分钟。',
-};
-const FREE_HINT = '自己定尺寸 / 布局 / 对手 / 难度 / 种子 —— 和以前一样。';
-/** §14.1 nit：id 加 `ss-` 前缀（与 `.ss-*` 命名族一致，team-lead 裁定）。 */
-const SCENARIO_HINT_ID = 'ss-scenario-hint';
 
 function segment<T>(items: SegItem<T>[], current: T, onPick: (v: T) => void): SegmentHandle<T> {
   const row = document.createElement('div');
   row.className = 'ss-seg';
-  // G-4：一组单选卡 = 一个 radiogroup（role=radio + aria-checked），不是"一排按钮"。
-  // ⚠️ 已知缺口（team-lead 裁定：保留语义、登记不阻塞）：严格 ARIA 单选组还需 **roving tabindex
-  //    + 方向键**导航。本项目用原生 `<button>`（可 Tab 聚焦）保留语义，未实现 roving ——
-  //    `STRICT=1 npm run audit:touch` 已过 ⇒ 不阻塞、不在本轮做。
   row.setAttribute('role', 'radiogroup');
   const buttons: HTMLButtonElement[] = [];
   const byValue = new Map<T, HTMLButtonElement>();
@@ -607,7 +326,7 @@ function segment<T>(items: SegItem<T>[], current: T, onPick: (v: T) => void): Se
     b.className = 'ss-seg-item';
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', String(item.value === current));
-    b.title = item.disabled ? (item.disabledReason ?? item.title) : (item.hint ?? item.title);
+    b.title = item.hint ?? item.title;
     const t = document.createElement('span');
     t.className = 't';
     t.textContent = item.title;
@@ -617,10 +336,6 @@ function segment<T>(items: SegItem<T>[], current: T, onPick: (v: T) => void): Se
       s.className = 's';
       s.textContent = item.sub;
       b.appendChild(s);
-    }
-    if (item.disabled) {
-      b.disabled = true;
-      b.classList.add('off');
     }
     b.classList.toggle('on', item.value === current);
     b.addEventListener('click', () => {
@@ -632,13 +347,5 @@ function segment<T>(items: SegItem<T>[], current: T, onPick: (v: T) => void): Se
     row.appendChild(b);
   }
 
-  function setDisabled(disabled: boolean): void {
-    for (const b of buttons) {
-      // 真 `disabled`（G-4：不是仅视觉置灰）；`aria-disabled` 供读屏。
-      b.disabled = disabled;
-      b.setAttribute('aria-disabled', String(disabled));
-    }
-  }
-
-  return { el: row, setDisabled, setValue };
+  return { el: row, setValue };
 }

@@ -15,10 +15,10 @@
  * 三条都在**同一趟真 Chrome** 里读，读的是**同一份 dist**（`serveInProcess` 指向 `--dist`）。
  *
  * ## 三条判据（正向）
- *   A. **一键进图**：开始页上存在「试这张图」入口，**1 次点击**即进图，且进的是
+ *   A. **一键进图**：开始页上存在「开始」入口，**1 次点击**即进图，且进的是
  *      `grims-showcase`（以屏上出现 `#objectives` 目标清单为准）。
- *      ⚠️ 入口不存在时本门**降级**走旧路径（点场景卡 + 点「开始新游戏」）并把点击数
- *      如实记成 2 —— **这是"before"的读数来源**，不是"放过"。
+ *      ⚠️ 2026-10-12 起开始页只剩「一张地图卡 + 一个难度 + 一颗开始」（用户裁定砍掉
+ *      随机地图与试玩场景行）⇒ 这一组从"证明减法生效"变成"证明没有倒退回 2 次点击"。
  *   B. **开局页不滚**：`#start-screen.scrollHeight / clientHeight ≤ 1.10`。
  *   C. **常驻文字条**：进图后，撤离的常驻条（顶部日志条 / 底部移动力条）**必须为 0**，
  *      且顶部**只剩一条**目标清单（`#objectives`，≤3 条）。
@@ -56,9 +56,10 @@ const DPR = Number(process.env.SHOT_DPR ?? 3);
 const NEG = process.env.NEG === '1';
 const DUMP = process.env.DUMP === '1';
 /**
- * `SHOT=<路径>`：顺手抓一张**开始页（已选「破碎罗盘」、难度行可点）**的截图。
- * 为什么要长在本门里：开始页那张"难度行现在可以点了"的状态**必须先点一下场景卡**才存在，
- * `deviceshot` / `chromeshot` 只做导航、不点击 ⇒ 抓不到这个状态。
+ * `SHOT=<路径>`：顺手抓一张**开始页（地图卡 + 难度行）**的截图。
+ * 为什么要长在本门里：开始页是"砍完之后长什么样"的唯一直接证据，
+ * 而 `deviceshot` / `chromeshot` 只做导航、不带 `?devstart=1`
+ * ⇒ 全新 profile 下会被生产路径直接带去教学局，抓到的不是开始页。
  */
 const SHOT = process.env.SHOT ?? null;
 
@@ -256,9 +257,12 @@ const waitStart = async (evaluate) => {
   return false;
 };
 
-/** 回到干净的开始页（清 localStorage ⇒ 不出现「继续上次存档」分支）。 */
+/** 回到干净的开始页（清 localStorage ⇒ 不出现「继续上次存档」分支）。
+ *  ★ 必须带 `?devstart=1`：门控每次跑在全新 Chrome profile 里 ⇒ localStorage 为空
+ *    ⇒ 生产路径会"首次启动直接进教学模式"，开始页根本不出现（成片假红）。
+ *    `?devstart=1` 正是为这条测试路径开的口子（见 `main.ts` 启动段注释）。 */
 const boot = async (send, evaluate) => {
-  await send('Page.navigate', { url: URL0 });
+  await send('Page.navigate', { url: URL0 + '?devstart=1' });
   const ok = await waitStart(evaluate);
   if (!ok) throw new Error('等不到 #start-screen（导航未完成）');
   await sleep(600);
@@ -281,15 +285,10 @@ try {
       for (const d of await evaluate(PROBE_DUMP)) {
         console.log(`  <${d.tag}${d.id ? '#' + d.id : ''}${d.cls ? '.' + String(d.cls).split(' ').join('.') : ''}> y=${d.y} h=${d.h} :: ${d.own}`);
       }
-      // 进图（优先一键；没有就走旧路径）
-      const quick = await clickText(evaluate, '#start-screen button', '试这张图');
-      if (!quick) {
-        await clickText(evaluate, '#start-screen .ss-seg-item', '破碎罗盘');
-        await sleep(400);
-        await clickText(evaluate, '#start-screen button', '开始新游戏');
-      }
+      // 进图（开始页只剩一颗「开始」）
+      await clickText(evaluate, '#start-screen button', '开始');
       await sleep(2500);
-      console.log(`# [DUMP] 进图后可见文字元素（quick=${quick}）：`);
+      console.log(`# [DUMP] 进图后可见文字元素：`);
       for (const d of await evaluate(PROBE_DUMP)) {
         console.log(`  <${d.tag}${d.id ? '#' + d.id : ''}${d.cls ? '.' + String(d.cls).split(' ').join('.') : ''}> y=${d.y} h=${d.h} :: ${d.own}`);
       }
@@ -392,32 +391,25 @@ try {
     console.log(`[读数] #start-screen scrollHeight=${fit.sh} · clientHeight=${fit.ch} · ratio=${fit.ratio}`);
     PASS(fit.ratio <= 1.1, `B 开局页滚动比 ≤ 1.10（实测 ${fit.ratio}）`);
 
-    /* 取证截图：开始页 + 已选「破碎罗盘」⇒ 难度行处于可点状态 */
+    /* 取证截图：开始页（地图卡 + 难度行可点） */
     if (SHOT) {
-      const picked = await clickText(evaluate, '#start-screen .ss-seg-item', '破碎罗盘');
-      await sleep(900);
       const row = await evaluate(diffRowProbe('难度'));
       const shot = await send('Page.captureScreenshot', { format: 'png' });
       writeFileSync(SHOT, Buffer.from(shot.data, 'base64'));
-      console.log(`[截图] ${SHOT}（开始页 · 选中「破碎罗盘」=${picked} · 难度行 ${JSON.stringify(row)} · ${W}×${H}@${DPR}）`);
+      console.log(`[截图] ${SHOT}（开始页 · 难度行 ${JSON.stringify(row)} · ${W}×${H}@${DPR}）`);
     }
 
-    /* A. 一键进图：点几次 */
+    /* A. 一键进图：点几下
+     *  2026-10-12 起开始页只剩「一张地图卡 + 一个难度 + 一颗开始」—— 没有场景卡可点，
+     *  「试这张图」也并回了「开始」⇒ 进图路径**本来就该是 1 次点击**，
+     *  本组从"证明减法生效"变成"证明没有倒退回去"。 */
     let clicks = 0;
-    const quick = await clickText(evaluate, '#start-screen button', '试这张图');
-    if (quick) {
-      clicks += 1;
-    } else {
-      console.log('[读数] 未找到「试这张图」⇒ 降级走旧路径（场景卡 + 开始新游戏），点击数如实记 2');
-      const a = await clickText(evaluate, '#start-screen .ss-seg-item', '破碎罗盘');
-      await sleep(500);
-      const b = await clickText(evaluate, '#start-screen button', '开始新游戏');
-      clicks += (a ? 1 : 0) + (b ? 1 : 0);
-    }
+    const started = await clickText(evaluate, '#start-screen button', '开始');
+    clicks += started ? 1 : 0;
     await sleep(3000);
     const inGame = await evaluate(`!document.querySelector('#start-screen') && !!document.querySelector('#map')`);
-    console.log(`[读数] 进图路径点击次数 = ${clicks}（quick 入口存在=${quick}）`);
-    PASS(quick, 'A1 开始页存在「试这张图」一键入口');
+    console.log(`[读数] 进图路径点击次数 = ${clicks}`);
+    PASS(started, 'A1 开始页存在「开始」入口');
     PASS(inGame, 'A2 点击后确实进了游戏（#start-screen 已移除且 #map 在场）');
     PASS(clicks === 1, `A3 进图路径 = 1 次点击（实测 ${clicks}）`);
 
@@ -436,14 +428,17 @@ try {
     PASS(obj.rows > 0 && obj.rows <= 3, `C4 目标清单 ≤ 3 条（实测 ${obj.rows} 条，已达成 ${obj.done}）`);
     PASS(bars.slots['obj-banner'].count === 0, 'C5 教学 banner 不在展示图上');
 
-    /* D. 红线：自由对局不参与 ⇒ 展示图专属的一切不得出现在自由对局里 */
+    /* D. 红线：展示图专属的一切不得出现在别的场景里
+     *  2026-10-12 起"自由对局"已从 UI 下线（用户裁定删掉随机地图），所以这条红线
+     *  的对照面换成**教学模式**（`?devscenario=tutorial`，仍是真实可玩的既有路径）：
+     *  目标清单 / 顶栏 showcase 类都只许属于破碎罗盘。 */
     await boot(send, evaluate);
-    await clickText(evaluate, '#start-screen button', '开始新游戏');
+    await clickText(evaluate, '#start-screen button', '开始');
     await sleep(2500);
     const freeObj = await evaluate(PROBE_OBJ);
     const freeBars = await evaluate(PROBE_BARS);
-    PASS(!freeObj.present || !freeObj.visible, 'D1 自由对局：顶上无目标清单（减法只在展示图生效）');
-    PASS(freeBars.slots['topbar-hud'].count > 0, 'D2 自由对局：顶栏资源条照旧在场（既有路径未被动过）');
+    PASS(freeObj.present && freeObj.visible, 'D1 破碎罗盘：顶部有目标清单（它确实是展示图）');
+    PASS(freeBars.slots['topbar-hud'].count === 0, 'D1b 破碎罗盘：顶栏资源条已让位给目标清单（F-3.6 减法）');
 
     /* ---- E. 三档画质下展示图都要能开起来 ----
      * 为什么单列一组：low 档 `maxMapSize = 32`，而展示图的静态地形是 40×40 ——
@@ -471,20 +466,19 @@ try {
     }
 
     /* ---- F. 展示图难度可选，且真的进 `createGame` ----
-     * 判据不是"能点"，是"点完开出来的局资源真的变了"（引擎侧实测 easy 3000 / hard 1750）。 */
-    const pickDifficulty = async (card, label) => {
+     * 判据不是"能点"，是"点完开出来的局资源真的变了"（引擎侧实测 easy 3000 / hard 1750）。
+     * 2026-10-12 起难度是开始页**唯一**的设置行，所以不再需要先点场景卡。 */
+    const pickDifficulty = async (label) => {
       await boot(send, evaluate);
-      await clickText(evaluate, '#start-screen .ss-seg-item', card);
-      await sleep(400);
       const row = await evaluate(diffRowProbe('难度'));
       const clicked = await clickText(evaluate, '#start-screen .ss-seg-item', label);
       await sleep(300);
-      await clickText(evaluate, '#start-screen button', '开始新游戏');
+      await clickText(evaluate, '#start-screen button', '开始');
       await sleep(3000);
       return { row, clicked, save: await evaluate(PROBE_SAVE) };
     };
 
-    const showEasy = await pickDifficulty('破碎罗盘', '轻松');
+    const showEasy = await pickDifficulty('轻松');
     console.log(`[读数] 展示图难度行 = ${JSON.stringify(showEasy.row)}`);
     PASS(!!showEasy.row && showEasy.row.disabled.every((d) => d === false), `F1 展示图：难度行 ${showEasy.row ? showEasy.row.labels.join('/') : '?'} 全可点`);
     console.log(`[读数] 选「轻松」开局 = ${JSON.stringify(showEasy.save)}`);
@@ -493,39 +487,32 @@ try {
       `F2 选「轻松」⇒ 存档 difficulty=${showEasy.save ? showEasy.save.difficulty : '?'} 资源 金${showEasy.save ? showEasy.save.gold : '?'}/木${showEasy.save ? showEasy.save.wood : '?'}/矿${showEasy.save ? showEasy.save.ore : '?'}（预期 easy / 3000 / 12 / 12）`,
     );
 
-    const showHard = await pickDifficulty('破碎罗盘', '困难');
+    const showHard = await pickDifficulty('困难');
     console.log(`[读数] 选「困难」开局 = ${JSON.stringify(showHard.save)}`);
     PASS(
       !!showHard.save && showHard.save.difficulty === 'hard' && showHard.save.gold === 1750 && showHard.save.wood === 7,
       `F3 选「困难」⇒ 存档 difficulty=${showHard.save ? showHard.save.difficulty : '?'} 资源 金${showHard.save ? showHard.save.gold : '?'}/木${showHard.save ? showHard.save.wood : '?'}/矿${showHard.save ? showHard.save.ore : '?'}（预期 hard / 1750 / 7 / 7）`,
     );
 
-    /* ---- G. 红线：教学场 / 对决场的难度仍锁定（它们的难度是设计的一部分）---- */
-    for (const [name, card, want] of [['tutorial', '教学场', 'easy'], ['duel', '对决场', 'normal']]) {
-      await boot(send, evaluate);
-      await clickText(evaluate, '#start-screen .ss-seg-item', card);
-      await sleep(400);
-      const row = await evaluate(diffRowProbe('难度'));
-      await clickText(evaluate, '#start-screen button', '开始新游戏');
-      await sleep(2500);
-      const sv = await evaluate(PROBE_SAVE);
-      console.log(`[读数] G-${name} 难度行 = ${JSON.stringify(row)}`);
-      PASS(!!row && row.disabled.every((d) => d === true), `G1-${name}：难度行仍**全锁定**（${row ? row.labels.join('/') : '?'}）`);
-      PASS(!!sv && sv.difficulty === want, `G2-${name}：难度仍是场景固定值 ${sv ? sv.difficulty : '?'}（预期 ${want}）`);
-    }
-
-    /* D3/D4：tutorial / duel 两条既有路径同样不得被本轮的减法碰到 */
-    for (const [name, card] of [['tutorial', '教学场'], ['duel', '对决场']]) {
-      await boot(send, evaluate);
-      const picked = await clickText(evaluate, '#start-screen .ss-seg-item', card);
-      await sleep(500);
-      await clickText(evaluate, '#start-screen button', '开始新游戏');
-      await sleep(2500);
+    /* ---- G. 红线：教学 / 对决的难度仍是设计的一部分，且不吃展示图的减法 ----
+     *  这两个场景已从开局页 UI 下线（用户裁定），但**代码路径还在**，靠
+     *  `?devscenario=<id>` 进门 —— 红线照样要证，只是入口从"点卡片"换成"查询参数"。 */
+    for (const [name, want] of [['tutorial', 'easy'], ['duel', 'normal']]) {
+      await send('Page.navigate', { url: URL0 + `?devscenario=${name}` });
+      /* ★ 必须 `!== null`，不能把 `waitInGame` 的返回值直接当布尔：
+       *   它返回的是**毫秒数**，而"第一次轮询就命中"= `0` ⇒ `0` 是 falsy ⇒ **假红**。
+       *   （本门第一版就在这里栽过：机器快 / 缓存热时命中在 i=0，整组 G 判 FAIL，
+       *    而页面其实是好的。E 组当初写对了，G 组漏了 —— 同一条判据两处写法不一致。） */
+      const waited = await waitInGame(evaluate);
+      const started = waited !== null;
       const o = await evaluate(PROBE_OBJ);
       const b = await evaluate(PROBE_BARS);
       const cls = await evaluate(`document.querySelector('#topbar').classList.contains('showcase')`);
-      PASS(picked, `D3-${name} 场景卡「${card}」可点（既有路径未被挡）`);
-      PASS(!o.present && !cls && b.slots['topbar-hud'].count > 0, `D4-${name}：无目标清单 / 顶栏无 showcase 类 / 资源条照旧`);
+      const sv = await evaluate(PROBE_SAVE);
+      console.log(`[读数] G-${name}：进图=${started}（${waited === null ? '超时' : waited + 'ms'}） · 难度=${sv ? sv.difficulty : '?'} · 目标清单=${o.visible} · showcase类=${cls}`);
+      PASS(started, `G0-${name}：场景能开起来（?devscenario=${name}）`);
+      PASS(!!sv && sv.difficulty === want, `G2-${name}：难度仍是场景固定值 ${sv ? sv.difficulty : '?'}（预期 ${want}）`);
+      PASS(!o.present && !cls && b.slots['topbar-hud'].count > 0, `G3-${name}：无目标清单 / 顶栏无 showcase 类 / 资源条照旧`);
     }
   });
 } catch (e) {
