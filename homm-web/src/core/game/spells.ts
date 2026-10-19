@@ -136,7 +136,11 @@ export function castAdventure(
     if (Math.max(Math.abs(p.x - hero.pos.x), Math.abs(p.y - hero.pos.y)) > 8) {
       return { ok: false, message: '次元门最多跨越 8 格' };
     }
-    if (!isRevealed(state, 'p1', p.x, p.y)) return { ok: false, message: '不能传送到没探索过的地方' };
+    // 迷雾门按**施法者自己**的探索度判，不能写死 'p1'：
+    // 同一分支上下两行都用 `hero.owner`（revealAround），写死会让"谁在施法"与
+    // "谁的迷雾"脱钩。玩家恒 p1 时这行恰好正确，所以长期没炸；解锁选族（D-48）
+    // 让玩家可能不再是 p1 的当天，它会静默拿玩家的迷雾替电脑做传送判定。
+    if (!isRevealed(state, hero.owner, p.x, p.y)) return { ok: false, message: '不能传送到没探索过的地方' };
     hero.mana -= sp.manaCost;
     hero.pos = { ...p };
     hero.movePoints = Math.floor(hero.movePoints * 2 / 3); // 瞬移也要付出代价

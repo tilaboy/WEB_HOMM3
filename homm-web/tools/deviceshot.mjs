@@ -288,7 +288,16 @@ try {
     if (!canvas) return { ok: false, why: '没有 canvas' };
     await frames(45);               // 45 帧足够让地图/布景/光照都画出来
     const mode = (() => { try { return localStorage.getItem('homm.tierMode'); } catch { return null; } })();
-    return { ok: true, w: canvas.width, h: canvas.height, cssW: canvas.clientWidth, cssH: canvas.clientHeight, mode };
+    // 画布在整页截图里的 device-pixel 区间 —— measurements-visible-delta.md 规定
+    // 裁掉 UI 边框（顶栏/底栏两版逐像素相同，会把差异摊薄），但那个区间是它当时的布局；
+    // 不打印出来，下游就只能猜；猜错 = 系统性低估/高估差异。
+    // ⚠️ 本段在外层模板字面量内，注释里**不能出现反引号**。
+    const r = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    return {
+      ok: true, w: canvas.width, h: canvas.height, cssW: canvas.clientWidth, cssH: canvas.clientHeight, mode,
+      rectDev: { x: Math.round(r.x * dpr), y: Math.round(r.y * dpr), w: Math.round(r.width * dpr), h: Math.round(r.height * dpr) },
+    };
   })()`);
 
   if (!waited?.ok) throw new Error(`页面没就绪：${JSON.stringify(waited)}`);
@@ -314,9 +323,11 @@ try {
   // 画布 dpr 一律**按实际值打印**（`canvas.width / clientWidth`）—— 别自称"原生 dpr3"：
   // 画质档会按 (视口 dpr × 档位) 选 dprCap，实测值可能不等于 `SHOT_DPR`。
   const canvasDpr = waited.cssW > 0 ? (waited.w / waited.cssW) : NaN;
+  const rd = waited.rectDev;
   console.log(
     `OK  ${outFile}  (canvas ${waited.w}x${waited.h} @css ${waited.cssW}x${waited.cssH} dpr ${canvasDpr}` +
       ` · viewport ${VW}x${VH}@${VDPR}` +
+      (rd ? ` · 画布在截图里 device y=${rd.y}..${rd.y + rd.h} ⇒ CMP_CROP=${rd.y},${rd.y + rd.h}` : '') +
       ` · tierMode=${waited.mode ?? '(未注入)'}` +
       ` · hint=${hideHint ? '隐藏(⚠全帧会变)' : '保留(默认)'} · warmup=${warm ? '丢 1 帧' : '关⚠'})`,
   );

@@ -6,7 +6,7 @@ import type { PathField } from './core/map/pathfinding.js';
 import { revealAround, isRevealed } from './core/map/fog.js';
 import { idx, inBounds } from './core/map/grid.js';
 import { TERRAIN } from './core/data/terrains.js';
-import { DEFAULT_CONFIG, factionName } from './core/data/factions.js';
+import { DEFAULT_CONFIG, factionName, viewerOf } from './core/data/factions.js';
 import {
   applyHeroBattle,
   applyInteraction,
@@ -1640,7 +1640,7 @@ function updateHover(e: PointerEvent): void {
   }
   hover = g;
   const i = idx(state.map, g.x, g.y);
-  if (!isRevealed(state, 'p1', g.x, g.y)) {
+  if (!isRevealed(state, viewerOf(state), g.x, g.y)) {
     hint('未探索的区域');
     previewPath = null;
     return;
@@ -1701,7 +1701,7 @@ const RESOURCE_TEXT: Record<string, string> = {
 
 function showTileInfo(sx: number, sy: number): void {
   const g = camera.pick(sx, sy);
-  if (!inBounds(state.map, g.x, g.y) || !isRevealed(state, 'p1', g.x, g.y)) return;
+  if (!inBounds(state.map, g.x, g.y) || !isRevealed(state, viewerOf(state), g.x, g.y)) return;
   const t = state.map.tiles[idx(state.map, g.x, g.y)];
   const terrain = TERRAIN[t.terrain];
   const obj = t.objectId ? state.map.objects[t.objectId] : null;

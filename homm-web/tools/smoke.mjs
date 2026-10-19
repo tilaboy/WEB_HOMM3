@@ -20,7 +20,7 @@ const { lossRatio, quickBattle } = await import(dimp('core/combat/battle.js'));
 const { previewInteraction, applyInteraction, battleSetup, enemyHeroAt, heroBattleSetup, applyHeroBattle, pendingObjectAt } = await import(dimp('core/game/interaction.js'));
 const { isPassable, castleCells, footprintOf } = await import(dimp('core/map/grid.js'));
 const { endDay } = await import(dimp('core/game/turn.js'));
-const { factionIds } = await import(dimp('core/data/factions.js'));
+const { factionIds, viewerOf } = await import(dimp('core/data/factions.js'));
 const {
   NO_TOWN_GRACE_DAYS,
   advanceNoTownStreaks,
@@ -2485,6 +2485,123 @@ console.log('\n--- 段 2 四族分兵 ---');
   ok(![...neutralArmy, ...unknownArmy].some((s) => s.unitTypeId.startsWith('p1_')),
     '⑦ 中立 / 未知 owner 拿不到 p1 兵（不静默 fallback）');
   ok(armyWarns.length === 2, `⑦ 两次解析失败各记一次日志（${armyWarns.length} 条）`);
+}
+
+/* ============================================================================
+ * ⑧ 次元门迷雾门（TP-2①）：施法者**自己的**迷雾，不是 p1 的
+ * ============================================================================
+ * 这条盯的是 `spells.ts` dimensionDoor 分支里的 `isRevealed(state, <who>, …)`。
+ * 它曾写死 `'p1'`，而同一分支的其余每一行都用 `hero.owner`——**同一段代码里
+ * 两种取值口径**，任何人读都会以为前者是笔误（它就是）。
+ *
+ * 为什么现在不爆：玩家恒为 p1，AI 完全不施法（`ai.ts` 无 castAdventure 调用点），
+ * 所以 `hero.owner === 'p1'` 恒成立 ⇒ 硬编码被"当前恰好正确"掩盖。
+ * 但 D-48（解锁选族）落地当天，玩家可能不再是 p1 ⇒ 这行会静默用**玩家的迷雾**
+ * 去判**电脑的传送**，且症状只是"AI 偶尔不瞬移"，极难归因。
+ *
+ * 断言设计（红→绿）：造一个 p2 施法者，在他**自己**没探索、但**玩家已探索**的
+ * 格子上施法。正确实现 ⇒ 拒绝；旧硬编码 ⇒ 放行。
+ */
+{
+  const g = createGame({ seed: 424242, opponents: 3 });
+  const foeHero = g.heroes.hero_p2 ?? Object.values(g.heroes).find((h) => h && h.owner === 'p2');
+  ok(!!foeHero, `⑧ 取到 p2 的英雄（${foeHero ? foeHero.id : '无'}）`);
+
+  // 迷雾是**显式摆出来**的，不靠"在地图上碰巧找到一格"。
+  // 理由：初始图每方只揭示 ~81/1024 格，且四族老家彼此相距很远 ⇒ "p1 探索过 ∧
+  // p2 未探索 ∧ 在 p2 身边 8 格内"在真实开局下**不存在**（实测 seed 424242 找不到）。
+  // 靠搜索构造前提 = 前提依赖地图生成器 ⇒ 生成器一改，这条断言就变成空集守卫（恒绿）。
+  // 这里直接指定坐标并写 fog 数组，测试只依赖被测函数本身。
+  const n = g.map.width * g.map.height;
+  let tile = null;
+  outer:
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const x = foeHero.pos.x + dx;
+      const y = foeHero.pos.y + dy;
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) continue;
+      if (x < 0 || y < 0 || x >= g.map.width || y >= g.map.height) continue;
+      if (!isPassable(g.map, x, y)) continue;
+      tile = { x, y };
+      break outer;
+    }
+  }
+  ok(!!tile, '⑧ 在 p2 英雄身边找到可通行格（' + (tile ? `(${tile.x},${tile.y})` : '无') + '）');
+
+  // 施法者站远一点，保证目标格在 8 格内且不是脚下；**并真的学会这个法术**
+  // （忘了 `hero.spells` 的话 `canAdventureCast` 会先以「未学会」短路，
+  //  下面那条"必须拒绝"就会因为错误的原因而绿 —— 那是假绿，必须先补前提。）
+  foeHero.pos = { x: Math.max(0, tile.x - 3), y: Math.max(0, tile.y) };
+  foeHero.mana = 99;
+  foeHero.movePoints = 99;
+  foeHero.spells = [...new Set([...foeHero.spells, 'dimensionDoor'])];
+
+  const chk = canAdventureCast(g, foeHero, 'dimensionDoor');
+  ok(chk.ok, '⑧ 前提：p2 英雄已学会次元门且法力/移动力够（' + (chk.ok ? 'ok' : '被拒：' + chk.reason) + '）');
+
+  // 显式摆迷雾：**只有 p1 探索过该格，p2 没有**
+  const iTile = tile.y * g.map.width + tile.x;
+  g.players.p1.revealed[iTile] = 1;
+  g.players.p2.revealed[iTile] = 0;
+  ok(g.players.p2.revealed[iTile] !== 1 && g.players.p1.revealed[iTile] === 1,
+    '⑧ 前提：该格 p1 已探索、p2 未探索（两方迷雾确实不同）');
+
+  const res = castAdventure(g, foeHero.id, 'dimensionDoor', { pos: tile });
+  const rejected = !res.ok;
+  ok(rejected,
+    '⑧ p2 施法者不能传到「只有 p1 探索过」的格子（现 ' + (rejected ? '正确拒绝' : '*** 放行了：' + JSON.stringify(res) + ' ***') + '）');
+
+  // 反向自检：同一格若 **p2 自己**探索过，就必须放行 —— 否则上一条可能只是"永远拒绝"
+  g.players.p2.revealed[iTile] = 1;
+  foeHero.mana = 99;
+  foeHero.movePoints = 99;
+  const res2 = castAdventure(g, foeHero.id, 'dimensionDoor', { pos: tile });
+  ok(res2.ok,
+    '⑧ p2 自己探索过的格子可以瞬移（对照：' + (res2.ok ? '放行 ✓' : '*** 被误拒：' + res2.message + ' ***') + '）');
+
+  // 空集守卫：确认上面两格确实是**同一张**地图上的不同格，且 n 与 fog 数组同长
+  // （防"改了 revealed 数组长度导致断言恒真"这类假绿）
+  ok(g.players.p1.revealed.length === n && g.players.p2.revealed.length === n,
+    `⑧ fog 数组与地图同长（${g.players.p1.revealed.length} / ${n}）`);
+}
+
+/* ============================================================================
+ * ⑨ viewerOf(state)（TP-2①）：玩家视角必须由 isHuman 推导，不能写死 p1
+ * ============================================================================
+ * `viewerOf` 是 ⑧ 之外三处调用点的真值源（`main.ts` 悬停/地块信息、`HeroPanel.ts`
+ * 迷雾与城池列表）。它在上面替代了 4 处写死的 `'p1'` 与 1 处模块级常量
+ * `VIEWER`，所以**它自己必须被钉住**——否则一处回退就把三处 UI 一起带歪，
+ * 而症状只是"迷雾不见了"，极难归因。
+ *
+ * 三种情形都要覆盖：正常（p1 是人类）／**改选族后（人类是 p3）**／数据异常（回退）。
+ * 第二种当前游戏还造不出来（generator 按 `fid === 'p1'` 置 isHuman），所以这里
+ * 直接构造 players 对象来测——测的是 `viewerOf` 这个纯函数，不依赖生成器。
+ */
+{
+  const gv = createGame({ seed: 7, opponents: 3 });
+  ok(viewerOf(gv) === 'p1', `⑨ 正常对局：viewerOf 返回 p1（现 ${viewerOf(gv)}）`);
+  ok(gv.players.p1.isHuman === true, '⑨ 前提：p1 的 isHuman 为 true');
+
+  // 关键情形：人类改成 p3（解锁选族 D-48 落地后的形态）
+  const swapped = {
+    players: {
+      p1: { isHuman: false },
+      p2: { isHuman: false },
+      p3: { isHuman: true },
+      p4: { isHuman: false },
+    },
+  };
+  ok(viewerOf(swapped) === 'p3',
+    `⑨ 人类是 p3 时 viewerOf 返回 p3 而不是 p1（现 ${viewerOf(swapped)}）`);
+
+  // 两个都标了 ⇒ 取 FACTION_ORDER 里靠前的（确定性优先，别让存档顺序决定视角）
+  const two = { players: { p2: { isHuman: true }, p3: { isHuman: true } } };
+  ok(viewerOf(two) === 'p2', `⑨ 多个 isHuman 时取顺序靠前者（现 ${viewerOf(two)}）`);
+
+  // 数据异常（老存档没有 isHuman 字段）⇒ 回退 p1，保持旧行为而不是"没有迷雾"
+  const legacy = { players: { p1: {}, p2: {} } };
+  ok(viewerOf(legacy) === 'p1', `⑨ 无 isHuman 字段时回退 p1（现 ${viewerOf(legacy)}）`);
+  ok(viewerOf({ players: {} }) === 'p1', `⑨ 空 players 也回退 p1（现 ${viewerOf({ players: {} })}）`);
 }
 
 console.log(fails === 0 ? '\n全部通过' : `\n${fails} 项失败`);

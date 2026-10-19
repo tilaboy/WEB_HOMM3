@@ -19,6 +19,11 @@
  *   node tools/chromeshot.mjs /tmp/shot.png \
  *     'http://127.0.0.1:5173/?devquick=0&devsize=medium&devseed=20260917&devreveal=1&devlight=0.22&devprobe=1'
  *
+ * 播种 localStorage（--ls key=value，可重复）：
+ *   有些实验要绕过"自动探测/首启引导"才能复现，而 chromeshot 每轮都开**全新 profile**
+ *   ⇒ localStorage 恒空。用 --ls 在页面脚本执行**之前**写入，避免首启逻辑抢先。
+ *   node tools/chromeshot.mjs /tmp/shot.png '<URL>' --ls homm.tierMode=high
+ *
  * 退出码：0 成功 / 2 前置不满足 / 1 其他失败
  */
 
@@ -27,10 +32,20 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const outFile = process.argv[2];
-const url = process.argv[3];
+const args = process.argv.slice(2);
+const positional = [];
+const lsSeed = [];
+for (const a of args) {
+  if (a.startsWith('--ls=')) {
+    const kv = a.slice('--ls='.length);
+    const eq = kv.indexOf('=');
+    if (eq > 0) lsSeed.push([kv.slice(0, eq), kv.slice(eq + 1)]);
+  } else positional.push(a);
+}
+const outFile = positional[0];
+const url = positional[1];
 if (!outFile || !url) {
-  console.error('用法：node tools/chromeshot.mjs <输出文件.png> <URL>');
+  console.error('用法：node tools/chromeshot.mjs <输出文件.png> <URL> [--ls key=value ...]');
   process.exit(2);
 }
 
@@ -71,7 +86,8 @@ const chrome = spawn(
     `--remote-debugging-port=${CDP_PORT}`,
     '--remote-allow-origins=*',
     '--window-size=1280,900',
-    url,
+    // 先开 about:blank：播种脚本必须在页面脚本之前装上（见下面 addScriptToEvaluateOnNewDocument）
+    'about:blank',
   ],
   { stdio: ['ignore', 'ignore', 'ignore'] },
 );
@@ -98,7 +114,7 @@ async function findTarget() {
   for (let i = 0; i < 120; i++) {
     try {
       const list = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`)).json();
-      const t = list.find((x) => x.type === 'page' && x.url.includes('127.0.0.1'));
+      const t = list.find((x) => x.type === 'page' && (x.url.includes('127.0.0.1') || x.url === 'about:blank'));
       if (t?.webSocketDebuggerUrl) return t.webSocketDebuggerUrl;
     } catch {
       /* 端口还没开 */
@@ -122,6 +138,28 @@ async function evaluate(expression) {
   return r.result?.value;
 }
 
+/**
+ * ⚠️ `Runtime.evaluate` 有**竞态**：CDP 连上的那一刻，页面可能刚好还在做初始导航提交，
+ * 此时 evaluate 会抛 `Execution context was destroyed` / `Cannot find context with specified id`。
+ * 这不是页面坏了，是**连早了** —— 表现为随机假红（实测：同一 URL 三次里挂一次）。
+ *
+ * 症状先出现在 `?devzoom=` / `?devbattle=` 这类"开图后还要再走一段启动逻辑"的 URL 上，
+ * 因为它们把导航提交推得更靠后。修法就是重试：每次重试都会拿到**新的** main-world context。
+ */
+async function evaluateRetry(expression, tries = 6, gapMs = 400) {
+  let last;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await evaluate(expression);
+    } catch (e) {
+      last = e;
+      if (!/Execution context was destroyed|Cannot find context|No frame with given id/i.test(e.message)) throw e;
+      await sleep(gapMs);
+    }
+  }
+  throw new Error(`evaluate 重试 ${tries} 次仍失败：${last?.message}`);
+}
+
 try {
   const wsUrl = await findTarget();
   ws = new WebSocket(wsUrl);
@@ -142,8 +180,20 @@ try {
   await send('Page.enable');
   await send('Runtime.enable');
 
+  // 播种 localStorage：在**任何页面脚本之前**执行 ⇒ 首启引导/自动探测读到的是我们给的值
+  if (lsSeed.length) {
+    const seedSrc = lsSeed
+      .map(([k, v]) => `try{localStorage.setItem(${JSON.stringify(k)},${JSON.stringify(v)})}catch(e){}`)
+      .join('\n');
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: seedSrc });
+    console.log(`  播种 localStorage：${lsSeed.map(([k, v]) => `${k}=${v}`).join(' ')}`);
+  }
+
+  // 真正导航（先 about:blank 就是为了这一步能由我们控制时机）
+  await send('Page.navigate', { url });
+
   // 等游戏挂载 + 渲染若干帧（等的是「画完了」，不是「固定时长」）
-  const waited = await evaluate(`(async () => {
+  const waited = await evaluateRetry(`(async () => {
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const frames = (n) => new Promise((r) => { let i = 0; const s = () => (++i >= n ? r() : requestAnimationFrame(s)); requestAnimationFrame(s); });
     let canvas = null;

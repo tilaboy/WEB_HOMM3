@@ -10,8 +10,9 @@ import type {
 import { MAP_SIZES } from '../types.js';
 
 /**
- * 四个阵营只做配色与命名的区分，兵种/建筑表是共用的。
- * 颜色刻意选得互相离得远（蓝/红/绿/紫），在小地图和灰度下也能分辨。
+ * 四族兵种/建筑表已按族分家（2026-10-12：`units.ts` `unitIdForTier(owner, tier)` 运行时解析，
+ * `buildings.ts` 的 growth 只写 tier）。本注释 2026-10-14 订正——旧描述「只做配色与命名的区分」已过期。
+ * 颜色仍刻意选得互相离得远（蓝/红/绿/紫），在小地图和灰度下也能分辨。
  */
 export const FACTIONS: Record<FactionId, FactionDef> = {
   p1: { id: 'p1', name: '晨曦军团', lord: '指挥官', home: '曙光城', color: '#3f6fd0', dark: '#27467f' },
@@ -41,6 +42,27 @@ export function factionName(player: PlayerId): string {
 /** 当前对局里实际存在的阵营（按 p1、p2… 的顺序），用于每日结算与胜负判定。 */
 export function factionIds(state: { players: Record<string, unknown> }): FactionId[] {
   return FACTION_ORDER.filter((id) => !!state.players[id]);
+}
+
+/**
+ * 「正在看棋盘的人」= 本局的人类玩家（TP-2①）。
+ *
+ * **为什么需要这个函数**：迷雾、资源、城镇列表这些"玩家视角"的东西以前在
+ * `main.ts` / `HeroPanel.ts` 里散着写死 `'p1'`。当前玩家恒为 p1，所以那些写法
+ * 一直是对的——但"恒为 p1"是**当前设计的巧合**，不是不变式：解锁选族（D-48）
+ * 让玩家可以选 p2/p3/p4 之后，每一处写死都会静默读错阵营的迷雾/资源。
+ *
+ * 真值源是 `PlayerState.isHuman`（`generator.ts` 按 `fid === 'p1'` 置位），
+ * 所以查它而不是查 id。查不到时回退 `'p1'`：宁可保持旧行为，也不要让
+ * 一处异常把整个界面变成"没有迷雾"（后者更难归因）。
+ */
+export function viewerOf(state: {
+  players: Record<string, { isHuman?: boolean } | undefined>;
+}): PlayerId {
+  for (const id of FACTION_ORDER) {
+    if (state.players[id]?.isHuman) return id;
+  }
+  return 'p1';
 }
 
 /**
