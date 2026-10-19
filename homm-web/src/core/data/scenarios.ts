@@ -37,6 +37,27 @@ export interface ScenarioGen {
   monsterCount?: number;
   /** 覆盖野怪分档的距离阈值（现为 `9k` / `18k`）。图一 = 全都算弱档。 */
   monsterTierBand?: { weakMax: number; midMax: number };
+  /**
+   * 强档隘口守卫与**任何玩家起点**（英雄出生点）的最小路径消耗（移动力；一天 = 1800）。
+   * 0 = 不约束（缺省）⇒ 不参与分支 ⇒ 自由对局 / 图一 / 图二逐字节一致。
+   *
+   * 图三（破碎罗盘）= 1800：实测默认规则把强档守卫摆到 p1 家 0.86~1.40 天处
+   * （`chokepointGuards`"守卫必须比目标更靠近主城" + p1 家在地图西缘 + 西侧
+   * 深处宝藏的合成结果，TP-9② P1）⇒ 展示图第一印象是一圈打不过的墙。
+   * 口径 = `computePaths` 同款路径消耗（不是曼哈顿格数），探针可复跑验证。
+   * ★ 源点用英雄出生点而非城堡门：验收尺子（探针）量的是"p1 英雄第一天的
+   *   步行圈"，两者实测会差 350 移动力（诊断见 generator.ts 该常量的注释）。
+   */
+  strongGuardMinHomeCost?: number;
+  /**
+   * 每座**玩家**主城在 HOME_MINE_RING 环带内保底一座金矿（TP-11③）。
+   * 缺省不开 ⇒ 整个分支不执行、不消耗 spots ⇒ 其余图生成逐字节一致。
+   *
+   * 图三（破碎罗盘）= true：实测默认散布规则全图只有 2 座金矿且都在"深处"
+   * （deepness ≥ 10 格），p2/p3/p4 的 D1 带金矿 = 0——经济节奏不对称。
+   * 规格：每玩家 D1 带（路径消耗 ≤ 一天）至少 1 座金矿。
+   */
+  homeGoldRing?: boolean;
 }
 
 /** 生成后盖章。**必须用独立 rng 流**（见 §1.3 红线），否则同种子地形会整体错位。 */
@@ -153,6 +174,12 @@ const GRIMS: ScenarioDef = {
   // （教学场 / 对决场不写这一项 ⇒ 仍锁定，行为与本次改动前一致。）
   difficultyEditable: true,
   staticMap: GRIMS_BROKEN_COMPASS,
+  // TP-11①：强档隘口守卫距任何玩家主城 ≥ 一天路程（默认 0 = 不约束）。
+  // 修实测问题"p1 家 0.86~1.40 天内 5 只 strong 环住"（TP-9② P1，用户 2026-10-16
+  // 批准微调野怪/资源）。验收 = 探针 D1 带强怪 = 0、D1 战力 ≤900。
+  // TP-11③：每座玩家主城环带内保底一座金矿（默认不开）。
+  // 修实测问题"p2/p3/p4 的 D1 带金矿 = 0"（默认散布规则金矿全在深处）。
+  gen: { strongGuardMinHomeCost: 1800, homeGoldRing: true },
 };
 
 export const SCENARIOS: ScenarioDef[] = [TUTORIAL, DUEL, GRIMS];

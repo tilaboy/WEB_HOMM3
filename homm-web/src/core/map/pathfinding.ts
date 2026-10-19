@@ -1,4 +1,4 @@
-import type { GameState, GridPos } from '../types.js';
+import type { GameMap, GameState, GridPos } from '../types.js';
 import { TERRAIN } from '../data/terrains.js';
 import { idx, isPassable } from './grid.js';
 
@@ -66,7 +66,18 @@ class MinHeap {
 
 /** 进入 (x,y) 一格所需的移动力；不可通行返回 Infinity。 */
 export function stepCost(state: GameState, from: GridPos, to: GridPos): number {
-  const m = state.map;
+  return stepCostOn(state.map, from, to);
+}
+
+/**
+ * `stepCost` 的 map 版：**只吃 `GameMap`**，不需要 `GameState`。
+ *
+ * 存在的理由 = 生成期也要算距离：`costFieldFromMap` 在 `buildGame` 摆物件时就要用
+ * （场景覆盖"强档野怪距家下限"），那时 `GameState` 还不存在。两条入口共用
+ * 同一份代价规则（地形 moveCost / 斜向 ×1.4 / 禁止贴角）⇒ 生成期约束与
+ * 运行时探针/玩家移动是**同一个数**（一天 = `BASE_MOVE_POINTS` = 1800）。
+ */
+export function stepCostOn(m: GameMap, from: GridPos, to: GridPos): number {
   if (to.x < 0 || to.y < 0 || to.x >= m.width || to.y >= m.height) return Infinity;
   if (!isPassable(m, to.x, to.y)) return Infinity;
   const base = TERRAIN[m.tiles[idx(m, to.x, to.y)].terrain].moveCost;
@@ -84,11 +95,19 @@ export function stepCost(state: GameState, from: GridPos, to: GridPos): number {
  * （传 Infinity 则全图展开，用于"移动力不够时先走一段"）。
  */
 export function computePaths(state: GameState, from: GridPos, maxCost = Infinity): PathField {
-  const m = state.map;
-  const n = m.width * m.height;
+  return costFieldFromMap(state.map, from, maxCost);
+}
+
+/**
+ * `computePaths` 的 map 版（生成期没有 `GameState`，见 `stepCostOn` 的说明）。
+ * 算法与 `computePaths` 逐行相同（重复入堆 + 松弛时比较），只是源从 `state.map`
+ * 改成直接传 `map` ⇒ 两者的输出**逐格一致**。
+ */
+export function costFieldFromMap(map: GameMap, from: GridPos, maxCost = Infinity): PathField {
+  const n = map.width * map.height;
   const cost = new Float64Array(n).fill(Infinity);
   const prev = new Int32Array(n).fill(-1);
-  const start = idx(m, from.x, from.y);
+  const start = idx(map, from.x, from.y);
   cost[start] = 0;
   const heap = new MinHeap();
   heap.push(start, 0);
@@ -96,15 +115,15 @@ export function computePaths(state: GameState, from: GridPos, maxCost = Infinity
   while (heap.size) {
     const cur = heap.pop();
     const curCost = cost[cur];
-    const cx = cur % m.width;
-    const cy = (cur / m.width) | 0;
+    const cx = cur % map.width;
+    const cy = (cur / map.width) | 0;
     for (const [dx, dy] of DIRS) {
       const nx = cx + dx;
       const ny = cy + dy;
-      if (nx < 0 || ny < 0 || nx >= m.width || ny >= m.height) continue;
-      const c = stepCost(state, { x: cx, y: cy }, { x: nx, y: ny });
+      if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
+      const c = stepCostOn(map, { x: cx, y: cy }, { x: nx, y: ny });
       if (!isFinite(c)) continue;
-      const ni = idx(m, nx, ny);
+      const ni = idx(map, nx, ny);
       const nc = curCost + c;
       if (nc < cost[ni] && nc <= maxCost) {
         cost[ni] = nc;

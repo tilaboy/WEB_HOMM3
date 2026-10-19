@@ -32,6 +32,7 @@ import { DEFAULT_CONFIG, DIFFICULTIES, FACTIONS, FACTION_ORDER } from '../data/f
 import { mulberry32, randInt, shuffle, pick } from '../rng.js';
 import { maxMovePoints } from '../game/hero.js';
 import { castleCells, idx, isPassable } from './grid.js';
+import { costFieldFromMap } from './pathfinding.js';
 import { revealAround } from './fog.js';
 // 试玩场景的生成期覆盖 / 生成后盖章。**无 scenario 时不参与任何分支** ⇒ 自由对局零变化。
 // （本模块 ↔ scenarios.ts 只有**类型**上的引用，编译后被擦除，不构成运行时循环依赖。）
@@ -448,6 +449,20 @@ function reachableFrom(map: GameMap, start: GridPos): Uint8Array {
     }
   }
   return seen;
+}
+
+/**
+ * 多张代价场逐格取最小（= "到最近那个源点要多少移动力"）。
+ * Infinity 安全：所有源都不可达的格子仍是 Infinity（比较时天然最大）。
+ * 只复制第一张的长度 ⇒ 调用方保证各张同尺寸（同 map 派生，必然同尺寸）。
+ */
+function minCostField(fields: Float64Array[]): Float64Array {
+  const out = Float64Array.from(fields[0]);
+  for (let i = 1; i < fields.length; i++) {
+    const f = fields[i];
+    for (let j = 0; j < out.length; j++) if (f[j] < out[j]) out[j] = f[j];
+  }
+  return out;
 }
 
 /* ---------------- 城堡选址（2×2，正面开门） ---------------- */
@@ -1043,6 +1058,27 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
     }
   }
 
+  // 1.5) **每座玩家主城**再保底一座金矿，同一个环带、同一套退档（TP-11③）。
+  //     场景覆盖（图三）：默认散布规则的金矿全在"深处"（deepness ≥ 8·kl），
+  //     实测 p2/p3/p4 的 D1 带金矿 = 0（p1 因家在地图西缘顺路够到一座）——
+  //     经济节奏不对称。规格：每玩家 D1 带至少 1 座金矿。
+  //     中立城不参与：它们的中立木石已由上面的 allTowns 循环覆盖，
+  //     金矿是"玩家对称性"规格，不扩散到可被征服的中立资产。
+  //     ⚠️ 默认不开（gen?.homeGoldRing 缺省）⇒ 不执行、不消耗 spots
+  //        ⇒ 自由对局 / 图一 / 图二生成逐字节一致。
+  if (gen?.homeGoldRing) {
+    for (const town of homeSpots) {
+      const dHome = (q: GridPos): number => Math.abs(q.x - town.x) + Math.abs(q.y - town.y);
+      let p = takeWhere(
+        (q) => dHome(q) >= HOME_MINE_RING.min && dHome(q) <= HOME_MINE_RING.max,
+      );
+      if (!p) {
+        p = takeWhere((q) => dHome(q) >= 2 && dHome(q) <= HOME_MINE_RING.max + 5);
+      }
+      if (p) addMine(p, 'gold');
+    }
+  }
+
   // 2) 散布的金矿与稀有矿：金矿别贴着主城，稀有矿一律藏在深处
   //    注意这里用的是**线性**尺度 kl，不是上面那个按面积算的 k：
   //    面积翻一倍地图边长只长 41%，用面积尺度会把"深处"推到地图之外，
@@ -1098,6 +1134,27 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   //    场景覆盖：图一 = false —— 实测"守卫必须比目标更靠近主城"这条规则会让强档怪
   //     unavoidably 贴近主城（小图 1.5 天圈内 4~13 只）；教学期不能出现"打不过又绕不开"的仗。
   const doChokepointGuards = gen?.chokepointGuards !== false;
+  /**
+   * 强档隘口守卫的"距家下限"（**移动力**口径，一天 = `BASE_MOVE_POINTS` = 1800）。
+   * 0 = 不约束 ⇒ 不参与分支 ⇒ 自由对局 / tutorial / duel 逐字节一致（scenario 同纪律）。
+   *
+   * 场景覆盖：图三（破碎罗盘）= 1800。实测默认规则在 40×40 导入图上把强档守卫
+   * 摆到 p1 家 0.86~1.40 天处（p1 家在地图西缘 + 西侧深处宝藏 + "守卫必须比目标
+   * 更靠近主城"的合成结果，TP-9② P1）：展示图的第一印象是一圈打不过的墙。
+   *
+   * ★ 度量源 = **英雄出生点**（`heroSpots`），不是城堡门（`homeSpots`）：
+   *   验收尺子是探针 `tp9-grimsprobe.mjs`，它量的是"p1 英雄第一天的步行圈"。
+   *   实测两者会差一格地形：p1 英雄 (6,25) 比城门 (7,26) 离西侧近 **350** 移动力
+   *   （2026-10-16 诊断）⇒ 用门口径时 (7,18) 的守卫门径 1995 过关、英径 1645 漏检。
+   *   "家"与"起点"只隔一天的一刹那，但**玩家用脚走的是起点**。
+   * ★ 用 `costFieldFromMap`（路径消耗）而不是 `dNearestHome`（曼哈顿格数）：
+   *   两者量纲不同；沼泽地上 8 格可以要走 2000+ 移动力，用格数会再次把怪放进"第一天"里。
+   */
+  const guardMinHomeCost = gen?.strongGuardMinHomeCost ?? 0;
+  const homeCostField =
+    doChokepointGuards && guardMinHomeCost > 0
+      ? minCostField(heroSpots.map((hp) => costFieldFromMap(map, hp).cost))
+      : null;
   for (const target of deepSpots) {
     if (!doChokepointGuards) break;
     const targetD = dNearestHome(target);
@@ -1112,6 +1169,9 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
         if (map.tiles[cell].objectId || reach[cell] !== 1) continue;
         // 守卫必须比它守的东西更靠近主城，这样才是"进谷口先挨一仗"
         if (dNearestHome({ x, y }) >= targetD) continue;
+        // 距家下限：强档守卫与任何玩家起点（英雄出生点）至少隔一天路程（0 = 不约束）。
+        // 找不到就放弃这处宝藏的守卫（宁缺勿错）——家门前的墙比少一只守卫致命得多。
+        if (homeCostField && homeCostField[cell] < guardMinHomeCost) continue;
         const n = walkable(x, y - 1);
         const s = walkable(x, y + 1);
         const e = walkable(x + 1, y);
