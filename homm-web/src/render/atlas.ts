@@ -5,7 +5,7 @@
  * 好处：① 逐像素的"手绘感"只付一次代价；② 放大时关掉插值就是硬边像素风；
  * ③ core/ 完全不知道美术的存在，跟之前程序化绘制一样保持零耦合。
  */
-import { PixBuf, fbm, hash2, mix, pnoise, shade } from './pixel.js';
+import { PixBuf, chamferRect, fbm, hash2, mix, pnoise, shade } from './pixel.js';
 import { UNIT_FRAMES, buildB0Frame } from './unitArt.js';
 import { FACTIONS, NEUTRAL_COLOR, NEUTRAL_DARK } from '../core/data/factions.js';
 
@@ -389,24 +389,84 @@ function vault(pb: PixBuf): void {
   shadow(pb, 16, 41, 14, 2.5);
 }
 
+/**
+ * TP-4「城堡去矩形」的测试钩（默认全开）—— 与 `unitArt` 的
+ * `setTierNormalizeEnabled` 同一用途：让验收门（tools/townartaudit.mjs）
+ * 能插桩造失败，证明闸门有分辨力。运行期不碰它。
+ */
+export interface TownArtOptions {
+  /** §1.2 切角。false = 退回纯 `rect` 直角（负向对照 N1）。 */
+  chamfer: boolean;
+  /** 城堡描边宽度（§1.1 例外条款：只有 72×96 的 2×2 城堡用 2px）。 */
+  castleOutline: number;
+  /** 城镇描边宽度（§1.1：帧高 52 ≤ 64 ⇒ 1px）。 */
+  townOutline: number;
+  /** 地面投影（半透明椭圆）。门控重建本体时关掉它，避免污染轮廓判据。 */
+  shadow: boolean;
+}
+
+let townArt: TownArtOptions = { chamfer: true, townOutline: 1, castleOutline: 2, shadow: true };
+
+export function setTownArtOptions(o: Partial<TownArtOptions>): void {
+  townArt = { ...townArt, ...o };
+}
+
+/** 城镇/城堡帧的固定画布尺寸（§1.1 描边分档 + 图集打包都按它）。 */
+export const TOWN_FRAME_SIZE = { w: 40, h: 52 } as const;
+export const CASTLE_FRAME_SIZE = { w: 72, h: 96 } as const;
+
+/**
+ * 离线验收入口：直接建 1×1 城镇帧的**像素**（不走图集画布，也不需要 DOM）。
+ * tools/townartaudit.mjs 消费；`Atlas.build()` 也复用它，尺寸只有这一份真源。
+ */
+export function buildTownFrame(owner: SpriteOwner, tier: number): PixBuf {
+  const { roof, wall } = ownerPalette(owner);
+  const pb = new PixBuf(TOWN_FRAME_SIZE.w, TOWN_FRAME_SIZE.h);
+  town(pb, roof, wall, tier);
+  return pb;
+}
+
+/** 离线验收入口：2×2 城堡帧（72×96，地图上真正会被看到的那一版）。 */
+export function buildCastleFrame(owner: SpriteOwner, tier: number): PixBuf {
+  const { roof, wall } = ownerPalette(owner);
+  const pb = new PixBuf(CASTLE_FRAME_SIZE.w, CASTLE_FRAME_SIZE.h);
+  castle(pb, roof, wall, tier);
+  return pb;
+}
+
+/**
+ * 1×1 城镇精灵（40×52）。
+ *
+ * TP-4「城堡去矩形」（2026-10-19）：墙体/塔楼/主楼全部改 `chamferRect` 四角切 1px
+ * —— cartoon-style.md §1.2「人造物禁止直角」：32px 尺度下的纯 90° 直角读成
+ * 「程序员的矩形」（圣经原话点的就是这堵墙）。切角档位按 §1.1 的**高度**判据：
+ * 本帧高 52 ≤ 64 ⇒ 切 1px、描边 1px（2px 是 72×96 城堡的专属例外）。
+ * 城齿、门窗、屋顶尖顶与族旗不动：尖角只留给屋顶母题（§1.2 末条）。
+ */
 function town(pb: PixBuf, roof: string, wall: string, tier: number): void {
-  const W = 40;
-  const H = 52;
+  const W = TOWN_FRAME_SIZE.w;
+  const H = TOWN_FRAME_SIZE.h;
   const wallDark = shade(wall, -0.35);
   const wallLite = shade(wall, 0.2);
+  /** 人造块统一入口：切角开 = chamferRect（四角各切 c px），关 = 纯 rect（负向对照）。 */
+  const block = (x: number, y: number, w: number, h: number, c: number, color: string): void => {
+    if (townArt.chamfer) chamferRect(pb, x, y, w, h, c, color);
+    else pb.rect(x, y, w, h, color);
+  };
 
   const wallY = 34;
-  pb.rect(4, wallY, W - 8, 14, wall);
-  pb.rect(4, wallY, 12, 14, wallLite);
-  pb.rect(W - 16, wallY, 12, 14, wallDark);
+  block(4, wallY, W - 8, 14, 1, wall);
+  block(4, wallY, 12, 14, 1, wallLite);
+  block(W - 16, wallY, 12, 14, 1, wallDark);
   for (let x = 4; x < W - 4; x += 4) pb.rect(x, wallY - 3, 2, 3, wall);
-  pb.rect(4, wallY + 12, W - 8, 2, wallDark);
+  // 墙脚暗带：左右各让 1px，避开墙体已切掉的底角（2px 高的带子切角会退化成直角）
+  pb.rect(5, wallY + 12, W - 10, 2, wallDark);
 
   const towers: number[] = tier >= 1 ? [2, W - 12] : [W - 14];
   for (const tx of towers) {
-    pb.rect(tx, 18, 12, 30, wall);
-    pb.rect(tx, 18, 4, 30, wallLite);
-    pb.rect(tx + 8, 18, 4, 30, wallDark);
+    block(tx, 18, 12, 30, 1, wall);
+    block(tx, 18, 4, 30, 1, wallLite);
+    block(tx + 8, 18, 4, 30, 1, wallDark);
     for (let x = tx; x < tx + 12; x += 4) pb.rect(x, 15, 2, 3, wall);
     pb.tri([tx + 6, 15], [tx, 4], [tx + 12, 4], roof);
     pb.tri([tx + 6, 15], [tx + 6, 4], [tx + 12, 4], shade(roof, -0.28));
@@ -416,9 +476,9 @@ function town(pb: PixBuf, roof: string, wall: string, tier: number): void {
   if (tier >= 2) {
     const kx = 13;
     const ky = tier >= 3 ? 8 : 14;
-    pb.rect(kx, ky, 14, H - ky - 4, wall);
-    pb.rect(kx, ky, 5, H - ky - 4, wallLite);
-    pb.rect(kx + 9, ky, 5, H - ky - 4, wallDark);
+    block(kx, ky, 14, H - ky - 4, 1, wall);
+    block(kx, ky, 5, H - ky - 4, 1, wallLite);
+    block(kx + 9, ky, 5, H - ky - 4, 1, wallDark);
     for (let x = kx; x < kx + 14; x += 4) pb.rect(x, ky - 3, 2, 3, wall);
     pb.tri([kx + 7, ky - 3], [kx - 2, ky - 14], [kx + 16, ky - 14], roof);
     pb.tri([kx + 7, ky - 3], [kx + 7, ky - 14], [kx + 16, ky - 14], shade(roof, -0.28));
@@ -430,22 +490,38 @@ function town(pb: PixBuf, roof: string, wall: string, tier: number): void {
   pb.poly([[16, H - 4], [16, 42], [20, 38], [24, 42], [24, H - 4]], '#3a2a18');
   pb.rect(7, 40, 3, 4, '#3a2a18');
   pb.rect(30, 40, 3, 4, '#3a2a18');
-  pb.outline(OUTLINE);
-  shadow(pb, W / 2, H - 3, 17, 3);
+  // §1.1：帧高 52 ≤ 64 ⇒ 1px 描边（2px 是 72×96 城堡的专属例外）
+  for (let i = 0; i < townArt.townOutline; i++) pb.outline(OUTLINE);
+  if (townArt.shadow) shadow(pb, W / 2, H - 3, 17, 3);
 }
 
 /**
- * 2×2 城堡。精灵画成 72×88，落到地上时正好铺满两格宽、两格高（见 render 里的锚点）。
+ * 2×2 城堡。精灵画成 72×96，落到地上时正好铺满两格宽、两格高（见 render 里的锚点）。
  * 城门永远在**左下角**那一格，也就是正面朝南 —— 城堡背面与右侧都是实墙，
  * 所以"只能从正面进"这件事在美术上是看得见的，不是靠代码硬掰。
+ *
+ * TP-4「城堡去矩形」（2026-10-19）：
+ *  ① 主楼 / 角塔 / 正面城墙 / 基座全部 `chamferRect` 四角切 **2px** —— §1.2
+ *     「大建筑（≥64px）切 2px」，72×96 正是大建筑档；
+ *  ② 描边改 **2px** —— §1.1 例外条款：全图集只有 72×96 的城堡用 2px
+ *     （1×1 城镇高 52 ≤ 64，仍守 1px）。实现 = `outline()` 迭代两次
+ *     （§8.1「粗描边」原语的落地方式：补两圈而非改膨胀核）；
+ *  ③ 与轮廓共享角的装饰元素（条纹 / 檐线 / 墙脚线）同步让位，否则会把切掉的角
+ *     重新画成直角 —— 验收门 `townartaudit` 的 T1 专抓这一类回退。
+ * 尖角仍只留给屋顶与族旗（§1.2 末条：母题只留一处）。
  */
 function castle(pb: PixBuf, roof: string, wall: string, tier: number): void {
-  const W = 72;
-  const H = 96;
+  const W = CASTLE_FRAME_SIZE.w;
+  const H = CASTLE_FRAME_SIZE.h;
   const wallDark = shade(wall, -0.35);
   const wallLite = shade(wall, 0.2);
   const roofDark = shade(roof, -0.28);
   const hollow = '#1a1208';
+  /** 同 town() 的 block：切角开 = chamferRect，关 = 纯 rect（负向对照 N1）。 */
+  const block = (x: number, y: number, w: number, h: number, c: number, color: string): void => {
+    if (townArt.chamfer) chamferRect(pb, x, y, w, h, c, color);
+    else pb.rect(x, y, w, h, color);
+  };
 
   const keepTop = tier >= 1 ? 30 : 36;
   const towerTop = tier >= 2 ? 36 : 40;
@@ -457,19 +533,20 @@ function castle(pb: PixBuf, roof: string, wall: string, tier: number): void {
   pb.tri([36, 5], [50, 10], [36, 15], roof);
 
   /* 中央主楼：比角塔更高更宽，撑住整个剪影 */
-  pb.rect(22, keepTop, 28, bodyBase - keepTop, wall);
-  pb.rect(22, keepTop, 7, bodyBase - keepTop, wallLite);
-  pb.rect(43, keepTop, 7, bodyBase - keepTop, wallDark);
+  block(22, keepTop, 28, bodyBase - keepTop, 2, wall);
+  block(22, keepTop, 7, bodyBase - keepTop, 2, wallLite);
+  block(43, keepTop, 7, bodyBase - keepTop, 2, wallDark);
   for (let x = 22; x < 50; x += 5) pb.rect(x, keepTop - 4, 3, 4, wall);
   pb.tri([36, keepTop - 4], [18, keepTop - 22], [54, keepTop - 22], roof);
   pb.tri([36, keepTop - 4], [36, keepTop - 22], [54, keepTop - 22], roofDark);
-  pb.rect(32, keepTop + 14, 8, 14, hollow);
+  // 主楼大窗（8×14，两边都 ≥6 ⇒ 按同一把尺子切 1px；塔楼小窗 5×9 不切）
+  block(32, keepTop + 14, 8, 14, 1, hollow);
 
   /* 两座角塔 */
   for (const tx of [2, 52]) {
-    pb.rect(tx, towerTop, 18, bodyBase - towerTop, wall);
-    pb.rect(tx, towerTop, 5, bodyBase - towerTop, wallLite);
-    pb.rect(tx + 13, towerTop, 5, bodyBase - towerTop, wallDark);
+    block(tx, towerTop, 18, bodyBase - towerTop, 2, wall);
+    block(tx, towerTop, 5, bodyBase - towerTop, 2, wallLite);
+    block(tx + 13, towerTop, 5, bodyBase - towerTop, 2, wallDark);
     for (let x = tx; x < tx + 18; x += 5) pb.rect(x, towerTop - 4, 3, 4, wall);
     pb.tri([tx + 9, towerTop - 4], [tx - 2, towerTop - 18], [tx + 20, towerTop - 18], roof);
     pb.tri([tx + 9, towerTop - 4], [tx + 9, towerTop - 18], [tx + 20, towerTop - 18], roofDark);
@@ -477,23 +554,25 @@ function castle(pb: PixBuf, roof: string, wall: string, tier: number): void {
   }
 
   /* 正面城墙：横跨整整两格，也是唯一敞开的一面 */
-  pb.rect(4, 68, W - 8, 20, wall);
-  pb.rect(4, 68, 16, 20, wallLite);
-  pb.rect(52, 68, 16, 20, wallDark);
+  block(4, 68, W - 8, 20, 2, wall);
+  block(4, 68, 16, 20, 2, wallLite);
+  block(52, 68, 16, 20, 2, wallDark);
   for (let x = 4; x < W - 6; x += 5) pb.rect(x, 64, 3, 4, wall);
-  pb.rect(2, 88, W - 4, 8, wallDark);
-  pb.rect(4, 87, W - 8, 2, shade(wall, -0.5));
+  block(2, 88, W - 4, 8, 2, wallDark);
+  // 墙脚线：左右各让 2px，避开城墙/基座已切掉的底角（2px 高的线切角会退化成直角）
+  pb.rect(6, 87, W - 12, 2, shade(wall, -0.5));
 
   /* 城门：左下角那格的正中，正面唯一能站人的位置 */
   pb.poly([[14, H], [14, 85], [17, 77], [23, 77], [26, 85], [26, H]], hollow);
   pb.rect(15, 91, 10, 5, '#4a3524');
   pb.rect(11, 76, 4, 20, wallDark);
   pb.rect(25, 76, 4, 20, wallDark);
-  pb.rect(12, 72, 17, 3, roof); // 城门上的小檐
-  pb.rect(12, 75, 17, 1, roofDark);
+  block(12, 72, 17, 3, 1, roof); // 城门上的小檐
+  pb.rect(13, 75, 15, 1, roofDark); // 檐影（1px 高：左端让 1px 避开檐口切角）
 
-  pb.outline(OUTLINE);
-  shadow(pb, W / 2, H - 3, 30, 4);
+  // §1.1 例外：只有 72×96 城堡用 2px 描边（outline 一次 = 1px 圈，迭代两次 = 2px）
+  for (let i = 0; i < townArt.castleOutline; i++) pb.outline(OUTLINE);
+  if (townArt.shadow) shadow(pb, W / 2, H - 3, 30, 4);
 }
 
 function hero(pb: PixBuf, cloth: string): void {
@@ -1055,15 +1134,12 @@ export class Atlas {
     put('vault', b);
 
     for (const key of SPRITE_OWNERS) {
-      const { roof, wall } = ownerPalette(key);
+      const { roof } = ownerPalette(key);
       for (let t = 0; t < 4; t++) {
-        b = p(40, 52);
-        town(b, roof, wall, t);
-        put(`town_${key}_${t}`, b);
+        // 城镇/城堡帧一律走 buildXxxFrame（画布尺寸只有那一份真源，门控也读它）
+        put(`town_${key}_${t}`, buildTownFrame(key, t));
         // 2×2 城堡：往上、往左右各借一点边界，落点对齐见 render/MapRenderer
-        b = p(72, 96);
-        castle(b, roof, wall, t);
-        put(`castle_${key}_${t}`, b, CASTLE_AX, CASTLE_AY);
+        put(`castle_${key}_${t}`, buildCastleFrame(key, t), CASTLE_AX, CASTLE_AY);
       }
       b = p(32, 44);
       hero(b, roof);

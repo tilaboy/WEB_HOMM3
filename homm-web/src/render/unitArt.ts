@@ -33,7 +33,7 @@
  *    是 asset-spec §3.2 的**建议值**，等 D1 定稿后再对齐，不要各自假设。
  */
 
-import { PixBuf } from './pixel.js';
+import { PixBuf, chamferRect } from './pixel.js';
 import { makeAdjacencyRules } from './materialRules.js';
 
 /* ==========================================================================
@@ -2553,40 +2553,6 @@ function ring(pb: PixBuf, cx: number, cy: number, rx: number, ry: number, color:
       pb.set(Math.round(cx + Math.cos(a) * r[0]), Math.round(cy + Math.sin(a) * r[1]), color);
     }
   }
-}
-
-/**
- * 切角矩形（§1.2「人造物禁止直角」的实现）：先铺满，再用透明角覆盖的方式不可行
- * ——`PixBuf` 没有 erase，所以**反过来画**：四条斜边三角 + 中间实心矩形，
- * 四角各切掉 `c` px（c=1 即 §1.2 的最低要求，≥64px 的大件用 c=2）。
- *
- * 为什么不用 `pb.rect` + 事后改角：改角需要"擦掉"，而本管线没有透明擦除原语。
- * 为什么不用 `poly` 画八边形：八边形仍然有 4 段横竖直边和 4 个 135° 角，
- * 在 32–64px 尺度上读起来仍偏"硬"；**斜切三角 + 直边**才是像素画里最省且最像
- * 手切木牌的画法（与 `town()` 墙体的切角意图一致）。
- */
-function chamferRect(
-  pb: PixBuf,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  c: number,
-  color: string,
-): void {
-  // 中间竖条 + 中间横条（保证内部全实）
-  pb.rect(x + c, y, w - 2 * c, h, color);
-  pb.rect(x, y + c, w, h - 2 * c, color);
-  // 四角切斜边（每角一个小三角）
-  pb.tri([x, y + c], [x + c, y], [x + c, y + c], color);
-  pb.tri([x + w - 1, y + c], [x + w - 1 - c, y], [x + w - 1 - c, y + c], color);
-  pb.tri([x, y + h - 1 - c], [x + c, y + h - 1], [x + c, y + h - 1 - c], color);
-  pb.tri(
-    [x + w - 1, y + h - 1 - c],
-    [x + w - 1 - c, y + h - 1],
-    [x + w - 1 - c, y + h - 1 - c],
-    color,
-  );
 }
 
 /**

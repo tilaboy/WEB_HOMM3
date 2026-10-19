@@ -278,3 +278,44 @@ export class PixBuf {
     return c;
   }
 }
+
+/**
+ * 切角矩形（cartoon-style.md §1.2「人造物禁止直角」的实现）：
+ * 先铺满、再用透明角覆盖的方式不可行 —— `PixBuf` 没有 erase，
+ * 所以**反过来画**：中间实心十字 + 四角各一个斜边小三角，
+ * 四角各切掉 `c` px（c=1 即 §1.2 的最低要求；≥64px 的大件用 c=2）。
+ *
+ * 为什么不用 `rect` + 事后改角：改角需要"擦掉"，而本管线没有透明擦除原语。
+ * 为什么不用 `poly` 画八边形：八边形仍有 4 段横竖直边和 4 个 135° 角，
+ * 在 32–64px 尺度上读起来仍偏"硬"；**斜切三角 + 直边**才是像素画里
+ * 最省且最像手切木牌的画法。
+ *
+ * 共用方：`unitArt.ts`（B0–B3 帧的盾牌 / 木牌 / 石块）与 `atlas.ts`
+ * （城镇 / 城堡的墙体、塔楼、基座 —— TP-4「城堡去矩形」，2026-10-19）。
+ * 矩形区域 = [x, x+w-1] × [y, y+h-1]（与 `PixBuf.rect` 同口径）。
+ */
+export function chamferRect(
+  pb: PixBuf,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  c: number,
+  color: string,
+): void {
+  if (w <= 0 || h <= 0) return;
+  const k = Math.max(0, Math.min(c, Math.floor(Math.min(w, h) / 2)));
+  // 中间竖条 + 中间横条（保证内部全实）
+  pb.rect(x + k, y, w - 2 * k, h, color);
+  pb.rect(x, y + k, w, h - 2 * k, color);
+  // 四角切斜边（每角一个小三角）
+  pb.tri([x, y + k], [x + k, y], [x + k, y + k], color);
+  pb.tri([x + w - 1, y + k], [x + w - 1 - k, y], [x + w - 1 - k, y + k], color);
+  pb.tri([x, y + h - 1 - k], [x + k, y + h - 1], [x + k, y + h - 1 - k], color);
+  pb.tri(
+    [x + w - 1, y + h - 1 - k],
+    [x + w - 1 - k, y + h - 1],
+    [x + w - 1 - k, y + h - 1 - k],
+    color,
+  );
+}
