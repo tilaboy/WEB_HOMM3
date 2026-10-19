@@ -28,6 +28,8 @@ import type { ScenarioObjective } from './core/data/scenarios.js';
 import { SCENARIO_BY_ID, scenarioGenOptions } from './core/data/scenarios.js';
 import { ownedMines } from './core/game/town.js';
 import { endDay } from './core/game/turn.js';
+import { aiEvents } from './core/game/aiReport.js';
+import type { AiEvent, AiEventKind } from './core/game/aiReport.js';
 import { evaluateOutcome, outcomeSummary } from './core/game/victory.js';
 import { Camera } from './render/camera.js';
 import { MapRenderer } from './render/MapRenderer.js';
@@ -1442,12 +1444,96 @@ function doEndDay(): void {
   renderLog();
   saveGame(state);
   if (afterWorldChange()) return;
-  if (pendingDest && state.heroes[pendingDest.heroId]) {
-    hint('按 M 继续昨日的行程（小旗处）');
+  showAiDayReport();
+}
+
+/**
+ * 过天「对手动向」摘要（TP-7 / F-2.2：回合结算看不到敌方活动、英雄死活不可知）。
+ *
+ * 数据源是 AI 行动时记的结构化事件（`aiReport.ts`），不解析日志文本。
+ * 有事件才弹；没有（教学场 / 对手全灭 / 第一天大家都没动）就安静走原流程。
+ * 弹窗时把原收尾 hint 交给关闭回调 —— 否则 toast 会在模态背后 2 秒蒸发。
+ */
+function showAiDayReport(): void {
+  const finish = (): void => {
+    if (pendingDest && state.heroes[pendingDest.heroId]) {
+      hint('按 M 继续昨日的行程（小旗处）');
+      return;
+    }
+    const last = state.log[state.log.length - 1];
+    hint(last ? `D${last.day} · ${last.text}` : '新的一天');
+  };
+
+  const evs = aiEvents();
+  if (!evs.length) {
+    finish();
     return;
   }
-  const last = state.log[state.log.length - 1];
-  hint(last ? `D${last.day} · ${last.text}` : '新的一天');
+
+  // 分组：按阵营；含"打到玩家头上"事件的阵营排最前（玩家的损失优先可见）。
+  const groups = new Map<string, AiEvent[]>();
+  for (const e of evs) {
+    const arr = groups.get(e.player);
+    if (arr) arr.push(e);
+    else groups.set(e.player, [e]);
+  }
+  const ordered = [...groups.entries()].sort((a, b) => {
+    const pa = a[1].some((e) => e.vsPlayer) ? 0 : 1;
+    const pb = b[1].some((e) => e.vsPlayer) ? 0 : 1;
+    return pa - pb;
+  });
+
+  const body: (Node | string)[] = [];
+  for (const [player, list] of ordered) {
+    const head = document.createElement('p');
+    head.className = 'ai-head';
+    head.textContent = `${factionName(player as Parameters<typeof factionName>[0])}${state.players[player]?.isHuman ? '（你）' : ''}`;
+    body.push(head);
+    for (const e of sortGroup(list)) {
+      const line = document.createElement('p');
+      // 着色只回答一个问题："这条对玩家是好消息还是坏消息"。
+      // vsPlayer 的交战且 AI 失手 = 好消息（绿）；其余打到玩家头上的（你的英雄阵亡 /
+      // 你的资产易主 / 你的英雄被击败）都是坏消息（红）。
+      const tone = !e.vsPlayer ? '' : e.kind === 'battle' && e.win === false ? ' win' : ' loss';
+      line.className = 'ai-line' + tone;
+      line.textContent = aiEventLine(e);
+      body.push(line);
+    }
+  }
+
+  showModal(stage, {
+    title: `第 ${state.day} 天 · 对手动向`,
+    body,
+    actions: [{ label: '知道了', primary: true, onClick: (c) => { c(); finish(); } }],
+  });
+}
+
+/** 组内排序：事件严重度优先（退出 > 阵亡 > 交战 > 占领 > 招募 > 移动），同级的玩家相关在前。 */
+function sortGroup(list: AiEvent[]): AiEvent[] {
+  const rank: Record<AiEventKind, number> = {
+    out: 0, death: 1, battle: 2, capture: 3, hire: 4, move: 5,
+  };
+  return [...list].sort((a, b) => rank[a.kind] - rank[b.kind] || (a.vsPlayer ? 0 : 1) - (b.vsPlayer ? 0 : 1));
+}
+
+/** 一条事件的一句话。文案以"主体 + 发生了什么"组织，不搞标记前缀。 */
+function aiEventLine(e: AiEvent): string {
+  switch (e.kind) {
+    case 'move':
+      return `${e.what} ${e.detail}`;
+    case 'battle':
+      return `${e.what} ${e.detail}`;
+    case 'capture':
+      // 城镇：what 已含动词（"攻陷了曙光城"）；矿场：what 是标题、detail 是产出（"占领金矿（每日 +400）"）
+      // hero 前缀不可省：否则"占领金矿"不知道是谁干的，玩家判断不出是哪员敌将在往哪儿去。
+      return `${e.hero ? `${e.hero} ` : ''}${e.what}${e.detail ? `（${e.detail}）` : ''}`;
+    case 'hire':
+      return `${e.what} ${e.detail}`;
+    case 'death':
+      return e.vsPlayer ? `你的英雄 ${e.what} 阵亡` : `${e.what} ${e.detail}`;
+    case 'out':
+      return `${e.what} ${e.detail}`;
+  }
 }
 
 /** 继续跨天行程：朝 pendingDest 的目的地重新寻路出发。 */

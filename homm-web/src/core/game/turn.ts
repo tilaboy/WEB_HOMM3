@@ -5,6 +5,7 @@ import { applyWeeklyGrowth, mineIncome, ownedTowns, townDailyIncome } from './to
 import { isNewWeek } from './calendar.js';
 import { pushLog } from './log.js';
 import { runAiTurn } from './ai.js';
+import { resetAiEvents } from './aiReport.js';
 import { advanceNoTownStreaks, eliminateFaction, evaluateOutcome, isEliminated } from './victory.js';
 
 export { DAYS_PER_WEEK, dayOfWeek, weekOf, isNewWeek } from './calendar.js';
@@ -59,6 +60,10 @@ function restoreHeroes(state: GameState, player: FactionId): void {
 export function endDay(state: GameState): void {
   if (state.status !== 'playing') return;
   state.day += 1;
+
+  // TP-7（F-2.2）：AI 活动事件缓冲按天清零。放在这里（而不是 UI 侧）⇒
+  // 任何调用方（含 devdays 连跑与 grimscontact 门控）拿到的都是"今天"的事件。
+  resetAiEvents();
 
   const ids = factionIds(state);
   const parts: string[] = [];

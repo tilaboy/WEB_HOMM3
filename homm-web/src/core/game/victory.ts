@@ -1,6 +1,7 @@
 import type { FactionId, GameState, GameStatus, Hero, Town } from '../types.js';
 import { factionIds, factionName } from '../data/factions.js';
 import { pushLog } from './log.js';
+import { noteAiEvent } from './aiReport.js';
 import { removeHero } from './interaction.js';
 
 /**
@@ -84,6 +85,12 @@ export function eliminateFaction(state: GameState, player: FactionId): void {
     state,
     `${factionName(player)} 已连续 ${NO_TOWN_GRACE_DAYS} 天没有城镇，退出了这场争夺`,
   );
+  noteAiEvent({
+    kind: 'out',
+    player,
+    what: factionName(player),
+    detail: `连续 ${NO_TOWN_GRACE_DAYS} 天没有城镇，退出争夺`,
+  });
 }
 
 /** 阵营还剩几座城、几位英雄，用于终局结算面板。 */

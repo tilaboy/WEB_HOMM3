@@ -768,6 +768,21 @@ body {
   color: var(--ok);
 }
 
+/* TP-7（F-2.2）：过天「对手动向」摘要。分组头 + 逐行；打到玩家头上的行按好坏着色。 */
+.modal .ai-head {
+  margin: 10px 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--gold);
+}
+
+.modal .ai-line {
+  margin: 0 0 4px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-line;
+}
+
 .modal .actions {
   display: flex;
   gap: 8px;

@@ -1,5 +1,5 @@
-import type { Army, FactionId, GameState, GridPos, GuardReward, Hero, Town } from '../types.js';
-import { DIFFICULTIES, factionName } from '../data/factions.js';
+import type { Army, FactionId, GameState, GridPos, GuardReward, Hero, MapObject, Town } from '../types.js';
+import { DIFFICULTIES, factionName, viewerOf } from '../data/factions.js';
 import { BUILDINGS } from '../data/buildings.js';
 import { WAR_MACHINES, WAR_MACHINE_IDS } from '../data/warmachines.js';
 import { MARKET_RATES, marketBuy } from './town.js';
@@ -38,6 +38,8 @@ import {
   townDefenseBonus,
 } from './town.js';
 import { pushLog } from './log.js';
+import { noteAiEvent } from './aiReport.js';
+import type { AiEvent } from './aiReport.js';
 import { isEliminated } from './victory.js';
 import { SCENARIO_BY_ID } from '../data/scenarios.js';
 
@@ -683,11 +685,80 @@ function aiMarch(state: GameState, hero: Hero, target: GridPos): void {
     if (preview?.kind === 'info') continue; // 只是看了眼说明，继续走
 
     const stops = arrived.kind === 'wanderingMonster' || arrived.kind === 'town';
+    const prevOwner = ownerOfObject(state, arrived);
     const res = applyInteraction(state, hero.id, arrived.id, true);
-    if (res.heroDefeated) return;
-    if (res.title) pushLog(state, `${hero.name}：${res.message.split('\n')[0]}`);
+    if (res.heroDefeated) {
+      noteAiEvent({ kind: 'death', player, what: hero.name, detail: '部队被全歼' });
+      return;
+    }
+    if (res.title) {
+      pushLog(state, `${hero.name}：${res.message.split('\n')[0]}`);
+      noteAiEvent(arrivalEvent(state, player, hero.name, arrived, prevOwner, res.title));
+    }
     if (stops) return; // 大事件（战斗/攻城）之后今日收工
   }
+}
+
+/** 物件当前归属（mine/town 有 owner；其余返回 null）。供"是否打到玩家头上"判定。 */
+function ownerOfObject(state: GameState, obj: MapObject): string | null {
+  if (obj.kind === 'mine') return (obj.payload as { owner?: string }).owner ?? 'neutral';
+  if (obj.kind === 'town') {
+    return state.towns[(obj.payload as { townId: string }).townId]?.owner ?? null;
+  }
+  return null;
+}
+
+/**
+ * 把一次抵达结算翻成结构化事件（TP-7）。
+ * 分类：城镇 = 攻城占领；矿场 = 插旗占领；野怪/宝库 = 交战。
+ * 调用方已排除 heroDefeated（战死）与空 title（路过自家城）两种分支。
+ */
+function arrivalEvent(
+  state: GameState,
+  player: FactionId,
+  heroName: string,
+  obj: MapObject,
+  prevOwner: string | null,
+  title: string,
+): AiEvent {
+  const human = viewerOf(state);
+  const vsPlayer = prevOwner === human;
+  if (obj.kind === 'town') {
+    const town = state.towns[(obj.payload as { townId: string }).townId];
+    const verb = title === '兵不血刃' ? '兵不血刃拿下' : '攻陷了';
+    return {
+      kind: 'capture',
+      player,
+      hero: heroName,
+      what: `${verb}${town?.name ?? '一座城镇'}`,
+      detail: '',
+      vsPlayer,
+      win: true,
+    };
+  }
+  if (obj.kind === 'mine') {
+    const perDay = (obj.payload as { perDay?: number }).perDay;
+    return {
+      kind: 'capture',
+      player,
+      hero: heroName,
+      what: title,
+      detail: perDay ? `每日 +${perDay}` : '',
+      vsPlayer,
+      win: true,
+    };
+  }
+  // 野怪 / 宝库：走到这里必然是战斗胜利（战死分支已提前返回）
+  return { kind: 'battle', player, what: foeNameOf(obj), detail: '清掉了挡路的敌人', win: true };
+}
+
+/** 野怪/宝库物件的中文主体名（宝库带档位）。 */
+function foeNameOf(obj: MapObject): string {
+  if (obj.kind === 'vault') {
+    const tier = (obj.payload as { tier?: string }).tier;
+    return tier === 'strong' ? '重兵把守的宝库' : '宝库';
+  }
+  return '野怪';
 }
 
 /** AI 主动打敌方英雄：无头结算，结果写回世界。 */
@@ -699,6 +770,35 @@ function aiFightHero(state: GameState, attacker: Hero, defender: Hero): void {
   const outcome = quickBattle(setup.attacker, setup.defender, setup.seed);
   const res = applyHeroBattle(state, attacker.id, defender.id, outcome);
   if (res.title) pushLog(state, `${attacker.name}：${res.title}`);
+  const vsPlayer = defender.owner === viewerOf(state);
+  noteAiEvent({
+    kind: 'battle',
+    player: attacker.owner as FactionId,
+    what: attacker.name,
+    detail: outcome.win
+      ? `击败了${vsPlayer ? '你的英雄' : ''}${defender.name}`
+      : `进攻 ${defender.name} 失利`,
+    vsPlayer,
+    win: outcome.win,
+  });
+  // 生死可见（F-2.2 的核心诉求）：败者从 state.heroes 消失，这里补一条死亡事件。
+  if (!state.heroes[defender.id]) {
+    noteAiEvent({
+      kind: 'death',
+      player: defender.owner as FactionId,
+      what: defender.name,
+      detail: vsPlayer ? '你的英雄阵亡了' : '被敌军击溃',
+      vsPlayer,
+    });
+  }
+  if (!state.heroes[attacker.id]) {
+    noteAiEvent({
+      kind: 'death',
+      player: attacker.owner as FactionId,
+      what: attacker.name,
+      detail: '进攻失利，全军覆没',
+    });
+  }
 }
 
 /* ---------------- 5. 扩编 ---------------- */
@@ -717,6 +817,12 @@ function maybeHireHero(state: GameState, player: FactionId): void {
     const hired = hireHero(state, town);
     if (hired) {
       pushLog(state, `${factionName(player)} 在 ${town.name} 招募了新英雄 ${hired.name}`);
+      noteAiEvent({
+        kind: 'hire',
+        player,
+        what: hired.name,
+        detail: `在 ${town.name} 加入战局`,
+      });
       return;
     }
   }
@@ -764,6 +870,12 @@ export function runAiTurn(state: GameState, player: FactionId): void {
         state,
         `${factionName(player)} · ${hero.name} 从 (${before.x},${before.y}) 移动到 (${hero.pos.x},${hero.pos.y})，部队 ${armyTop(hero.army)}`,
       );
+      noteAiEvent({
+        kind: 'move',
+        player,
+        what: hero.name,
+        detail: `(${before.x},${before.y}) → (${hero.pos.x},${hero.pos.y})`,
+      });
     }
   }
 
