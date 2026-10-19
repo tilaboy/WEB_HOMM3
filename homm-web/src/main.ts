@@ -2029,17 +2029,27 @@ if (Number.isFinite(devDays) && devDays > 0) {
 }
 
 // 调试入口：?devbattle=1 直接开一场固定阵容的战斗，用于截图与验证，不影响正常流程
+// `?devbattle=t5`：阵容换成四族 T5（各侧两只），用于人工验收「T5 在战斗里真的画出来了」。
+//   TP-1 背景：四族 T5 曾长期在图集里没有 `cu_*` 帧 ⇒ 战斗渲染静默跳过 ⇒ 只剩队伍色底盘圈，
+//   而**任何断言都不响**（断言只查"已注册的帧画得对不对"）。这条入口是那把人工验收的输入。
+//   ⚠️ `=1`（缺省）的阵容**逐字不变**，否则既有截图基线的可比性就没了。
 if (bootParams.has('devbattle') && selected && state.heroes[selected]) {
+  const t5 = bootParams.get('devbattle') === 't5';
   openBattleScreen(stage, {
     state,
     heroId: selected,
-    title: '调试战斗',
+    title: t5 ? '调试战斗 · T5 顶点兵' : '调试战斗',
     attacker: {
-      army: [
-        { unitTypeId: 'archer', count: 20 },
-        { unitTypeId: 'pikeman', count: 12 },
-        { unitTypeId: 'knight', count: 6 },
-      ],
+      army: t5
+        ? [
+            { unitTypeId: 'p1_overangel', count: 3 },
+            { unitTypeId: 'p3_unicorn', count: 4 },
+          ]
+        : [
+            { unitTypeId: 'archer', count: 20 },
+            { unitTypeId: 'pikeman', count: 12 },
+            { unitTypeId: 'knight', count: 6 },
+          ],
       attack: 3,
       defense: 4,
       // 调试用：给一套完整法术，方便截图验证施法界面
@@ -2050,11 +2060,16 @@ if (bootParams.has('devbattle') && selected && state.heroes[selected]) {
       },
     },
     defender: {
-      army: [
-        { unitTypeId: 'wolf', count: 26 },
-        { unitTypeId: 'boar', count: 13 },
-        { unitTypeId: 'ogre', count: 11 },
-      ],
+      army: t5
+        ? [
+            { unitTypeId: 'p2_lavatroll', count: 2 },
+            { unitTypeId: 'p4_colossus', count: 3 },
+          ]
+        : [
+            { unitTypeId: 'wolf', count: 26 },
+            { unitTypeId: 'boar', count: 13 },
+            { unitTypeId: 'ogre', count: 11 },
+          ],
       attack: 0,
       defense: 0,
     },
@@ -2082,6 +2097,19 @@ if (bootParams.has('devsetup') && state.players.p1) {
     // 前置建筑补好了，但"今天建过"要清掉，否则卡片只会说"明日再来"
     home.builtDay = -1;
   }
+}
+
+// 调试：`?devarmy=t5` 把当前英雄的部队换成四族 T5 各 1（截图 / 人工验收用）。
+// 用途：T5 在地图侧的唯一表面是**队伍徽标**（`MapRenderer.drawTeamBadge`，帧名 `u_<cid>_map`），
+// 而它默认关（`?devbadge=1` 才开）⇒ 没有这支部队就永远截不到地图侧的 T5。
+// ⚠️ 只动"当前选中英雄"的 army，不碰生产路径；不传即零影响。
+if (bootParams.get('devarmy') === 't5' && selected && state.heroes[selected]) {
+  state.heroes[selected].army = [
+    { unitTypeId: 'p1_overangel', count: 1 },
+    { unitTypeId: 'p2_lavatroll', count: 1 },
+    { unitTypeId: 'p3_unicorn', count: 1 },
+    { unitTypeId: 'p4_colossus', count: 1 },
+  ];
 }
 
 // 调试：?devtown=1 直接打开我方首座城镇面板（需配合 ?devquick 才有城镇）

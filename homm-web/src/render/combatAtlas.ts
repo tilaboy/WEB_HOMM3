@@ -13,6 +13,27 @@ import { UNIT_FRAMES, buildB0Frame } from './unitArt.js';
 // 审计脚本 `tools/atlasaudit.mjs` 复算容量时拿到的就是运行时这套规则。
 import { shelfAdvance, packMetrics, warnOverflow, type PackItem, type PackMetrics, type ShelfCursor } from './atlas.js';
 
+/**
+ * 旧通用美术的中立怪 / 退役 p1 别名帧（44×56，`drawCombatUnit` 手绘 switch）。
+ *
+ * ⚠️ 这份清单是**战斗精灵覆盖率的真值源之一**，与 `UNIT_FRAMES` 的 `cu_*` 合并成
+ * 「运行时可能被 `BattleRenderer` 请求的全部 `cu_<id>`」。`tools/b0audit.mjs` 的
+ * `[C]` 覆盖断言直接 import 它 —— **往这里加/删 id 前先跑那把尺**。
+ *
+ * 背景（2026-10-14）：四族 T5 曾因帧表没有 `cu_*`、`BattleRenderer` 静默 `return`，
+ * 在战斗中只剩队伍色底盘圈且无人察觉。覆盖率必须由断言兜住，不能靠人记得。
+ */
+export const LEGACY_COMBAT_SPRITE_IDS = [
+  'peasant',
+  'archer',
+  'pikeman',
+  'knight',
+  'angel',
+  'wolf',
+  'boar',
+  'ogre',
+] as const;
+
 export interface CFrame {
   x: number;
   y: number;
@@ -115,7 +136,7 @@ export class CombatAtlas {
     put('cbase_0', teamRing('#2f6fbf', '#9fd0ff'), -20, -8);
     put('cbase_1', teamRing('#a8322a', '#ff9b8c'), -20, -8);
 
-    for (const id of ['peasant', 'archer', 'pikeman', 'knight', 'angel', 'wolf', 'boar', 'ogre']) {
+    for (const id of LEGACY_COMBAT_SPRITE_IDS) {
       const pb = new PixBuf(44, 56);
       drawCombatUnit(pb, id);
       pb.outline('#1b1410', 0.9);

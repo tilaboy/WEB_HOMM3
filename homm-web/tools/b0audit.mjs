@@ -35,6 +35,10 @@ requireFile(DIST, 'render/unitArt.js');
 
 const {
   UNIT_FRAMES,
+  B0_FRAMES,
+  B1_FRAMES,
+  B2_FRAMES,
+  B3_FRAMES,
   B0_PALETTE,
   B0_SHADE_STEPS,
   B0_PENDING_AI_FRAME,
@@ -45,6 +49,26 @@ const {
   setTierNormalizeEnabled,
   isTierNormalizeEnabled,
 } = await import(u('render/unitArt.js'));
+
+/**
+ * 扫描范围**派生**自 unitArt.ts 的批数组，不写死。
+ * 教训（2026-10-14）：本文件原先把结论文案硬编码成「B0 的 6 帧仍 PASS，B1 的 18 帧亦 PASS」——
+ * 加完 B3/T5 12 帧后，那句仍原样打印，读者**无法从输出判断 T5 到底有没有被扫**。
+ * 凡是「声明了却可能没实现」的计数，一律从真值源算出来。
+ */
+const BATCHES = [
+  ['B0', B0_FRAMES],
+  ['B1', B1_FRAMES],
+  ['B2', B2_FRAMES],
+  ['B3', B3_FRAMES],
+];
+const batchLabel = BATCHES.map(([n, a]) => `${n} ${a.length}`).join(' + ');
+const batchTotal = BATCHES.reduce((s, [, a]) => s + a.length, 0);
+if (batchTotal !== UNIT_FRAMES.length) {
+  console.log(
+    `⚠️ 扫范围自检不一致：批数组合计 ${batchTotal} ≠ UNIT_FRAMES ${UNIT_FRAMES.length}（有帧没被任一 批数组收编）`,
+  );
+}
 const { shade } = await import(u('render/pixel.js'));
 
 /* ---------------------------------------------------------------- 参数 */
@@ -667,8 +691,8 @@ function grid(rows, gap, bg) {
 
 /* ---------------------------------------------------------------- 主流程 */
 
-console.log('B0+B1 程序化兵种批 · 验收（asset-spec §9.1 / §9.2）');
-console.log('扫描范围：unitArt.ts 内全部帧（B0 6 + B1 18 = 24），阈值未放宽');
+console.log('B0+B1+B2+B3 程序化兵种批 · 验收（asset-spec §9.1 / §9.2）');
+console.log(`扫描范围：unitArt.ts 内全部帧（${batchLabel} = ${batchTotal}），阈值未放宽`);
 console.log('='.repeat(64));
 
 const frames = UNIT_FRAMES.map((spec) => ({
@@ -862,15 +886,77 @@ checkTierMatrix({ label: 'map 地图帧', kind: 'map', targets: TIER_TARGET_PCT_
 
 /* ---------------------------------------------------------------- 报告 */
 
+/**
+ * [C] 战斗精灵覆盖率 —— **不属 asset-spec §9.1 的七条断言**，是本仓自己加的回归闸。
+ *
+ * 为什么必须有：四族 T5 曾长期在图集里没有 `cu_*` 帧，而 `BattleRenderer.drawUnit`
+ * 对缺帧是**静默 `return`** ⇒ 战斗中只剩队伍色底盘圈（无本体/无数量牌/无血条），
+ * 从截图上看着只是"美术还没做完"，**任何现有断言都不会响**（b0audit 只查"已注册的帧
+ * 画得对不对"，不查"该注册的帧有没有注册"）。这正是本项目反复治的病：**零命中 ≠ 零**。
+ *
+ * 判据：运行时可能被请求的全部 `cu_<id>` ⊆ 实际烘焙进战斗图集的 `cu_<id>`。
+ *   · 请求侧 = `FACTION_UNITS` 的全部 20 个兵种 id ∪ `MONSTER_UNIT_IDS`（中立怪）。
+ *   · 供给侧 = `UNIT_FRAMES` 里 kind ≠ 'map' 的帧名 ∪ `LEGACY_COMBAT_SPRITE_IDS`。
+ * 两侧都从真值源算，任何一边漏了都会在这里红。
+ */
+{
+  const { FACTION_UNITS, MONSTER_UNIT_IDS } = await import(u('core/data/units.js'));
+  const { LEGACY_COMBAT_SPRITE_IDS } = await import(u('render/combatAtlas.js'));
+  const want = new Set([...Object.values(FACTION_UNITS).flat(), ...MONSTER_UNIT_IDS]);
+  const have = new Set([
+    ...UNIT_FRAMES.filter((f) => f.kind !== 'map').map((f) => f.name.replace(/^cu_/, '')),
+    ...LEGACY_COMBAT_SPRITE_IDS,
+  ]);
+  const missing = [...want].filter((id) => !have.has(id)).sort();
+  const detail = {
+    want: `${want.size} 个兵种 id`,
+    baked: `${have.size} 个 cu_* 帧`,
+    missing: missing.length ? missing.join(', ') : 0,
+  };
+  if (missing.length) {
+    detail['后果'] = 'BattleRenderer 会静默跳过 ⇒ 该兵种只剩队伍色底盘圈';
+  }
+  record('C', '战斗精灵覆盖率（请求的 cu_* ⊆ 烘焙的 cu_*）', missing.length === 0, detail);
+  // 反向也查：供过于求不是错误，但列出来便于发现"退役了却没删"的帧
+  const extra = [...have].filter((id) => !want.has(id)).sort();
+  if (extra.length) console.log(`\n[信息] 图集里有 ${extra.length} 个当前无消费者的帧（非失败）：${extra.join(', ')}`);
+}
+
+/**
+ * [M] 地图兵种精灵覆盖率 —— 与 [C] 同源的回归闸，管的是 `mapBadge` 那条链路。
+ *
+ * 为什么必须有：`mapBadge.pickRepresentativeUnit` 对"canonical 但真值表没登记"的兵种
+ * 是**静默 `continue`**，代表兵种算不出来 ⇒ 地图上不画徽标（只剩英雄本体）。
+ * 症状与 [C] 一样轻（截图上只是"少个小图标"），但断言 [1]-[13] 全都不会响——
+ * 它们只查"已注册的帧画得对不对"，不查"该注册的帧有没有注册"。
+ *
+ * 判据：`FACTION_UNITS` 全 20 个兵种 id ⊆ 已烘焙的 `u_<id>_map` 帧名。
+ * 中立怪（wolf/boar/ogre）按 `toCanonicalUnitId` 的设计**本来就没有** map 帧
+ * （§13.4 ③「宁可缺不可错」），所以不纳入请求侧。
+ */
+{
+  const { FACTION_UNITS } = await import(u('core/data/units.js'));
+  const wantMap = [...new Set(Object.values(FACTION_UNITS).flat())].sort();
+  const haveMap = new Set(UNIT_FRAMES.filter((f) => f.kind === 'map').map((f) => f.name.replace(/^u_/, '').replace(/_map$/, '')));
+  const missingMap = wantMap.filter((id) => !haveMap.has(id));
+  const d = {
+    请求: `${wantMap.length} 个四族兵种 id`,
+    已烘焙: `${haveMap.size} 个 u_*_map 帧`,
+    缺帧: missingMap.length ? missingMap.join(', ') : 0,
+  };
+  if (missingMap.length) d['后果'] = 'mapBadge.pickRepresentativeUnit 静默跳过 ⇒ 地图上不画徽标';
+  record('M', '地图兵种精灵覆盖率（请求的 u_*_map ⊆ 烘焙的 u_*_map）', missingMap.length === 0, d);
+}
+
 const byId = new Map();
 for (const r of results) {
   if (!byId.has(r.id)) byId.set(r.id, []);
   byId.get(r.id).push(r);
 }
 
-console.log('\n── 自动断言（逐帧 1/2/4/8 + 色板级 3 + 基线 5） ──');
+console.log('\n── 自动断言（逐帧 1/2/4/8 + 色板级 3 + 基线 5 + 覆盖 C/M） ──');
 const verdict = new Map();
-for (const id of [1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13]) {
+for (const id of [1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 'C', 'M']) {
   const rs = byId.get(id) ?? [];
   const pass = rs.every((r) => r.pass);
   verdict.set(id, pass);
@@ -921,7 +1007,7 @@ console.log('  [6] 去色 32px 可辨（核心）MANUAL  3 个盲测者 × 各 3
 console.log('                                 判据：全部答对（§5.6.5 的 20 格版本阈值 = 命中率 ≥90%）');
 console.log('  [7] 手机上表情可读      MANUAL  64×56 帧在 zoom 2 × dpr 3 下截图，眼与嘴线可辨');
 console.log(`  [+] ${B0_PENDING_AI_FRAME} 全流程    MANUAL  七步管线（抠底→块众数降采样→钳色→落位→描边重建→手工修→PNG-8）`);
-console.log('        （本轮只做 6 个程序化帧；crestL_p1 是 asset-spec §9.1 的第 7 个资产，留到下一批）');
+console.log('        （程序化帧已做到 60 帧，但 crestL_p1 是 asset-spec §9.1 的第 7 个资产（AI 生成），仍留到下一批）');
 
 /* ---------------------------------------------------------------- 预览 */
 
@@ -958,7 +1044,7 @@ if (pngDir) {
   );
   writeFileSync(join(pngDir, 'blindtest_32px.png'), encodePng(up.w, up.h, up.data));
   console.log(`\nPNG 已导出 → ${pngDir}`);
-  console.log('  6 帧 ×8 原图 + blindtest_32px.png（去色 32px 盲测表，**答案：上=晨曦提灯侍从，下=赤焰捡破烂小鬼**）');
+  console.log(`  ${frames.length} 帧 ×8 原图（= ${batchLabel}）+ blindtest_32px.png（去色 32px 盲测表，**答案：上=晨曦提灯侍从，下=赤焰捡破烂小鬼**）`);
 }
 
 /* ---------------------------------------------------------------- 汇总 */
@@ -971,7 +1057,13 @@ console.log(
     .join('  ')}`,
 );
 console.log(`人工项： [3 的 AI 半] MANUAL  [6] MANUAL  [7] MANUAL  [+${B0_PENDING_AI_FRAME}] MANUAL`);
-console.log(`结论：自动部分 ${allPass ? '全过（B0 的 6 帧仍 PASS，B1 的 18 帧亦 PASS）' : '未全过 —— 不要提交'}`);
+console.log(
+  `结论：自动部分 ${
+    allPass
+      ? `全过（本轮实扫 ${frames.length} 帧 = ${batchLabel}）`
+      : `未全过 —— 本轮实扫 ${frames.length} 帧 = ${batchLabel} —— 不要提交`
+  }`,
+);
 console.log('='.repeat(64));
 
 process.exit(allPass ? 0 : 1);

@@ -504,10 +504,14 @@ export class MapRenderer {
     const hero = vm.state.heroes[hid];
     if (!hero) return;
     const cid = pickRepresentativeUnit(hero.army);
-    if (!cid) return; // 空队 / 野怪 / T5 未登记
+    if (!cid) return; // 空队 / 野怪 / 未登记兵种
     const frameName = `u_${cid}_map`; // ⑤ 帧名只用 canonical id，owner 不参与
     const g = this.silOf(frameName);
-    if (!g) return; // T5 等无帧 ⇒ 跳过不画（TODO：T5 精灵到位后自然生效）
+    // 缺帧 ⇒ 只跳过这一枚**徽标**（不是英雄本体——本体在上面先画）。
+    // T5 四族的 u_*_map 已于 2026-10-14（TP-1）并入 UNIT_FRAMES，这里不再是"T5 恒缺"；
+    // 它仍保留是因为徽标默认关（`badgesVisible`），且它是缺帧的最后一道网 ——
+    // 与 BattleRenderer 的同类分支同取舍：**告警不静默、不抛**（throw = 白屏）。
+    if (!g) return;
     const hx = Math.round(fx);
     const hy = Math.round(fy);
     const heroName = `hero_${owner === 'neutral' ? 'neutral' : owner}`;

@@ -193,7 +193,11 @@ export interface B0FrameSpec {
     | 'p4_stoneimp'
     | 'p4_fireapprentice'
     | 'p4_hopgolem'
-    | 'p4_librarian';
+    | 'p4_librarian'
+    | 'p1_overangel'
+    | 'p2_lavatroll'
+    | 'p3_unicorn'
+    | 'p4_colossus';
   kind: 'map' | 'idle' | 'atk';
 }
 
@@ -284,9 +288,41 @@ export const B2_FRAMES: B0FrameSpec[] = [
   { name: 'cu_p4_librarian_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_librarian', kind: 'atk' },
 ];
 
-/** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 + B2 24 = 48），供 `tools/b0audit.mjs` 全扫描，
+/**
+ * B3 批（TP-1，2026-10-14）：四族 **T5 顶点兵**，12 帧（4 单位 × 3）。
+ *
+ * 为什么这批是 P0 而不是"补内容"：T5 此前**只有数据表、没有帧**（`units.ts:61-169`），
+ * 而 `dwell5` 真能招募（`buildings.ts` growth tier 5）⇒ 玩家建了 5 级兵营、花 1300 金招出
+ * 「加班天使」，在战斗中 `BattleRenderer.ts` 取不到帧直接早退，**只剩下一个队伍色底盘圈**
+ * （无精灵 / 无数量牌 / 无血条）。这是正常游玩必然撞见的真 bug，不是缺内容。
+ *
+ * 帧名 / 槽位 / 锚点与 B0–B2 同规格（asset-spec §3.2 / §1.2）：
+ *   map 52×44（ax=-10, ay=-12，贴地） / cu_* 64×56（ax=-32, ay=-48） / cu_*_atk 64×56。
+ * id 取自 races.md §6.3 的 20 兵种短名表（T5 行）：`p1_overangel` / `p2_lavatroll` /
+ *   `p3_unicorn` / `p4_colossus`。
+ */
+export const B3_FRAMES: B0FrameSpec[] = [
+  // 晨曦 T5 加班天使（p1 垂直母题：对称双翼 + 光环，垂直上升感）
+  { name: 'u_p1_overangel_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_overangel', kind: 'map' },
+  { name: 'cu_p1_overangel', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_overangel', kind: 'idle' },
+  { name: 'cu_p1_overangel_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_overangel', kind: 'atk' },
+  // 赤焰 T5 熔岩巨魔（p2 楔形母题：最宽的楔形，双肩长刺，锤比身体宽）
+  { name: 'u_p2_lavatroll_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_lavatroll', kind: 'map' },
+  { name: 'cu_p2_lavatroll', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_lavatroll', kind: 'idle' },
+  { name: 'cu_p2_lavatroll_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_lavatroll', kind: 'atk' },
+  // 翠林 T5 独角兽园丁（p3 圆形母题：圆身 + 长角指天，鬃毛圆波浪）
+  { name: 'u_p3_unicorn_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_unicorn', kind: 'map' },
+  { name: 'cu_p3_unicorn', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_unicorn', kind: 'idle' },
+  { name: 'cu_p3_unicorn_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_unicorn', kind: 'atk' },
+  // 紫晶 T5 失控大魔像（p4 菱形母题：悬浮菱形核心，四块碎石环绕，脚下无腿）
+  { name: 'u_p4_colossus_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_colossus', kind: 'map' },
+  { name: 'cu_p4_colossus', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_colossus', kind: 'idle' },
+  { name: 'cu_p4_colossus_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_colossus', kind: 'atk' },
+];
+
+/** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 + B2 24 + B3 12 = 60），供 `tools/b0audit.mjs` 全扫描，
  *  `atlas.ts` / `combatAtlas.ts` 也遍历本数组烘焙（#24 已接好，无需改那两个文件）。 */
-export const UNIT_FRAMES: B0FrameSpec[] = [...B0_FRAMES, ...B1_FRAMES, ...B2_FRAMES];
+export const UNIT_FRAMES: B0FrameSpec[] = [...B0_FRAMES, ...B1_FRAMES, ...B2_FRAMES, ...B3_FRAMES];
 
 /** 第 7 个资产：AI 生成的 `crestL_p1`（256×384），本轮不做，只在验收脚本里留人工项。 */
 export const B0_PENDING_AI_FRAME = 'crestL_p1';
@@ -314,13 +350,15 @@ export const TIER_OF: Record<string, number> = {
   p1_hornxbow: 2, p2_axethrower: 2, p3_thornarcher: 2, p4_fireapprentice: 2,
   p1_oathpike: 3, p2_wolfrider: 3, p3_vineguard: 3, p4_hopgolem: 3,
   p1_templar: 4, p2_firebrand: 4, p3_treant: 4, p4_librarian: 4,
+  p1_overangel: 5, p2_lavatroll: 5, p3_unicorn: 5, p4_colossus: 5,
 };
 
 /** 相邻材质可读性规则（断言 2 台阶 / 断言 8 明度差）—— 与 tools/b0audit.mjs 同一份实现。 */
 const RULES = makeAdjacencyRules(B0_PALETTE);
 
-/** §5.6.2 目标（剪影高 ÷ 56 × 100，cu 帧）。±8pt 容差见 silhouette-audit.md §1（软断言 S1，非规格）。 */
-export const TIER_TARGET_PCT: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4: 88 };
+/** §5.6.2 目标（剪影高 ÷ 56 × 100，cu 帧）。±8pt 容差见 silhouette-audit.md §1（软断言 S1，非规格）。
+ *  T5 = **100**（§5.6.2 原文：占满 56 画布，允许向上溢出 4px）——TP-1 补齐四族顶点兵时加入。 */
+export const TIER_TARGET_PCT: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4: 88, 5: 100 };
 
 /**
  * map 画布（52×44）的 tier 目标 —— §5.6.2 只写了「占 **64×56** 战斗画布高」这一句，
@@ -337,7 +375,7 @@ export const TIER_TARGET_PCT: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4:
  *    ⇒ 步长 **+6.8 / +9.1 / +9.1**，全部 ≥6pt。这也是「等比换算像素高」的字面含义。
  *    两种读法的可行性都已被探针验证；**决定因素是 map 画布上的整数取整余量**。
  */
-export const TIER_TARGET_PCT_MAP: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4: 88 };
+export const TIER_TARGET_PCT_MAP: Record<number, number> = { 1: 62, 2: 70, 3: 78, 4: 88, 5: 100 };
 
 /* ==========================================================================
  * 0c. Tier 体量归一化（§5.6.1 / §5.6.2 的纵轴通道）—— 阶段 1-B
@@ -656,6 +694,18 @@ export function buildB0Frame(name: string, outline = true): PixBuf {
       break;
     case 'p4_librarian':
       drawLibrarian(pb, spec.kind);
+      break;
+    case 'p1_overangel':
+      drawOverangel(pb, spec.kind);
+      break;
+    case 'p2_lavatroll':
+      drawLavatroll(pb, spec.kind);
+      break;
+    case 'p3_unicorn':
+      drawUnicorn(pb, spec.kind);
+      break;
+    case 'p4_colossus':
+      drawColossus(pb, spec.kind);
       break;
   }
   // P0 收口：Tier 体量归一化（§5.6.1 / §5.6.2 的纵轴通道）—— 全量 16 单位的 cu 帧。
@@ -2455,4 +2505,593 @@ function drawLibrarianCombat(pb: PixBuf, atk: boolean): void {
   pb.rect(34, 31, 6, 1, C.p4a4);
   pb.poly([[41, 28], [43, 31], [41, 34], [38, 31]], C.p4emissive);
   pb.set(41, 31, C.p4a4);
+}
+
+/* ==========================================================================
+ * 20–23. B3 批 · 四族 T5 顶点兵（2026-10-14 · TP-1）
+ *
+ * 规格来源（动手前必读）：
+ *   cartoon-style.md §5.6.2 **T5 通道**：体量 = **100%**（占满 56 画布，允许向上溢出 4px）；
+ *     站姿 = 悬浮 / 巨躯 / 双足异常宽；「必须有」= 一个**打破画框**的元素。
+ *   cartoon-style.md §5.6.3 **Faction 通道**（每族在每个 tier 都必须成立）：
+ *     p1 垂直矩形 / 对称 / 顶部尖角 / 平底落地 / 高宽比 **≥1.25**
+ *     p2 楔形前倾 / 锯齿 / 1–3 根刺 / 支点偏前 / **≈1.0（硬下界 0.875，槽位安全）**
+ *     p3 圆形有机 / 大圆弧无直角 / 凸出枝叶 / 与地面融合 / **≤1.1（矮宽）**
+ *     p4 菱形收尖 / 直线硬几何 / 菱形尖 / **不落地** / **≥1.35**（细长）
+ *   cartoon-style.md §5.6.4 T5 格（剪影第一读法，逐字照做，不自行发明）：
+ *     p1 加班天使：对称双翼 + 头顶光环，垂直上升感，手里还攥着考勤表
+ *     p2 熔岩巨魔：最宽的楔形，双肩长刺，锤比身体宽，一脚踩地一脚抬起
+ *     p3 独角兽园丁：圆身 + 长角指天（唯一锐角），鬃毛呈圆波浪
+ *     p4 失控大魔像：悬浮菱形核心，四块碎石环绕，脚下完全没有腿
+ *   races.md §8.3 招牌动作：加班天使「看表再落锤」→ 攻击帧抡考勤表。
+ *
+ * 硬性纪律（同 B0–B2，违反即不通过）：
+ *   1. 颜色 **100% 取用 §3.2 / §3.3 字面色板**（本文件不 shade()/mix() 现场造色）。
+ *   2. **不使用任何 alpha < 1 的绘制**（投影用 1px `ink1` 实色 AO 圈）。
+ *   3. 每单位 **只有一处**比例失调（§1.3）。
+ *   4. 唯一高光 = 双眼右上 1px `hi0`（`face()` 已内建）。
+ *   5. 人造物四角切角（`chamfer`）或包边。
+ *   6. 描边只在最后跑一次 `outline(ink0, 1)`（`buildB0Frame` 统一做，本段不调）。
+ *   7. **禁止任何文字**。
+ *
+ * ⚠️ 配色对账（本批新踩的两个坑，写死在注释里免得后人重犯）：
+ *   · `p1clash(#ffb020)` ↔ `skin2(#d8a878)` = **违规对**（ΔL*5.3 / 需 12）⇒ p1 光环与头之间
+ *     必须留 **1px 空气**（光环悬空是设定，正好合法）。
+ *   · `stone4(#cfc6b4)` ↔ `p4a4(#d4aefc)` = 违规（ΔL*3.3 / 需 8）；`stone4` ↔ `p2emissive` = 违规。
+ *     ⇒ p4 碎石一律用 **stone2**（与 p4a2/p4a4 均 ≥8）；p2 熔岩纹只落 **stone2 / stone0**。
+ *   · 跨族"外来物"（p1 考勤表）用 **ink0 包边**——ink0 是全色板唯一与所有色都安全的邻色。
+ * ========================================================================== */
+
+/** 椭圆环：连画两圈邻近半径，保证 1–2px 连通、不留断点（光环 / 晶体环用）。 */
+function ring(pb: PixBuf, cx: number, cy: number, rx: number, ry: number, color: string): void {
+  for (const r of [
+    [rx, ry],
+    [rx - 1, ry - 1],
+  ] as [number, number][]) {
+    for (let i = 0; i < 72; i++) {
+      const a = (i / 72) * Math.PI * 2;
+      pb.set(Math.round(cx + Math.cos(a) * r[0]), Math.round(cy + Math.sin(a) * r[1]), color);
+    }
+  }
+}
+
+/**
+ * 切角矩形（§1.2「人造物禁止直角」的实现）：先铺满，再用透明角覆盖的方式不可行
+ * ——`PixBuf` 没有 erase，所以**反过来画**：四条斜边三角 + 中间实心矩形，
+ * 四角各切掉 `c` px（c=1 即 §1.2 的最低要求，≥64px 的大件用 c=2）。
+ *
+ * 为什么不用 `pb.rect` + 事后改角：改角需要"擦掉"，而本管线没有透明擦除原语。
+ * 为什么不用 `poly` 画八边形：八边形仍然有 4 段横竖直边和 4 个 135° 角，
+ * 在 32–64px 尺度上读起来仍偏"硬"；**斜切三角 + 直边**才是像素画里最省且最像
+ * 手切木牌的画法（与 `town()` 墙体的切角意图一致）。
+ */
+function chamferRect(
+  pb: PixBuf,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  c: number,
+  color: string,
+): void {
+  // 中间竖条 + 中间横条（保证内部全实）
+  pb.rect(x + c, y, w - 2 * c, h, color);
+  pb.rect(x, y + c, w, h - 2 * c, color);
+  // 四角切斜边（每角一个小三角）
+  pb.tri([x, y + c], [x + c, y], [x + c, y + c], color);
+  pb.tri([x + w - 1, y + c], [x + w - 1 - c, y], [x + w - 1 - c, y + c], color);
+  pb.tri([x, y + h - 1 - c], [x + c, y + h - 1], [x + c, y + h - 1 - c], color);
+  pb.tri(
+    [x + w - 1, y + h - 1 - c],
+    [x + w - 1 - c, y + h - 1],
+    [x + w - 1 - c, y + h - 1 - c],
+    color,
+  );
+}
+
+/**
+ * 碎石（§1.2「有机物用圆不用直角」+ §1.2「尖角只留给一个母题」）：
+ * 石头既不该是切角矩形（那读成人造砖），也不该是尖角多边形（那抢了族母题），
+ * 所以给一张 6 种朝向的圆钝五边形表，`variant` 取模选一种。
+ *
+ * 尺寸固定 5×5 —— 与 T5 目标体量（=100% 画布高）配套，碎石是配景不是主体，
+ * 刻意画小以免和菱形核心抢第一读。
+ */
+const PEBBLE_SHAPES: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
+  [
+    [1, 0],
+    [4, 1],
+    [4, 4],
+    [1, 4],
+    [0, 2],
+  ],
+  [
+    [0, 1],
+    [3, 0],
+    [4, 3],
+    [2, 4],
+    [0, 3],
+  ],
+  [
+    [1, 0],
+    [4, 0],
+    [4, 3],
+    [2, 4],
+    [0, 2],
+  ],
+  [
+    [0, 0],
+    [3, 0],
+    [4, 2],
+    [3, 4],
+    [1, 4],
+  ],
+  [
+    [1, 0],
+    [4, 1],
+    [4, 4],
+    [0, 4],
+    [0, 1],
+  ],
+  [
+    [0, 1],
+    [2, 0],
+    [4, 1],
+    [4, 4],
+    [1, 3],
+  ],
+];
+function pebble(pb: PixBuf, x: number, y: number, variant: number, color: string): void {
+  const shape = PEBBLE_SHAPES[((variant % 6) + 6) % 6];
+  pb.poly(
+    shape.map(([dx, dy]) => [x + dx, y + dy] as [number, number]),
+    color,
+  );
+}
+
+/**
+ * 圆波浪鬃毛（§5.6.4 p3 T5「鬃毛呈圆波浪」）。
+ *
+ * 为什么不能只叠三颗同色圆球：三球同色 + 互相压叠 ⇒ 融成一块**实心色板**，
+ * 读成"马背上的鞍子/一片叶子"，波浪感全丢（这正是本函数被加进来的原因——
+ * 门控 13 条全绿时它就已经错了，**断言查不出"形状语义"**）。
+ *
+ * 做法：逐瓣画 `base` 色椭圆，再在每瓣**朝上一侧**压一道 `rim` 高光弧。
+ * 有了 rim，瓣与瓣之间就有亮线隔开 ⇒ 读成"一串圆瓣"而不是"一块板"。
+ * `rim` 与 `base` 的 ΔL* 必须 ≥ 12（p3a2↔p3a4 = 16.6 ✓，见 materialRules）。
+ */
+function scallopMane(
+  pb: PixBuf,
+  lobes: ReadonlyArray<readonly [number, number, number, number]>,
+  base: string,
+  rim: string,
+): void {
+  for (const [x, y, rx, ry] of lobes) {
+    pb.ellipse(x, y, rx, ry, base);
+    // 上缘高光：沿椭圆上半弧内缩 1px
+    for (let i = 0; i <= 20; i++) {
+      const a = Math.PI + (i / 20) * Math.PI; // π → 2π = 上半圈
+      pb.set(Math.round(x + Math.cos(a) * (rx - 1)), Math.round(y + Math.sin(a) * (ry - 1)), rim);
+    }
+  }
+}
+
+/* ---------------- 20. p1 晨曦 T5 · 加班天使 ---------------- */
+
+function drawOverangel(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  if (kind === 'map') drawOverangelMap(pb);
+  else if (kind === 'idle') drawOverangelCombat(pb, false);
+  else drawOverangelCombat(pb, true);
+}
+
+/** 52×44 冒险地图帧：靴底 42，光环顶 14；对称双翼折在体侧（保住 ≥1.25 的瘦高比）。 */
+function drawOverangelMap(pb: PixBuf): void {
+  const cx = 26;
+  // 靴 + AO
+  pb.rect(cx - 6, 39, 5, 3, C.canv2);
+  pb.rect(cx + 1, 39, 5, 3, C.canv2);
+  aoContact(pb, cx - 6, cx + 5, 42);
+  // 长袍（p1 垂直母题：竖条纹）
+  pb.rect(cx - 5, 28, 11, 11, C.p1a2);
+  pb.rect(cx - 1, 29, 3, 9, C.p1w2);
+  pb.hline(cx - 5, cx + 5, 38, C.p1a0);
+  // 双翼（对称、向上折）
+  pb.tri([cx - 4, 30], [cx - 9, 20], [cx - 6, 31], C.p1w2);
+  pb.tri([cx + 4, 30], [cx + 9, 20], [cx + 6, 31], C.p1w2);
+  // 头 + 发 + 脸
+  pb.ellipse(cx, 24, 4.5, 4, C.skin2);
+  pb.ellipse(cx, 21, 5, 1.5, C.wood0);
+  face(pb, cx - 3, cx + 1, 24, 27, 3, false);
+  // 光环（唯一失调：悬在头顶上方，与头之间留 1px 空气）
+  ring(pb, cx, 15, 5, 2, C.p1clash);
+}
+
+/** 64×56 战斗帧：靴底 54，光环顶 13；双翼展到 ±11（打破画框），考勤表 ink0 包边。 */
+function drawOverangelCombat(pb: PixBuf, atk: boolean): void {
+  if (!atk) {
+    const cx = 32;
+    // 靴 + AO
+    pb.rect(cx - 6, 51, 5, 3, C.canv2);
+    pb.rect(cx + 1, 51, 5, 3, C.canv2);
+    aoContact(pb, cx - 6, cx + 5, 54);
+    // 长袍 + 竖条纹 + 腰带
+    pb.rect(cx - 6, 30, 13, 21, C.p1a2);
+    pb.rect(cx - 1, 31, 3, 19, C.p1w2);
+    pb.hline(cx - 6, cx + 6, 44, C.ink1);
+    pb.rect(cx - 4, 44, 2, 1, C.metal4); // 金属扣：贴 ink1/p1a2，避开竖条纹 p1w2
+    pb.hline(cx - 6, cx + 6, 50, C.p1a0);
+    // 双翼（对称、折在体侧）—— **切角不用直角**：翅膀是有机物，§1.2 要求圆润，
+    // 这里用切角 + 羽尖斜边（`tri`）双保险，读起来才像翅膀不像木板。
+    chamferRect(pb, cx - 11, 24, 5, 16, 1, C.p1w2);
+    chamferRect(pb, cx + 7, 24, 5, 16, 1, C.p1w2);
+    pb.tri([cx - 11, 24], [cx - 9, 21], [cx - 7, 24], C.p1w2); // 左翼尖上折
+    pb.tri([cx + 11, 24], [cx + 9, 21], [cx + 7, 24], C.p1w2); // 右翼尖上折
+    pb.hline(cx - 11, cx - 7, 40, C.p1a0);
+    pb.hline(cx + 7, cx + 11, 40, C.p1a0);
+    // 头 + 发 + 脸
+    pb.ellipse(cx, 25, 5, 4.5, C.skin2);
+    pb.ellipse(cx, 22, 5.5, 2, C.wood0);
+    face(pb, cx - 3, cx + 1, 25, 28, 3, false);
+    // 光环（唯一失调：打破画框上沿）
+    ring(pb, cx, 16, 6, 2.5, C.p1clash);
+    // 右臂 → 手 → 考勤表（ink0 包边 + wood4 夹板 + hi1 纸；**人造物切角** §1.2）
+    pb.rect(cx + 7, 40, 3, 4, C.p1a2);
+    pb.rect(cx + 10, 43, 3, 2, C.skin2);
+    chamferRect(pb, cx + 12, 38, 7, 9, 1, C.ink0);
+    chamferRect(pb, cx + 13, 39, 5, 7, 1, C.wood4);
+    pb.rect(cx + 14, 40, 3, 5, C.hi1);
+    return;
+  }
+  /* ---- 攻击帧：抡起考勤表下砸（races.md §8.3「看表再落锤」）---- */
+  const acx = 30;
+  pb.rect(acx - 7, 51, 5, 3, C.canv2);
+  pb.rect(acx + 2, 51, 5, 3, C.canv2);
+  aoContact(pb, acx - 7, acx + 6, 54);
+  // 长袍前倾
+  pb.poly(
+    [
+      [acx - 6, 34],
+      [acx + 7, 31],
+      [acx + 8, 50],
+      [acx - 7, 50],
+    ],
+    C.p1a2,
+  );
+  pb.line(acx - 6, 34, acx + 7, 31, C.p1a0);
+  pb.rect(acx - 1, 35, 2, 12, C.p1w2);
+  pb.hline(acx - 7, acx + 8, 49, C.p1a0);
+  // 双翼后掠（打破画框）
+  pb.tri([acx - 6, 33], [acx - 14, 22], [acx - 9, 40], C.p1w2);
+  pb.tri([acx + 8, 32], [acx + 15, 21], [acx + 11, 39], C.p1w2);
+  // 头（随身体前倾）+ 光环下压
+  pb.ellipse(acx + 1, 28, 5, 4.5, C.skin2);
+  pb.ellipse(acx + 1, 25, 5.5, 2, C.wood0);
+  face(pb, acx - 2, acx + 2, 28, 31, 3, false);
+  ring(pb, acx + 3, 19, 6, 2.5, C.p1clash);
+  // 高举的手臂 + 抡起的考勤表（切角 §1.2）
+  pb.rect(acx + 8, 22, 3, 10, C.p1a2);
+  chamferRect(pb, acx + 9, 12, 7, 9, 1, C.ink0);
+  chamferRect(pb, acx + 10, 13, 5, 7, 1, C.wood4);
+  pb.rect(acx + 11, 14, 3, 5, C.hi1);
+}
+
+/* ---------------- 21. p2 赤焰 T5 · 熔岩巨魔 ---------------- */
+
+function drawLavatroll(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  if (kind === 'map') drawLavatrollMap(pb);
+  else if (kind === 'idle') drawLavatrollCombat(pb, false);
+  else drawLavatrollCombat(pb, true);
+}
+
+/** 52×44 冒险地图帧：踩地脚 42；最宽的楔形（锤比身体宽），一脚抬起。 */
+function drawLavatrollMap(pb: PixBuf): void {
+  const cx = 24;
+  // 右脚踩地 + 左脚抬起（支点偏前）
+  pb.rect(cx - 9, 38, 6, 4, C.stone0);
+  pb.rect(cx + 5, 35, 6, 3, C.stone0);
+  aoContact(pb, cx - 9, cx - 4, 42);
+  // 躯干（宽楔形石体，三档石色）
+  pb.ellipse(cx, 30, 13, 9, C.stone2);
+  pb.ellipse(cx - 1, 24, 11, 4, C.stone4);
+  pb.ellipse(cx, 36, 12, 3, C.stone0);
+  // 熔岩裂纹（只落 stone2 / stone0，**且离 stone4 高光 ≥2 行**——stone4↔p2emissive ΔL*5.6 是违规对）
+  pb.set(cx - 5, 31, C.p2emissive);
+  pb.set(cx - 4, 32, C.p2emissive);
+  pb.set(cx - 3, 33, C.p2emissive);
+  pb.set(cx + 3, 36, C.p2emissive);
+  pb.set(cx + 2, 37, C.p2emissive);
+  // 双肩长刺
+  pb.tri([cx - 12, 22], [cx - 16, 13], [cx - 9, 20], C.stone2);
+  pb.tri([cx + 7, 20], [cx + 12, 11], [cx + 10, 21], C.stone2);
+  // 头（前伸）+ 发光眼 + 嘴
+  pb.ellipse(cx + 4, 22, 6, 5, C.stone2);
+  pb.rect(cx + 1, 21, 2, 2, C.p2emissive);
+  pb.rect(cx + 6, 21, 2, 2, C.p2emissive);
+  pb.hline(cx + 2, cx + 8, 26, C.stone0);
+  // 巨锤（锤头比身体宽）：木柄 + 石锤头（**人造物切角** §1.2）
+  // ⚠️ 柄用 wood0 而非 wood2：wood2↔stone0 ΔL*=0.2 是违规对（wood0↔stone0 = 14.3 ✓）
+  pb.rect(cx + 11, 18, 2, 15, C.wood0);
+  chamferRect(pb, cx + 7, 8, 13, 10, 2, C.stone2); // 13px 宽 ≥ 8 ⇒ 切 2px（§1.2 大件档）
+  pb.hline(cx + 8, cx + 18, 9, C.stone4);
+  pb.hline(cx + 7, cx + 19, 17, C.stone0);
+}
+
+/** 64×56 战斗帧：踩地脚 54；最宽的楔形（≈1.0 高宽比），锤头显著宽于躯干。 */
+function drawLavatrollCombat(pb: PixBuf, atk: boolean): void {
+  if (!atk) {
+    const cx = 30;
+    // 右脚踩地 + 左脚抬起
+    pb.rect(cx - 12, 49, 8, 5, C.stone0);
+    pb.rect(cx + 6, 45, 8, 4, C.stone0);
+    aoContact(pb, cx - 12, cx - 4, 54);
+    // 躯干（宽楔形）
+    pb.ellipse(cx - 2, 38, 17, 12, C.stone2);
+    pb.ellipse(cx - 3, 30, 14, 5, C.stone4);
+    pb.ellipse(cx - 2, 46, 16, 4, C.stone0);
+    // 熔岩裂纹（只落 stone2；**必须离 stone4 高光下沿 ≥1 行**——stone4↔p2emissive ΔL*=5.6
+    // 是违规对，实测贴到 stone4 底行即红 ⇒ 三条裂纹整体下移 1 行，中间留 stone2 分隔行）
+    pb.set(cx - 8, 36, C.p2emissive);
+    pb.set(cx - 7, 37, C.p2emissive);
+    pb.set(cx - 6, 38, C.p2emissive);
+    pb.set(cx + 4, 43, C.p2emissive);
+    pb.set(cx + 5, 44, C.p2emissive);
+    pb.set(cx - 12, 42, C.p2emissive);
+    pb.set(cx - 11, 43, C.p2emissive);
+    // 双肩长刺
+    pb.tri([cx - 16, 28], [cx - 21, 15], [cx - 12, 25], C.stone2);
+    pb.tri([cx + 9, 25], [cx + 16, 12], [cx + 13, 27], C.stone2);
+    // 头（前伸）+ 眼 + 嘴
+    pb.ellipse(cx + 6, 27, 8, 6.5, C.stone2);
+    pb.rect(cx + 2, 26, 2, 2, C.p2emissive);
+    pb.rect(cx + 9, 26, 2, 2, C.p2emissive);
+    pb.hline(cx + 3, cx + 11, 32, C.stone0);
+    // 巨锤举在体侧（锤头 16px 宽 > 躯干半宽；切角 §1.2）
+    pb.rect(cx + 15, 22, 3, 22, C.wood2);
+    chamferRect(pb, cx + 9, 6, 16, 12, 2, C.stone2);
+    pb.hline(cx + 11, cx + 22, 7, C.stone4);
+    pb.hline(cx + 11, cx + 22, 16, C.stone0);
+    return;
+  }
+  /* ---- 攻击帧：抡锤下砸（重心前压，锤落在身前）----
+   * ⚠️ 横向预算：本帧归一化后 destW 一度 69 > 画布 64（断言 12 红）。
+   * 等比缩放的放大倍率由**剪影高**决定（scale = 55/srcH），所以只能压**宽**：
+   * 左肩刺收 3px（acx−20 → acx−17）、锤头右缘收 3px（acx+33 → acx+30）⇒ srcW 54 → 48，
+   * destW ≈ 61 ≤ 64。再动这里前先跑 `node tools/b0audit.mjs` 看 [12]。 */
+  const acx = 28;
+  pb.rect(acx - 13, 49, 8, 5, C.stone0);
+  pb.rect(acx + 5, 47, 8, 4, C.stone0);
+  aoContact(pb, acx - 13, acx - 5, 54);
+  pb.ellipse(acx - 1, 38, 17, 12, C.stone2);
+  pb.ellipse(acx - 2, 30, 14, 5, C.stone4);
+  pb.ellipse(acx - 1, 46, 16, 4, C.stone0);
+  // 熔岩裂纹：同 idle，避开 stone4 底行（原 y=35 紧贴 (21,34) ⇒ 下移 2 行）
+  pb.set(acx - 7, 37, C.p2emissive);
+  pb.set(acx - 6, 38, C.p2emissive);
+  pb.set(acx + 5, 43, C.p2emissive);
+  pb.tri([acx - 14, 28], [acx - 17, 15], [acx - 10, 25], C.stone2);
+  pb.tri([acx + 10, 25], [acx + 17, 12], [acx + 14, 27], C.stone2);
+  pb.ellipse(acx + 7, 28, 8, 6.5, C.stone2);
+  pb.rect(acx + 3, 27, 2, 2, C.p2emissive);
+  pb.rect(acx + 10, 27, 2, 2, C.p2emissive);
+  pb.hline(acx + 4, acx + 12, 33, C.stone0);
+  // 锤砸向身前地面（斜柄 + 大锤头，切角 §1.2）
+  thickLine(pb, acx + 12, 26, acx + 20, 44, C.wood2, C.wood0);
+  chamferRect(pb, acx + 17, 42, 14, 11, 2, C.stone2);
+  pb.hline(acx + 19, acx + 28, 43, C.stone4);
+  pb.hline(acx + 19, acx + 28, 51, C.stone0);
+}
+
+/* ---------------- 22. p3 翠林 T5 · 独角兽园丁 ---------------- */
+
+function drawUnicorn(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  if (kind === 'map') drawUnicornMap(pb);
+  else if (kind === 'idle') drawUnicornCombat(pb, false);
+  else drawUnicornCombat(pb, true);
+}
+
+/** 52×44 冒险地图帧：角尖 4，与地面融合（脚不明显）；矮宽比 ≤1.1。 */
+function drawUnicornMap(pb: PixBuf): void {
+  const cx = 25;
+  // 圆身（矮宽）
+  pb.ellipse(cx, 31, 15, 9, C.p3w2);
+  pb.ellipse(cx, 35, 14, 5, C.p3w0);
+  // 四条短腿（脚部融进草里）
+  for (const dx of [-9, -2, 4, 10]) pb.rect(cx + dx, 37, 3, 4, C.p3w0);
+  grassBase(pb, cx - 17, cx + 17, 41);
+  // 头 + 口鼻
+  pb.ellipse(cx - 12, 24, 6, 5.5, C.p3w2);
+  pb.ellipse(cx - 17, 26, 3.5, 2.5, C.p3w2);
+  pb.set(cx - 19, 26, C.p3w0);
+  // 长角指天（唯一锐角）
+  pb.tri([cx - 13, 19], [cx - 11, 4], [cx - 9, 19], C.canv4);
+  // 圆波浪鬃毛（四瓣递降，p3a4 上缘高光把瓣与瓣分开 —— 见 scallopMane 注）
+  scallopMane(
+    pb,
+    [
+      [cx - 6, 22, 5, 4],
+      [cx - 1, 25, 4.5, 3.5],
+      [cx + 4, 28, 4, 3],
+      [cx + 8, 30, 3, 2.5],
+    ],
+    C.p3a2,
+    C.p3a4,
+  );
+  // 尾（圆蓬）
+  pb.ellipse(cx + 16, 27, 3, 4, C.p3a2);
+  pb.ellipse(cx + 16, 25, 2.5, 2, C.p3a4);
+  // 小花（p3 撞色，只落鬃毛上）
+  pb.set(cx - 7, 20, C.p3clash);
+  pb.set(cx - 6, 20, C.p3clash);
+  // 眼睛（唯一高光由 face 内建规则手工等价）
+  pb.rect(cx - 15, 23, 2, 2, C.ink0);
+  pb.set(cx - 14, 23, C.hi0);
+}
+
+/** 64×56 战斗帧：角尖 5，脚底埋进草里（y51）；矮宽比 ≤1.1。 */
+function drawUnicornCombat(pb: PixBuf, atk: boolean): void {
+  const cx = 30;
+  const lean = atk ? -3 : 0; // 攻击帧前倾
+  // 圆身（矮宽）
+  pb.ellipse(cx + lean, 38, 18, 11, C.p3w2);
+  pb.ellipse(cx + lean, 43, 17, 6, C.p3w0);
+  // 四条短腿 + 草（与地面融合）
+  for (const dx of [-12, -3, 5, 12]) pb.rect(cx + lean + dx, 45, 4, 6, C.p3w0);
+  grassBase(pb, cx - 20, cx + 20, 51);
+  // 头 + 口鼻
+  pb.ellipse(cx - 15 + lean, 28, 7, 6.5, C.p3w2);
+  pb.ellipse(cx - 21 + lean, 30, 4, 3, C.p3w2);
+  pb.set(cx - 24 + lean, 30, C.p3w0);
+  // 长角指天（唯一锐角）
+  pb.tri([cx - 16 + lean, 22], [cx - 13 + lean, 5], [cx - 10 + lean, 22], C.canv4);
+  // 圆波浪鬃毛（p3a4 上缘高光分瓣，见 scallopMane 注）
+  scallopMane(
+    pb,
+    [
+      [cx - 7 + lean, 25, 6, 4.5],
+      [cx - 1 + lean, 29, 5, 4],
+      [cx + 5 + lean, 33, 4, 3.5],
+      [cx + 10 + lean, 36, 3, 2.5],
+    ],
+    C.p3a2,
+    C.p3a4,
+  );
+  // 尾（圆蓬）
+  pb.ellipse(cx + 19, 33, 3.5, 5, C.p3a2);
+  pb.ellipse(cx + 19, 30, 2.5, 2.5, C.p3a4);
+  if (!atk) {
+    // 小花（撞色只落鬃毛）
+    pb.set(cx - 9 + lean, 22, C.p3clash);
+    pb.set(cx - 8 + lean, 22, C.p3clash);
+    pb.rect(cx - 18 + lean, 27, 2, 2, C.ink0);
+    pb.set(cx - 17 + lean, 27, C.hi0);
+    return;
+  }
+  // 攻击帧：低头亮角，前蹄抬起
+  pb.set(cx - 9 + lean, 22, C.p3clash);
+  pb.set(cx - 8 + lean, 22, C.p3clash);
+  pb.rect(cx - 19 + lean, 27, 2, 2, C.ink0);
+  pb.set(cx - 18 + lean, 27, C.hi0);
+  pb.rect(cx - 14 + lean, 43, 4, 5, C.p3w0); // 前蹄抬起
+}
+
+/* ---------------- 23. p4 紫晶 T5 · 失控大魔像 ---------------- */
+
+function drawColossus(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  if (kind === 'map') drawColossusMap(pb);
+  else if (kind === 'idle') drawColossusCombat(pb, false);
+  else drawColossusCombat(pb, true);
+}
+
+/** 52×44 冒险地图帧：菱形核心 y6–40，**无腿**，四块碎石环绕（底端不落地）。 */
+function drawColossusMap(pb: PixBuf): void {
+  const cx = 26;
+  // 菱形核心（不落地）
+  pb.poly(
+    [
+      [cx, 6],
+      [cx + 8, 23],
+      [cx, 40],
+      [cx - 8, 23],
+    ],
+    C.p4a2,
+  );
+  pb.poly(
+    [
+      [cx, 11],
+      [cx + 5, 23],
+      [cx, 35],
+      [cx - 5, 23],
+    ],
+    C.p4a4,
+  );
+  pb.poly(
+    [
+      [cx, 18],
+      [cx + 3, 23],
+      [cx, 28],
+      [cx - 3, 23],
+    ],
+    C.p4emissive,
+  );
+  // 四块碎石环绕（一律 stone2 —— stone4 与 p4a4 违规）
+  // 石头是**有机物** ⇒ §1.2 要圆润，不是切角矩形：每块用 5px 不规则 poly，
+  // 四块形状/朝向各不相同（对称的石头会读成"装饰件"而不是"碎石"）。
+  pebble(pb, cx - 13, 12, 1, C.stone2);
+  pebble(pb, cx + 9, 14, 3, C.stone2);
+  pebble(pb, cx - 12, 31, 5, C.stone2);
+  pebble(pb, cx + 9, 30, 7, C.stone2);
+}
+
+/** 64×56 战斗帧：菱形核心 y6–46，**脚下完全没有腿**，四块碎石环绕。 */
+function drawColossusCombat(pb: PixBuf, atk: boolean): void {
+  const cx = 32;
+  // 菱形核心（细长 ≥1.35）
+  pb.poly(
+    [
+      [cx, 6],
+      [cx + 9, 26],
+      [cx, 46],
+      [cx - 9, 26],
+    ],
+    C.p4a2,
+  );
+  pb.poly(
+    [
+      [cx, 12],
+      [cx + 6, 26],
+      [cx, 40],
+      [cx - 6, 26],
+    ],
+    C.p4a4,
+  );
+  pb.poly(
+    [
+      [cx, 20],
+      [cx + 3, 26],
+      [cx, 32],
+      [cx - 3, 26],
+    ],
+    C.p4emissive,
+  );
+  if (!atk) {
+    // 四块碎石环绕（stone2；有机物用 pebble 不用直角矩形，§1.2）
+    pebble(pb, cx - 15, 15, 1, C.stone2);
+    pebble(pb, cx + 11, 13, 3, C.stone2);
+    pebble(pb, cx - 14, 37, 5, C.stone2);
+    pebble(pb, cx + 10, 38, 7, C.stone2);
+    return;
+  }
+  // 攻击帧：核心爆开、碎石外扩（菱形尖冲出画框上沿）
+  pb.poly(
+    [
+      [cx, 3],
+      [cx + 10, 26],
+      [cx, 47],
+      [cx - 10, 26],
+    ],
+    C.p4a2,
+  );
+  pb.poly(
+    [
+      [cx, 10],
+      [cx + 7, 26],
+      [cx, 41],
+      [cx - 7, 26],
+    ],
+    C.p4a4,
+  );
+  pb.poly(
+    [
+      [cx, 19],
+      [cx + 4, 26],
+      [cx, 33],
+      [cx - 4, 26],
+    ],
+    C.p4emissive,
+  );
+  // 攻击帧：碎石更大更远（失控外扩），仍用 pebble 保持有机轮廓
+  pebble(pb, cx - 18, 13, 1, C.stone2);
+  pebble(pb, cx + 13, 11, 3, C.stone2);
+  pebble(pb, cx - 17, 37, 5, C.stone2);
+  pebble(pb, cx + 12, 39, 7, C.stone2);
 }

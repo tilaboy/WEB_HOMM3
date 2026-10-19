@@ -120,7 +120,9 @@ export function pickRepresentativeUnit(army: readonly Stack[]): string | null {
     const cid = toCanonicalUnitId(st.unitTypeId);
     if (!cid) continue;
     const u = UNITS[cid];
-    if (!u) continue; // canonical 名但未登记（T5 等）⇒ 跳过
+    if (!u) continue; // canonical 形状但真值表里没有 ⇒ 跳过（宁可缺不可错）
+    // 注：T5 四单位（p1_overangel / p2_lavatroll / p3_unicorn / p4_colossus）已于 TP-1 登记进 UNITS，
+    //     tier=5 ⇒ 有队伍时必被选为代表兵种，不再走这条跳过分支。
     const cand = { id: cid, tier: u.tier, count: st.count };
     if (!best) {
       best = cand;
