@@ -83,6 +83,15 @@ interface Anim {
 
 let openRef: { close: () => void } | null = null;
 
+/** TP-5 探针专用：最近邻缩放的 dest→src 映射表缓存（键 = `sw x sh>dw x dh`）。
+ *  为什么需要实测表而不是推公式：Chrome/Skia 的 NN 重采样在**分数目标尺寸**下，
+ *  两种常见约定 `floor(X·S/D)` 与 `floor((X+0.5)·S/D)` 都不成立
+ *  （2026-10-18 实测 16→74：真实跳变点 5,10,15,20,24,28…；两公式分别给
+ *  4,9,14,19,23… 和 5,10,15,20,23…）。探针 B4 要"屏幕=图集"零容差，
+ *  映射错 1px 就会让半透明边缘像素的混色永远对不上 ⇒ 用同一批参数
+ *  （整数矩形 + imageSmoothingEnabled=false）画一遍唯一色图，把表读出来。 */
+const nnMapCache = new Map<string, number[]>();
+
 export function isBattleOpen(): boolean {
   return openRef !== null;
 }
@@ -180,7 +189,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     return v === 2 || v === 3 ? v : 1;
   })();
   let hover: Hex | null = null;
-  let lunge: { unitId: string; dx: number; dy: number } | null = null;
+  let lunge: { unitId: string; dx: number; dy: number; sx?: number; sy?: number } | null = null;
   let arrow: { x: number; y: number; tx: number; ty: number; color?: string } | null = null;
   const floats: FloatText[] = [];
   const posOverride: Record<string, { x: number; y: number }> = {};
@@ -193,7 +202,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   let spellTargets: Set<string> | null = null;
   const spellFx: { hex: Hex; life: number; color: string; splash?: boolean }[] = [];
   /** 近战打击特效与闪电（纯表演，p 走到头就移除）。 */
-  const impacts: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number; dur: number }[] = [];
+  const impacts: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number; dur: number; unitId?: string }[] = [];
   let bolt: { x: number; y: number; p: number } | null = null;
 
   function fit(): void {
@@ -524,7 +533,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         break;
       }
       case 'melee': {
-        anim = meleeAnim(e.unitId, e.from, hexOf(e.targetId), e.damage, e.killed);
+        anim = meleeAnim(e.unitId, e.from, hexOf(e.targetId), e.damage, e.killed, e.targetId);
         break;
       }
       case 'siege': {
@@ -604,7 +613,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         break;
       }
       case 'retaliate': {
-        anim = meleeAnim(e.unitId, hexOf(e.unitId), hexOf(e.targetId), e.damage, e.killed);
+        anim = meleeAnim(e.unitId, hexOf(e.unitId), hexOf(e.targetId), e.damage, e.killed, e.targetId);
         break;
       }
       case 'shoot': {
@@ -617,20 +626,24 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
           dur: 640,
           step: (p) => {
             if (p < 0.45) {
+              // 拉弓/瞄准期：零位移 lunge = 只换 atk 帧 + 轻微拉伸（H5 ②的远程版）
+              lunge = { unitId: e.unitId, dx: 0, dy: 0, sx: 1.08, sy: 0.92 };
               const k = p / 0.45;
               arrow = { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k - Math.sin(k * Math.PI) * 12, tx: b.x, ty: b.y };
             } else {
+              lunge = null;
               if (!hit) {
                 hit = true;
                 addFloat(`-${e.damage}`, hexOf(e.targetId), e.blocked ? '#ffb347' : '#ffe07a');
                 if (e.killed) addFloat(`-${e.killed}`, hexOf(e.targetId), '#ffdcd2');
-                impacts.push({ x: b.x, y: b.y, kind: 'thrust', p: 0, dur: 280 });
+                impacts.push({ x: b.x, y: b.y, kind: 'thrust', p: 0, dur: 280, unitId: e.targetId });
               }
               arrow = null;
             }
           },
           end: () => {
             arrow = null;
+            lunge = null;
           },
         };
         break;
@@ -727,9 +740,15 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   }
 
   /** 命中瞬间：打击特效 + 伤害浮字（浮字跟着命中走，不再提前出现）。 */
-  function onMeleeHit(style: 'thrust' | 'slash' | 'smash', to: Hex, damage: number, killed: number): void {
+  function onMeleeHit(
+    style: 'thrust' | 'slash' | 'smash',
+    to: Hex,
+    damage: number,
+    killed: number,
+    targetId: string,
+  ): void {
     const c = hexCenter(to);
-    impacts.push({ x: c.x, y: c.y, kind: style, p: 0, dur: style === 'smash' ? 420 : 300 });
+    impacts.push({ x: c.x, y: c.y, kind: style, p: 0, dur: style === 'smash' ? 420 : 300, unitId: targetId });
     sfx.hit();
     addFloat(`-${damage}`, to, '#ff6b52');
     if (killed) addFloat(`-${killed}`, to, '#ffdcd2');
@@ -738,8 +757,10 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   /**
    * 近战表演，按武器分三段：
    *   突刺 = 快进快出（0.3 命中）；挥砍 = 前冲收招（0.35）；抡砸 = 先仰后砸（0.55）。
+   * H5 ② squash & stretch：出击帧 1.15× 宽 / 0.85× 高，命中帧反过来
+   *（`hit` 置位后缩放反号：由拉伸转挤压，读作"砸中了"）。
    */
-  function meleeAnim(unitId: string, from: Hex, to: Hex, damage: number, killed: number): Anim {
+  function meleeAnim(unitId: string, from: Hex, to: Hex, damage: number, killed: number, targetId: string): Anim {
     const a = hexCenter(from);
     const b = hexCenter(to);
     const dx = Math.sign(b.x - a.x);
@@ -747,12 +768,13 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     const style = meleeStyleOf(unitById(battle, unitId)?.unitTypeId ?? '');
     let hit = false;
     const push = (k: number): void => {
-      lunge = { unitId, dx: dx * 7 * k, dy: dy * 5 * k };
+      const f = hit ? -0.15 : 0.15;
+      lunge = { unitId, dx: dx * 7 * k, dy: dy * 5 * k, sx: 1 + f * k, sy: 1 - f * k };
     };
     const tryHit = (p: number, at: number): void => {
       if (!hit && p >= at) {
         hit = true;
-        onMeleeHit(style, to, damage, killed);
+        onMeleeHit(style, to, damage, killed, targetId);
       }
     };
     if (style === 'thrust') {
@@ -817,7 +839,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       dur: 520,
       step: (p) => {
         const k = p < 0.35 ? p / 0.35 : Math.max(0, 1 - (p - 0.35) / 0.65);
-        lunge = { unitId, dx: dx * k, dy: dy * k };
+        // H5 ②：与 meleeAnim 同款的伸缩（无命中反转——砸墙没有"受击方单位"）
+        lunge = { unitId, dx: dx * k, dy: dy * k, sx: 1 + 0.15 * k, sy: 1 - 0.15 * k };
       },
       end: () => {
         lunge = null;
@@ -1167,12 +1190,6 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     const effHover = !busy() && u && u.side === 0 ? hover : null;
     // 调试探针：把"这一帧真正画出去的悬停格"暴露给自动化（tools/hoveraudit.mjs）。
     // 悬停残留是个纯视觉 bug，截图看不出来，只能这样断言。
-    if (opts.debugProbe) {
-      (window as unknown as Record<string, unknown>)['__battleHover'] = effHover
-        ? [effHover.col, effHover.row]
-        : null;
-    }
-
     renderer.draw({
       battle,
       activeId: u && u.side === 0 ? u.id : null,
@@ -1189,6 +1206,109 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       impacts,
       time: now,
     });
+
+    /* ---- TP-5 调试探针钩子（tools/probes/tp5-animframes.mjs）----
+       放在 draw() **之后**：`__battleScene.units[].bx/by/bw/bh` 取的是本次
+       draw 的真实落笔矩形（BattleRenderer.lastBlit），放在 draw 前会读到上一帧的。 */
+    if (opts.debugProbe) {
+      const w = window as unknown as Record<string, unknown>;
+      // ③ `__battleOff`：渲染器离屏画布（1px = 1 场单位）。探针在同一帧里读它 +
+      //    上面的钩子，比整页截图快三个数量级（本机截图每张 2.5~15s，会系统性
+      //    漏掉 520ms 的攻击演出）。
+      w['__battleOff'] = renderer.offscreen;
+      // ④ `__battleAtlas`：战斗图集画布（含 alpha）。探针裁出 lastFrame 指向的帧，
+      //    与离屏画布同位置逐像素比 —— "屏幕上这一块就是图集里这一帧"的零容差实证
+      //    （imageSmoothingEnabled=false，最近邻缩放 = 精确拷贝）。
+      w['__battleAtlas'] = renderer.atlasCanvas;
+      // ⑤ `__battleNN(sw,sh,dw,dh)`：上面那条零容差比对用的**映射表测量器**——
+      //    squash&stretch 下 dest≠src 尺寸，dest 像素对应哪个 src 像素不能推公式
+      //    （见 nnMapCache 注释里的实测数据），只能用同一批参数画唯一色图读出来。
+      //    返回 Int 数组（长度 dw*dh，元素 = v*sw+u 的源索引，-1 = 出界）。
+      w['__battleNN'] = (sw: number, sh: number, dw: number, dh: number) => {
+        const key = `${sw}x${sh}>${dw}x${dh}`;
+        const hit = nnMapCache.get(key);
+        if (hit) return hit;
+        if (sw > 255 || sh > 255 || dw < 1 || dh < 1) return null; // 唯一色编码装不下
+        const src = document.createElement('canvas');
+        src.width = sw;
+        src.height = sh;
+        const sg = src.getContext('2d');
+        if (!sg) return null;
+        const sd = sg.createImageData(sw, sh);
+        for (let v = 0; v < sh; v++) {
+          for (let u = 0; u < sw; u++) {
+            const i = (v * sw + u) * 4;
+            sd.data[i] = u;
+            sd.data[i + 1] = v;
+            sd.data[i + 2] = 0;
+            sd.data[i + 3] = 255;
+          }
+        }
+        sg.putImageData(sd, 0, 0);
+        const dst = document.createElement('canvas');
+        dst.width = dw;
+        dst.height = dh;
+        const dg = dst.getContext('2d');
+        if (!dg) return null;
+        dg.imageSmoothingEnabled = false;
+        dg.drawImage(src, 0, 0, sw, sh, 0, 0, dw, dh);
+        const dd = dg.getImageData(0, 0, dw, dh).data;
+        const table: number[] = [];
+        for (let i = 0; i < dw * dh; i++) {
+          const u = dd[i * 4];
+          const v = dd[i * 4 + 1];
+          table.push(u < sw && v < sh ? v * sw + u : -1);
+        }
+        nnMapCache.set(key, table);
+        return table;
+      };
+      w['__battleHover'] = effHover ? [effHover.col, effHover.row] : null;
+      // ① `__battleLunge`：lunge 非空 ⇔ 该单位这一帧在画 atk 帧 + squash&stretch
+      //    （BattleRenderer.drawUnit 的选帧与缩放唯一依据）。探针靠它**精确抓帧**——
+      //    固定时间窗连拍会被飘字/冲击火花/`chi_sel` 光圈的 alpha 脉冲污染，造出
+      //    "平移解释不了"的假阳性（恒绿陷阱：门过了，验的其实是光圈）。
+      w['__battleLunge'] = lunge
+        ? { unitId: lunge.unitId, dx: lunge.dx, dy: lunge.dy, sx: lunge.sx ?? 1, sy: lunge.sy ?? 1 }
+        : null;
+      // ② `__battleScene`：整帧场景快照，字段全部取**当帧真值**（`createBattle` 只给
+      //    初始站位，而 auto 战斗里单位会移动，拿初始站位算框会全偏——踩过）：
+      //    - units[].fx/fy：实时场坐标（含 posOverride 移动演出中的插值位置）；
+      //    - units[].bx/by/bw/bh：该部队本帧的**实际落笔矩形**（含 lunge 位移、
+      //      squash 缩放、idle 浮动、受击 +2px —— 全是绘制期量，场景状态里没有）。
+      //      探针拿它算"两帧间理应发生的位移"（矩形差，精确到像素）和"场景安静"
+      //      （别的部队矩形逐一相等 ⇒ 它们真的一个像素都没动）；
+      //    - overlays：静态高亮格集合（reachable/attackable/hover；键集合相等 ⇒ 无差异）；
+      //    - activeHex：当前行动单位的格——它的 `chi_sel` 光圈 alpha 在脉冲，必须排除；
+      //    - floats / impacts：飘字与冲击特效的场坐标（边升边放的动效，必须排除）。
+      //      impacts 带 [x, y, p, unitId]：p/uid 供受击位移（H5③ +2px）软检精确定位
+      //      "冲击 p 跨 0.3"的帧对（BattleRenderer.ts:591 的 jerk 窗口定义）。
+      const actU = currentUnit(battle);
+      const actId = actU && actU.side === 0 ? actU.id : null;
+      const actHex = actId ? unitById(battle, actId)?.hex : undefined;
+      w['__battleScene'] = {
+        units: battle.units
+          .filter((u) => u.count > 0)
+          .map((u) => {
+            const p = posOverride[u.id] ?? hexCenter(u.hex);
+            const bl = renderer.lastBlit.get(u.id);
+            const fr = renderer.lastFrame.get(u.id);
+            return {
+              id: u.id, unitTypeId: u.unitTypeId, side: u.side,
+              fx: p.x, fy: p.y,
+              bx: bl ? bl.x : null, by: bl ? bl.y : null, bw: bl ? bl.w : null, bh: bl ? bl.h : null,
+              frame: fr ? { name: fr.name, x: fr.x, y: fr.y, w: fr.w, h: fr.h } : null,
+            };
+          }),
+        overlays: [
+          ...(reachableSet ? [...reachableSet] : []),
+          ...(attackableSet ? [...attackableSet] : []),
+          ...(effHover ? [hexKey(effHover)] : []),
+        ],
+        activeHex: actHex ? [actHex.col, actHex.row] : null,
+        floats: floats.map((f) => [f.x, f.y]),
+        impacts: impacts.map((im) => [im.x, im.y, Math.round(im.p * 100) / 100, im.unitId ?? null]),
+      };
+    }
     raf = requestAnimationFrame(frame);
   }
 

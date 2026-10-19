@@ -18,6 +18,9 @@ export { PAD };
 export const BASE_W = 591 + PAD * 2;
 export const BASE_H = 376 + PAD * 2;
 
+/** H5 ① idle 浮动三帧（px）：0 / -1 / -2 循环，600ms 一轮（圣经 §4 H5）。 */
+const IDLE_BOB = [0, -1, -2] as const;
+
 export interface FloatText {
   text: string;
   x: number;
@@ -33,7 +36,8 @@ export interface BattleDraw {
   attackable: Set<string> | null;
   hover: Hex | null;
   posOverride: Record<string, { x: number; y: number }>;
-  lunge: { unitId: string; dx: number; dy: number } | null;
+  /** 攻击前冲表演（位移 + H5 squash&stretch 缩放；命中后缩放反向）。 */
+  lunge: { unitId: string; dx: number; dy: number; sx?: number; sy?: number } | null;
   arrow: { x: number; y: number; tx: number; ty: number; color?: string } | null;
   floats: FloatText[];
   /** 施法目标格高亮（选了法术后点目标时用）。 */
@@ -42,8 +46,8 @@ export interface BattleDraw {
   spellFx?: { hex: Hex; life: number; color: string; splash?: boolean }[];
   /** 闪电：从目标头顶劈下来（p: 剩余生命 1 → 0）。 */
   bolt?: { x: number; y: number; p: number } | null;
-  /** 近战打击特效（p: 0 → 1 播放进度）。 */
-  impacts?: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number }[];
+  /** 近战打击特效（p: 0 → 1 播放进度）。`unitId` = 受击方，供 H5 受击位移用。 */
+  impacts?: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number; unitId?: string }[];
   time: number;
 }
 
@@ -52,6 +56,25 @@ export class BattleRenderer {
   private off: HTMLCanvasElement;
   private offCtx: CanvasRenderingContext2D;
   private atlas: CombatAtlas;
+  /** 缺帧告警去重：`drawUnit` 每帧都会被调，不去重会刷满控制台。 */
+  private readonly missingSpriteWarned = new Set<string>();
+  /** 每帧各部队精灵的**实际落笔矩形**（整数屏幕坐标，drawUnit 算完就记）。
+   *  TP-5 探针（tools/probes/tp5-animframes.mjs）用它做两件事：
+   *  ① 两帧间"理应发生的位移"直接取矩形差 —— 精确到像素，不用建模（lunge 的
+   *     dx/dy 是 k 插值小数、squash 还有锚点补偿，建模必漏项，踩过）；
+   *  ② 场景安静闸：别的部队矩形逐一相等 ⇒ 它们的 bob/受击抖动/移动全都没动
+   *     （这些是**绘制期**偏移，不在任何场景状态里，只查 fx/fy 查不出来，踩过）。 */
+  readonly lastBlit = new Map<string, { x: number; y: number; w: number; h: number }>();
+  /** 每帧各部队**实际 blit 的图集帧**（name = 选中的帧名，x/y/w/h = 图集里的矩形）。
+   *  TP-5 探针用它做三件事：
+   *  ① 换帧实证：攻击演出期 name 必须是 `cu_<id>_atk`（帧烘焙了但渲染器从不 blit
+   *     就是这个项目 TP-5 之前的真实状态，光看画面像素分不清"换了帧"和"位移更大"）；
+   *  ② squash 实证：落笔矩形 w/h 与这里的自然 w/h 之差就是缩放系数（1.15/0.85 ⇒
+   *     74×48 / 54×64），差 0 = 缩放没生效；
+   *  ③ 屏幕=图集实证：拿这个矩形去图集里裁出那一帧，和离屏画布同位置逐像素比
+   *     （imageSmoothingEnabled=false ⇒ 最近邻缩放是精确拷贝，容差 0）。
+   *  ⚠️ 与 lastBlit 同在 drawUnit 里、同一处维护；缺帧早退时两个都 delete。 */
+  readonly lastFrame = new Map<string, { name: string; x: number; y: number; w: number; h: number }>();
   scale = 2;
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -67,14 +90,28 @@ export class BattleRenderer {
     this.atlas = getCombatAtlas();
   }
 
+  /** 调试探针专用：离屏画布（BASE_W×BASE_H 场像素，1px = 1 场单位，无缩放无 DPR）。
+   *  TP-5 探针（tools/probes/tp5-animframes.mjs）读它而不是整页截图：截图要走
+   *  合成器，本机每张 2.5~15s，520ms 的攻击演出会被系统性漏掉（实测零 lunge
+   *  片段——不是动画没做，是采样节奏永远错过它）。离屏画布 toDataURL 是纯 JS
+   *  操作，且和 __battleScene 钩子同帧同源，天然对齐。 */
+  get offscreen(): HTMLCanvasElement {
+    return this.off;
+  }
+
+  /** 调试探针专用：战斗图集画布（含 alpha）。TP-5 探针拿它裁出 lastFrame 指向的帧，
+   *  与离屏画布同位置逐像素比对（"屏幕上这块就是图集里这一帧"的零容差实证）。 */
+  get atlasCanvas(): HTMLCanvasElement {
+    return this.atlas.canvas;
+  }
+
   /**
    * 按容器可用空间决定放大倍数。
    * 优先取整数倍（像素最整齐）；差一点放不下整数倍时才退回小数倍，
    * 否则 600px 宽的战场在大屏幕上会小得可怜。
    * 同时乘上 devicePixelRatio，让逻辑像素对齐物理像素。
    */
-  fit(availW: number, availH: number): void {
-    // §5.3：套上画质 DPR 上限；本渲染器已支持小数倍缩放，只需钳制即可
+  fit(availW: number, availH: number): void {    // §5.3：套上画质 DPR 上限；本渲染器已支持小数倍缩放，只需钳制即可
     const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), quality.dprCap);
     const raw = Math.min(availW / BASE_W, availH / BASE_H);
     let s = Math.min(4, Math.max(0.6, raw));
@@ -524,10 +561,29 @@ export class BattleRenderer {
   private drawUnit(g: CanvasRenderingContext2D, d: BattleDraw, u: BattleUnit): void {
     const c = hexCenter(u.hex);
     const ov = d.posOverride[u.id];
-    const cx = (ov ? ov.x : c.x) + PAD;
-    const cy = (ov ? ov.y : c.y) + PAD;
-    if (d.lunge && d.lunge.unitId === u.id) {
-      // 近战/射击时的"前冲"位移，纯表演
+    let cx = (ov ? ov.x : c.x) + PAD;
+    let cy = (ov ? ov.y : c.y) + PAD;
+    // H5 ① idle 浮动：0 / -1 / -2px 三帧循环（600ms，圣经 §4 H5）。
+    // 相位按格子哈希错开——否则整屏部队同呼吸，一眼假。
+    // posOverride（移动演出）期间不加：那会儿坐标是动画权威，叠浮动会抖。
+    // ⚠️ hash2 返回 [0,1) 小数，必须先 ×3 取整再当索引用——
+    //   直接 `IDLE_BOB[小数]` = undefined，`cy += undefined` = NaN，
+    //   而 canvas 对 NaN 坐标是**静默不画**（单位全体隐形、零报错）。踩过，别再犯。
+    if (!ov) {
+      const off = Math.floor(hash2(u.hex.col, u.hex.row, 91) * IDLE_BOB.length);
+      const ph = ((Math.floor(d.time / 200) + off) % IDLE_BOB.length + IDLE_BOB.length) % IDLE_BOB.length;
+      cy += IDLE_BOB[ph];
+    }
+    // NaN 防线：canvas 对 NaN 坐标**静默不画**（单位隐形且零报错——TP-5 真踩过）。
+    // 宁可画在错位置 + 留一条 warn，也不许静默消失。
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) {
+      const tag = `pos:${u.id}`;
+      if (!this.missingSpriteWarned.has(tag)) {
+        this.missingSpriteWarned.add(tag);
+        console.warn(`[战斗精灵] ${u.id}(${u.unitTypeId}) 屏幕坐标非有限（cx=${cx} cy=${cy}）→ 已回退到格子中心。查动画侧 posOverride/lunge 的数值来源。`);
+      }
+      cx = c.x + PAD;
+      cy = c.y + PAD;
     }
 
     const team = this.atlas.need(`cbase_${u.side}`);
@@ -537,16 +593,48 @@ export class BattleRenderer {
       Math.round(cx + team.ax), Math.round(cy + team.ay), team.w, team.h,
     );
 
-    const name = `cu_${u.unitTypeId}`;
-    if (!this.atlas.has(name)) return;
+    const idleName = `cu_${u.unitTypeId}`;
+    // TP-5①：攻击表演期换 atk 帧（帧早已烘焙、成本已付，此前渲染器从不 blit）。
+    // 中性怪（狼/野猪/食人魔）没烘 atk 帧 ⇒ 回退 idle，不影响它们的表现。
+    const atkName = `${idleName}_atk`;
+    const name = d.lunge && d.lunge.unitId === u.id && this.atlas.has(atkName) ? atkName : idleName;
+    // 兜底**保留**（不抛：抛了=开局白屏，比少一张精灵更糟——同 `atlas.ts` `warnOverflow` 的取舍），
+    // 但**不许再静默**。背景：四族 T5 曾因图集里没有 `cu_*` 帧、这一行直接 return，战斗中
+    // 只剩队伍色底盘圈（无精灵 / 无数量牌 / 无血条），而且**没有任何提示**，谁都没察觉
+    // （`PROJECT-WRAPUP.md` §13.2① 记的就是这个后果，只是当时把位置记成了地图侧）。
+    // ⇒ 兜底照留，但缺帧必须留下可观测的痕迹。
+    if (!this.atlas.has(name)) {
+      if (!this.missingSpriteWarned.has(name)) {
+        this.missingSpriteWarned.add(name);
+        console.warn(
+          `[战斗精灵] 图集缺 ${name}（unitTypeId=${u.unitTypeId}）→ 该兵种只画队伍色底盘圈，` +
+            `不画本体/数量牌/血条。检查 unitArt.ts 的帧表与 combatAtlas.ts 的烘焙循环。`,
+        );
+      }
+      return;
+    }
+    this.lastBlit.delete(u.id); // 缺帧没画本体 ⇒ 不留给探针一个过期矩形
+    this.lastFrame.delete(u.id);
     const f = this.atlas.need(name);
-    const ox = d.lunge && d.lunge.unitId === u.id ? d.lunge.dx : 0;
-    const oy = d.lunge && d.lunge.unitId === u.id ? d.lunge.dy : 0;
-    g.drawImage(
-      this.atlas.canvas,
-      f.x, f.y, f.w, f.h,
-      Math.round(cx + f.ax + ox), Math.round(cy + f.ay + oy), f.w, f.h,
-    );
+    this.lastFrame.set(u.id, { name, x: f.x, y: f.y, w: f.w, h: f.h }); // TP-5 探针用（见字段注释）
+    const lg = d.lunge && d.lunge.unitId === u.id ? d.lunge : null;
+    const ox = lg ? lg.dx : 0;
+    const oy = lg ? lg.dy : 0;
+    // H5 ③ 受击位移：冲击特效的新鲜期内整图 +2px 右移（圣经"1 帧"按冲击时长
+    // 折算成 p<0.3 的可见窗口——rAF 下单帧 16ms 读不出，那等于没做）。
+    const jerked = (d.impacts ?? []).some((im) => im.unitId === u.id && im.p < 0.3) ? 2 : 0;
+    // H5 ② 攻击 squash & stretch：出击 1.15× 宽 / 0.85× 高，命中帧反过来
+    //（BattleScreen 的 meleeAnim 按 hit 状态反号后写进 lunge.sx/sy）。
+    const sx = lg?.sx ?? 1;
+    const sy = lg?.sy ?? 1;
+    const sw = Math.max(1, Math.round(f.w * sx));
+    const sh = Math.max(1, Math.round(f.h * sy));
+    // 缩放锚点 = 底边中点（脚不离开地面）+ 当前位移；否则拉伸时单位会"飘"
+    // （变量名带 s 前缀：本函数后半段还有数量牌的 bx/by，不能撞名）
+    const sbx = Math.round(cx + f.ax + ox + jerked + (f.w - sw) / 2);
+    const sby = Math.round(cy + f.ay + oy + (f.h - sh));
+    this.lastBlit.set(u.id, { x: sbx, y: sby, w: sw, h: sh }); // TP-5 探针用（见字段注释）
+    g.drawImage(this.atlas.canvas, f.x, f.y, f.w, f.h, sbx, sby, sw, sh);
 
     // 数量牌
     const def = getUnit(u.unitTypeId);
