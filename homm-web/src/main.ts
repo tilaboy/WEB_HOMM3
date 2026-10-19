@@ -54,6 +54,8 @@ import { openStartScreen } from './ui/StartScreen.js';
 import { openTownDialog } from './ui/TownDialog.js';
 import { closeModal, hideInfoPopup, isModalOpen, showInfoPopup, showModal } from './ui/Dialogs.js';
 import { isMuted, setMuted, sfx } from './ui/sfx.js';
+import { play as playMusic } from './audio/music.js';
+import { isMusicOn, setMusicOn } from './audio/bus.js';
 import { clearSave, hasSave, hydratePersistence, loadConfig, loadGame, saveConfig, saveGame } from './save/persistence.js';
 import { installLifecycle } from './app/lifecycle.js';
 
@@ -480,6 +482,10 @@ function loadLatest(): void {
   renderer.resize();
   camera.clamp();
   closeModal();
+  // TP-3：地图场景 ⇒ map 曲（audio-direction.md §10.1 接线②）。两处"进图"路径
+  // （读最近存档 / 开新局，含 startScenario 的教程与破碎罗盘）共用同一转入点，
+  // 从 menu 交叉淡入 700ms（§3.1-3）。
+  playMusic('map');
   recomputeField();
   refresh();
   renderLog();
@@ -564,6 +570,20 @@ function openSetup(): void {
       () => {
         setMuted(!isMuted());
         if (!isMuted()) sfx.click();
+      },
+    ),
+  );
+  // TP-3 / Q3：音乐**独立于音效**的开关（homm.music，默认开）。
+  // homm.mute 保持总开关语义不变；关音乐不关音效是移动端最常见组合（§11-Q3）。
+  wrap.appendChild(
+    setupToggle(
+      '音乐',
+      'ic_music_on',
+      'ic_music_off',
+      () => isMusicOn(),
+      () => {
+        setMusicOn(!isMusicOn());
+        if (isMusicOn()) sfx.click(); // 给一个即时反馈：开了就听见一下
       },
     ),
   );
@@ -1197,6 +1217,11 @@ function openStart(): void {
     playerName: state.config.playerName,
   };
 
+  // TP-3：开始屏 = 主菜单场景 ⇒ menu 曲（audio-direction.md §10.1 接线①）。
+  // ctx 懒创建：此刻通常还没有用户手势 ⇒ 调度器排不上音符，首次点击时才真响
+  // （§7「首屏不出声」纪律，R1 守卫保证挂起期间零排程）。
+  playMusic('menu');
+
   openStartScreen(app, {
     initial,
     hasSave: hasSave(),
@@ -1326,6 +1351,10 @@ function startNewGame(config: GameConfig): void {
   renderer.resize();
   camera.clamp();
   closeModal();
+  // TP-3：地图场景 ⇒ map 曲（audio-direction.md §10.1 接线②）。两处"进图"路径
+  // （读最近存档 / 开新局，含 startScenario 的教程与破碎罗盘）共用同一转入点，
+  // 从 menu 交叉淡入 700ms（§3.1-3）。
+  playMusic('map');
   recomputeField();
   refresh();
   renderLog();
@@ -1909,6 +1938,28 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('/sw.js').catch(() => undefined);
   });
 }
+
+/* ---------------- TP-3 场景音乐巡更 ---------------- */
+
+/**
+ * 城镇对话框的「关窗 ⇒ 回 map 曲」。
+ *
+ * 为什么用轮询而不是回调：TownDialog 走 `showModal`（Dialogs.ts），而模态系统
+ * **没有 onClose 回调**；关闭可能发生在对话框自身的「返回」钮或任何外部
+ * `closeModal()`。给共享的 Dialogs 加回调机制波及全部弹窗，不值当 —— 这里用
+ * 250ms 轻轮询（一次 querySelector）补上这一跳。
+ *
+ * **开窗**不靠轮询：TownDialog 自己开馆时立即播 town（零滞后）。
+ * 轮询只负责「关」这一刻，而 map 曲是 700ms 交叉淡入 ⇒ 250ms 侦测滞后听不出来。
+ * `.town` 类是 TownDialog 独有的根类（全仓仅它一处创建），做开闭标记可靠。
+ */
+let townDialogOpen = false;
+setInterval(() => {
+  const now = document.querySelector('#modal-root .town') !== null;
+  if (now === townDialogOpen) return;
+  townDialogOpen = now;
+  if (!now) playMusic('map'); // 关窗 ⇒ 回地图曲（与 battle 关闭同一处理）
+}, 250);
 
 /* ---------------- 启动 ---------------- */
 

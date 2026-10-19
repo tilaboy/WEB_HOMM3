@@ -727,6 +727,25 @@ function lightIcon(pb: PixBuf, on: boolean): void {
   pb.outline('#3a2a18', 0.85);
 }
 
+/**
+ * setup **音乐**开关两态（TP-3，Q3 独立开关）：`ic_music_on` = 八分音符；
+ * `ic_music_off` = 同一音符 + 对角斜杠。与 `ic_sound_*`（喇叭）必须一眼分得清——
+ * 设置里「音效 / 音乐」两行并列，图标撞形会被读成同一项。
+ */
+function musicIcon(pb: PixBuf, on: boolean): void {
+  const ink = '#d8c48a';
+  // 符头：椭圆；符杆：右上竖线；符尾：单旗
+  pb.ellipse(6, 12, 3, 2.4, ink);
+  pb.rect(8, 3, 1.4, 9, ink);
+  pb.poly([[9, 3], [13, 5], [13, 7], [9, 5]], ink);
+  pb.set(5, 11, '#ffffff', 0.5); // 符头高光
+  if (!on) {
+    pb.line(2, 2, 15, 15, '#d0553f');
+    pb.line(15, 2, 2, 15, '#d0553f');
+  }
+  pb.outline('#3a2a18', 0.85);
+}
+
 /* ---------------- 打包 ---------------- */
 
 /** 一帧在图集里的落点（打包器产出的几何，不含锚点）。 */
@@ -1038,7 +1057,7 @@ export class Atlas {
       put(`ic_${k}`, b);
     }
 
-    // UI 状态图标（D-38③ / UX Q8）：稀有聚合槽 + 音效两态 + 光照两态。
+    // UI 状态图标（D-38③ / UX Q8）：稀有聚合槽 + 音效两态 + 光照两态 + 音乐两态（TP-3）。
     // 帧名以 asset-spec.md §2.3.1 为准（引区块、不引散行）。18×18 与既有 ic_* 同尺度。
     b = p(18, 18);
     rareBagIcon(b);
@@ -1051,6 +1070,11 @@ export class Atlas {
     for (const [name, on] of [['ic_light_on', true], ['ic_light_off', false]] as [string, boolean][]) {
       b = p(18, 18);
       lightIcon(b, on);
+      put(name, b);
+    }
+    for (const [name, on] of [['ic_music_on', true], ['ic_music_off', false]] as [string, boolean][]) {
+      b = p(18, 18);
+      musicIcon(b, on);
       put(name, b);
     }
 

@@ -32,6 +32,9 @@ import {
 import type { BuildStatus } from '../core/game/town.js';
 import { showModal } from './Dialogs.js';
 import { sfx } from './sfx.js';
+// TP-3：城镇场景曲（audio-direction.md §10.1 接线④）。开窗立即播；
+// 关窗回 map 由 main.ts 的场景巡更补（showModal 没有 onClose，见那边注释）。
+import { play as playMusic } from '../audio/music.js';
 
 export interface TownDialogOptions {
   state: GameState;
@@ -141,6 +144,9 @@ export function openTownDialog(parent: HTMLElement, opts: TownDialogOptions): vo
     headClose: true,
     actions: [],
   });
+
+  // TP-3：城镇对话框 = 经营场景 ⇒ town 曲（最暖的一首，含鸡啄喜剧点 §2.4）。
+  playMusic('town');
 }
 
 type Say = (msg: string) => void;

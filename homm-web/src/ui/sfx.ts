@@ -7,60 +7,17 @@
  *
  * 全局开关：localStorage 'homm.mute'，master gain 实时跟随，
  * 静音只拧音量不销毁上下文，切回来立刻有声。
+ *
+ * 2026-10-18 TP-3：总线图拆到 `src/audio/bus.ts`（规格 §5.1），本文件的
+ * tone()/noise() 出口从 master 改接 **busUI**（规格 §10.1 步骤②，共 2 行）。
+ * **10 个方法名与签名完全不变**（§10.2 零改动清单）；新增的只有
+ * win/lose 叠加音乐 sting（§5.4 方案 i，Q4 已拍板）。
  */
 
-let ctx: AudioContext | null = null;
-let master: GainNode | null = null;
-let muted = localStorage.getItem('homm.mute') === '1';
-/** 是否已完成「首次手势解锁」——只做一次，见 ac() 注释。 */
-let unlocked = false;
+import { ac, outUI, beginVoice, suspendAudio, resumeAudio, isMuted, setMuted, duckMusic } from '../audio/bus.js';
+import { sting } from '../audio/music.js';
 
-const MASTER_VOL = 0.18;
-
-export function isMuted(): boolean {
-  return muted;
-}
-
-export function setMuted(v: boolean): void {
-  muted = v;
-  localStorage.setItem('homm.mute', v ? '1' : '0');
-  if (master) master.gain.value = v ? 0 : MASTER_VOL;
-}
-
-/**
- * 显式挂起音频（M-06，规格 §5.4）。切后台时由生命周期钩子调用，
- * 释放被系统中断前占用的音频硬件；只有确知在 running 时才 suspend，避免无谓调用。
- */
-export function suspendAudio(): void {
-  if (ctx?.state === 'running') void ctx.suspend();
-}
-
-/**
- * 显式恢复音频（M-06，规格 §5.4）。回到前台时由生命周期钩子调用。
- * **不要**再依赖发声时的自动 resume：后台被系统中断后，下一次发声若立刻把上下文
- * 猛地拉起，部分设备会爆音——所以恢复只能由生命周期在正确的时机显式驱动。
- */
-export function resumeAudio(): void {
-  if (ctx?.state === 'suspended') void ctx.resume();
-}
-
-function ac(): AudioContext | null {
-  if (typeof AudioContext === 'undefined') return null;
-  if (!ctx) {
-    ctx = new AudioContext();
-    master = ctx.createGain();
-    master.gain.value = muted ? 0 : MASTER_VOL;
-    master.connect(ctx.destination);
-  }
-  // 自动播放策略：上下文在首次发声时可能仍是 suspended，而首次发声必然发生在某次
-  // 用户手势里，此时 resume() 是允许的。所以**只在第一次**推一把（unlocked 标记），
-  // 之后一概不自动 resume——后台被系统中断后的恢复交给 lifecycle 显式调用（M-06）。
-  if (!unlocked) {
-    unlocked = true;
-    if (ctx.state === 'suspended') void ctx.resume();
-  }
-  return ctx;
-}
+export { suspendAudio, resumeAudio, isMuted, setMuted };
 
 interface ToneOpts {
   type?: OscillatorType;
@@ -73,7 +30,8 @@ interface ToneOpts {
 /** 单个音：振荡器 + 指数衰减包络。 */
 function tone(freq: number, dur: number, opts: ToneOpts = {}): void {
   const c = ac();
-  if (!c || !master) return;
+  const out = outUI();
+  if (!c || !out) return;
   const t0 = c.currentTime + (opts.delay ?? 0);
   const osc = c.createOscillator();
   osc.type = opts.type ?? 'sine';
@@ -84,7 +42,14 @@ function tone(freq: number, dur: number, opts: ToneOpts = {}): void {
   g.gain.setValueAtTime(0, t0);
   g.gain.linearRampToValueAtTime(peak, t0 + 0.008);
   g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-  osc.connect(g).connect(master);
+  osc.connect(g).connect(out);
+  beginVoice(osc, () => {
+    try {
+      osc.stop();
+    } catch {
+      /* ignore */
+    }
+  });
   osc.start(t0);
   osc.stop(t0 + dur + 0.02);
 }
@@ -102,7 +67,8 @@ interface NoiseOpts {
 /** 噪声打击感：白噪声 + 带通滤波 + 快速衰减。 */
 function noise(dur: number, opts: NoiseOpts = {}): void {
   const c = ac();
-  if (!c || !master) return;
+  const out = outUI();
+  if (!c || !out) return;
   const t0 = c.currentTime + (opts.delay ?? 0);
   const len = Math.max(1, Math.ceil(c.sampleRate * dur));
   const buf = c.createBuffer(1, len, c.sampleRate);
@@ -119,7 +85,14 @@ function noise(dur: number, opts: NoiseOpts = {}): void {
   const peak = opts.gain ?? 0.4;
   g.gain.setValueAtTime(peak, t0);
   g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-  src.connect(bp).connect(g).connect(master);
+  src.connect(bp).connect(g).connect(out);
+  beginVoice(src, () => {
+    try {
+      src.stop();
+    } catch {
+      /* ignore */
+    }
+  });
   src.start(t0);
 }
 
@@ -154,6 +127,7 @@ export const sfx = {
   },
   /** 建造完成 */
   build(): void {
+    duckMusic(); // §5.2：win/lose/build 是"该让位"的低密度重要事件
     noise(0.08, { gain: 0.3, freq: 300, q: 0.9 });
     tone(392, 0.12, { type: 'triangle', gain: 0.28, delay: 0.07 });
   },
@@ -164,18 +138,28 @@ export const sfx = {
   },
   /** 战斗胜利 */
   win(): void {
+    duckMusic();
     tone(523, 0.12, { type: 'triangle', gain: 0.3 });
     tone(659, 0.12, { type: 'triangle', gain: 0.3, delay: 0.1 });
     tone(784, 0.2, { type: 'triangle', gain: 0.32, delay: 0.2 });
+    // §5.4 方案 i（Q4 已拍板）：sfx 保"立刻有反应"的手感，sting 600ms 后叠加
+    sting('victory');
   },
   /** 战斗失败/撤退 */
   lose(): void {
+    duckMusic();
     tone(392, 0.14, { type: 'sawtooth', gain: 0.16 });
     tone(311, 0.2, { type: 'sawtooth', gain: 0.16, delay: 0.12 });
     tone(233, 0.28, { type: 'sawtooth', gain: 0.16, delay: 0.24 });
+    sting('defeat');
   },
   /** 操作无效 */
   error(): void {
     tone(170, 0.12, { type: 'square', gain: 0.14 });
   },
 };
+
+// 调试表面（?devprobe=1 才挂）：探针用它验"关音乐不关音效"的独立性（S6 闸）。
+if (typeof window !== 'undefined' && location.search.includes('devprobe')) {
+  (window as unknown as { __sfxCtl: typeof sfx }).__sfxCtl = sfx;
+}

@@ -48,6 +48,10 @@ import { STRUCTURE_NAME, structureAt, structureById, type SiegeStructure } from 
 import { getSpell } from '../core/data/spells.js';
 import { BattleRenderer, BASE_H, BASE_W, PAD } from '../render/BattleRenderer.js';
 import type { FloatText } from '../render/BattleRenderer.js';
+// TP-3：战斗场景曲（audio-direction.md §10.1 接线③）。开关都在屏内 ——
+// openBattleScreen 有三个调用点（野怪战 / 英雄遭遇 / ?devbattle），
+// 把音乐接在屏自身比在 main.ts 逐点包一层漏不了。
+import { play as playMusic } from '../audio/music.js';
 
 export interface BattleOptions {
   state: GameState;
@@ -1199,9 +1203,17 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     if (root.parentElement) root.parentElement.removeChild(root);
     document.body.classList.remove('in-battle');
     openRef = null;
+    // TP-3：战斗结束 ⇒ 回地图曲（交叉淡出，§3.1-3）。
+    // victory/defeat sting 已在 sfx.win/lose 里于 600ms 后叠加（§5.4 方案 i），
+    // 与本淡出同走 busMusic ⇒ 不会互相掐断；结算弹窗关得早也只会淡出得干脆。
+    playMusic('map');
   }
 
   openRef = { close };
+
+  // TP-3：战斗场景曲（§10.1 接线③）。恒定速度、不跟 1×/2×/3× 档变速（§3.1-2），
+  // 随时可被 close() 的交叉淡出截断（§3 循环要求）。
+  playMusic('battle');
 
   fit();
   recomputeOptions();
