@@ -14,7 +14,7 @@ import { UNIT_FRAMES, buildB0Frame } from './unitArt.js';
 import { shelfAdvance, packMetrics, warnOverflow, type PackItem, type PackMetrics, type ShelfCursor } from './atlas.js';
 
 /**
- * 旧通用美术的中立怪 / 退役 p1 别名帧（44×56，`drawCombatUnit` 手绘 switch）。
+ * 退役 p1 别名帧（44×56，`drawCombatUnit` 手绘 switch）。
  *
  * ⚠️ 这份清单是**战斗精灵覆盖率的真值源之一**，与 `UNIT_FRAMES` 的 `cu_*` 合并成
  * 「运行时可能被 `BattleRenderer` 请求的全部 `cu_<id>`」。`tools/b0audit.mjs` 的
@@ -22,6 +22,11 @@ import { shelfAdvance, packMetrics, warnOverflow, type PackItem, type PackMetric
  *
  * 背景（2026-10-14）：四族 T5 曾因帧表没有 `cu_*`、`BattleRenderer` 静默 `return`，
  * 在战斗中只剩队伍色底盘圈且无人察觉。覆盖率必须由断言兜住，不能靠人记得。
+ *
+ * TP-4②（2026-10-20）：狼 / 野猪 / 食人魔已迁出 —— 改走 `unitArt.ts` 的 B4 批
+ * 新卡通帧（`cu_wolf` / `cu_boar` / `cu_ogre`，64×56 与四族同规格）。本清单只剩
+ * 5 个退役 p1 别名（peasant/archer/pikeman/knight/angel），待段 2 全量切 canonical
+ * id 后整表删除（units.ts:173 的迁移计划）。
  */
 export const LEGACY_COMBAT_SPRITE_IDS = [
   'peasant',
@@ -29,9 +34,6 @@ export const LEGACY_COMBAT_SPRITE_IDS = [
   'pikeman',
   'knight',
   'angel',
-  'wolf',
-  'boar',
-  'ogre',
 ] as const;
 
 export interface CFrame {
@@ -401,44 +403,6 @@ function humanoid(pb: PixBuf, o: Look): void {
   }
 }
 
-function quadruped(pb: PixBuf, body: string, dark: string, eye: string, tusks: boolean): void {
-  const cx = 22;
-  shadow(pb, cx, 53, 13, 3);
-  // 躯干
-  pb.ellipse(cx - 1, 36, 13, 8, body);
-  pb.ellipse(cx - 1, 33, 12, 5, shade(body, 0.18));
-  // 腿
-  for (const dx of [-9, -5, 5, 9]) pb.rect(cx + dx, 42, 4, 10, dark);
-  for (const dx of [-9, 5]) pb.rect(cx + dx, 50, 4, 2, shade(dark, -0.3));
-  // 头
-  pb.ellipse(cx + 11, 30, 7, 6, body);
-  pb.poly(
-    [
-      [cx + 17, 28],
-      [cx + 21, 32],
-      [cx + 17, 35],
-    ],
-    shade(body, -0.15),
-  );
-  pb.set(cx + 21, 32, '#14100c');
-  pb.set(cx + 13, 29, eye);
-  pb.poly(
-    [
-      [cx + 6, 24],
-      [cx + 9, 20],
-      [cx + 11, 25],
-    ],
-    dark,
-  );
-  if (tusks) {
-    pb.line(cx + 19, 34, cx + 22, 31, '#f0ead6');
-    pb.line(cx + 19, 35, cx + 22, 37, '#f0ead6');
-  }
-  // 尾
-  pb.line(cx - 13, 34, cx - 19, 28, dark);
-  pb.line(cx - 19, 28, cx - 21, 24, dark);
-}
-
 function drawCombatUnit(pb: PixBuf, id: string): void {
   switch (id) {
     case 'peasant':
@@ -471,38 +435,7 @@ function drawCombatUnit(pb: PixBuf, id: string): void {
         metal: '#f8f8fb', metalDark: '#a8a8b8', accent: '#e3b869', weapon: 'sword', wings: '#fbfbff',
       });
       break;
-    case 'wolf':
-      quadruped(pb, '#8a8a92', '#3a3a42', '#d8c23a', false);
-      break;
-    case 'boar':
-      quadruped(pb, '#6b4a2f', '#241a10', '#c86a2a', true);
-      break;
-    case 'ogre': {
-      const cx = 22;
-      shadow(pb, cx, 53, 13, 3);
-      pb.rect(cx - 10, 24, 20, 20, '#4f6b3a');
-      pb.rect(cx - 10, 24, 20, 4, '#639050');
-      pb.rect(cx - 10, 40, 20, 4, '#33471f');
-      pb.rect(cx - 13, 26, 4, 16, '#3a5029');
-      pb.rect(cx + 9, 26, 4, 16, '#3a5029');
-      pb.rect(cx - 8, 44, 7, 8, '#3a5029');
-      pb.rect(cx + 2, 44, 7, 8, '#3a5029');
-      pb.ellipse(cx, 18, 7, 7, '#5f7a44');
-      pb.rect(cx - 6, 13, 12, 3, '#2e3f1c');
-      pb.set(cx - 3, 18, '#e8d84a');
-      pb.set(cx + 3, 18, '#e8d84a');
-      pb.rect(cx - 3, 22, 6, 2, '#241a10');
-      pb.line(cx - 2, 22, cx - 2, 21, '#f0ead6');
-      pb.line(cx + 2, 22, cx + 2, 21, '#f0ead6');
-      // 狼牙棒
-      pb.rect(cx + 14, 16, 3, 26, '#5b3f22');
-      pb.ellipse(cx + 15, 14, 5, 5, '#7a6a55');
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        pb.rect(Math.round(cx + 15 + Math.cos(a) * 5) - 1, Math.round(14 + Math.sin(a) * 5) - 1, 2, 2, '#c9c2ad');
-      }
-      break;
-    }
+    // 狼 / 野猪 / 食人魔：TP-4② 迁往 unitArt.ts B4 批（新卡通帧，64×56）
     default:
       humanoid(pb, {
         skin: '#d8a878', hair: '#4a3a22', cloth: '#7c6236', clothDark: '#54421f',

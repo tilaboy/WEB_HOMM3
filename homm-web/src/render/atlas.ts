@@ -6,7 +6,7 @@
  * ③ core/ 完全不知道美术的存在，跟之前程序化绘制一样保持零耦合。
  */
 import { PixBuf, chamferRect, fbm, hash2, mix, pnoise, shade } from './pixel.js';
-import { UNIT_FRAMES, buildB0Frame } from './unitArt.js';
+import { NEUTRAL_ART_COLORS, UNIT_FRAMES, buildB0Frame } from './unitArt.js';
 import { FACTIONS, NEUTRAL_COLOR, NEUTRAL_DARK } from '../core/data/factions.js';
 
 export const TILE = 32;
@@ -593,59 +593,145 @@ function hero(pb: PixBuf, cloth: string): void {
   shadow(pb, 16, 41, 8, 2);
 }
 
+/**
+ * TP-4② `mon_*` 中立怪地图图标的测试钩（默认全开）—— 与 `townArt` 同一用途：
+ * 让验收门（tools/neutralaudit.mjs）能插桩造失败，证明闸门有分辨力。运行期不碰它。
+ */
+export interface MonArtOptions {
+  /** 描边（图集墨 OUTLINE）。false = 退回无描边（负向对照 N1）。 */
+  outline: boolean;
+}
+let monArt: MonArtOptions = { outline: true };
+export function setMonArtOptions(o: Partial<MonArtOptions>): void {
+  monArt = { ...monArt, ...o };
+}
+
+/** `mon_*` 帧的固定画布尺寸（TP-4② 同尺寸替换，不占新容量）。 */
+export const MON_FRAME_SIZE = {
+  wolf: { w: 32, h: 30 },
+  boar: { w: 32, h: 30 },
+  ogre: { w: 32, h: 44 },
+} as const;
+
+/** 离线验收入口：`mon_<id>` 地图图标帧的**像素**（不走图集画布，也不需要 DOM）。 */
+export function buildMonFrame(id: 'wolf' | 'boar' | 'ogre'): PixBuf {
+  const size = MON_FRAME_SIZE[id];
+  const pb = new PixBuf(size.w, size.h);
+  if (id === 'wolf') wolf(pb);
+  else if (id === 'boar') boar(pb);
+  else ogre(pb);
+  return pb;
+}
+
+/**
+ * TP-4②（2026-10-20）：`mon_*` 三只中立怪的地图图标与 `unitArt.ts` B4 批的
+ * `cu_*` 战斗帧**同批翻新**——旧画法是椭圆 blob + 矩形腿 + 1px 眼 + 0.8 半透明，
+ * 正是圣经 §1.2/§1.3/§4 H3 点的反面教材。新画法取色与造型语言与战斗帧同源
+ * （`NEUTRAL_ART_COLORS`），零半透明、2px 眼、每单位一处失调。
+ * 尺寸不变（32×30/32×30/32×44）⇒ 冒险图集容量零增长。
+ */
 function wolf(pb: PixBuf): void {
-  pb.ellipse(14, 15, 10, 6, '#5a5f66');
-  pb.ellipse(12, 13, 8, 4, '#6e747c', 0.8);
-  pb.ellipse(24, 12, 5, 4, '#63696f');
-  pb.poly([[21, 9], [22, 4], [24, 9]], '#4a4f56');
-  pb.poly([[26, 9], [27, 4], [29, 10]], '#4a4f56');
-  pb.rect(27, 12, 4, 2, '#3a3f45');
-  pb.set(29, 13, '#1a1a1a');
-  pb.set(25, 11, '#d04a4a');
-  pb.rect(8, 20, 2, 7, '#43484e');
-  pb.rect(12, 20, 2, 7, '#4e545b');
-  pb.rect(18, 20, 2, 7, '#4e545b');
-  pb.rect(22, 20, 2, 7, '#43484e');
-  pb.line(4, 13, 0, 7, '#4a4f56');
-  pb.line(4, 14, 0, 9, '#4a4f56');
-  pb.outline(OUTLINE);
-  shadow(pb, 15, 27, 10, 2);
+  pb.tri([7, 12], [9, 8], [11, 12], NEUTRAL_ART_COLORS.fur0); // 双尖耳（母题）
+  pb.ellipse(8, 15, 4, 4, NEUTRAL_ART_COLORS.fur2); // 头
+  pb.rect(2, 14, 6, 3, NEUTRAL_ART_COLORS.fur2); // 长吻（唯一失调）
+  pb.rect(2, 14, 2, 2, NEUTRAL_ART_COLORS.fur0); // 鼻头
+  pb.hline(3, 7, 17, NEUTRAL_ART_COLORS.ink); // 嘴线
+  pb.set(5, 17, NEUTRAL_ART_COLORS.tusk); // 1px 獠牙
+  pb.line(5, 11, 9, 12, NEUTRAL_ART_COLORS.ink); // 平眉（H6：T1 最认真）
+  pb.rect(7, 13, 2, 2, NEUTRAL_ART_COLORS.eyeWhite); // 2px 眼白 + 1px 瞳孔（H3）
+  pb.set(8, 14, NEUTRAL_ART_COLORS.ink);
+  pb.ellipse(18, 19, 9, 5, NEUTRAL_ART_COLORS.fur2); // 躯干
+  pb.ellipse(18, 22, 8, 2, NEUTRAL_ART_COLORS.fur0); // 腹暗面
+  for (const x of [12, 16, 20, 24]) {
+    pb.rect(x, 22, 2, 4, NEUTRAL_ART_COLORS.fur0); // 四腿
+    pb.rect(x, 26, 3, 2, NEUTRAL_ART_COLORS.fur0); // 1.4× 掌
+  }
+  pb.rect(26, 16, 3, 2, NEUTRAL_ART_COLORS.fur2); // 蓬尾
+  pb.rect(28, 14, 2, 2, NEUTRAL_ART_COLORS.fur0);
+  pb.hline(11, 27, 28, NEUTRAL_ART_COLORS.ao); // AO（画布内）
+  if (monArt.outline) pb.outline(OUTLINE);
 }
 
 function boar(pb: PixBuf): void {
-  pb.ellipse(14, 16, 11, 7, '#6b4a30');
-  pb.ellipse(12, 14, 8, 5, '#825c3c', 0.85);
-  pb.ellipse(25, 15, 5, 4.5, '#5a3d26');
-  pb.rect(28, 15, 4, 3, '#7a5537');
-  pb.set(31, 17, '#2a1c10');
-  pb.set(30, 16, '#e8e0c8');
-  pb.set(30, 18, '#e8e0c8');
-  pb.set(26, 13, '#d04a4a');
-  for (let i = 0; i < 6; i++) pb.line(8 + i * 2, 11, 9 + i * 2, 8, '#3d2a1a', 0.8);
-  pb.rect(9, 22, 3, 6, '#4a3320');
-  pb.rect(14, 22, 3, 6, '#573c26');
-  pb.rect(19, 22, 3, 6, '#573c26');
-  pb.rect(24, 22, 3, 6, '#4a3320');
-  pb.outline(OUTLINE);
-  shadow(pb, 15, 28, 11, 2);
+  for (const [x, tip] of [
+    [11, 13],
+    [15, 11],
+    [19, 10],
+    [23, 11],
+  ] as [number, number][]) {
+    pb.tri([x, 15], [x + 2, tip], [x + 4, 15], NEUTRAL_ART_COLORS.bristle0); // 锯齿背鬃
+  }
+  pb.ellipse(18, 18, 10, 6, NEUTRAL_ART_COLORS.bristle2); // 躯干
+  pb.ellipse(18, 21, 9, 3, NEUTRAL_ART_COLORS.bristle0);
+  pb.ellipse(12, 16, 5, 4, NEUTRAL_ART_COLORS.bristle2); // 肩
+  pb.ellipse(8, 15, 5, 5, NEUTRAL_ART_COLORS.bristle2); // 头
+  pb.rect(2, 16, 6, 4, NEUTRAL_ART_COLORS.bristle2); // 吻
+  pb.rect(2, 17, 2, 2, NEUTRAL_ART_COLORS.bristle0); // 鼻头
+  pb.hline(3, 7, 20, NEUTRAL_ART_COLORS.ink); // 嘴线
+  // 一对大獠牙（唯一失调）
+  pb.poly(
+    [
+      [4, 21],
+      [1, 15],
+      [7, 19],
+    ],
+    NEUTRAL_ART_COLORS.tusk,
+  );
+  pb.poly(
+    [
+      [7, 21],
+      [5, 17],
+      [10, 20],
+    ],
+    NEUTRAL_ART_COLORS.tusk,
+  );
+  pb.ellipse(11, 11, 2, 2, NEUTRAL_ART_COLORS.bristle0); // 圆耳
+  pb.line(5, 11, 10, 12, NEUTRAL_ART_COLORS.ink); // 凶眉
+  pb.rect(7, 13, 2, 2, NEUTRAL_ART_COLORS.eyeWhite);
+  pb.set(8, 14, NEUTRAL_ART_COLORS.ink);
+  for (const x of [11, 15, 21, 25]) {
+    pb.rect(x, 23, 3, 4, NEUTRAL_ART_COLORS.bristle0); // 四腿
+    pb.rect(x, 26, 3, 2, NEUTRAL_ART_COLORS.ink); // 蹄（ink0：贴 wood0 的 ΔL* 理由同 cu 帧）
+  }
+  pb.rect(27, 16, 2, 2, NEUTRAL_ART_COLORS.bristle2); // 小卷尾
+  pb.hline(10, 28, 28, NEUTRAL_ART_COLORS.ao);
+  if (monArt.outline) pb.outline(OUTLINE);
 }
 
 function ogre(pb: PixBuf): void {
-  pb.rect(11, 32, 4, 9, '#4a5f30');
-  pb.rect(18, 32, 4, 9, '#3f5228');
-  pb.poly([[9, 14], [23, 14], [26, 34], [6, 34]], '#6f8f4a');
-  pb.poly([[9, 14], [16, 14], [16, 34], [6, 34]], '#83a659', 0.85);
-  pb.rect(8, 18, 3, 10, '#83a659');
-  pb.rect(22, 16, 3, 12, '#5c7a3c');
-  pb.ellipse(16, 10, 5, 5, '#7fa055');
-  pb.set(14, 9, '#d04a4a');
-  pb.set(18, 9, '#d04a4a');
-  pb.rect(13, 13, 6, 1, '#3f5228');
-  pb.rect(25, 8, 3, 14, '#7a5a34');
-  pb.ellipse(26, 7, 4, 4, '#8a6a3c');
-  pb.ellipse(26, 7, 2.5, 2.5, '#5f4426', 0.7);
-  pb.outline(OUTLINE);
-  shadow(pb, 16, 42, 11, 2.5);
+  // 超长狼牙棒（唯一失调）
+  pb.rect(24, 10, 3, 10, NEUTRAL_ART_COLORS.club0);
+  pb.ellipse(26, 6, 4, 4, NEUTRAL_ART_COLORS.club4);
+  chamferRect(pb, 23, 3, 2, 2, 1, NEUTRAL_ART_COLORS.stud); // 棒钉（人造物切角）
+  chamferRect(pb, 28, 5, 2, 2, 1, NEUTRAL_ART_COLORS.stud);
+  pb.rect(22, 18, 3, 5, NEUTRAL_ART_COLORS.hide2); // 右臂举棒
+  pb.rect(21, 21, 5, 4, NEUTRAL_ART_COLORS.hide4); // 1.4× 拳
+  pb.rect(7, 18, 3, 6, NEUTRAL_ART_COLORS.hide2); // 左臂
+  pb.rect(6, 23, 5, 4, NEUTRAL_ART_COLORS.hide4);
+  pb.ellipse(16, 12, 5, 5, NEUTRAL_ART_COLORS.hide2); // 头
+  pb.ellipse(12, 12, 2, 2, NEUTRAL_ART_COLORS.hide0); // 耳（收紧到头侧：右耳让开 club 杆 1px）
+  pb.ellipse(20, 12, 2, 2, NEUTRAL_ART_COLORS.hide0);
+  pb.line(10, 8, 14, 9, NEUTRAL_ART_COLORS.ink); // 呆怒眉
+  pb.line(18, 9, 22, 8, NEUTRAL_ART_COLORS.ink);
+  pb.rect(12, 10, 2, 2, NEUTRAL_ART_COLORS.eyeWhite);
+  pb.set(13, 11, NEUTRAL_ART_COLORS.ink);
+  pb.rect(18, 10, 2, 2, NEUTRAL_ART_COLORS.eyeWhite);
+  pb.set(19, 11, NEUTRAL_ART_COLORS.ink);
+  pb.hline(13, 19, 15, NEUTRAL_ART_COLORS.ink); // 嘴线
+  pb.set(14, 15, NEUTRAL_ART_COLORS.tusk); // 小獠牙
+  pb.set(17, 15, NEUTRAL_ART_COLORS.tusk);
+  pb.ellipse(16, 24, 8, 7, NEUTRAL_ART_COLORS.hide2); // 躯干
+  pb.rect(11, 28, 11, 4, NEUTRAL_ART_COLORS.cloth); // 腰布
+  for (let x = 12; x <= 20; x++) {
+    const pat = [1, 0, 2, 0][(x - 12) % 4];
+    pb.vline(x, 32, 32 + pat, NEUTRAL_ART_COLORS.ao); // 锯齿下摆
+  }
+  pb.rect(10, 32, 5, 6, NEUTRAL_ART_COLORS.hide0); // 双腿
+  pb.rect(18, 32, 5, 6, NEUTRAL_ART_COLORS.hide0);
+  pb.rect(9, 37, 7, 3, NEUTRAL_ART_COLORS.hide0); // 大脚（探到画布底-3 内：贴地）
+  pb.rect(17, 37, 7, 3, NEUTRAL_ART_COLORS.hide0);
+  pb.hline(8, 25, 40, NEUTRAL_ART_COLORS.ao); // AO
+  if (monArt.outline) pb.outline(OUTLINE);
 }
 
 function marker(pb: PixBuf, kind: 'gold' | 'res' | 'chest' | 'mine'): void {
@@ -1146,15 +1232,10 @@ export class Atlas {
       put(`hero_${key}`, b);
     }
 
-  b = p(32, 30);
-  wolf(b);
-  put('mon_wolf', b);
-  b = p(32, 30);
-  boar(b);
-  put('mon_boar', b);
-  b = p(32, 44);
-  ogre(b);
-  put('mon_ogre', b);
+  // 中立怪地图图标（TP-4② 翻新）：一律走 buildMonFrame（画布尺寸只有那一份真源，门控也读它）
+  put('mon_wolf', buildMonFrame('wolf'));
+  put('mon_boar', buildMonFrame('boar'));
+  put('mon_ogre', buildMonFrame('ogre'));
 
   // B0 + B1 批（asset-spec §9.1 / §9.2）：地图兵种槽位 `u_<faction>_<unit>_map` 52×44（D-73 二次加宽至 52），
   // 锚点走 Packer 默认（ax=(TILE-w)/2、ay=TILE-h 贴地），与 §1.2 网格表一致。

@@ -39,6 +39,7 @@ const {
   B1_FRAMES,
   B2_FRAMES,
   B3_FRAMES,
+  B4_FRAMES,
   B0_PALETTE,
   B0_SHADE_STEPS,
   B0_PENDING_AI_FRAME,
@@ -61,6 +62,7 @@ const BATCHES = [
   ['B1', B1_FRAMES],
   ['B2', B2_FRAMES],
   ['B3', B3_FRAMES],
+  ['B4', B4_FRAMES], // TP-4② 中立野怪（cu_wolf / cu_boar / cu_ogre）
 ];
 const batchLabel = BATCHES.map(([n, a]) => `${n} ${a.length}`).join(' + ');
 const batchTotal = BATCHES.reduce((s, [, a]) => s + a.length, 0);
@@ -160,6 +162,9 @@ const S1_TOL = 3;
 const MIN_DL = 8;
 const MIN_DL_SAME_HUE = 12;
 const SAME_HUE_DEG = 30;
+
+/** H1 体量阶梯的族前缀白名单（p1–p4；中立怪不是族，见 checkTierMatrix 内注释）。 */
+const FACTION_PREFIXES = new Set(['p1', 'p2', 'p3', 'p4']);
 
 function requiredDl(h1, h2) {
   return hueGap(h1, h2) < SAME_HUE_DEG ? MIN_DL_SAME_HUE : MIN_DL;
@@ -823,6 +828,11 @@ function checkTierMatrix({ label, kind, targets }) {
   const byFaction = new Map();
   for (const f of list) {
     const fac = f.spec.unit.slice(0, 2);
+    // H1 的分组只认四族前缀（p1–p4）：圣经 §5.6.1 的阶梯是**族内** T1→T4 属性。
+    // TP-4② 起 TIER_OF 含中立怪（wolf T1 / boar T3 / ogre T4）——它们不是族、
+    // 形不成阶梯，入 H1 只会误红；其体量由 S1（落靶 ±3pt）与 H2（跨档倒挂）
+    // 两条断言覆盖，强度不减。若将来新增第 5 族，这里要跟着扩。
+    if (!FACTION_PREFIXES.has(fac)) continue;
     if (!byFaction.has(fac)) byFaction.set(fac, []);
     byFaction.get(fac).push(f);
   }
@@ -1007,7 +1017,7 @@ console.log('  [6] 去色 32px 可辨（核心）MANUAL  3 个盲测者 × 各 3
 console.log('                                 判据：全部答对（§5.6.5 的 20 格版本阈值 = 命中率 ≥90%）');
 console.log('  [7] 手机上表情可读      MANUAL  64×56 帧在 zoom 2 × dpr 3 下截图，眼与嘴线可辨');
 console.log(`  [+] ${B0_PENDING_AI_FRAME} 全流程    MANUAL  七步管线（抠底→块众数降采样→钳色→落位→描边重建→手工修→PNG-8）`);
-console.log('        （程序化帧已做到 60 帧，但 crestL_p1 是 asset-spec §9.1 的第 7 个资产（AI 生成），仍留到下一批）');
+console.log(`        （程序化帧已做到 ${frames.length} 帧，但 crestL_p1 是 asset-spec §9.1 的第 7 个资产（AI 生成），仍留到下一批）`);
 
 /* ---------------------------------------------------------------- 预览 */
 

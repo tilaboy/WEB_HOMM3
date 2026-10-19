@@ -197,7 +197,11 @@ export interface B0FrameSpec {
     | 'p1_overangel'
     | 'p2_lavatroll'
     | 'p3_unicorn'
-    | 'p4_colossus';
+    | 'p4_colossus'
+    // TP-4② 中立野怪（D-58 §6.4.4：不迁名，id 即帧名中缀）
+    | 'wolf'
+    | 'boar'
+    | 'ogre';
   kind: 'map' | 'idle' | 'atk';
 }
 
@@ -320,9 +324,35 @@ export const B3_FRAMES: B0FrameSpec[] = [
   { name: 'cu_p4_colossus_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_colossus', kind: 'atk' },
 ];
 
-/** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 + B2 24 + B3 12 = 60），供 `tools/b0audit.mjs` 全扫描，
+/**
+ * B4 批（TP-4② · 中立野怪翻新，2026-10-20）：狼 / 野猪 / 食人魔，**3 帧（3 单位 × 1 idle）**。
+ *
+ * 背景：这三只此前走 `combatAtlas.ts` 的 `LEGACY_COMBAT_SPRITE_IDS` +
+ * `drawCombatUnit()` 旧通用树（44×56，四足怪 = 椭圆躯干 + 矩形腿 + 1px 眼睛，
+ * 食人魔 = 矩形堆 + 狼牙棒；地图侧 `mon_*` 同款 blob）。TP-4② 把它们接入
+ * 本帧体系：cu 帧 64×56 / ax=-32 / ay=-48，与四族同规格同锚点。
+ *
+ * 为什么只登记 idle：
+ *   · plan TP-4② 的范围是「改新卡通帧并接 canonical id」——`BattleRenderer`
+ *     默认请求的就是 `cu_<id>`（idle）；攻击帧 `cu_<id>_atk` 缺帧时按 TP-5
+ *     既定设计自动回退 idle，**无功能缺口**。
+ *   · atk 帧 = +3 帧容量，留作后续增强（容量读数见 production/overall-repair-plan.md）。
+ * 为什么不登记 map 帧：中立怪按设计**没有** `u_*_map`（b0audit [M] 断言注释 +
+ * §13.4 ③「宁可缺不可错」）——地图侧是 `atlas.ts` 的小图标 `mon_*`（32×30/32×44），
+ * 与本批同批翻新（同色板同造型语言），但那套在图集容量与锚点上另论，不进 UNIT_FRAMES。
+ */
+export const B4_FRAMES: B0FrameSpec[] = [
+  // 野狼 T1（§5.6.2 目标 62%）：低长横剪影 + 异常长的吻（唯一失调）+ 双尖耳
+  { name: 'cu_wolf', w: 64, h: 56, ax: -32, ay: -48, unit: 'wolf', kind: 'idle' },
+  // 野猪 T3（78%）：宽矮冲锋身板 + 一对大獠牙（唯一失调）+ 锯齿背鬃
+  { name: 'cu_boar', w: 64, h: 56, ax: -32, ay: -48, unit: 'boar', kind: 'idle' },
+  // 食人魔 T4（88%）：壮实绿皮 + 超长狼牙棒（唯一失调，道具占剪影 ≥25%）
+  { name: 'cu_ogre', w: 64, h: 56, ax: -32, ay: -48, unit: 'ogre', kind: 'idle' },
+];
+
+/** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 + B2 24 + B3 12 + B4 3 = 63），供 `tools/b0audit.mjs` 全扫描，
  *  `atlas.ts` / `combatAtlas.ts` 也遍历本数组烘焙（#24 已接好，无需改那两个文件）。 */
-export const UNIT_FRAMES: B0FrameSpec[] = [...B0_FRAMES, ...B1_FRAMES, ...B2_FRAMES, ...B3_FRAMES];
+export const UNIT_FRAMES: B0FrameSpec[] = [...B0_FRAMES, ...B1_FRAMES, ...B2_FRAMES, ...B3_FRAMES, ...B4_FRAMES];
 
 /** 第 7 个资产：AI 生成的 `crestL_p1`（256×384），本轮不做，只在验收脚本里留人工项。 */
 export const B0_PENDING_AI_FRAME = 'crestL_p1';
@@ -351,6 +381,10 @@ export const TIER_OF: Record<string, number> = {
   p1_oathpike: 3, p2_wolfrider: 3, p3_vineguard: 3, p4_hopgolem: 3,
   p1_templar: 4, p2_firebrand: 4, p3_treant: 4, p4_librarian: 4,
   p1_overangel: 5, p2_lavatroll: 5, p3_unicorn: 5, p4_colossus: 5,
+  // TP-4② 中立野怪（tier 取自 units.ts：wolf T1 / boar T3 / ogre T4）。
+  // 入表 ⇒ cu 帧过 normalizeTier 归一化 + b0audit 的 S1（落靶 ±3pt）/ H2（跨档倒挂）
+  // 覆盖；H1（每族 T1→T4 阶梯）不适用——中立怪不是族，见 b0audit 的分组注释。
+  wolf: 1, boar: 3, ogre: 4,
 };
 
 /** 相邻材质可读性规则（断言 2 台阶 / 断言 8 明度差）—— 与 tools/b0audit.mjs 同一份实现。 */
@@ -706,6 +740,16 @@ export function buildB0Frame(name: string, outline = true): PixBuf {
       break;
     case 'p4_colossus':
       drawColossus(pb, spec.kind);
+      break;
+    // TP-4② 中立野怪：B4 只登记 idle；map/atk 永不入 spec，落 idle 兜底
+    case 'wolf':
+      drawWolf(pb, spec.kind);
+      break;
+    case 'boar':
+      drawBoar(pb, spec.kind);
+      break;
+    case 'ogre':
+      drawOgre(pb, spec.kind);
       break;
   }
   // P0 收口：Tier 体量归一化（§5.6.1 / §5.6.2 的纵轴通道）—— 全量 16 单位的 cu 帧。
@@ -3060,4 +3104,167 @@ function drawColossusCombat(pb: PixBuf, atk: boolean): void {
   pebble(pb, cx + 13, 11, 3, C.stone2);
   pebble(pb, cx - 17, 37, 5, C.stone2);
   pebble(pb, cx + 12, 39, 7, C.stone2);
+}
+
+/* ==========================================================================
+ * 24. TP-4② 中立野怪（B4 批 · 2026-10-20）
+ *
+ * 三只共用一套纪律（cartoon-style §1.1–§1.4 / §3.2 / §4）：
+ *   · 描边恒 1px `ink0`（§1.1 战斗单位行：**不要加粗**，手机上 1px = 4~6 物理像素）
+ *   · 兽类躯干 = 椭圆（§1.2 有机物圆角即天然圆）；人造物（狼牙棒 / 棒钉）切角
+ *   · 每单位**只有一处**比例失调（§1.3 / H1）：狼 = 异常长的吻；野猪 = 一对大獠牙；
+ *     食人魔 = 超长狼牙棒（道具占剪影 ≥25%）
+ *   · 尖角每单位只留一个母题（§1.2 末条）：狼 = 双尖耳；野猪 = 獠牙（背鬃是有机锯齿）；
+ *     食人魔 = 棒钉（且是人造物 ⇒ 走 chamfer 切角，不是裸尖）
+ *   · 表情（H3）：2px 眼白 + 1px 瞳孔 + 1px 眉/嘴线；T1 狼按 H6 要"最认真"——平眉正视
+ *   · 取色 100% 落 §3.2 色板，零 shade() 现场造色、零半透明：
+ *       狼 = stone 灰（与 p2 狼骑的狼同族同色，同物种读感一致）
+ *       野猪 = wood 棕ramp（§3.2 无毛皮族，棕色最近族；蹄用 ink0——ink1 贴 wood0
+ *               ΔL*≈5.8 <12 会撞断言 8 的同色系档， ink0↔wood0 ΔL*≈18.7 过）
+ *       食人魔 = leaf 绿皮 + wood 狼牙棒；腰布用 canv2（wood 贴 leaf0 ΔL*≈4.1 <8 会红）
+ *   · AO 接触阴影 = 1px `ink1` 实色（§1.4），画在脚底**画布内**一行
+ *     （⚠️ PixBuf.set 越界静默丢弃——狼骑旧代码 AO 写在 y=56 其实是空操作，别再犯）
+ * ========================================================================== */
+
+/** TP-4② 三只中立怪的共用取色表 —— `atlas.ts` 的 `mon_*` 地图图标也从这里取，保证同源。 */
+export const NEUTRAL_ART_COLORS = {
+  fur2: C.stone2, fur0: C.stone0, // 狼 · 灰
+  bristle2: C.wood2, bristle0: C.wood0, // 野猪 · 棕
+  hide2: C.leaf2, hide0: C.leaf0, hide4: C.leaf4, // 食人魔 · 绿皮
+  tusk: C.hi1, eyeWhite: C.hi0, ink: C.ink0, ao: C.ink1,
+  // 棒身用 wood0 不用 wood2：wood2(#8a5f34, L*≈44) 贴 leaf2 手臂 ΔL*≈5.8 < 8 会撞
+  // 断言 8 的同色系档（实测 cu_ogre @(44,28) 红过）；wood0(#5f4022, L*≈30) ΔL*≈19.8 过。
+  club0: C.wood0, club4: C.wood4, stud: C.metal2, cloth: C.canv2,
+} as const;
+
+/** 野狼 T1 · cu 帧（64×56）：低长横剪影朝左，剪影高 ≈33px（§5.6.2 T1 = 62%）。 */
+function drawWolf(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  // B4 只登记 idle；map/atk 永不入 spec（TP-4② 范围 = 接 canonical id），落 idle 兜底
+  void kind;
+  // 双尖耳（唯一尖角母题）
+  pb.tri([13, 25], [16, 20], [19, 26], C.stone0);
+  pb.tri([19, 25], [22, 21], [23, 27], C.stone0);
+  // 头 + 异常长的吻（唯一失调：吻长 12px ≈ 头宽的 2 倍）
+  pb.ellipse(17, 32, 6, 6, C.stone2);
+  pb.rect(3, 31, 12, 5, C.stone2); // 长吻
+  pb.rect(3, 32, 3, 3, C.stone0); // 鼻头
+  pb.hline(6, 13, 36, C.ink0); // 嘴线
+  pb.set(9, 36, C.hi1); // 1px 獠牙（表情，非高光）
+  // 平眉 + 2px 眼白 + 1px 瞳孔（H3 / H6：T1 最认真）
+  pb.line(12, 28, 17, 29, C.ink0);
+  pb.rect(14, 30, 2, 2, C.hi0);
+  pb.set(15, 31, C.ink0);
+  // 胸 + 躯干 + 腹暗面（同族 stone）
+  pb.ellipse(25, 38, 7, 7, C.stone2);
+  pb.ellipse(37, 39, 14, 8, C.stone2);
+  pb.ellipse(37, 44, 13, 4, C.stone0);
+  // 四腿 + 1.4× 掌（§1.3 手脚放大）
+  for (const x of [26, 30, 43, 47]) {
+    pb.rect(x, 44, 3, 8, C.stone0);
+    pb.rect(x, 51, 4, 2, C.stone0);
+  }
+  // 蓬尾（右，暗尖）
+  pb.rect(50, 35, 5, 3, C.stone2);
+  pb.rect(54, 33, 3, 3, C.stone2);
+  pb.rect(56, 32, 2, 2, C.stone0);
+  // AO（脚底接触线，画布内）
+  aoContact(pb, 24, 51, 53);
+}
+
+/** 野猪 T3 · cu 帧（64×56）：宽矮冲锋身板朝左，剪影高 ≈42px（§5.6.2 T3 = 78%）。 */
+function drawBoar(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  void kind;
+  // 锯齿背鬃（有机锯齿，§1.2 有机物不切角；5 枚长短错落）
+  for (const [x, tip] of [
+    [20, 15],
+    [26, 12],
+    [32, 11],
+    [38, 12],
+    [44, 15],
+  ] as [number, number][]) {
+    pb.tri([x, 24], [x + 2, tip], [x + 4, 24], C.wood0);
+  }
+  // 肩 + 躯干 + 腹暗面
+  pb.ellipse(24, 27, 9, 7, C.wood2);
+  pb.ellipse(34, 31, 19, 12, C.wood2);
+  pb.ellipse(34, 38, 18, 6, C.wood0);
+  // 头 + 吻
+  pb.ellipse(13, 28, 9, 8, C.wood2);
+  pb.rect(1, 30, 9, 7, C.wood2);
+  pb.rect(1, 31, 3, 3, C.wood0); // 鼻头
+  pb.hline(2, 8, 37, C.ink0); // 嘴线
+  // 一对大獠牙（唯一失调：单根 14px ≈ 身高的 1/3，向上外弯）
+  pb.poly(
+    [
+      [4, 37],
+      [1, 23],
+      [8, 32],
+    ],
+    C.hi1,
+  );
+  pb.poly(
+    [
+      [8, 37],
+      [5, 26],
+      [12, 34],
+    ],
+    C.hi1,
+  );
+  // 圆耳（不抢獠牙的尖角母题）+ 凶眉 + 2px 眼
+  pb.ellipse(16, 22, 3, 2, C.wood0);
+  pb.line(8, 24, 13, 25, C.ink0);
+  pb.rect(10, 26, 2, 2, C.hi0);
+  pb.set(11, 27, C.ink0);
+  // 四腿 + 蹄（ink0：见上方配色注）
+  for (const x of [19, 26, 40, 47]) {
+    pb.rect(x, 41, 5, 9, C.wood0);
+    pb.rect(x, 49, 6, 2, C.ink0);
+  }
+  // 小卷尾
+  pb.rect(51, 28, 3, 2, C.wood2);
+  pb.rect(53, 26, 2, 2, C.wood0);
+  aoContact(pb, 18, 53, 51);
+}
+
+/** 食人魔 T4 · cu 帧（64×56）：壮实绿皮正面立，剪影高 ≈48px（§5.6.2 T4 = 88%）。 */
+function drawOgre(pb: PixBuf, kind: 'map' | 'idle' | 'atk'): void {
+  void kind;
+  // 超长狼牙棒（唯一失调：棒头高过耳朵，占剪影 ≥25%）
+  pb.rect(45, 16, 4, 12, C.wood0); // 棒身（wood0：贴 leaf2 的 ΔL* 理由见 NEUTRAL_ART_COLORS）
+  pb.ellipse(47, 11, 6, 5, C.wood4); // 棒头
+  // 棒钉 3 枚（人造物 ⇒ chamfer 切角，§1.2）
+  chamfer(pb, 41, 7, 3, 3, C.metal2, 1);
+  chamfer(pb, 50, 9, 3, 3, C.metal2, 1);
+  chamfer(pb, 44, 13, 3, 3, C.metal2, 1);
+  // 右臂举棒 + 1.4× 拳（§1.3）
+  pb.rect(41, 24, 5, 8, C.leaf2);
+  pb.rect(40, 20, 8, 7, C.leaf4);
+  // 左臂下垂 + 拳
+  pb.rect(14, 24, 5, 10, C.leaf2);
+  pb.rect(12, 32, 8, 7, C.leaf4);
+  // 头（1:3 头身比 ⇒ 16px）+ 呆怒眉 + 2px 眼 + 嘴线 + 小獠牙
+  pb.ellipse(31, 22, 8, 8, C.leaf2);
+  pb.tri([27, 16], [29, 12], [31, 16], C.leaf0); // 莫霍克两撮
+  pb.tri([31, 15], [33, 11], [35, 15], C.leaf0);
+  pb.ellipse(22, 22, 2, 3, C.leaf0); // 耳
+  pb.ellipse(40, 22, 2, 3, C.leaf0);
+  pb.line(24, 18, 29, 19, C.ink0);
+  pb.line(33, 19, 38, 18, C.ink0);
+  pb.rect(26, 20, 2, 2, C.hi0);
+  pb.set(27, 21, C.ink0);
+  pb.rect(34, 20, 2, 2, C.hi0);
+  pb.set(35, 21, C.ink0);
+  pb.hline(28, 34, 26, C.ink0);
+  pb.set(29, 26, C.hi1);
+  pb.set(32, 26, C.hi1);
+  // 躯干 + 腰布（canv2：见上方配色注）+ ink1 锯齿下摆
+  pb.ellipse(31, 36, 14, 10, C.leaf2);
+  chamfer(pb, 24, 41, 15, 6, C.canv2, 1);
+  jagHem(pb, 25, 37, 47, C.ink1, [1, 0, 2, 0]);
+  // 双腿 + 大脚（1.4×）
+  pb.rect(23, 45, 8, 8, C.leaf0);
+  pb.rect(37, 45, 8, 8, C.leaf0);
+  pb.rect(22, 52, 10, 2, C.leaf0);
+  pb.rect(36, 52, 10, 2, C.leaf0);
+  aoContact(pb, 21, 47, 54);
 }

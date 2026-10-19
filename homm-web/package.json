@@ -20,6 +20,7 @@
     "sheet:units": "node tools/unitsheet.mjs",
     "audit:atlas": "node tools/atlasaudit.mjs",
     "audit:townart": "node tools/townartaudit.mjs",
+    "audit:neutral": "node tools/neutralaudit.mjs",
     "audit:ai-diag": "node tools/aidiagnose.mjs",
     "audit:badge": "node tools/mapbadgeaudit.mjs",
     "audit:contact": "node tools/contactaudit.mjs",
