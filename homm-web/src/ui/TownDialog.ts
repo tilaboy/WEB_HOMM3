@@ -53,7 +53,8 @@ type TownTab = 'build' | 'dwell' | 'recruit' | 'army' | 'market';
 /**
  * 建筑拆成两页 —— 不是为了分类好看，而是为了满足 **R4/§5.4「每页纵向可点行 ≤5」**：
  * 16 张建筑卡放在一页，3 列网格也有 6 行 > 5，只能靠滚动，而滚动正是"拉到底"摩擦的来源。
- * 拆成 7 + 8 张（各 3 行）后两页都不必滚动。
+ * 拆成 7 + 8 张（列分布各 3 行）后两页都不必滚动。⚠️ 卡片高不均（状态行文字行数
+ * 不同）时视觉行数会到 4（tp6-townpanel 探针实测），仍 ≤5 —— 别按"恰好 3 行"写断言。
  */
 const BUILD_TABS: Record<'build' | 'dwell', readonly string[]> = {
   build: ['tavern', 'market', 'townhall', 'workshop', 'wall1', 'wall2', 'wall3'],
