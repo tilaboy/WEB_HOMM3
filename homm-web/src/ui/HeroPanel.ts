@@ -2,15 +2,22 @@ import type { GameState, GridPos, Hero, PlayerId } from '../core/types.js';
 import { ARTIFACTS, ARTIFACT_SLOTS } from '../core/data/artifacts.js';
 import { WAR_MACHINES } from '../core/data/warmachines.js';
 import { getUnit } from '../core/data/units.js';
-import { factionColor, factionIds, factionName } from '../core/data/factions.js';
+import { factionColor, factionIds, factionName, viewerOf } from '../core/data/factions.js';
 import { isRevealed } from '../core/map/fog.js';
 import { effectivePrimary, expToNext, manaMaxOf, maxMovePoints } from '../core/game/hero.js';
 import { factionStanding } from '../core/game/victory.js';
 import { SCENARIO_BY_ID } from '../core/data/scenarios.js';
 import { ownedMines } from '../core/game/town.js';
+import { getAtlas } from '../render/atlas.js';
 
-/** 面板永远是人类玩家 p1 的视角（迷雾、城池列表都按这个来）。 */
-const VIEWER: PlayerId = 'p1';
+/**
+ * 面板永远从**人类玩家**的视角看（迷雾、城池列表都按这个来）。
+ *
+ * 旧写法是模块级 `const VIEWER: PlayerId = 'p1'`（TP-2① 订正）：玩家恒为 p1 时
+ * 一直正确，但那是当前设计的巧合而非不变式——解锁选族（D-48）让玩家可能不是 p1
+ * 之后，它会静默显示**别人的**迷雾与城池。真值源是 `PlayerState.isHuman`
+ * （`factions.ts viewerOf`），所以查它而不是查 id。
+ */
 
 /* §14.2 教学清单的两条阈值（数值权威 = `playtest-scenarios.md`，此处只引用、不复制理由）。
  * 140 ≠ 60：`revealed` 是**定长 0/1 掩码**（长度恒 = w×h = 576），开局两视野圆并集约 82 ——
@@ -328,10 +335,11 @@ export class HeroPanel {
     if (!objs || !objs.length) return null;
 
     // 三条判定（§14.2 表，逐条已核源）；其中 ② 必须**锁存**（英雄阵亡后 hero1 会消失）。
+    const viewer = viewerOf(state);
     const live: Record<string, boolean> = {
-      walk: revealedCount(state, VIEWER) >= WALK_MIN,
+      walk: revealedCount(state, viewer) >= WALK_MIN,
       firstwin: (state.heroes['hero1']?.exp ?? 0) > 0,
-      mine: ownedMines(state, VIEWER).length >= MINE_MIN,
+      mine: ownedMines(state, viewer).length >= MINE_MIN,
     };
     if (!this.objSeeded) {
       // 首次用「现值」播种：载入即 3/3 不算"由假变真" ⇒ 不弹 banner（边缘情况 1）。
@@ -364,8 +372,14 @@ export class HeroPanel {
       const row = div('hp-obj-row' + (got ? ' done' : ''));
       row.setAttribute('role', 'listitem');
       row.setAttribute('aria-label', `${got ? '已学会' : '未学会'}：${o.text}`);
-      const mark = span('hp-obj-mark', got ? '☑' : '☐');
-      mark.setAttribute('aria-hidden', 'true'); // ☐/☑ 不是唯一语义载体（a11y 基线 §4.3）
+      // TP-6③ / F-3.5：☑/☐ 文本符号 → 图集图标 `ic_obj_done`/`ic_obj_todo`。
+      // 文本符号的字形与尺寸随 OS/字体变（G-17 同族理由：不用文字当图标）；
+      // a11y 不变：aria-label 与右侧「已学会/未学会」文字仍是唯一语义载体。
+      const mark = document.createElement('img');
+      mark.className = 'hp-obj-mark';
+      mark.draggable = false;
+      mark.src = getAtlas().url(got ? 'ic_obj_done' : 'ic_obj_todo');
+      mark.setAttribute('aria-hidden', 'true');
       row.append(mark, span('hp-obj-text', o.text), span('hp-obj-flag', got ? '已学会' : '未学会'));
       list.appendChild(row);
     }
@@ -399,7 +413,7 @@ export class HeroPanel {
       const row = div('hp-frow' + (st.alive ? '' : ' dead'));
       const dot = div('hp-fdot');
       dot.style.background = factionColor(id);
-      const nm = div('hp-fname', id === VIEWER ? `${state.players[id]?.name ?? factionName(id)}（你）` : (state.players[id]?.name ?? factionName(id)));
+      const nm = div('hp-fname', id === viewerOf(state) ? `${state.players[id]?.name ?? factionName(id)}（你）` : (state.players[id]?.name ?? factionName(id)));
       const meta = div('hp-fmeta', st.alive ? `${st.towns} 城 · ${st.heroes} 将` : '已出局');
       row.append(dot, nm, meta);
       wrap.appendChild(row);
@@ -416,7 +430,7 @@ export class HeroPanel {
     const known: (typeof state.towns)[string][] = [];
     let hidden = 0;
     for (const t of Object.values(state.towns)) {
-      if (isRevealed(state, VIEWER, t.pos.x, t.pos.y)) known.push(t);
+      if (isRevealed(state, viewerOf(state), t.pos.x, t.pos.y)) known.push(t);
       else hidden += 1;
     }
 
@@ -435,9 +449,10 @@ export class HeroPanel {
     }
 
     const list = div('hp-city-list');
-    known.sort((a, b) => (a.owner === VIEWER ? -1 : 1) - (b.owner === VIEWER ? -1 : 1));
+    const viewer = viewerOf(state);
+    known.sort((a, b) => (a.owner === viewer ? -1 : 1) - (b.owner === viewer ? -1 : 1));
     for (const t of known) {
-      const mine = t.owner === VIEWER;
+      const mine = t.owner === viewer;
       const row = div('hp-crow');
 
       const dot = div('hp-ctdot' + (mine ? ' mine' : ''));

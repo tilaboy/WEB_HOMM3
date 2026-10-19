@@ -746,6 +746,48 @@ function musicIcon(pb: PixBuf, on: boolean): void {
   pb.outline('#3a2a18', 0.85);
 }
 
+/**
+ * 教学清单勾选两态（TP-6③ / F-3.5）：`ic_obj_done` = 实心方块 + 对勾；
+ * `ic_obj_todo` = 空心方框。替掉 `HeroPanel.objectiveSection` 里的 ☑/☐ 文本符号
+ * （G-17 同族理由：文本符号尺寸/字形随 OS 与字体变，且是"用文字当图标"）。
+ *
+ * 形状语言 = 「勾选框」而不是「圆点」：`hp-obj-row` 是**只读**清单行，勾选框的
+ * 方轮廓跟文本基线对齐比圆点稳。对勾用两段折线，不用曲线（整数像素 + B0 风格）。
+ */
+function objCheckIcon(pb: PixBuf, done: boolean): void {
+  const ink = done ? '#7fc25f' : '#8d8578';
+  if (done) {
+    pb.rect(3, 3, 12, 12, '#1d2a16');
+    pb.poly([[4, 9], [7, 12], [14, 4]], ink); // 长划
+    pb.poly([[7, 12], [8, 12], [14, 5]], shade(ink, 0.25)); // 短划高光
+  } else {
+    pb.rect(3, 3, 12, 12, '#141019');
+    // 空心：四条边各一条 1px 线（PixBuf 没有 stroke 概念，手绘）
+    pb.rect(3, 3, 12, 1, ink);
+    pb.rect(3, 14, 12, 1, ink);
+    pb.rect(3, 3, 1, 12, ink);
+    pb.rect(14, 3, 1, 12, ink);
+  }
+  pb.outline('#3a2a18', 0.8);
+}
+
+/**
+ * 城防等级图标（TP-6③ / F-3.5）：`ic_wall_1` / `ic_wall_2` = 城墙剖面（雉堊数 = 等级）。
+ * 替掉 `interaction.ts` 攻城框里的 `'★'.repeat(wall)` 文本符号。
+ * 等级 0 不出图标（那句话整体换成「无城墙，野战」文字，不再是符号）。
+ */
+function wallLevelIcon(pb: PixBuf, level: number): void {
+  const stone = '#9b948a';
+  // 城墙身
+  pb.rect(2, 9, 14, 6, stone);
+  pb.rect(2, 9, 14, 2, shade(stone, 0.18));
+  pb.rect(2, 13, 14, 2, shade(stone, -0.22));
+  // 雉堊：等级 1 = 左右两座；等级 2 = 左中右三座
+  const merlons = level >= 2 ? [2, 7, 12] : [2, 12];
+  for (const mx of merlons) pb.rect(mx, 5, 4, 4, stone);
+  pb.outline('#3a2a18', 0.85);
+}
+
 /* ---------------- 打包 ---------------- */
 
 /** 一帧在图集里的落点（打包器产出的几何，不含锚点）。 */
@@ -1076,6 +1118,18 @@ export class Atlas {
       b = p(18, 18);
       musicIcon(b, on);
       put(name, b);
+    }
+    // TP-6③（F-3.5）：教学清单勾选两态 + 城防等级两态。替 HeroPanel ☑/☐ 与
+    // interaction.ts 攻城框 ★ 文本符号（G-17 同族：不用文字当图标）。
+    for (const [name, done] of [['ic_obj_done', true], ['ic_obj_todo', false]] as [string, boolean][]) {
+      b = p(18, 18);
+      objCheckIcon(b, done);
+      put(name, b);
+    }
+    for (const lv of [1, 2]) {
+      b = p(18, 18);
+      wallLevelIcon(b, lv);
+      put(`ic_wall_${lv}`, b);
     }
 
     for (let k = 0; k < 6; k++) {

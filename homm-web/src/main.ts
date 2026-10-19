@@ -902,9 +902,20 @@ function onArrive(heroId: string, obj: MapObject): void {
       resolve(heroId, obj, true);
       return;
     }
+    // TP-6③ / F-3.5：城防等级出图集图标（`ic_wall_1/2`），不再写 '★' 文本符号。
+    // 图标是**第二语义载体**：消息文本已写「带器械/未带器械/无城墙」，a11y 不依赖图标。
+    const body: (Node | string)[] = [pending.message];
+    if (pending.fortIcon) {
+      const ic = document.createElement('img');
+      ic.className = 'fort-ic';
+      ic.draggable = false;
+      ic.src = getAtlas().url(pending.fortIcon);
+      ic.setAttribute('aria-hidden', 'true');
+      body.push(ic);
+    }
     showModal(stage, {
       title: pending.title,
-      body: [pending.message],
+      body,
       actions: [
         { label: '撤退', danger: true, onClick: (c) => { c(); resolve(heroId, obj, false); } },
         { label: '进入战场', primary: true, onClick: (c) => { c(); startBattle(heroId, obj, pending.title); } },

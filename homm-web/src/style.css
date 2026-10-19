@@ -760,6 +760,16 @@ body {
   white-space: pre-line;
 }
 
+/* TP-6③：攻城框的城防等级图标（ic_wall_1/2）。单独一行、左对齐，
+ * 与上方文本的间距比 p 的 10px 小一半 —— 它是同一句提示的图形部分，不是新段落。 */
+.modal .fort-ic {
+  display: block;
+  width: 22px;
+  height: 22px;
+  margin: 0 0 10px;
+  image-rendering: pixelated;
+}
+
 .modal .loss {
   color: var(--danger);
 }
@@ -1930,8 +1940,10 @@ body.in-battle #thumb {
 
 .hp-obj-mark {
   flex: 0 0 auto;
-  font-size: 13px;
-  line-height: 1;
+  width: 14px;
+  height: 14px;
+  /* 图标替 ☑/☐ 文本符号（TP-6③）：字形不随 OS 变；aria-label 与右侧文字仍是唯一语义载体 */
+  image-rendering: pixelated;
 }
 
 .hp-obj-text {

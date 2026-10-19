@@ -35,6 +35,13 @@ export interface PendingInteraction {
   townId?: string;
   /** 攻城战才有：守方城墙等级 1/2/3，决定战场上有几座箭塔、城墙多厚。 */
   siegeLevel?: number;
+  /**
+   * TP-6③ / F-3.5：城防**图标帧名**（`ic_wall_1` / `ic_wall_2`；等级 0 = 无城墙不出图标）。
+   * 原来这里写 `'★'.repeat(wall)` 文本符号 —— 文本符号字形随 OS 变（G-17 同族理由），
+   * 且"用文字当图标"。UI 层（main.ts）拿它渲染成 `<img>`，消息文本里只留一句短提示。
+   * ⚠️ core/ 只给帧名（字符串），**不 import 渲染层**（零耦合纪律：core 不知道美术存在）。
+   */
+  fortIcon?: string;
 }
 
 export interface InteractionResult {
@@ -233,11 +240,12 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
       );
       const ratio = lossRatio(outcome);
       // 同遭遇框：压到两行，城防只留一句短提示（细节教学挪出对话框）。
+      // TP-6③：等级本身改出图标（fortIcon），文本里不再重复 '★'.repeat(wall)。
       const fort =
         wall > 0
-          ? `城防 ${'★'.repeat(wall)}${
-              machines.length ? `（器械：${machines.map((m) => WAR_MACHINES[m].name).join('、')}）` : '（未带器械，破墙减半）'
-            }`
+          ? machines.length
+            ? `带器械：${machines.map((m) => WAR_MACHINES[m].name).join('、')}`
+            : '未带器械，破墙减半'
           : '无城墙，野战';
       return {
         objId, kind: 'siege', townId, siegeLevel: wall,
@@ -248,6 +256,7 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
         confirmLabel: '攻城',
         cancelLabel: '撤退',
         estimate: outcome,
+        fortIcon: wall > 0 ? `ic_wall_${Math.min(2, wall)}` : undefined,
       };
     }
     default:
