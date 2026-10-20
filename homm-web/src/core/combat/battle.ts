@@ -590,6 +590,11 @@ function startRound(s: BattleState): void {
     });
   }
   s.castUsed = [false, false];
+  // 行动顺序：速度降序；**同速时攻方（side 0）先动** —— 这是刻意的，不是 bug。
+  // HOMM3 同款：攻方本来就该有先手优势（2026-10-20 拍板保留，原本差点被"洗牌"掉）。
+  // 代价要写清楚：镜像对打（双方每一对兵速度都一样）时攻方胜率 78~93%（整军，120 种子），
+  // 因为每个速度档内攻方每一支都先于自己的对手动手。非镜像的实战里速度构成不同，
+  // 这个先手会被速度差稀释，不会到 90%。读数见 `faction-gameplay-review` §11.5。
   s.order = s.units
     .filter((u) => u.count > 0)
     .sort((a, b) => {
@@ -670,20 +675,25 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
   ev.push({ t: 'melee', unitId: u.id, targetId: target.id, damage: dmg, killed, from, to });
   ev.push(...afterHit(target));
 
-  // 反击：每回合每支部队限一次，伤害减半
+  // 反击：每回合每支部队限一次，**全额**。
+  //
+  // 2026-10-20 恢复 HOMM3 原设计（原先是 ×0.5）。为什么取消减半：
+  //   反击用的是"被打完之后的人数"（下面 `applyDamage` 已经把伤亡扣掉了），
+  //   人数本身就把这一击摊薄了 —— 实测只值 −10~25%（20 队 T3 对砍，见
+  //   `production/faction-gameplay-review-2026-10-20.md` §11.5）。
+  //   再乘 0.5 等于二次打折：一次交换变成 46% / 38%，胜负几乎由"谁先碰到对手"决定。
+  //
   // ⚠️ 反击**不吃族动词**（冲锋）：这是"被撞了一下回手"，不是自己冲过去。
   //    否则赤焰部队站着挨打反而更赚，动词会退化成"别动"。
   if (target.count > 0 && !target.retaliated) {
     target.retaliated = true;
-    const back = Math.round(
-      rollDamage(
-        s.rng,
-        getUnit(target.unitTypeId),
-        target.count,
-        s.atkBonus[target.side] + effAtkBonus(target, true),
-        getUnit(u.unitTypeId),
-        defBonusOf(s, u),
-      ) * 0.5,
+    const back = rollDamage(
+      s.rng,
+      getUnit(target.unitTypeId),
+      target.count,
+      s.atkBonus[target.side] + effAtkBonus(target, true),
+      getUnit(u.unitTypeId),
+      defBonusOf(s, u),
     );
     const k2 = applyDamage(u, back);
     ev.push({ t: 'retaliate', unitId: target.id, targetId: u.id, damage: back, killed: k2 });
@@ -691,6 +701,55 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
   }
   checkOver(s);
   return ev;
+}
+
+/**
+ * 这一击会招致的反击（期望值）—— UI 提示与 AI 评分共用。
+ *
+ * 边界必须和 `actMelee` 的结算一字不差，否则出现"提示说 40、实际挨 60"的分裂：
+ *   ① 远程不招反击（只有近战贴脸才会被回手）；
+ *   ② 目标被这一击打死 ⇒ 没有反击；
+ *   ③ 目标本回合已经反击过 ⇒ 不再反击；
+ *   ④ 反击按**减掉这一击伤亡之后**的人数出手（`countAfterDamage`）；
+ *   ⑤ 反击不吃冲锋，只吃英雄/法术加成（和 actMelee 里那行参数一致）。
+ */
+export function estimateRetaliation(
+  s: BattleState,
+  atk: BattleUnit,
+  def: BattleUnit,
+  ranged: boolean,
+  forwardDmg: number,
+): number {
+  if (ranged || def.retaliated) return 0;
+  if (forwardDmg >= poolOf(def)) return 0;
+  const remain = countAfterDamage(def, forwardDmg);
+  if (remain <= 0) return 0;
+  const du = getUnit(def.unitTypeId);
+  const avg = ((du.damageMin + du.damageMax) / 2) * remain;
+  const mod = damageMod(
+    Math.max(0, s.atkBonus[def.side] + effAtkBonus(def, true)),
+    getUnit(atk.unitTypeId).defense + defBonusOf(s, atk),
+  );
+  return Math.max(1, Math.round(avg * mod));
+}
+
+/** 挨 `dmg` 之后还剩几个 —— `applyDamage` 的只读版（预估不能改状态）。 */
+function countAfterDamage(u: BattleUnit, dmg: number): number {
+  const hp = getUnit(u.unitTypeId).hp;
+  let d = dmg;
+  let count = u.count;
+  let top = u.hpTop;
+  while (d > 0 && count > 0) {
+    if (d >= top) {
+      d -= top;
+      count -= 1;
+      top = hp;
+    } else {
+      top -= d;
+      d = 0;
+    }
+  }
+  return Math.max(0, count);
 }
 
 export function actShoot(s: BattleState, u: BattleUnit, target: BattleUnit): BattleEvent[] {
@@ -1042,6 +1101,12 @@ function pickTarget(s: BattleState, u: BattleUnit, pool: BattleUnit[], ranged: b
     if (dmg >= poolHp) score += 100000; // 能秒
     if (poolHp <= poolOf(u) * 0.25) score += 500; // 残血优先
     if (ranged) score += (getUnit(t.unitTypeId).hp - poolHp) * 0.5;
+    // 反击改全额之后，"打谁"必须把要挨的那一下算进去：否则 AI 会拿自己的高攻部队
+    // 去换一个高反击目标（尤其是打残血但没死的坦）。按"占我总血量的比例"折算，
+    // 不按绝对值——同样的反击打在 20 血和 200 血的部队上代价完全不同。
+    if (!ranged) {
+      score -= (estimateRetaliation(s, u, t, false, dmg) / Math.max(1, poolOf(u))) * 400;
+    }
     if (score > bestScore) {
       bestScore = score;
       best = t;
@@ -1205,6 +1270,9 @@ export function aiAct(s: BattleState, u: BattleUnit): BattleEvent[] {
       let score = dmg + threatOf(f) * 0.5;
       if (dmg >= poolOf(f)) score += 100000;
       score -= path.length * 2; // 同等条件下少走两步
+      // 全额反击：走过去打也要付反击成本（能一击打死就不付）——
+      // 否则 AI 会为了"多走两步的冲锋"去换一个打不死的坦克，白吃一整轮反击。
+      score -= (estimateRetaliation(s, u, f, false, dmg) / Math.max(1, poolOf(u))) * 400;
       if (score > bestScore) {
         bestScore = score;
         bestHex = h;

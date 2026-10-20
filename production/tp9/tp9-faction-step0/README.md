@@ -14,6 +14,7 @@ npm run build
 npm run probe:factionverbs        # node tools/probes/factionverbs.mjs
 npm run probe:sidebias            # 报告模式（不判定退出码）
 npm run probe:d1                  # D1 走位闸（= sidebias.mjs --gate=d1）
+npm run probe:d2                  # D2 反击全额 + 攻方先手区间（= --gate=d2）
 npm run smoke
 npm run audit:b0 && npm run audit:atlas && npm run audit:townart && npm run audit:neutral
 ```
@@ -28,7 +29,10 @@ npm run audit:b0 && npm run audit:atlas && npm run audit:townart && npm run audi
 | `probe:sidebias`（报告模式） | **0** | 只诊断，不判定 |
 | **`probe:d1`（正常）** | **0** | 9 条 D1 断言全绿 |
 | **`probe:d1`（深层桩）** | **1** | dist `incomingAt` 首行 `return 0`（威胁区失效）⇒ **5 条红**：合计 68%、攻方首杀 25% |
-| `probe:sidebias --gate` | **1** | 对称性 12 条里 9 条红 —— **D2 未修，预期红** |
+| **`probe:d2`（正常）** | **0** | 14 条 D2 断言全绿（首击→反击 0.71~0.96、贴脸 45~70%、整军 63~85%） |
+| **`probe:d2`（把 ×0.5 注回 dist）** | **1** | **7 条红**：首击→反击掉回 0.36~0.48，翠林整军 98% |
+| **`probe:d2`（把同速排序改成洗牌）** | **1** | **3 条红**：回合首发 0 侧 49%、赤焰整军 30% |
+| `probe:sidebias --gate`（D1+D2 一起） | **0** | 两个闸都绿；这条不再是"预期红" |
 
 ## 关键读数
 

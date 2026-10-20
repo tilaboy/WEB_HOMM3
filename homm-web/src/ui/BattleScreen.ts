@@ -29,6 +29,7 @@ import {
   describeEvent,
   endActivation,
   estimateDamage,
+  estimateRetaliation,
   estimateSiegeDamage,
   meleeTargets,
   poolOf,
@@ -957,10 +958,14 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       const ranged = canShoot(battle, u) && !isAdjacent(u.hex, target.hex);
       const dmg = estimateDamage(battle, u, target, ranged);
       const kills = Math.floor((poolOf(target) - 0.0001) / Math.max(1, dmg));
+      // 反击全额之后，"我会挨多少"和"我能打多少"一样是决策依据，必须摆在提示里
+      // （远程/一击打死/本回合已反击过 ⇒ 不会挨反击，也明说，省得玩家自己推）。
+      const back = estimateRetaliation(battle, u, target, ranged, dmg);
       hint(
         `${getUnit(target.unitTypeId).name} ×${target.count}　预计伤害 ${dmg}` +
           (ranged ? '（远程）' : '') +
-          (kills > 0 ? `，约可击杀 ${Math.min(target.count, Math.floor(poolOf(target) / Math.max(1, dmg)))}` : ''),
+          (kills > 0 ? `，约可击杀 ${Math.min(target.count, Math.floor(poolOf(target) / Math.max(1, dmg)))}` : '') +
+          (back > 0 ? `　·　会被反击 ${back}` : ranged ? '' : '　·　不会挨反击'),
       );
     } else if (u && u.side === 0 && structureAt(battle.siege, h)) {
       const st = structureAt(battle.siege, h)!;

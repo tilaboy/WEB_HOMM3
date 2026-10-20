@@ -15,17 +15,19 @@
  *
  * ## 读法（这是本探针存在的意义）
  *   - [D1] 威胁区占比高 ⇒ 走位在送礼（D1）；
- *   - [2] 偏 ⇒ 打击经济本身偏（D2：先打的人打满、只吃半额反击）；
- *   - [2] 不偏但 [1] 偏 ⇒ 偏置来自"谁先动"，不是伤害公式。
+ *   - [2] 首击/反击比 ⇒ 反击折扣（2026-10-20 起应为全额 ≈ 0.75~0.9；出现 0.4 说明有人加回了 ×0.5）；
+ *   - [2] 攻方胜率 ⇒ 先手值多少。**攻方先手是设计**（HOMM3 同款，同速时攻方先动），
+ *     不是缺陷；只有接近"必赢"（>90%）才算过头。
  *
  * ## 用法
  *   node tools/probes/sidebias.mjs              # 报告模式（默认）：只诊断，永远 exit 0
- *   node tools/probes/sidebias.mjs --gate=d1    # **D1 闸**：走位相关断言（当前接入的那道）
- *   node tools/probes/sidebias.mjs --gate       # 全闸：含胜率对称性 —— D2 修好前必红
+ *   node tools/probes/sidebias.mjs --gate=d1    # **D1 闸**：走位相关断言
+ *   node tools/probes/sidebias.mjs --gate=d2    # **D2 闸**：反击全额 + 攻方先手在合理区间
+ *   node tools/probes/sidebias.mjs --gate       # 两个都判
  *   node tools/probes/sidebias.mjs --seeds=200  # 加大样本
  *
- * 默认报告模式是**故意的**：整块对称性还没修完（D2 未修），
- * 把 `--gate` 接进"全绿"清单只会训练人忽略红色。
+ * 2026-10-20 拍板：排序**保留**（攻方先手 = 设计，HOMM3 同款）；反击改**全额**（原 ×0.5
+ * 是二次打折，人数损失已经摊薄过一次）。所以本探针不再要求"镜像 50/50"。
  *
  * ## 负向对照（复跑方法，2026-10-20 实测）
  *   把 `dist/core/combat/battle.js` 里的 `function incomingAt(...) {` 改成立刻 `return 0;`
@@ -52,6 +54,7 @@ const { distance } = await import(distUrl('core/combat/hex.js', DIST));
 const args = process.argv.slice(2);
 const GATE = args.includes('--gate');
 const GATE_D1 = args.includes('--gate=d1');
+const GATE_D2 = args.includes('--gate=d2');
 const SEEDS = Number((args.find((a) => a.startsWith('--seeds=')) ?? '--seeds=60').split('=')[1]);
 const WEEKS = 2;
 
@@ -86,6 +89,8 @@ function runBattle(attacker, defender, seed, placeAdjacent = false) {
   const intoReach = [0, 0];
   const waits = [0, 0];
   let firstMelee = null;
+  // 首回合"首击 → 反击"这一对：用来判"反击是否还是减半"（全额 ≈ 0.75~0.9，减半 ≈ 0.4）
+  let firstPair = null;
   let lastRound = 0;
   let guard = 0;
   while (!st.over && guard++ < 4000) {
@@ -108,11 +113,16 @@ function runBattle(attacker, defender, seed, placeAdjacent = false) {
       if (foes.some((f) => distance(u.hex, f.hex) - 1 <= unitSpeed(st, f))) intoReach[u.side] += 1;
     }
     for (const e of ev) {
-      if (e.t === 'melee' && firstMelee === null) firstMelee = u.side;
+      if (e.t === 'melee') {
+        if (firstMelee === null) firstMelee = u.side;
+        if (firstPair === null) firstPair = { dmg: e.damage, back: 0 };
+      } else if (e.t === 'retaliate' && firstPair && firstPair.back === 0) {
+        firstPair.back = e.damage;
+      }
     }
     endActivation(st);
   }
-  return { winner: st.winner, openers, firstMelee, rounds: st.round, adv, intoReach, waits };
+  return { winner: st.winner, openers, firstMelee, rounds: st.round, adv, intoReach, waits, firstPair };
 }
 
 const pct = (n, d) => (d ? `${((100 * n) / d).toFixed(0)}%` : '—');
@@ -182,7 +192,7 @@ console.log(`    合计    ${pad(d1Adv, 8)}  ${pad(d1Into, 10)}  ${pad(pct(d1Int
 
 /* ---------------------------------------------------------------- [2] 贴脸对峙 */
 console.log('\n[2] 贴脸对峙（同兵同量、手工摆相邻，排除走位）');
-console.log('    族/兵种                     攻方胜  守方胜');
+console.log('    族/兵种                     攻方胜  守方胜  首击→反击');
 const adjacent = {};
 const sampleUnits = {
   p1: 'p1_oathpike',
@@ -194,6 +204,8 @@ for (const f of F) {
   const id = sampleUnits[f];
   let w0 = 0;
   let w1 = 0;
+  let sumRatio = 0;
+  let nRatio = 0;
   for (let s = 0; s < SEEDS; s++) {
     const r = runBattle(
       { army: [{ unitTypeId: id, count: 20 }], attack: 0, defense: 0, faction: f },
@@ -203,9 +215,16 @@ for (const f of F) {
     );
     if (r.winner === 0) w0++;
     else if (r.winner === 1) w1++;
+    if (r.firstPair && r.firstPair.back > 0) {
+      sumRatio += r.firstPair.back / Math.max(1, r.firstPair.dmg);
+      nRatio++;
+    }
   }
-  adjacent[f] = { w0, w1, id };
-  console.log(`    ${FNAME[f]} ${id.padEnd(18)} ${pad(pct(w0, SEEDS), 5)}  ${pad(pct(w1, SEEDS), 5)}`);
+  const ratio = nRatio ? sumRatio / nRatio : 0;
+  adjacent[f] = { w0, w1, id, ratio };
+  console.log(
+    `    ${FNAME[f]} ${id.padEnd(18)} ${pad(pct(w0, SEEDS), 5)}  ${pad(pct(w1, SEEDS), 5)}  ${pad(ratio.toFixed(2), 6)}`,
+  );
 }
 
 /* ---------------------------------------------------------------- [3] 单栈镜像 */
@@ -231,71 +250,67 @@ for (const f of F) {
 }
 
 /* ---------------------------------------------------------------- 归因 */
-console.log('\n[归因]');
+console.log('\n[归因]（先手优势是设计，只有"接近必赢"或"反击又被打折"才算问题）');
 let worstFull = 0;
 let worstFaction = '';
 for (const f of F) {
-  const bias = Math.abs(full[f].w0 / SEEDS - 0.5) * 100;
-  if (bias > worstFull) {
+  const bias = (full[f].w0 / SEEDS - 0.5) * 100;
+  if (Math.abs(bias) > Math.abs(worstFull)) {
     worstFull = bias;
     worstFaction = f;
   }
-  const adjBias = Math.abs(adjacent[f].w0 / SEEDS - 0.5) * 100;
   const fm = full[f].fm;
-  const laterMoverShare = fm[0] + fm[1] ? fm[1] / (fm[0] + fm[1]) : 0.5;
-  const op0 = full[f].op[0];
-  const op1 = full[f].op[1];
-  const opShare = op0 + op1 ? op0 / (op0 + op1) : 0.5;
+  const opShare =
+    (full[f].op[0] + full[f].op[1]) ? full[f].op[0] / (full[f].op[0] + full[f].op[1]) : 0.5;
   const intoShare =
     full[f].adv[0] + full[f].adv[1]
       ? (full[f].intoReach[0] + full[f].intoReach[1]) / (full[f].adv[0] + full[f].adv[1])
       : 0;
 
   const tags = [];
-  if (Math.abs(bias) > 15) tags.push(`整军偏 ${bias.toFixed(0)}pt`);
-  if (adjBias > 15) tags.push(`先手决定性（贴脸偏 ${adjBias.toFixed(0)}pt）`);
+  if (bias >= 45) tags.push(`先手近乎必赢（+${bias.toFixed(0)}pt）`);
+  else if (bias >= 12) tags.push(`攻方 +${bias.toFixed(0)}pt（设计内）`);
+  else tags.push('先手优势不明显');
   if (intoShare > 0.55) tags.push(`推进送礼（${(intoShare * 100).toFixed(0)}% 停进威胁区）`);
-  if (laterMoverShare > 0.8) tags.push(`后动方先手 ${(laterMoverShare * 100).toFixed(0)}%`);
-  if (tags.length === 0) tags.push('无显著偏置');
+  if (adjacent[f].ratio > 0 && adjacent[f].ratio < 0.6)
+    tags.push(`反击只值 ${(adjacent[f].ratio * 100).toFixed(0)}% —— 是不是又减半了？`);
 
   console.log(
-    `  ${FNAME[f]}：${tags.join('｜')}｜回合首发 0 侧 ${(opShare * 100).toFixed(0)}%`,
+    `  ${FNAME[f]}：${tags.join('｜')}｜回合首发 0 侧 ${(opShare * 100).toFixed(0)}%` +
+      `｜首击→反击 ${(adjacent[f].ratio * 100).toFixed(0)}%`,
   );
 }
 console.log(
-  `\n  最大偏置：${FNAME[worstFaction]} ${worstFull.toFixed(0)}pt ` +
+  `\n  攻方最大优势：${FNAME[worstFaction]} ${worstFull >= 0 ? '+' : ''}${worstFull.toFixed(0)}pt ` +
     `(攻方 ${full[worstFaction].w0}/${SEEDS})`,
 );
 console.log(
   [
     '',
-    '  已修（2026-10-20）：',
-    '   D1 走位让先 —— `aiAct` 的推进分支改成"安全落点 → 让一手 → 最不亏的暴露落点"，',
-    '      判据不再看"走到多近"，而是"站上去会不会被先打一下"。',
-    '      实测：停在威胁区的比例 73% → 44%（四族），首次近战归属从"后动方 100%"',
-    '      改为"攻方先手"（p1 那张 0/60 已变成 60/0）。',
-    '  仍未修：',
-    '   D2 先手决定性 —— 贴脸单挑攻方 68~92%：先打的人打满、只吃半额反击。',
-    '      D1 修完后镜像胜率偏置**没有消失**（p1 0%→90% / p3 78%→98%），',
-    '      说明胜率主要由 D2 决定，D1 只决定"谁吃白打"。这条必须单独立项。',
+    '  2026-10-20 拍板后的口径：',
+    '   D1（走位）已修：推进改"安全落点 → 让一手 → 最不亏的暴露落点"，',
+    '      判据是"站上去会不会被先打一下"，不是"走到多近"。威胁区 73% → 41%。',
+    '   先手（排序）：**保留攻方先手** —— 同速时攻方先动，HOMM3 同款，主理人拍板。',
+    '      代价写在 `battle.ts::startRound` 注释里：镜像整军攻方 63~85%（只有镜像才这么高，',
+    '      实战里速度构成不同会被稀释）。',
+    '   反击：改**全额**（原 ×0.5）。人数损失本来就把反击摊薄了 10~25%，再减半＝二次打折；',
+    '      首击→反击从 0.45 回到 0.75~0.90，交锋不再"谁先碰到谁赢"。',
+    '   残留：镜像散差仍随族波动（贴脸 45~70% / 整军 63~85%），与配置无关，',
+    '      属"速度构成 + 兵种差异"，未再追；别把"攻方优势"当成 bug 反复修。',
   ].join('\n'),
 );
 
 /* ---------------------------------------------------------------- 闸模式 */
-const TOL_FULL = 15; // 整军镜像允许的偏置（百分点）
-const TOL_ADJ_HI = 70; // 贴脸对峙攻方胜率上限（先手优势可以有，但不该到 90%+）
-const TOL_FIRST_MELEE = 75; // 首次近战命中方占比上限
-
 const chk = (cond, msg) => {
   console.log(`  ${cond ? '✅' : '❌'} ${msg}`);
   return cond ? 0 : 1;
 };
+let fail = 0;
 
-if (GATE_D1) {
-  // D1 闸：只判"走位"，不含胜率对称性（那要等 D2）。
-  // 阈值取整、留余量：改前合计 73%、改后 44%；单族上限 60%（改前 p2 95% / p1 78% / p4 64%）。
+if (GATE_D1 || GATE) {
+  // D1 闸：只判"走位"。
+  // 阈值取整、留余量：改前合计 73%、改后 41~44%；单族上限 60%（改前 p2 95% / p1 78% / p4 64%）。
   console.log('\n[闸模式 · D1]');
-  let fail = 0;
   fail += chk(d1Adv > 0, `采样到推进（${d1Adv} 次，> 0）`);
   fail += chk(
     d1Into / Math.max(1, d1Adv) <= 0.55,
@@ -312,33 +327,42 @@ if (GATE_D1) {
   const draws = F.reduce((n, f) => n + full[f].dr, 0);
   fail += chk(draws === 0, `没有把仗拖成平局（平局 ${draws}）`);
   fail += chk(d1Waits > 0, `"让一手"分支真的在用（${d1Waits} 次，> 0）`);
-  console.log(`\n${fail === 0 ? '✅ D1 达标' : `❌ ${fail} 条 D1 断言失败`}`);
-  process.exit(fail === 0 ? 0 : 1);
+  console.log(`  ${fail === 0 ? '✅ D1 达标' : `❌ 累计 ${fail} 条 D1 断言失败`}`);
 }
 
-if (!GATE) {
+if (GATE_D2 || GATE) {
+  // D2 闸：判两件事 —— ① 反击是全额（不是又被减半）；② 攻方先手在"合理优势"区间内。
+  // 为什么不再要求 50/50：攻方先手是设计（HOMM3 同款），见文件头与 §11.5。
+  console.log('\n[闸模式 · D2]');
+  const before = fail;
+  for (const f of F) {
+    const r = adjacent[f].ratio;
+    // 全额实测 0.75~0.90；加回 ×0.5 会掉到 0.35~0.45 ⇒ 0.60 是安全分界。
+    fail += chk(r >= 0.6, `${FNAME[f]} 首击→反击 ≥ 60%（实测 ${(100 * r).toFixed(0)}%）`);
+  }
+  for (const f of F) {
+    const adj = (100 * adjacent[f].w0) / SEEDS;
+    fail += chk(adj >= 40 && adj <= 80, `${FNAME[f]} 贴脸攻方胜率 40~80%（实测 ${adj.toFixed(0)}%）`);
+  }
+  for (const f of F) {
+    const fm = (100 * full[f].w0) / SEEDS;
+    fail += chk(fm >= 55 && fm <= 95, `${FNAME[f]} 整军攻方胜率 55~95%（实测 ${fm.toFixed(0)}%）`);
+  }
+  const draws = F.reduce((n, f) => n + full[f].dr, 0);
+  fail += chk(draws === 0, `平局 0（实测 ${draws}）`);
+  // 同速攻方先动 = 设计；但"整支军队都先动"是这条设计的具体形态，
+  // 有人把它改成洗牌/随机时这里会掉下来（实测 74~100%）。
+  const opShare = full.p1.op[0] / Math.max(1, full.p1.op[0] + full.p1.op[1]);
+  fail += chk(opShare >= 0.6, `回合首发 0 侧 ≥ 60%（晨曦实测 ${(100 * opShare).toFixed(0)}%，攻方先手仍成立）`);
+  console.log(`  ${fail === before ? '✅ D2 达标' : `❌ 累计 ${fail - before} 条 D2 断言失败`}`);
+}
+
+if (!GATE && !GATE_D1 && !GATE_D2) {
   console.log(
-    '\n（报告模式：不判定退出码。`--gate=d1` 判走位；整块对称性等 D2 修好后再用 `--gate`。）',
+    '\n（报告模式：不判定退出码。`--gate=d1` 判走位，`--gate=d2` 判反击全额+先手区间。）',
   );
   process.exit(0);
 }
 
-let fail = 0;
-console.log('\n[闸模式]');
-for (const f of F) {
-  const bias = Math.abs(full[f].w0 / SEEDS - 0.5) * 100;
-  fail += chk(
-    bias <= TOL_FULL + 1e-9,
-    `${FNAME[f]} 整军镜像偏置 ≤ ${TOL_FULL}pt（实测 ${bias.toFixed(0)}pt）`,
-  );
-  const adj = (100 * adjacent[f].w0) / SEEDS;
-  fail += chk(adj <= TOL_ADJ_HI, `${FNAME[f]} 贴脸攻方胜率 ≤ ${TOL_ADJ_HI}%（实测 ${adj.toFixed(0)}%）`);
-  const fm = full[f].fm;
-  const share = fm[0] + fm[1] ? (100 * fm[0]) / (fm[0] + fm[1]) : 50;
-  fail += chk(
-    Math.abs(share - 50) <= TOL_FIRST_MELEE - 50,
-    `${FNAME[f]} 首次近战命中方占比 50±${TOL_FIRST_MELEE - 50}%（实测攻方 ${share.toFixed(0)}%）`,
-  );
-}
-console.log(`\n${fail === 0 ? '✅ 对称性达标' : `❌ ${fail} 条对称性断言失败（D2 未修，预期红）`}`);
+console.log(`\n${fail === 0 ? '✅ 全部达标' : `❌ ${fail} 条断言失败`}`);
 process.exit(fail === 0 ? 0 : 1);

@@ -1407,10 +1407,15 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
       footprint: castleCells(pos),
       owner: 'neutral',
       buildings: [],
-      // 中立城驻军同样受 monsterMul 缩放（无 rng，直接乘）
+      // 中立城驻军同样受 monsterMul 缩放（无 rng，直接乘）。
+      //
+      // 2026-10-20 从 20 狼 + 10 猪 调到 21 + 11：反击改全额后，20 弓手打这个档
+      // 从"有风险"变成 98% 平推（损失 34%），不再是一次决策。这条曲线是刀刃式的
+      // （21+10 → 92%，21+11 → 71%，22+12 → 49%），所以只加 1 只就能拉回设计意图。
+      // 读数见 `production/faction-gameplay-review-2026-10-20.md` §11.6。
       garrison: [
-        { unitTypeId: 'wolf', count: Math.max(1, Math.round(20 * diff.monsterMul)) },
-        { unitTypeId: 'boar', count: Math.max(1, Math.round(10 * diff.monsterMul)) },
+        { unitTypeId: 'wolf', count: Math.max(1, Math.round(21 * diff.monsterMul)) },
+        { unitTypeId: 'boar', count: Math.max(1, Math.round(11 * diff.monsterMul)) },
       ],
       growthPool: {},
     };

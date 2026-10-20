@@ -222,8 +222,9 @@ ok(strongDuel.winRate > 0.3 && strongDuel.winRate < 0.9, '强档：应是胜负�
 ok(strongDuel.avgLoss > 0.4, '强档：即使赢也要付出惨重代价');
 ok(hopeless.winRate <= 0.05, '悬殊：必败');
 
-const siegeDuel = duelArmy([{ unitTypeId: 'wolf', count: 20 }, { unitTypeId: 'boar', count: 10 }], 120);
-report('中立城 · 20 野狼 + 10 野猪', siegeDuel);
+// 驻军规模必须跟 `generator.ts` 的中立城一致（20/10 是反击全额之前的旧值）
+const siegeDuel = duelArmy([{ unitTypeId: 'wolf', count: 21 }, { unitTypeId: 'boar', count: 11 }], 120);
+report('中立城 · 21 野狼 + 11 野猪', siegeDuel);
 ok(siegeDuel.winRate > 0.4 && siegeDuel.winRate < 0.95, '中立城：起始 20 弓手应是有风险但值得一试的目标');
 ok(siegeDuel.avgLoss > 0.4, '中立城：即使攻下也会元气大伤');
 
@@ -236,6 +237,15 @@ const neutral = g.towns.town_n1;
 
 ok(home.owner === 'p1', '主城归属玩家');
 ok(neutral.owner === 'neutral', '第二座城为中立');
+// 上面 duelArmy 用的驻军规模必须和生成器一致，否则"测试用的怪"和"地图上的怪"又脱钩了
+{
+  const g0 = neutral.garrison ?? [];
+  const desc = g0.map((x) => `${x.unitTypeId}${x.count}`).join('+');
+  ok(
+    g0.length === 2 && g0[0].unitTypeId === 'wolf' && g0[0].count === 21 && g0[1].unitTypeId === 'boar' && g0[1].count === 11,
+    `中立城驻军与上面的对练口径一致（${desc}）`,
+  );
+}
 ok(!!g.towns.town_n2 && g.towns.town_n2.owner === 'neutral', '第三座城也为中立');
 ok(!!g.towns.town_n3 && g.towns.town_n3.owner === 'neutral', '第四座城也为中立');
 ok(home.buildings.includes('tavern') && home.buildings.includes('dwell2'), '主城预置酒馆与射箭场');
