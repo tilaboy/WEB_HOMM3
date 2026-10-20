@@ -307,7 +307,19 @@ export interface BuildingDef {
    * ⚠️ 因此 `growth` 只在**有 owner 的语境**下有意义：`unitIdForTier` 对中立方
    * 返回 `null`（规则 5），调用方必须跳过并记日志，**不得 fallback 到 p1**。
    */
-  growth?: { tier: number; count: number };
+  growth?: {
+    tier: number;
+    /**
+     * ⚠️ 这里**故意没有** `count`（2026-10-20 删除）。
+     *
+     * 周产数量的唯一权威是 `UnitType.growthPerWeek`（`core/data/units.ts`）：
+     * 四族 T1 分别是 11/12/10/9，写死一个数就必然与兵种表冲突。
+     * 旧字段 `count` 曾是与 `growthPerWeek` 并存的**第二份真相**，而
+     * `applyWeeklyGrowth` 只读 `count` ⇒ 兵种表的周产是死数据，
+     * 四族增长完全相同（`production/faction-gameplay-review-2026-10-20.md §1.2`）。
+     * 现在 `tier` 只负责"这是第几级兵的槽位"，数值一律查兵种。
+     */
+  };
   /** 全局周增长比例加成 */
   growthBonus?: number;
   /** 解锁的城镇功能 */
@@ -325,7 +337,7 @@ export interface Town {
   buildings: string[];
   garrison: Army;
   growthPool: Record<string, number>;
-  /** 每周增长的的小数余数累加器：growthBonus 让 g.count×mult 出现小数，
+  /** 每周增长的的小数余数累加器：growthBonus 让 growthPerWeek×mult 出现小数，
    *  整数部分进 growthPool，余下小数攒在这里，攒满 1 再进位。
    *  可选字段——旧存档读出来是 undefined，按 0 处理，不会崩。 */
   growthRemainder?: Record<string, number>;

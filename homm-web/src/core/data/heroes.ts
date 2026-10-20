@@ -1,4 +1,4 @@
-import type { HeroPrimary, Stack } from '../types.js';
+import type { FactionId, HeroPrimary, Stack } from '../types.js';
 import { unitIdForTier } from './units.js';
 
 export const HERO_TEMPLATES: {
@@ -47,6 +47,42 @@ export const HERO_TEMPLATES: {
     startArmyCount: 8,
   },
 ];
+
+/**
+ * 族 → 招牌英雄模板（**身份映射，不是下标**）。
+ *
+ * 2026-10-20 前 `generator.ts` 用 `HERO_TEMPLATES[i]`（i = 阵营在 factions 数组里的下标）
+ * 取模板，于是：p1→骑士、p2→游侠、**p3 翠林（花园保安）→牧师**、
+ * **p4 紫晶（魔法实验室）→野蛮人** —— 后两个身份正好错位，
+ * 玩家开局第一眼看到的职业与种族气质相反。
+ *
+ * 现在按语义显式对应：晨曦=骑士（秩序/守序）、赤焰=野蛮人（莽）、
+ * 翠林=游侠（林地）、紫晶=牧师（学识/法术）。
+ */
+const SIGNATURE_TEMPLATE: Record<FactionId, string> = {
+  p1: 'knight',
+  p2: 'barbarian',
+  p3: 'ranger',
+  p4: 'cleric',
+};
+
+/**
+ * 取某阵营的英雄模板。
+ *
+ * - `ordinal === 0`（开局英雄 / 酒馆第一位）：该族的**招牌职业**；
+ * - `ordinal >= 1`：在其余三个模板里轮换 —— 副英雄可以有别的职业，
+ *   但**第一位永远对得上种族**，这样"p3 开局是牧师"这种错位不会再出现。
+ *
+ * 未知阵营（含 `neutral`）退化为第一个模板（而不是随机），保证可复现。
+ */
+export function heroTemplateFor(owner: string, ordinal = 0) {
+  const sigId = SIGNATURE_TEMPLATE[owner as FactionId];
+  if (!sigId) return HERO_TEMPLATES[0]!;
+  const sig = HERO_TEMPLATES.find((t) => t.id === sigId) ?? HERO_TEMPLATES[0]!;
+  if (ordinal <= 0) return sig;
+  const rest = HERO_TEMPLATES.filter((t) => t.id !== sig.id);
+  return rest[(ordinal - 1) % rest.length]!;
+}
 
 /**
  * 起始部队的 tier = **2**。

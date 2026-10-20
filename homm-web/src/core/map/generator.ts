@@ -26,7 +26,7 @@ import {
   VAULTS,
   vaultRareBundle,
 } from '../data/mines.js';
-import { HERO_TEMPLATES, startArmyFor } from '../data/heroes.js';
+import { heroTemplateFor, startArmyFor } from '../data/heroes.js';
 import { FACTION_UNITS } from '../data/units.js';
 import { DEFAULT_CONFIG, DIFFICULTIES, FACTIONS, FACTION_ORDER } from '../data/factions.js';
 import { mulberry32, randInt, shuffle, pick } from '../rng.js';
@@ -1343,7 +1343,9 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   factions.forEach((fid, i) => {
     const def = FACTIONS[fid];
     const isHuman = fid === 'p1';
-    const tpl = HERO_TEMPLATES[Math.min(i, HERO_TEMPLATES.length - 1)];
+    // 英雄职业按**阵营身份**映射（不是阵营下标）：p3 翠林→游侠、p4 紫晶→牧师。
+    // 旧写法 `HERO_TEMPLATES[i]` 会让这两族的职业正好互换（见 heroes.ts 的说明）。
+    const tpl = heroTemplateFor(fid);
     // 电脑对手按难度给起始资源；玩家按 playerStartMul 缩放
     const mul = isHuman ? diff.playerStartMul : diff.startMul;
     const res: ResourceBag = {

@@ -23,6 +23,7 @@ import {
   canAssemble,
   heroWarMachines,
   recruitRows,
+  buildingDesc,
   recruitToGarrison,
   recruitToHero,
   townDailyIncome,
@@ -249,7 +250,7 @@ function paintBuildings(
     nm.setAttribute('role', 'button');
     nm.setAttribute('tabindex', '0');
     nm.setAttribute('aria-expanded', 'false');
-    const onName = (): void => revealDesc(card, def.desc, nm);
+    const onName = (): void => revealDesc(card, buildingDesc(town, id), nm);
     nm.addEventListener('click', onName);
     nm.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {

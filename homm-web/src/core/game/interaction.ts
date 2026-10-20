@@ -233,8 +233,8 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
       const machines = hero.warMachines ?? [];
       // 预估必须和真正打起来时用的是同一套输入，否则 AI 会"预估打不下来、实际按野战打赢"去送死
       const outcome = quickBattle(
-        { army: hero.army, attack: p.attack, defense: p.defense, warMachines: machines },
-        { army: garrison, attack: 0, defense: townDefenseBonus(town) },
+        { army: hero.army, attack: p.attack, defense: p.defense, warMachines: machines, faction: hero.owner },
+        { army: garrison, attack: 0, defense: townDefenseBonus(town), faction: town.owner },
         battleSeed(state, obj),
         wall,
       );
@@ -378,8 +378,10 @@ export function applyInteraction(
           caster: { spells: hero.spells, spellPower: effectivePrimary(hero).spellPower, mana: hero.mana },
           // 攻城器械同样要带进来：AI 结算走过的就是这条兜底路径
           warMachines: hero.warMachines,
+          // 族动词（赤焰冲锋）必须与预估那一次用同一份输入，否则预估与实战分裂
+          faction: hero.owner,
         },
-        { army: garrison, attack: 0, defense: townDefenseBonus(town) },
+        { army: garrison, attack: 0, defense: townDefenseBonus(town), faction: town.owner },
         battleSeed(state, obj),
         // 这里是 AI 攻城真正结算的地方（AI 不开战术界面），必须带上城墙等级，
         // 否则预估说"打不下来"、实际却按野战打 —— AI 会去送死。
@@ -548,6 +550,7 @@ export function battleSetup(
     army: hero.army,
     attack: p.attack,
     defense: p.defense,
+    faction: hero.owner,
     // 英雄带进战场：法术表 + 魔力 + 剩余法力
     caster: { spells: hero.spells, spellPower: p.spellPower, mana: hero.mana },
     // 工坊装配的攻城器械（M6）：只有攻方用得上，守方的城防是建筑自带的
@@ -565,7 +568,7 @@ export function battleSetup(
     const garrison = town.garrison.filter((s) => s.count > 0);
     return {
       attacker,
-      defender: { army: garrison, attack: 0, defense: townDefenseBonus(town) },
+      defender: { army: garrison, attack: 0, defense: townDefenseBonus(town), faction: town.owner },
       seed: battleSeed(state, obj),
       siegeLevel: wallLevelOf(town),
     };
@@ -613,6 +616,7 @@ function sideOf(hero: Hero): BattleSide {
     army: hero.army,
     attack: p.attack,
     defense: p.defense,
+    faction: hero.owner,
     caster: { spells: hero.spells, spellPower: p.spellPower, mana: hero.mana },
   };
 }

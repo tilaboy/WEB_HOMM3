@@ -53,6 +53,8 @@ export interface BattleSide {
   army: Army;
   attack: number;
   defense: number;
+  /** 这一侧属于哪个阵营（`p1`~`p4`）。野怪/中立守军省略。 */
+  faction?: string;
   /** 施法者（英雄）。野怪没有，中立城守军也没有。 */
   caster?: BattleCaster;
   /** 携带的攻城器械：每回合开始自动开火，不受指挥。 */
@@ -110,6 +112,13 @@ export interface BattleUnit {
   defending: boolean;
   /** 本回合是否已移动过（HOMM：一回合可"移动 + 攻击"，但不能移动两次）。 */
   moved: boolean;
+  /**
+   * **本回合已移动的格数**（0 = 原地没动）。每回合开始清零，`actMove` 写入路径长度。
+   *
+   * 存在理由：赤焰「冲锋」的判定不是"有没有移动"（`moved` 布尔），而是"冲了几格"
+   * —— 移动 2 格和 5 格必须能被区分开（`production/faction-gameplay-review-2026-10-20.md §4`）。
+   */
+  moveDist: number;
   /** 建队序号，用于同速时的稳定排序。 */
   seq: number;
   /** 建队时的初始数量：复活/损失统计的基准。 */
@@ -125,6 +134,14 @@ export interface BattleState {
   idx: number;
   atkBonus: [number, number];
   defBonus: [number, number];
+  /**
+   * 两侧所属阵营（`p1`~`p4`；野怪/中立守军为 `null`）。
+   *
+   * 这是**族动词**的唯一开关：赤焰冲锋只看 `factions[side] === 'p2'`。
+   * 部队 id 前缀也能反推阵营，但显式传进来更可靠 —— 中立野怪用的是
+   * canonical id 之外的旧 id，且未来可能出现"借兵"玩法。
+   */
+  factions: [string | null, string | null];
   over: boolean;
   winner: 0 | 1 | null;
   fled: boolean;
@@ -233,6 +250,7 @@ function deploy(army: Army, side: 0 | 1, seqBase: number): BattleUnit[] {
       waited: false,
       defending: false,
       moved: false,
+      moveDist: 0,
       seq: seqBase + i,
       startCount: s.count,
       effects: [],
@@ -256,6 +274,7 @@ export function createBattle(
     idx: 0,
     atkBonus: [attacker.attack, defender.attack],
     defBonus: [attacker.defense, defender.defense],
+    factions: [attacker.faction ?? null, defender.faction ?? null],
     over: false,
     winner: null,
     fled: false,
@@ -391,6 +410,85 @@ export function effDefBonus(u: BattleUnit): number {
   return hasEffect(u, 'stoneSkin') ? 3 : 0;
 }
 
+/* ---------------- 族动词（2026-10-20） ----------------
+ *
+ * 四族差异此前只有数值纹理（见 `production/faction-gameplay-review-2026-10-20.md`）。
+ * 这里落第一个**动词**：赤焰「冲锋」。判断标准是"玩家每回合要多想一件事"，
+ * 不是"多一个 +1"。
+ *
+ * 规则（一句话能说清）：
+ *   赤焰的近战部队，**本回合移动 ≥3 格后攻击：攻 +2；原地不动就攻击：攻 −1**。
+ *
+ * 三条边界（都是有意的，写死在这里而不是散落在调用点）：
+ *   ① **只算子自己的攻击动作**：反击不吃冲锋 —— 反击是"被撞了一下回手"，
+ *      不是冲过去，吃了会变成"站着挨打反而更赚"。
+ *   ② **远程单位整条不参与**（`shots` 有值的兵）：投斧蛮子站在原地扔斧子，
+ *      不冲也不萎；否则族里唯一的远程会被净罚 −1，等于白送一个负面被动。
+ *      即使它被迫近战，也不吃冲锋 —— 规则按"兵种"关闭，不按"这一次是近战还是射击"关闭，
+ *      否则同一支部队在两种攻击之间会有两套加成，玩家无法预期。
+ *   ③ **攻城不计**：冲城墙不是冲锋（`estimateSiegeDamage` 不调本函数）。
+ */
+
+/** 拥有冲锋动词的阵营。 */
+export const CHARGE_FACTION = 'p2';
+/** 触发冲锋所需的本回合移动格数。 */
+export const CHARGE_MOVE_HEXES = 3;
+/** 冲起来之后的攻击加成。 */
+export const CHARGE_ATK_BONUS = 2;
+/** 原地不动就出手的惩罚。 */
+export const CHARGE_IDLE_PENALTY = -1;
+
+/**
+ * 冲锋带来的攻击修正（0 = 这个单位/这一击不吃这条规则）。
+ *
+ * `moveDist` 可显式传入：AI 在**评估某个落点**时单位还没真的移动过去，
+ * 必须用"假定走了这么远"来算伤害，否则它会低估冲锋、永远不冲。
+ */
+export function chargeAtkBonus(
+  s: BattleState,
+  u: BattleUnit,
+  melee: boolean,
+  moveDist: number = u.moveDist,
+): number {
+  if (!melee) return 0;
+  if (s.factions[u.side] !== CHARGE_FACTION) return 0;
+  if (getUnit(u.unitTypeId).shots !== undefined) return 0; // 远程单位整条不参与
+  if (moveDist >= CHARGE_MOVE_HEXES) return CHARGE_ATK_BONUS;
+  if (moveDist === 0) return CHARGE_IDLE_PENALTY;
+  return 0;
+}
+
+/**
+ * 战场提示文案（1 行 = 1 个数字，不弹窗、不加面板）。
+ *
+ * 放在 core 而不是 UI，是因为它需要能被断言：`tools/probes/factionverbs.mjs`
+ * 直接验这三种状态的文字，避免"UI 那行看起来对"却没人量过。
+ * 返回 `null` = 这个单位不吃这条规则（别族 / 远程），UI 不该显示任何东西。
+ */
+export function chargeHint(s: BattleState, u: BattleUnit): string | null {
+  if (s.factions[u.side] !== CHARGE_FACTION) return null;
+  if (getUnit(u.unitTypeId).shots !== undefined) return null;
+  const b = chargeAtkBonus(s, u, true);
+  if (b > 0) return `冲锋 +${b}（本回合已冲 ${u.moveDist} 格）`;
+  if (b < 0) return `冲锋 ${b}（原地出手，动起来才 +${CHARGE_ATK_BONUS}）`;
+  return `冲锋 ±0（冲 ${CHARGE_MOVE_HEXES} 格以上 +${CHARGE_ATK_BONUS}）`;
+}
+
+/**
+ * **自己发起的一次攻击**的总攻击力：英雄加成 + 法术临时加成 + 族动词修正。
+ *
+ * 所有"本单位出手"的伤害入口都必须走这里（近战 / 射击 / 战前预估 / AI 评分）——
+ * 少接一处就会出现"预估说 +2、实战没吃到"的分裂，而那种 bug 没有任何断言会响。
+ */
+export function strikeAtkBonus(
+  s: BattleState,
+  u: BattleUnit,
+  melee: boolean,
+  assumeMoveDist?: number,
+): number {
+  return s.atkBonus[u.side] + effAtkBonus(u, melee) + chargeAtkBonus(s, u, melee, assumeMoveDist);
+}
+
 /** 实际速度（加速 +2 / 减速 -2，下限 1）。 */
 export function unitSpeed(_s: BattleState, u: BattleUnit): number {
   let v = getUnit(u.unitTypeId).speed;
@@ -401,13 +499,22 @@ export function unitSpeed(_s: BattleState, u: BattleUnit): number {
 
 /* ---------------- damage ---------------- */
 
-/** 期望伤害，AI 与 UI 提示都用它。 */
-export function estimateDamage(s: BattleState, atk: BattleUnit, def: BattleUnit, ranged: boolean): number {
+/** 期望伤害，AI 与 UI 提示都用它。
+ *
+ * `assumeMoveDist` 只给 AI 评分用：评估"走到 X 再打"时，单位实际还没移动，
+ * 用它把冲锋加成算进去（见 `chargeAtkBonus`）。 */
+export function estimateDamage(
+  s: BattleState,
+  atk: BattleUnit,
+  def: BattleUnit,
+  ranged: boolean,
+  assumeMoveDist?: number,
+): number {
   const au = getUnit(atk.unitTypeId);
   const du = getUnit(def.unitTypeId);
   const avg = ((au.damageMin + au.damageMax) / 2) * atk.count;
   let mod = damageMod(
-    Math.max(0, au.attack + s.atkBonus[atk.side] + effAtkBonus(atk, !ranged)),
+    Math.max(0, strikeAtkBonus(s, atk, !ranged, assumeMoveDist)),
     du.defense + defBonusOf(s, def),
   );
   if (ranged) {
@@ -421,6 +528,8 @@ export function estimateDamage(s: BattleState, atk: BattleUnit, def: BattleUnit,
 /**
  * 砸城防的期望伤害，UI 提示与 AI 决策共用。
  * 城防没有血量池概念，只有 hp，所以这里直接按"攻击力 vs 结构防御"算倍率。
+ *
+ * ⚠️ 这里**故意不调 `strikeAtkBonus`**：攻城不计族动词（冲城墙不是冲锋）。
  */
 export function estimateSiegeDamage(s: BattleState, u: BattleUnit, st: SiegeStructure, ranged: boolean): number {
   const au = getUnit(u.unitTypeId);
@@ -473,6 +582,7 @@ function startRound(s: BattleState): void {
     u.waited = false;
     u.defending = false;
     u.moved = false;
+    u.moveDist = 0;
     // 法术时效：进入新回合扣 1 轮，归零则消失
     u.effects = u.effects.filter((e) => {
       e.rounds -= 1;
@@ -538,6 +648,8 @@ export function actMove(s: BattleState, u: BattleUnit, to: Hex): BattleEvent[] {
   const from = { ...u.hex };
   u.hex = { ...to };
   u.moved = true;
+  // `path` 不含起点（见 `reachable`），所以长度 = 移动格数。
+  u.moveDist = path.length;
   return [{ t: 'move', unitId: u.id, path, from }];
 }
 
@@ -550,7 +662,7 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
     s.rng,
     getUnit(u.unitTypeId),
     u.count,
-    s.atkBonus[u.side] + effAtkBonus(u, true),
+    strikeAtkBonus(s, u, true),
     getUnit(target.unitTypeId),
     defBonusOf(s, target),
   );
@@ -559,6 +671,8 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
   ev.push(...afterHit(target));
 
   // 反击：每回合每支部队限一次，伤害减半
+  // ⚠️ 反击**不吃族动词**（冲锋）：这是"被撞了一下回手"，不是自己冲过去。
+  //    否则赤焰部队站着挨打反而更赚，动词会退化成"别动"。
   if (target.count > 0 && !target.retaliated) {
     target.retaliated = true;
     const back = Math.round(
@@ -590,7 +704,7 @@ export function actShoot(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
     s.rng,
     getUnit(u.unitTypeId),
     u.count,
-    s.atkBonus[u.side] + effAtkBonus(u, false),
+    strikeAtkBonus(s, u, false),
     getUnit(target.unitTypeId),
     defBonusOf(s, target),
   );
@@ -1033,7 +1147,9 @@ export function aiAct(s: BattleState, u: BattleUnit): BattleEvent[] {
     const h: Hex = { col: c, row: r };
     for (const f of foes) {
       if (!isAdjacent(h, f.hex)) continue;
-      const dmg = estimateDamage(s, u, f, false);
+      // 用"假定已经走了 path.length 格"算伤害：赤焰冲锋的 +2 只有算进去，
+      // AI 才会为了冲起来而选更远的落点（否则它永远按原地 -1 估价）。
+      const dmg = estimateDamage(s, u, f, false, path.length);
       let score = dmg + threatOf(f) * 0.5;
       if (dmg >= poolOf(f)) score += 100000;
       score -= path.length * 2; // 同等条件下少走两步

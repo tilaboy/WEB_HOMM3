@@ -15,7 +15,7 @@ import { WAR_MACHINES } from '../data/warmachines.js';
 import { DIFFICULTIES, factionIds, factionName } from '../data/factions.js';
 import { getSpell, spellsOfGuild } from '../data/spells.js';
 import { MAX_STACKS, getUnit, unitIdForTier } from '../data/units.js';
-import { HERO_TEMPLATES, startArmyFor } from '../data/heroes.js';
+import { heroTemplateFor, startArmyFor } from '../data/heroes.js';
 import { addResources, maxMovePoints } from './hero.js';
 import { isNewWeek, weekOf } from './calendar.js';
 import { pushLog } from './log.js';
@@ -355,6 +355,12 @@ export interface AssembleResult {
  * （弓手 5 × 1.1 = 5.5 → floor 5 → 增量 0）。现在把小数余数攒进 `growthRemainder`，
  * 攒满 1 再进位进 `growthPool`，于是 +0.1 这类"小数加成"能真正多产兵。
  *
+ * **周产数量的来源（2026-10-20 修正）**：唯一权威是 `UnitType.growthPerWeek`，
+ * 不是 `BUILDINGS[id].growth.count`。后者曾是与兵种表并存的第二份真相，
+ * 而本函数只读它 ⇒ 四族 T1 统统 +10、赤焰（12）与紫晶（9）的设计产量从未生效。
+ * 现在按 `dwellUnitId(town, tier)` 解析出**本族**兵种，再查它的 `growthPerWeek`：
+ * 同一座农舍在四个族里长出四种兵，也长出四个不同的数字。
+ *
  * 玩家侧按 `playerGrowthBonus` 缩放（困难档为 0、即不罚）。
  * `Math.max(0.5, ...)` 钳制：防止负向加成把乘数压到过低导致几乎不长兵。
  */
@@ -372,7 +378,7 @@ export function applyWeeklyGrowth(state: GameState): void {
         // 段 2：兵种按 owner × tier 现解析（中立方 → null ⇒ 跳过，不 fallback）。
         const unitTypeId = dwellUnitId(town, g.tier, 'applyWeeklyGrowth');
         if (!unitTypeId) continue;
-        const exact = g.count * mult;
+        const exact = getUnit(unitTypeId).growthPerWeek * mult;
         const whole = Math.floor(exact);
         const frac = exact - whole;
         let pool = (town.growthPool[unitTypeId] ?? 0) + whole;
@@ -445,6 +451,24 @@ export function recruitRows(state: GameState, town: Town): RecruitRow[] {
     });
   }
   return rows;
+}
+
+/**
+ * 建筑描述（阵营感知版）。兵营类会把「本族每周 +N」拼进去 —— N 来自
+ * `UnitType.growthPerWeek`，所以同一座农舍在四族里显示 11 / 12 / 10 / 9，
+ * 而不是一句对三族都错的「+10」。
+ *
+ * 不直接改 `BUILDINGS[id].desc`：那张表是**阵营中立**的（一张表服务四族），
+ * 一旦把某个族的数字写回去，就又变回了第二份真相。
+ */
+export function buildingDesc(town: Town, id: string): string {
+  const def = BUILDINGS[id];
+  if (!def) return '';
+  const g = def.growth;
+  if (!g) return def.desc;
+  const unitTypeId = unitIdForTier(town.owner, g.tier);
+  if (!unitTypeId) return def.desc;
+  return `${def.desc}（本族每周 +${getUnit(unitTypeId).growthPerWeek}）`;
 }
 
 export function maxAffordable(
@@ -581,7 +605,11 @@ export function hireHero(state: GameState, town: Town): Hero | null {
   let n = 1;
   while (state.heroes[`hero${n}`]) n += 1;
   const id = `hero${n}`;
-  const tpl = HERO_TEMPLATES[(n - 1) % HERO_TEMPLATES.length];
+  // 职业按**本阵营已有英雄数**轮换：第一位是招牌职业，之后才轮到其余三个模板。
+  // 旧写法 `(n-1) % 4` 用的是**全局**英雄序号 ⇒ 同一个族的第二位英雄职业取决于
+  // 别族招了几个人，且首位英雄职业也可能与种族错位（2026-10-20 修）。
+  const ownHeroes = Object.values(state.heroes).filter((h) => h.owner === town.owner).length;
+  const tpl = heroTemplateFor(town.owner, ownHeroes);
   const hero: Hero = {
     id,
     name: tpl.name,
