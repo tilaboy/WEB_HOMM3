@@ -154,6 +154,11 @@ export const UNITS: Record<string, UnitType> = {
     attack: 6, defense: 4, damageMin: 4, damageMax: 6, hp: 15, speed: 6,
     expValue: EXP_BY_TIER[2], growthPerWeek: 4, cost: { gold: 230, ore: 2 },
     anim: 'smash',
+    // 「弹跳袭击」：**蹦过去**砸一下再弹开，守方这一下够不着回手（HOMM3 吸血伯爵同款），
+    // 每队每场一次。两个前提都是有理由的：
+    //   ① 必须移动 ≥1 格（站着原地砸不叫"蹦"）——顺带避免"贴脸开打先手必赢"的退化；
+    //   ② 每队每场一次 —— 无限次实测把紫晶贴脸镜像推到 95%（结构性必赢），见 §11.7。
+    noRetaliate: true,
     ...theme('p4'),
   },
   p4_librarian: {

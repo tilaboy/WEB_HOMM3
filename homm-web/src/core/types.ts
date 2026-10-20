@@ -113,6 +113,16 @@ export interface UnitType {
    * （直线纵深 → thrust；横向/斜向弧 → slash；垂直下压 → smash），**不按名字里的动词取**。
    */
   anim?: 'thrust' | 'slash' | 'smash';
+  /**
+   * 「打它不招反击」—— HOMM3 吸血伯爵 `No enemy retaliation` 的同款，**只能加在攻方身上**。
+   *
+   * 语义严格：**这一支主动攻击时，守方不能回手**。守方身份不受影响（它被攻击时照常反击）。
+   * 和"免疫反击"（守方不打回去）是两件不同的事，别混。缺省 `false`。
+   *
+   * 目前只有紫晶 T3 `p4_hopgolem`（蹦跳魔偶）带这条：它蹦过去砸一下又弹开，对手够不着。
+   * 新增单位带这条之前先想清楚——这是"免掉一次交换成本"，对平衡的撬动和 +2 攻同一量级。
+   */
+  noRetaliate?: boolean;
 }
 
 export interface Stack {

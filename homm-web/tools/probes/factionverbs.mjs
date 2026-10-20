@@ -11,6 +11,8 @@
  *       旧实现用阵营下标取模板，导致 p3 拿牧师、p4 拿野蛮人（身份正好互换）。
  *   [C] 赤焰「冲锋」动词 —— 本回合移动 ≥3 格后近战攻击 +2、原地攻击 −1。
  *       边界必须一起验：远程不参与、反击不吃、别族不受影响、AI 估价看得到。
+ *   [D] 紫晶「弹跳袭击」—— 移动 ≥1 格后近战不招反击，**每队每场一次**；守方身份不受影响。
+ *       边界：原地不触发、第二次照常挨反击、别族照常挨反击、预估与结算同源、AI 会用。
  *
  * 用法：
  *   node tools/probes/factionverbs.mjs
@@ -22,6 +24,8 @@
  *   若要证明**整条断言链会红**，把 dist 里 `chargeAtkBonus` 的第一行改成
  *   `return 0;` 再跑本探针 ⇒ [C1]/[C5] 必须红且 exit 1（2026-10-20 已实测，
  *   日志见 `production/tp9/tp9-faction-step0/factionverbs-deepstub.log`）。
+ *   `[D]` 两条（2026-10-20 实测）：① `dist` 里 `noRetaliate: true` → `false` ⇒ 4 红 exit 1；
+ *   ② 把 `u.moveDist > 0` 从 `actMelee` 的条件里删掉 ⇒ 1 红 exit 1（正是 [D3]）。
  */
 import { distDir, distUrl, printHeader, requireFile } from '../_dist.mjs';
 
@@ -36,13 +40,17 @@ const { heroTemplateFor, HERO_TEMPLATES } = await import(distUrl('core/data/hero
 const { applyWeeklyGrowth } = await import(distUrl('core/game/town.js', DIST));
 const {
   actMelee,
+  actMove,
   aiAct,
   chargeAtkBonus,
   chargeHint,
   createBattle,
   currentUnit,
+  describeEvent,
   endActivation,
   estimateDamage,
+  estimateRetaliation,
+  reachable,
   CHARGE_ATK_BONUS,
   CHARGE_IDLE_PENALTY,
   CHARGE_MOVE_HEXES,
@@ -311,6 +319,121 @@ ok(
   'AI 既会冲、也会原地打（说明"移动距离"真的在影响决策）',
   usage.map((u) => `${u.o}: 冲${u.charged}/原地${u.idle}`).join(' '),
 );
+
+/* ---------------------------------------------------------------- [D] 紫晶「弹跳袭击」 */
+
+section('[D] 紫晶「弹跳袭击」：蹦过去那一下不招反击（每队每场一次）');
+{
+  const { neighbors } = await import(distUrl('core/combat/hex.js', DIST));
+  const keyOf = (h) => `${h.col},${h.row}`;
+
+  /** 可控几何：攻方 (4,5)、守方 (4+gap,5)。只用来验规则，不代表真实阵型。 */
+  function staged(atkId, defId, gap, fa = 'p4', fd = 'p1') {
+    const b = createBattle(
+      { army: [{ unitTypeId: atkId, count: 10 }], attack: 0, defense: 0, faction: fa },
+      { army: [{ unitTypeId: defId, count: 10 }], attack: 0, defense: 0, faction: fd },
+      4242,
+    );
+    b.units[0].hex = { col: 4, row: 5 };
+    b.units[1].hex = { col: 4 + gap, row: 5 };
+    return { b, a: b.units[0], d: b.units[1] };
+  }
+  /** 走一格贴到守方身边（挑 1 格路径，保证 moveDist === 1）。 */
+  function bounceIn(b, a, d) {
+    const paths = reachable(b, a);
+    const spot = neighbors(d.hex).find((h) => paths.get(keyOf(h))?.length === 1);
+    if (!spot) return null;
+    actMove(b, a, spot);
+    return spot;
+  }
+
+  // [D1] 正例：蹦过去打 ⇒ 无反击 + 有 bounce 事件 + 日志说得出名字
+  {
+    const { b, a, d } = staged('p4_hopgolem', 'p1_oathpike', 2);
+    const spot = bounceIn(b, a, d);
+    const ev = actMelee(b, a, d);
+    const bounced = ev.some((e) => e.t === 'bounce');
+    const retal = ev.some((e) => e.t === 'retaliate');
+    ok(
+      !!spot && bounced && !retal,
+      '蹦过去打：守方这一下没有反击（bounce 事件替代 retaliate）',
+      `moveDist=${a.moveDist} bounce=${bounced} retaliate=${retal}`,
+    );
+    const text = ev.map((e) => describeEvent(b, e)).join(' / ');
+    ok(/弹跳袭击/.test(text), '战斗日志说得出「弹跳袭击」（不是静默机制）', text.slice(0, 48));
+  }
+
+  // [D2] 一次性：同一队下一回合原地再打 ⇒ 正常挨反击
+  {
+    const { b, a, d } = staged('p4_hopgolem', 'p1_oathpike', 2);
+    bounceIn(b, a, d);
+    actMelee(b, a, d);
+    d.retaliated = false; // 模拟下一回合（反击标记按回合重置）
+    a.moveDist = 0; // 已经贴脸，原地砸
+    const ev2 = actMelee(b, a, d);
+    ok(
+      ev2.some((e) => e.t === 'retaliate') && !ev2.some((e) => e.t === 'bounce'),
+      '第二次（原地）就正常挨反击：这是"每场一次的偷袭"，不是永久免疫',
+      `freeHitUsed=${a.freeHitUsed}`,
+    );
+  }
+
+  // [D3] 前提：必须移动过。"贴脸站着砸"不触发 —— 否则贴脸开打就退化成先手必赢。
+  {
+    const { b, a, d } = staged('p4_hopgolem', 'p1_oathpike', 1);
+    const ev = actMelee(b, a, d);
+    ok(
+      ev.some((e) => e.t === 'retaliate') && !ev.some((e) => e.t === 'bounce'),
+      '原地不动直接砸不触发（"蹦"是前提）',
+      `moveDist=${a.moveDist}`,
+    );
+  }
+
+  // [D4] 特异性：别族单位走上去打照样挨反击
+  {
+    const { b, a, d } = staged('p1_oathpike', 'p4_hopgolem', 2, 'p1', 'p4');
+    bounceIn(b, a, d);
+    const ev = actMelee(b, a, d);
+    ok(ev.some((e) => e.t === 'retaliate'), '别族单位走上去打照样挨反击（不是全员免疫）', '');
+  }
+
+  // [D5] 提示与结算同源：estimateRetaliation 跟着走位变
+  {
+    const { b, a, d } = staged('p4_hopgolem', 'p1_oathpike', 2);
+    const before = estimateRetaliation(b, a, d, false, 10);
+    bounceIn(b, a, d);
+    const after = estimateRetaliation(b, a, d, false, 10);
+    ok(before > 0 && after === 0, '预估反击跟着走位变：原地 >0、蹦过去 =0', `${before} → ${after}`);
+  }
+
+  // [D6] AI 真的会用，且每队每场最多一次
+  {
+    let total = 0;
+    let maxPerUnit = 0;
+    for (let s = 0; s < 12; s++) {
+      const b = createBattle(
+        { army: armyOf('p4'), attack: 0, defense: 0, faction: 'p4' },
+        { army: armyOf('p3'), attack: 0, defense: 0, faction: 'p3' },
+        6100 + s,
+      );
+      const per = new Map();
+      let guard = 0;
+      while (!b.over && guard++ < 4000) {
+        const u = currentUnit(b);
+        if (!u) break;
+        for (const e of aiAct(b, u)) {
+          if (e.t !== 'bounce') continue;
+          per.set(e.unitId, (per.get(e.unitId) ?? 0) + 1);
+          total += 1;
+        }
+        endActivation(b);
+      }
+      for (const n of per.values()) maxPerUnit = Math.max(maxPerUnit, n);
+    }
+    ok(total > 0, 'AI 在整军对局里真的会蹦（不是玩家的专属技巧）', `12 场共 ${total} 次`);
+    ok(maxPerUnit <= 1, '同一支部队每场最多蹦一次（一次性资源没被写穿）', `max=${maxPerUnit}`);
+  }
+}
 
 /* ---------------------------------------------------------------- 汇总 */
 

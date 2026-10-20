@@ -24,8 +24,10 @@ npm run audit:b0 && npm run audit:atlas && npm run audit:townart && npm run audi
 | 项 | 退出码 | 说明 |
 |---|---|---|
 | `build` / `smoke` / `audit:b0` / `audit:atlas` / `audit:townart` / `audit:neutral` / `audit:scenario` / `audit:tutorial` / `audit:score` | **0 × 9** | D1 改动后全绿 |
-| `probe:factionverbs`（正常） | **0** | 30/30 断言 |
-| `probe:factionverbs`（深层桩） | **1** | 把 dist 里 `chargeAtkBonus` 首行改成 `return 0` ⇒ 6 条红 |
+| `probe:factionverbs`（正常） | **0** | **38/38** 断言：[A] 周产 · [B] 英雄映射 · [C] 冲锋（20 条） · **[D] 弹跳袭击（8 条）** |
+| `probe:factionverbs`（冲锋深层桩） | **1** | 把 dist 里 `chargeAtkBonus` 首行改成 `return 0` ⇒ 6 条红 |
+| **`probe:factionverbs`（关掉 `noRetaliate`）** | **1** | dist `units.js` 里 `noRetaliate: true` → `false` ⇒ **[D] 4 条红** |
+| **`probe:factionverbs`（删掉移动前提）** | **1** | 把 `actMelee` 条件里的 `u.moveDist > 0` 删掉 ⇒ **[D3] 1 条红** |
 | `probe:sidebias`（报告模式） | **0** | 只诊断，不判定 |
 | **`probe:d1`（正常）** | **0** | 9 条 D1 断言全绿 |
 | **`probe:d1`（深层桩）** | **1** | dist `incomingAt` 首行 `return 0`（威胁区失效）⇒ **5 条红**：合计 68%、攻方首杀 25% |
