@@ -1,0 +1,22 @@
+# TP-8① 盲测素材清单
+dist: /Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist
+main.js.md5: 5c993900e22fca998f31bc854c3a4b68   combo: 7dc54ba9cd69d344   mtime(非绑定量): 2026-10-19T23:52:58.168Z
+seed: 20261020   rounds: 3   negctrl: 无
+底景: L=208（灰阶中性；实测贴底像素 P 2.3% / Q 3.5%，见 [Contrast]）· 格框 L=192
+查看: 用 tp8-blind-viewer.html（pixelated 放大，不改像素）；普通看图器会插值糊化 1:1 素材。
+generated: 2026-10-20T00:44:12.629Z
+files:
+  ../production/tp9/tp8/tp8-blind-P-r1.png
+  ../production/tp9/tp8/tp8-blind-Q-r1.png
+  ../production/tp9/tp8/tp8-blind-P-r2.png
+  ../production/tp9/tp8/tp8-blind-Q-r2.png
+  ../production/tp9/tp8/tp8-blind-P-r3.png
+  ../production/tp9/tp8/tp8-blind-Q-r3.png
+  ../production/tp9/tp8/tp8-blind-answerkey.md
+  ../production/tp9/tp8/tp8-blind-scoresheet.md
+  ../production/tp9/tp8/tp8-blind-viewer.html
+
+协议口径（silhouette-audit.md §③ 裁定，勿漂移）：
+  P（形状通道·认族）：map 帧去色 + 剪影各自缩到 32px 高 + 底对齐 + 随机 4×5。体量差被构造消除。
+  Q（体量通道·认 tier）：map 帧去色 + 原生 52×44 不缩放 + 槽底对齐（= 游戏内徽标真实呈现）+ 32px 格宽刻度。
+  注意：P 缩的是剪影 bbox 而非槽位 —— 缩槽位不会消除体量差，与裁定自述矛盾。

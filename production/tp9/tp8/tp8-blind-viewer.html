@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>TP-8① 盲测素材查看器</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; padding: 20px 24px 48px; background: #f4f4f2; color: #222;
+         font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  .note { color: #555; margin: 0 0 14px; }
+  .note b { color: #222; }
+  .bar { position: sticky; top: 0; background: #f4f4f2; padding: 8px 0 10px; border-bottom: 1px solid #ddd; z-index: 9; }
+  button { font: inherit; padding: 4px 12px; margin-right: 6px; border: 1px solid #bbb; border-radius: 6px;
+           background: #fff; cursor: pointer; }
+  button[aria-pressed="true"] { background: #222; color: #fff; border-color: #222; }
+  section { margin-top: 22px; }
+  h2 { font-size: 13px; font-weight: 600; color: #444; margin: 16px 0 6px; }
+  /* 关键：pixelated —— 放大不插值，看到的仍是原始像素块 */
+  img.px { display: block; image-rendering: pixelated; background: #fff; border: 1px solid #ccc; }
+  img.px[data-z="1"] { zoom: 1; }
+  img.px[data-z="2"] { zoom: 2; }
+  img.px[data-z="3"] { zoom: 3; }
+</style>
+<h1>TP-8① 盲测素材（P 形状通道 / Q 体量通道）</h1>
+<p class="note">
+  素材是 <b>1:1 原生像素</b>，本页只做 pixelated 放大，<b>不改任何像素</b>。
+  判读以 1× 为准；放大只为看清像素块（普通看图器的平滑插值会让 52×44 糊成灰块，看着像坏图）。
+</p>
+<div class="bar">
+  <button data-z="1" aria-pressed="true">1×</button>
+  <button data-z="2" aria-pressed="false">2×</button>
+  <button data-z="3" aria-pressed="false">3×</button>
+  <span class="note" style="margin-left:8px">盲测时请让测试者只看图，本页不含任何答案。</span>
+</div>
+      <section>
+        <h2>Round 1 · 盲测-P（认族 · 剪影各自缩到 32px 高）</h2>
+        <img class="px" src="tp8-blind-P-r1.png" alt="P r1">
+        <h2>Round 1 · 盲测-Q（认 tier · 原生 52×44 不缩放）</h2>
+        <img class="px" src="tp8-blind-Q-r1.png" alt="Q r1">
+      </section>
+      <section>
+        <h2>Round 2 · 盲测-P（认族 · 剪影各自缩到 32px 高）</h2>
+        <img class="px" src="tp8-blind-P-r2.png" alt="P r2">
+        <h2>Round 2 · 盲测-Q（认 tier · 原生 52×44 不缩放）</h2>
+        <img class="px" src="tp8-blind-Q-r2.png" alt="Q r2">
+      </section>
+      <section>
+        <h2>Round 3 · 盲测-P（认族 · 剪影各自缩到 32px 高）</h2>
+        <img class="px" src="tp8-blind-P-r3.png" alt="P r3">
+        <h2>Round 3 · 盲测-Q（认 tier · 原生 52×44 不缩放）</h2>
+        <img class="px" src="tp8-blind-Q-r3.png" alt="Q r3">
+      </section>
+<script>
+  for (const b of document.querySelectorAll('button[data-z]')) {
+    b.addEventListener('click', () => {
+      const z = b.dataset.z;
+      for (const x of document.querySelectorAll('button[data-z]')) x.setAttribute('aria-pressed', String(x === b));
+      for (const img of document.querySelectorAll('img.px')) img.dataset.z = z;
+    });
+  }
+  for (const img of document.querySelectorAll('img.px')) img.dataset.z = '1';
+</script>
+</html>
