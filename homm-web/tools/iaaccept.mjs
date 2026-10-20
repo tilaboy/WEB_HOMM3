@@ -213,13 +213,36 @@ try {
       /** 直接进某个场景的对局（`?devscenario=<id>`）。
        *  2026-10-12 起场景卡整行没了，原来"点场景卡 + 点开始新游戏"的两步合成一步。 */
       const bootGame = async (id) => {
+        /* ★ 2026-10-21：旧判据能被**上一份文档**满足 —— 不是产品缺陷，是门的缺陷。
+         *   旧写法只等「`#map` 在、`#start-screen` 不在」。`Page.navigate` 提交前，
+         *   **上一局**的文档正好满足这两条 ⇒ 判据立刻为真 ⇒ 随后 `readSave()` 读到的是
+         *   **上一局的存档**。实测（冷启动首跑）：教学场读回 `grims-showcase` / 3 对手 /
+         *   37 野怪 / `教学块 null` ⇒ 连报 9 项 FAIL；同一份构建热跑则全绿。
+         *   修两件：
+         *     ① 导航前在**旧 window** 打标记，新文档里标记必须消失（真的换了文档才算数）；
+         *     ② 就绪判据里带上**目标场景 id** ——「断言的对象」必须就是「启动的对象」，
+         *        否则这条门证的是"某局开起来了"，不是"**教学场**开起来了"。
+         *   这与文件头 2026-09-21 那条同型：**判据必须绑在被测对象上**，不能绑在"页面里有个 canvas"。 */
+        await evaluate(`window.__probeOldDoc = 1`).catch(() => {});
         await send('Page.navigate', { url: `${URL0}/?devscenario=${encodeURIComponent(id)}` });
-        for (let i = 0; i < 60; i++) {
+        for (let i = 0; i < 80; i++) {
           await sleep(150);
           try {
-            if (await evaluate(`document.readyState === 'complete' && !document.querySelector('#start-screen') && !!document.querySelector('#map')`)) return;
+            const ready = await evaluate(`(() => {
+              if (window.__probeOldDoc) return false;               // 还是上一份文档
+              if (document.readyState !== 'complete') return false;
+              if (document.querySelector('#start-screen')) return false;
+              if (!document.querySelector('#map')) return false;
+              const raw = localStorage.getItem('homm-save-v1');
+              if (!raw) return false;
+              return JSON.parse(raw).config.scenario === ${JSON.stringify(id)};
+            })()`);
+            if (ready) return;
           } catch { /* 导航中 */ }
         }
+        /* 超时不静默：不在这里记 FAIL（后续断言会各自报），但必须留一行，否则
+         * "没启动起来"与"启动起来了但对象不对"在读日志时无法区分。 */
+        console.log(`  [前置] bootGame(${id}) 12s 内未达到目标场景 —— 后续断言可能读到上一局存档`);
         await sleep(1200);
       };
       const clickText = (sel, text) =>
