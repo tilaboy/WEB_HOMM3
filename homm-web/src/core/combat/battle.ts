@@ -485,6 +485,49 @@ export function chargeHint(s: BattleState, u: BattleUnit): string | null {
   return `冲锋 ±0（冲 ${CHARGE_MOVE_HEXES} 格以上 +${CHARGE_ATK_BONUS}）`;
 }
 
+/* ---------------- 族动词 · 晨曦「加班」 ----------------
+ *
+ * 规则（一句话）：**从第 4 回合起，晨曦全军每回合攻 +1，上限 +3**。
+ *
+ * 和「冲锋」的区别在于它不改变玩家"这一手怎么走"，而是改变**整场仗的节奏**：
+ *   晨曦想拖、对手想快；赤焰的仗 3.5 回合就结束 ⇒ 加班根本来不及生效。
+ * 这正是设计文档里写的反制关系（§4：加班 ← 被赤焰式爆发在 3 回合内拆掉）。
+ *
+ * 三条边界（同冲锋一样写死在这里）：
+ *   ① **只跟回合数有关**，不看单位、不看走位、不看是否远程 —— 全军一起加班，
+ *      所以射击也吃、反击也吃（这是"部队的攻击力变高了"，不是"这一下有加成"）。
+ *   ② **攻城不计**：砸城墙不是"交战"（`actSiege` / `estimateSiegeDamage` 都不调本函数），
+ *      和冲锋的边界保持一致，免得玩家要记两套规则。
+ *   ③ **按回合数线性**，第 4 回合 +1、5 回合 +2、6 回合起恒 +3。
+ *
+ * 为什么从第 4 回合：切在"正常战斗已经打了 3 回合"的位置，玩家能明确感到
+ * "这仗拖长了要变天"，而不是从第一回合就有个看不见的数值差。
+ */
+export const OVERTIME_FACTION = 'p1';
+/** 加班从第几回合开始生效（这一回合的攻击就已经 +1）。 */
+export const OVERTIME_START_ROUND = 4;
+/** 加班攻击加成的上限。 */
+export const OVERTIME_MAX = 3;
+
+/** 该阵营此刻的加班加成（0 = 不生效 / 别族）。 */
+export function overtimeAtkBonus(s: BattleState, side: 0 | 1): number {
+  if (s.factions[side] !== OVERTIME_FACTION) return 0;
+  return Math.min(OVERTIME_MAX, Math.max(0, s.round - (OVERTIME_START_ROUND - 1)));
+}
+
+/**
+ * 加班提示文案（1 行、1 个数字）。返回 `null` = 这个单位不吃这条规则（别族）。
+ *
+ * 和 `chargeHint` 一样放在 core，是为了能被探针直接断言 —— 否则"UI 看起来对"
+ * 但没人量过文案与实际加成是否一致。
+ */
+export function overtimeHint(s: BattleState, u: BattleUnit): string | null {
+  if (s.factions[u.side] !== OVERTIME_FACTION) return null;
+  const b = overtimeAtkBonus(s, u.side);
+  if (b > 0) return `加班 +${b}（第 ${s.round} 回合，上限 +${OVERTIME_MAX}）`;
+  return `加班 +0（第 ${OVERTIME_START_ROUND} 回合起每回合 +1，上限 +${OVERTIME_MAX}）`;
+}
+
 /**
  * **自己发起的一次攻击**的总攻击力：英雄加成 + 法术临时加成 + 族动词修正。
  *
@@ -497,7 +540,22 @@ export function strikeAtkBonus(
   melee: boolean,
   assumeMoveDist?: number,
 ): number {
-  return s.atkBonus[u.side] + effAtkBonus(u, melee) + chargeAtkBonus(s, u, melee, assumeMoveDist);
+  return (
+    s.atkBonus[u.side] +
+    effAtkBonus(u, melee) +
+    chargeAtkBonus(s, u, melee, assumeMoveDist) +
+    overtimeAtkBonus(s, u.side)
+  );
+}
+
+/**
+ * **反击**的攻击力：英雄加成 + 法术临时加成 + 加班（不含冲锋）。
+ *
+ * 单独一个函数是因为有两处必须一字不差：`actMelee` 的结算 和 `estimateRetaliation`
+ * 的预估。以前这两处各写一遍，改一处就会分裂（"提示说 40、实际挨 60"）。
+ */
+function retaliationAtkBonus(s: BattleState, u: BattleUnit): number {
+  return s.atkBonus[u.side] + effAtkBonus(u, true) + overtimeAtkBonus(s, u.side);
 }
 
 /** 实际速度（加速 +2 / 减速 -2，下限 1）。 */
@@ -616,6 +674,13 @@ function startRound(s: BattleState): void {
     .map((u) => u.id);
   s.idx = 0;
   s.log.push(`—— 第 ${s.round} 回合 ——`);
+  // 晨曦「加班」开张的那一回合给一行战报：玩家必须**看得到**规则变了，
+  // 否则"敌人怎么越打越疼"会变成隐藏数值（设计红线：1 个动词 = 1 行文字）。
+  if (s.round === OVERTIME_START_ROUND && s.factions.includes(OVERTIME_FACTION)) {
+    s.log.push(
+      `晨曦开始加班：全军攻击 +1（每回合再 +1，上限 +${OVERTIME_MAX}）`,
+    );
+  }
 }
 
 /** 结束当前单位的行动，推进行动指针。 */
@@ -714,7 +779,7 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
       s.rng,
       getUnit(target.unitTypeId),
       target.count,
-      s.atkBonus[target.side] + effAtkBonus(target, true),
+      retaliationAtkBonus(s, target),
       getUnit(u.unitTypeId),
       defBonusOf(s, u),
     );
@@ -734,7 +799,8 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
  *   ② 目标被这一击打死 ⇒ 没有反击；
  *   ③ 目标本回合已经反击过 ⇒ 不再反击；
  *   ④ 反击按**减掉这一击伤亡之后**的人数出手（`countAfterDamage`）；
- *   ⑤ 反击不吃冲锋，只吃英雄/法术加成（和 actMelee 里那行参数一致）；
+ *   ⑤ 反击不吃冲锋，但**吃加班**（加班是"全军攻击力变高"，不是"这一下有加成"），
+ *      所以统一走 `retaliationAtkBonus`（和 actMelee 里那行参数同源）；
  *   ⑥ 攻方这一击能触发「弹跳袭击」⇒ 恒为 0（和 actMelee 的 `noRetaliate` 判定同源：
  *      带标记 + 这次攻击前移动过 + 这场还没用过）。
  */
@@ -755,7 +821,7 @@ export function estimateRetaliation(
   const du = getUnit(def.unitTypeId);
   const avg = ((du.damageMin + du.damageMax) / 2) * remain;
   const mod = damageMod(
-    Math.max(0, s.atkBonus[def.side] + effAtkBonus(def, true)),
+    Math.max(0, retaliationAtkBonus(s, def)),
     getUnit(atk.unitTypeId).defense + defBonusOf(s, atk),
   );
   return Math.max(1, Math.round(avg * mod));

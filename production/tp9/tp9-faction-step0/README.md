@@ -1,7 +1,7 @@
 # 四族差异化 Step 0 + Step 2 证据（2026-10-20）
 
 对应设计与拍板：`production/faction-gameplay-review-2026-10-20.md` §11。
-本轮落地：`growthPerWeek` 接活 · 英雄模板按族映射 · 赤焰「冲锋」动词 · 侧别偏置 probe · **D1 走位让先修复**。
+本轮落地：`growthPerWeek` 接活 · 英雄模板按族映射 · 赤焰「冲锋」· 紫晶「弹跳袭击」· **晨曦「加班」** · 侧别偏置 probe · **D1 走位让先修复** · **D2 反击全额**。
 
 > ⚠️ 本目录下的 `*.log` 被 `.gitignore` 忽略（项目惯例：证据目录只提交图片/文档）。
 > 关键读数已经抄进本文与 §11，日志本身可用下面的命令随时复跑。
@@ -24,10 +24,12 @@ npm run audit:b0 && npm run audit:atlas && npm run audit:townart && npm run audi
 | 项 | 退出码 | 说明 |
 |---|---|---|
 | `build` / `smoke` / `audit:b0` / `audit:atlas` / `audit:townart` / `audit:neutral` / `audit:scenario` / `audit:tutorial` / `audit:score` | **0 × 9** | D1 改动后全绿 |
-| `probe:factionverbs`（正常） | **0** | **38/38** 断言：[A] 周产 · [B] 英雄映射 · [C] 冲锋（20 条） · **[D] 弹跳袭击（8 条）** |
+| `probe:factionverbs`（正常） | **0** | **49/49** 断言：[A] 周产 · [B] 英雄映射 · [C] 冲锋（20 条） · [D] 弹跳袭击（8 条） · **[E] 加班（11 条）** |
 | `probe:factionverbs`（冲锋深层桩） | **1** | 把 dist 里 `chargeAtkBonus` 首行改成 `return 0` ⇒ 6 条红 |
 | **`probe:factionverbs`（关掉 `noRetaliate`）** | **1** | dist `units.js` 里 `noRetaliate: true` → `false` ⇒ **[D] 4 条红** |
 | **`probe:factionverbs`（删掉移动前提）** | **1** | 把 `actMelee` 条件里的 `u.moveDist > 0` 删掉 ⇒ **[D3] 1 条红** |
+| **`probe:factionverbs`（关掉加班）** | **1** | dist 里 `overtimeAtkBonus` 首行 `return 0` ⇒ **[E] 4 条红** |
+| **`probe:factionverbs`（反击不吃加班）** | **1** | `retaliationAtkBonus` 去掉加班项 ⇒ **只有 [E4] 1 条红**（证明这条断言是特异的） |
 | `probe:sidebias`（报告模式） | **0** | 只诊断，不判定 |
 | **`probe:d1`（正常）** | **0** | 9 条 D1 断言全绿 |
 | **`probe:d1`（深层桩）** | **1** | dist `incomingAt` 首行 `return 0`（威胁区失效）⇒ **5 条红**：合计 68%、攻方首杀 25% |

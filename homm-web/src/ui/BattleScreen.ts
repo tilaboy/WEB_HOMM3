@@ -32,6 +32,7 @@ import {
   estimateRetaliation,
   estimateSiegeDamage,
   meleeTargets,
+  overtimeHint,
   poolOf,
   reachable,
   shootTargets,
@@ -229,10 +230,11 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       `总生命 ${Math.round(poolOf(u))}${def.shots ? `　弹药 ${u.shots}` : ''}`,
     ];
     for (const e of u.effects) lines.push(`${getSpell(e.spellId).name} · 剩 ${e.rounds} 回合`);
-    // 族动词（赤焰冲锋）：1 行文字 = 1 个数字，不弹窗、不加面板。
-    // 文案由 core 的 `chargeHint` 生成，探针可以直接断言（见 factionverbs.mjs）。
-    const hint = chargeHint(battle, u);
-    if (hint) lines.push(hint);
+    // 族动词：赤焰「冲锋」+ 晨曦「加班」。1 行文字 = 1 个数字，不弹窗、不加面板。
+    // 文案由 core 的 `chargeHint` / `overtimeHint` 生成，探针可以直接断言（见 factionverbs.mjs）。
+    for (const hint of [chargeHint(battle, u), overtimeHint(battle, u)]) {
+      if (hint) lines.push(hint);
+    }
     if (u.defending) lines.push('防御中');
     if (u.waited) lines.push('已等待');
     return lines.join('\n');

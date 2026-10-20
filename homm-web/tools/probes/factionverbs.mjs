@@ -13,6 +13,8 @@
  *       边界必须一起验：远程不参与、反击不吃、别族不受影响、AI 估价看得到。
  *   [D] 紫晶「弹跳袭击」—— 移动 ≥1 格后近战不招反击，**每队每场一次**；守方身份不受影响。
  *       边界：原地不触发、第二次照常挨反击、别族照常挨反击、预估与结算同源、AI 会用。
+ *   [E] 晨曦「加班」—— 第 4 回合起全军攻 +1，每回合再 +1，上限 +3。
+ *       边界：别族/中立不吃、远程也吃、反击也吃、攻城不吃、提示与战报不静默、AI 预估同源。
  *
  * 用法：
  *   node tools/probes/factionverbs.mjs
@@ -26,6 +28,8 @@
  *   日志见 `production/tp9/tp9-faction-step0/factionverbs-deepstub.log`）。
  *   `[D]` 两条（2026-10-20 实测）：① `dist` 里 `noRetaliate: true` → `false` ⇒ 4 红 exit 1；
  *   ② 把 `u.moveDist > 0` 从 `actMelee` 的条件里删掉 ⇒ 1 红 exit 1（正是 [D3]）。
+ *   `[E]` 两条（2026-10-20 实测）：① `overtimeAtkBonus` 首行 `return 0` ⇒ 4 红 exit 1；
+ *   ② `retaliationAtkBonus` 去掉加班项 ⇒ **只有 [E4] 1 红**（证明它没被别的机制顺带照亮）。
  */
 import { distDir, distUrl, printHeader, requireFile } from '../_dist.mjs';
 
@@ -432,6 +436,163 @@ section('[D] 紫晶「弹跳袭击」：蹦过去那一下不招反击（每队�
     }
     ok(total > 0, 'AI 在整军对局里真的会蹦（不是玩家的专属技巧）', `12 场共 ${total} 次`);
     ok(maxPerUnit <= 1, '同一支部队每场最多蹦一次（一次性资源没被写穿）', `max=${maxPerUnit}`);
+  }
+}
+
+/* ---------------------------------------------------------------- [E] 晨曦「加班」 */
+
+section('[E] 晨曦「加班」：第 4 回合起全军每回合攻 +1，上限 +3');
+{
+  const { estimateSiegeDamage, overtimeAtkBonus, overtimeHint, OVERTIME_MAX, OVERTIME_START_ROUND } =
+    await import(distUrl('core/combat/battle.js', DIST));
+
+  /** 造一个"只改回合数、其余全同"的场面：p1 枪兵 vs 中立狼。 */
+  function atRound(r, { fa = 'p1', atkId = 'p1_oathpike', defId = 'wolf', fn = null } = {}) {
+    const b = createBattle(
+      { army: [{ unitTypeId: atkId, count: 10 }], attack: 0, defense: 0, faction: fa },
+      { army: [{ unitTypeId: defId, count: 10 }], attack: 0, defense: 0, ...(fn ? { faction: fn } : {}) },
+      5150,
+    );
+    b.round = r;
+    b.units[0].hex = { col: 5, row: 5 };
+    b.units[1].hex = { col: 6, row: 5 };
+    return b;
+  }
+
+  // [E1] 阶梯：第 1/3 回合 0，第 4 回合 +1，第 5 回合 +2，第 6 回合起恒 +3
+  {
+    const l = [1, 3, 4, 5, 6, 9].map((r) => {
+      const b = atRound(r);
+      return overtimeAtkBonus(b, 0);
+    });
+    ok(
+      l[0] === 0 && l[1] === 0 && l[2] === 1 && l[3] === 2 && l[4] === OVERTIME_MAX && l[5] === OVERTIME_MAX,
+      `加成阶梯 0/0/1/2/${OVERTIME_MAX}/${OVERTIME_MAX}（第 1/3/4/5/6/9 回合）`,
+      `实测 ${l.join('/')}`,
+    );
+  }
+
+  // [E2] 特异性：别族与中立守军都不吃
+  {
+    const other = overtimeAtkBonus(atRound(9, { fa: 'p2', atkId: 'p2_wolfrider' }), 0);
+    const neutral = (() => {
+      const b = createBattle(
+        { army: [{ unitTypeId: 'wolf', count: 10 }], attack: 0, defense: 0 },
+        { army: [{ unitTypeId: 'wolf', count: 10 }], attack: 0, defense: 0 },
+        5150,
+      );
+      b.round = 9;
+      return overtimeAtkBonus(b, 0);
+    })();
+    ok(other === 0 && neutral === 0, '别族与中立守军都不吃加班（不是全局计时器）', `p2=${other} 中立=${neutral}`);
+  }
+
+  // [E3] 全军都吃：近战与远程共用 `strikeAtkBonus`，伤害预估必须一起涨
+  {
+    const b3 = atRound(3);
+    const b6 = atRound(6);
+    const melee3 = estimateDamage(b3, b3.units[0], b3.units[1], false);
+    const melee6 = estimateDamage(b6, b6.units[0], b6.units[1], false);
+    const r3 = atRound(3, { atkId: 'p1_hornxbow' });
+    const r6 = atRound(6, { atkId: 'p1_hornxbow' });
+    const shoot3 = estimateDamage(r3, r3.units[0], r3.units[1], true);
+    const shoot6 = estimateDamage(r6, r6.units[0], r6.units[1], true);
+    ok(
+      melee6 > melee3 && shoot6 > shoot3,
+      '近战和远程的期望伤害都随回合上升（"全军"不是"只算近战"）',
+      `近战 ${melee3}→${melee6}　远程 ${shoot3}→${shoot6}`,
+    );
+    ok(
+      melee6 / melee3 >= 1.1,
+      '满层（+3）时伤害涨幅 ≥10%（+3 攻 ≈ +15% 伤害倍率）',
+      `${((melee6 / melee3 - 1) * 100).toFixed(0)}%`,
+    );
+  }
+
+  // [E4] 反击也吃：加班是"部队攻击力变高"，不是"这一下有加成"
+  {
+    const b3 = atRound(3, { defId: 'p1_templar', fn: 'p1' });
+    const b6 = atRound(6, { defId: 'p1_templar', fn: 'p1' });
+    const back3 = estimateRetaliation(b3, b3.units[0], b3.units[1], false, 10);
+    const back6 = estimateRetaliation(b6, b6.units[0], b6.units[1], false, 10);
+    ok(back6 > back3, '反击也吃加班（和冲锋不同：这不是"这一下的加成"）', `${back3} → ${back6}`);
+  }
+
+  // [E5] 攻城不吃：砸城墙不是"交战"（和冲锋边界一致）
+  {
+    const siege = (r) => {
+      const b = createBattle(
+        { army: [{ unitTypeId: 'p1_oathpike', count: 10 }], attack: 0, defense: 0, faction: 'p1' },
+        { army: [{ unitTypeId: 'p3_vineguard', count: 10 }], attack: 0, defense: 0, faction: 'p3' },
+        5150,
+        2,
+      );
+      b.round = r;
+      b.units[0].hex = { col: 10, row: 1 };
+      return estimateSiegeDamage(b, b.units[0], b.siege.structures[0], false);
+    };
+    ok(siege(3) === siege(9), '攻城伤害不随回合变（砸墙不算加班）', `r3=${siege(3)} r9=${siege(9)}`);
+  }
+
+  // [E6] 文案与数值同源：提示里的数字必须等于函数返回值，否则玩家会按错数字决策
+  {
+    const b3 = atRound(3);
+    const b6 = atRound(6);
+    const other = atRound(9, { fa: 'p2', atkId: 'p2_wolfrider' });
+    const h3 = overtimeHint(b3, b3.units[0]);
+    const h6 = overtimeHint(b6, b6.units[0]);
+    // 只认开头那个数字（"上限 +3" 里也有 +3，不能用 includes 蒙混过关）
+    const shown = (h) => Number(/加班 \+(\d)/.exec(h ?? '')?.[1] ?? NaN);
+    ok(
+      !!h3 && h3.includes(String(OVERTIME_START_ROUND)) && shown(h3) === 0,
+      `没到第 ${OVERTIME_START_ROUND} 回合时提示改期（预告，不装作已经生效）`,
+      h3 ?? 'null',
+    );
+    ok(
+      shown(h6) === overtimeAtkBonus(b6, 0),
+      '生效后提示里的数字 === 实际加成',
+      `${h6 ?? 'null'}`,
+    );
+    ok(overtimeHint(other, other.units[0]) === null, '别族的悬停提示里没有加班这一行', '');
+  }
+
+  // [E7] 不静默：打到第 4 回合，战报必须说一句"晨曦开始加班"
+  {
+    const b = createBattle(
+      { army: armyOf('p1'), attack: 0, defense: 0, faction: 'p1' },
+      { army: armyOf('p1'), attack: 0, defense: 0, faction: 'p1' },
+      5151,
+    );
+    let guard = 0;
+    while (!b.over && b.round < 5 && guard++ < 4000) {
+      const u = currentUnit(b);
+      if (!u) break;
+      aiAct(b, u);
+      endActivation(b);
+    }
+    ok(
+      b.round >= 5 && b.log.some((l) => /加班/.test(l)),
+      '第 4 回合战报里有"晨曦开始加班"（规则变化看得见）',
+      b.log.filter((l) => /加班/.test(l)).join(' / ').slice(0, 60),
+    );
+  }
+
+  // [E8] AI 与结算同源：AI 打分用的 `estimateDamage` 必须能预测真实掷出的伤害
+  {
+    const b = atRound(6);
+    const au = getUnit('p1_oathpike');
+    const avg = (au.damageMin + au.damageMax) / 2;
+    const est = estimateDamage(b, b.units[0], b.units[1], false);
+    const ev = actMelee(b, b.units[0], b.units[1]);
+    const dmg = ev.find((e) => e.t === 'melee')?.damage ?? 0;
+    // 掷骰区间是 [min,max]，估算用均值 ⇒ 真实伤害必须落在按同一攻击力折算的区间内
+    const lo = Math.floor((est * au.damageMin) / avg);
+    const hi = Math.ceil((est * au.damageMax) / avg);
+    ok(
+      dmg >= lo && dmg <= hi,
+      'AI 的伤害预估能预测实战掷骰（加班没有分裂成"预估一套、结算一套"）',
+      `估计 ${est}，区间 ${lo}~${hi}，实战 ${dmg}`,
+    );
   }
 }
 
