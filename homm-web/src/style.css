@@ -1342,6 +1342,17 @@ table.est td:last-child {
   white-space: nowrap;
 }
 
+/* 紫晶「实验事故」：只有 p4 参战时才出现，一整场都得挂着（规则变了不能只闪一下） */
+.bt-accident {
+  color: #d9b6ff;
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid rgba(201, 182, 255, 0.45);
+  border-radius: 10px;
+  background: rgba(201, 182, 255, 0.1);
+  white-space: nowrap;
+}
+
 .bt-head-actions {
   margin-left: auto;
   display: flex;

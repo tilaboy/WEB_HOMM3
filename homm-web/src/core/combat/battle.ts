@@ -10,7 +10,7 @@
  */
 import type { Army, WarMachineId } from '../types.js';
 import { getUnit } from '../data/units.js';
-import { getSpell } from '../data/spells.js';
+import { getSpell, SPELLS } from '../data/spells.js';
 import { WAR_MACHINES } from '../data/warmachines.js';
 import { mulberry32, randInt } from '../rng.js';
 import { damageMultiplier, rollDamage } from './damage.js';
@@ -93,6 +93,11 @@ export interface BattleOutcome {
   fled?: boolean;
   /** 战后剩余法力（side 0 的施法者）。世界层据此写回英雄。 */
   casterMana?: number;
+  /**
+   * 这场仗的「实验事故」（紫晶参战才有）。
+   * 带在 outcome 上是为了**战前公示**：预估与实战同一个种子 ⇒ 同一条事故。
+   */
+  accident?: BattleAccident | null;
 }
 
 /* ---------------- units ---------------- */
@@ -159,11 +164,25 @@ export interface BattleState {
   /** 本回合双方各可施法 1 次。 */
   castUsed: [boolean, boolean];
   rng: () => number;
+  /**
+   * **事故专用的随机流**（与 `rng` 分开，同种子派生）。
+   *
+   * 为什么不开第二条流：事故只掷 1 次，但这一次抽样会把 `rng` 整体错位，
+   * 于是"同一种子 + 不同事故"根本不是同一场战斗 —— 测事故影响时无法隔离，
+   * 玩家侧也变成"开战骰子一响，整盘伤害序列全换一遍"。
+   * 分开之后：同种子的对局在事故前后的每一次伤害抽样都一一对应。
+   */
+  accidentRng: () => number;
   log: string[];
   /** 攻城结构（城墙 / 城门 / 箭塔）。没有城墙的战斗是 null。 */
   siege?: SiegeState | null;
   /** 双方携带的攻城器械。不是单位，不占格、不能被瞄准。 */
   machines?: [WarMachineId[], WarMachineId[]];
+  /**
+   * 开战掷出的「实验事故」（紫晶族动词）。没有紫晶参战 = null。
+   * 只在 `createBattle` 里掷一次、写在这里，UI 与探针都读这一份，不另算。
+   */
+  accident?: BattleAccident | null;
 }
 
 /** 超过这个格数算"远距离抛射"，伤害减半（HOMM 的经典设定）。 */
@@ -191,6 +210,8 @@ export type BattleEvent =
   | { t: 'retaliate'; unitId: string; targetId: string; damage: number; killed: number }
   /** 「弹跳袭击」生效：攻方砸完弹开，守方这一下没能回手（每队每场一次）。 */
   | { t: 'bounce'; unitId: string; targetId: string }
+  /** 翠林「缠根」生效：目标速度 −2，到它下一次行动结束。 */
+  | { t: 'root'; unitId: string; targetId: string }
   | { t: 'die'; unitId: string }
   /** 攻城器械开火：投石车砸城防，弩车射部队。 */
   | {
@@ -269,6 +290,98 @@ function deploy(army: Army, side: 0 | 1, seqBase: number): BattleUnit[] {
   });
 }
 
+/* ---------------- 族动词 · 紫晶「实验事故」（2026-10-20） ----------------
+ *
+ * 规则（一句话）：**只要场上有紫晶（`p4`）的部队，开战先掷一条事故，双方同受** ——
+ *   反重力（全场速度 +2）/ 试剂泄漏（远程弹药减半）/ 爆炸（双方各损 5% 兵力）。
+ *
+ * 为什么是"改变规则"而不是"加个数值"：另外三个动词分别在管空间（冲锋）、
+ * 对手的空间（缠根）、时钟（加班）；紫晶要管的是**这一局的前提**。
+ * 它不是"玩家的一个决定"，而是"这局要多想一件事"——开局先看一眼脚下是哪种世界。
+ *
+ * 四条边界（硬约束）：
+ *   ① **双方同受，一条不落**。这是底线：只坑玩家的随机事件是最好的劝退设计
+ *      （`design/gdd/races.md` 的「魔法实验室事故」设定本身也是"全员遭殃"）。
+ *   ② **用战斗自己的种子**（`s.rng`），所以同一个种子的"预估"和"实战"必然是**同一条**
+ *      —— 战前那个胜率里已经含了这场事故，不会出现"预估说能赢、进去发现换了规则"。
+ *   ③ **在 `startRound` 之前结算**：反重力会影响第一回合的排序与移动力，
+ *      爆炸掉的人要在第一回合就不在场。
+ *   ④ **中立守军也会吃**（它们只是"另一方"，不是"不受规则约束的人"）。
+ *      这意味着紫晶打野怪也带事故——这是族身份，不是 bug。
+ */
+export type AccidentKind = 'gravity' | 'leak' | 'boom';
+
+export interface BattleAccident {
+  kind: AccidentKind;
+  name: string;
+  /** 一句话规则说明：头部标签与战报共用同一句，探针直接断言它。 */
+  detail: string;
+}
+
+/** 拥有这条动词的阵营。 */
+export const ACCIDENT_FACTION = 'p4';
+/** 爆炸按"当前总血量的百分之几"扣（不是按人数：5% 的 2 人队会四舍五入成 0）。 */
+export const ACCIDENT_BOOM_RATE = 0.05;
+/**
+ * 反重力扣掉的**远程**伤害系数。
+ *
+ * 为什么载荷全在伤害轴、不上速度/弹药：实测（100 种子 × p4 六格）把速度 +1/+2
+ * 或弹药减半当作"双方同受"的载荷，会把 `紫晶→翠林 91%` 打成 `0~23%`、
+ * `紫晶→赤焰 100%` 打成 `22~54%` —— 因为这两条轴改的是**接触时间**，
+ * 而紫晶的整套强度就建立在"先射几轮再被贴上"，一提前接触就整盘翻面。
+ * 名字叫"同受"不等于"同影响"。改到伤害轴后摆动收到 19~28pp（见 §11.10）。
+ *
+ * 为什么是 0.9 而不是 0.8：0.8 时 `紫晶→翠林` 仍从 77% 掉到 17%（−60pp）——
+ * 这张对战矩阵是"刀锋"状的（见 §11.10 末），再小的规则改动也会被放大。
+ * 取 0.9 后最大摆动 28pp，和另两条（22 / 19）同一量级。
+ */
+export const ACCIDENT_RANGED_SCALE = 0.9;
+/** 试剂泄漏扣掉的防御（双方同受）。 */
+export const ACCIDENT_DEF_PENALTY = 1;
+
+/** 三条事故的权威表（顺序 = 掷骰顺序，别改顺序：老种子的事故会跟着变）。 */
+export const ACCIDENT_TABLE: readonly BattleAccident[] = [
+  { kind: 'gravity', name: '反重力', detail: `远程伤害 −${Math.round((1 - ACCIDENT_RANGED_SCALE) * 100)}%（飘着射不准，双方同受）` },
+  { kind: 'leak', name: '试剂泄漏', detail: `防御 −${ACCIDENT_DEF_PENALTY}（护甲被腐蚀，双方同受）` },
+  { kind: 'boom', name: '爆炸', detail: `双方各损 ${Math.round(ACCIDENT_BOOM_RATE * 100)}% 当前兵力（同受）` },
+];
+
+/** 头部标签 / 战报的那一行（没有事故 = 空串，UI 直接判空）。 */
+export function accidentLabel(a: BattleAccident | null | undefined): string {
+  return a ? `实验室事故：${a.name} · ${a.detail}` : '';
+}
+
+/** 掷一条并立刻生效。没有紫晶参战 ⇒ null（且**不消耗**随机数，别动别人的随机流）。 */
+export function rollAccident(s: BattleState): BattleAccident | null {
+  if (s.factions[0] !== ACCIDENT_FACTION && s.factions[1] !== ACCIDENT_FACTION) return null;
+  // 用专用流：这一抽不能挪动伤害序列（否则同种子不可比，见 `accidentRng` 的注释）
+  const pick =
+    ACCIDENT_TABLE[
+      Math.min(ACCIDENT_TABLE.length - 1, Math.floor(s.accidentRng() * ACCIDENT_TABLE.length))
+    ];
+  // 反重力 / 试剂泄漏都是**读取时生效**的修正（见 `accidentAtkMod` / `defBonusOf`），
+  // 不在掷骰阶段改任何单位的状态 —— 这样战前预估与实战走同一个函数，不可能算两套。
+  if (pick.kind === 'boom') {
+    let dead = 0;
+    for (const u of s.units) {
+      const pool = poolOf(u);
+      // 留 1 点血：事故是"开战前挨了一下"，不该在掷骰阶段直接把某队抹掉
+      if (pool <= 1) continue;
+      dead += applyDamage(u, Math.min(pool - 1, Math.max(1, Math.round(pool * ACCIDENT_BOOM_RATE))));
+    }
+    // 5% 落在"血量"上，多单位小队常常一个人都死不掉 —— 战报必须写**实际死了几个**，
+    // 否则玩家只看到战报说"各损 5%"，场上一个数字都没变。
+    return {
+      ...pick,
+      detail:
+        dead > 0
+          ? `双方各损 ${Math.round(ACCIDENT_BOOM_RATE * 100)}% 当前兵力（同受），合计 −${dead} 人`
+          : `双方各损 ${Math.round(ACCIDENT_BOOM_RATE * 100)}% 当前兵力（同受），无人阵亡（只削血线）`,
+    };
+  }
+  return { ...pick };
+}
+
 export function createBattle(
   attacker: BattleSide,
   defender: BattleSide,
@@ -296,10 +409,19 @@ export function createBattle(
     ],
     castUsed: [false, false],
     rng: mulberry32(seed),
+    accidentRng: mulberry32(seed ^ 0x5bf03635),
     log: [],
     siege: createSiege(siegeLevel),
     machines: [[...(attacker.warMachines ?? [])], [...(defender.warMachines ?? [])]],
+    accident: null,
   };
+  // 紫晶「实验事故」：在 `startRound` 之前掷，战报第一行就是它 ——
+  // 规则变了必须看得见（而且第一回合的预估就已经按事故算，不会"先好后坏"）。
+  const accident = rollAccident(s);
+  if (accident) {
+    s.accident = accident;
+    s.log.push(accidentLabel(accident));
+  }
   startRound(s);
   return s;
 }
@@ -341,7 +463,9 @@ function moatPenalty(s: BattleState, u: BattleUnit): number {
 
 /** 一个部队当前的防御加/减值总和（护城河是减值，所以可能为负）。 */
 function defBonusOf(s: BattleState, u: BattleUnit): number {
-  return s.defBonus[u.side] + effDefBonus(u) + (u.defending ? 3 : 0) - moatPenalty(s, u);
+  // 「试剂泄漏」腐蚀护甲：双方同受（这里只管被结算方的防御，所以攻守都吃）。
+  const leak = s.accident?.kind === 'leak' ? ACCIDENT_DEF_PENALTY : 0;
+  return s.defBonus[u.side] + effDefBonus(u) + (u.defending ? 3 : 0) - moatPenalty(s, u) - leak;
 }
 
 /** 部队站不上去的格子：有人，或者还立着一截城墙。 */
@@ -405,6 +529,16 @@ function addEffect(u: BattleUnit, spellId: string, rounds: number): void {
   const cur = u.effects.find((e) => e.spellId === spellId);
   if (cur) cur.rounds = Math.max(cur.rounds, rounds);
   else u.effects.push({ spellId, rounds });
+}
+
+/**
+ * `effects` 里**不只有法术**：族动词也会挂效果（「缠根」）。
+ * UI 以前直接 `getSpell(e.spellId).name`，遇到非法术 id 会抛异常 —— 统一走这里。
+ */
+export const EFFECT_LABEL: Record<string, string> = { root: '缠根' };
+
+export function effectLabel(effectId: string): string {
+  return SPELLS[effectId]?.name ?? EFFECT_LABEL[effectId] ?? effectId;
 }
 
 /** 攻击的临时加成：祝福 +3，嗜血 +4（仅近战），诅咒 -3（合并后不低于 -原攻击）。 */
@@ -529,6 +663,19 @@ export function overtimeHint(s: BattleState, u: BattleUnit): string | null {
 }
 
 /**
+ * **事故给出的伤害系数**（只有「反重力」有：远程 ×0.9，近战不动）。
+ *
+ * 为什么不做成"攻击 −2"：`estimateDamage` 与结算都对攻击加成做了 `Math.max(0, …)`，
+ * 英雄不加攻时负修正会被**整条吃掉**（探针 [G5] 就是这么红的）。而且 −2 点攻击
+ * 对 5 攻打 2 防是 ×0.8、对 20 攻打 10 防只有 ×0.97 —— 越小越狠，不是一条能写进
+ * 说明书的规则。用固定系数，任何人一读就知道"远程少两成"。
+ */
+export function accidentDamageScale(s: BattleState, ranged: boolean): number {
+  if (s.accident?.kind !== 'gravity' || !ranged) return 1;
+  return ACCIDENT_RANGED_SCALE;
+}
+
+/**
  * **自己发起的一次攻击**的总攻击力：英雄加成 + 法术临时加成 + 族动词修正。
  *
  * 所有"本单位出手"的伤害入口都必须走这里（近战 / 射击 / 战前预估 / AI 评分）——
@@ -558,11 +705,99 @@ function retaliationAtkBonus(s: BattleState, u: BattleUnit): number {
   return s.atkBonus[u.side] + effAtkBonus(u, true) + overtimeAtkBonus(s, u.side);
 }
 
-/** 实际速度（加速 +2 / 减速 -2，下限 1）。 */
+/* ---------------- 族动词 · 翠林「缠根」（2026-10-20） ----------------
+ *
+ * 规则（一句话）：**翠林的近战命中后，目标速度 −2（最低 1），正好影响它的一次行动**。
+ *
+ * 和「冲锋」正好互换：冲锋是"我要空间"，缠根是"我不给你空间"。
+ * 翠林全军速度 3（只有 T5 独角兽 6），永远比赤焰/紫晶慢半拍 ⇒ 它最需要
+ * 把对面最快那支按住，否则每回合都在挨"走一步 + 打一下"。这也是反制关系里
+ * 写的「冲锋 ← 被缠根/减速堵住」的那一半。
+ *
+ * 三条边界（与冲锋同构，写死在函数里而不是散在调用点）：
+ *   ① **只算自己发起的那次近战**：射击不缠、反击不缠、攻城不缠 ——
+ *      否则翠林站着挨打就能控场，动词会退化成"别动"（和冲锋不吃反击同一个道理）。
+ *   ② **远程单位整条不参与**（`shots` 有值的兵）：荆棘射手不"缠"，它只是射。
+ *   ③ **与「减速」法术不叠加**：两者都是 −2，取一次（见 `unitSpeed`）。
+ *      叠到 −4 会让狼骑 7→3，一支兵被两次控制就废掉，玩家也算不清。
+ *
+ * ⚠️ 时效陷阱（不写下来一定会踩）：`startRound` 会把所有效果的 `rounds` 减 1，
+ *    而**行动顺序也是在 `startRound` 里按 `unitSpeed` 排的**。所以挂 `rounds: 1`
+ *    时，下一回合一开始就被清掉、顺序还没排 —— 缠根等于什么都没做（实测：p3 全军
+ *    速度 3，等它出手时敌人基本都动过了，效果 100% 落空）。
+ *    要么挂 2 轮（吃它下一手），要么承认"目标本回合还没动"时这一手已经被缠住。
+ *    因此：
+ *      · 目标本回合已行动（`i < s.idx`）⇒ `rounds = 2`（吃它**下一**手）
+ *      · 目标本回合还没动            ⇒ `rounds = 1`（吃它**这一**手）
+ *    两种情况都正好是"**一次行动**"，既不落空也不连吃两次控制。
+ */
+export const ROOT_FACTION = 'p3';
+/** `effects` 里的键名。故意不复用 `slow`：那是法术，时长按魔力算，混在一起玩家分不清。 */
+export const ROOT_EFFECT = 'root';
+export const ROOT_SPEED_PENALTY = 2;
+
+/** 这个单位这一击会不会缠根（近战兵 + 本族）。UI 提示与结算共用。 */
+export function rootApplies(s: BattleState, u: BattleUnit): boolean {
+  if (s.factions[u.side] !== ROOT_FACTION) return false;
+  return getUnit(u.unitTypeId).shots === undefined;
+}
+
+/** 目标本回合是否已经行动过（决定缠根挂几轮，见上面的时效陷阱）。 */
+function actedThisRound(s: BattleState, u: BattleUnit): boolean {
+  const i = s.order.indexOf(u.id);
+  return i >= 0 && i < s.idx;
+}
+
+/**
+ * 给目标挂缠根，返回"这一下是不是新缠上的"。
+ * 已经缠着的目标再被砸**不刷新**（`addEffect` 取 max，轮数不会变长）——
+ * 所以不推事件、不重复记战报，免得每回合刷一行"缠根"。
+ */
+export function applyRoot(s: BattleState, u: BattleUnit, target: BattleUnit): boolean {
+  if (!rootApplies(s, u)) return false;
+  if (target.count <= 0) return false;
+  const fresh = !hasEffect(target, ROOT_EFFECT);
+  addEffect(target, ROOT_EFFECT, actedThisRound(s, target) ? 2 : 1);
+  return fresh;
+}
+
+/**
+ * 悬停提示那一行（1 行 = 1 条规则，不弹窗）。
+ *   被缠住的部队 → "被缠根：速度 −2"
+ *   翠林的近战兵 → "缠根：近战命中让目标速度 −2"
+ *   其余（别族 / 翠林远程）→ null，UI 不该显示任何东西。
+ */
+export function rootHint(s: BattleState, u: BattleUnit): string | null {
+  if (hasEffect(u, ROOT_EFFECT)) return `被缠根：速度 −${ROOT_SPEED_PENALTY}（到它下次行动）`;
+  if (!rootApplies(s, u)) return null;
+  return `缠根：近战命中让目标速度 −${ROOT_SPEED_PENALTY}（到它下次行动）`;
+}
+
+/**
+ * AI 眼里"缠他值多少"：**只做同分时的偏好**，不压过威胁/击杀这些硬指标。
+ * 已经缠住的目标给 0（再砸只是延长期限，不如去缠另一支）；
+ * 越快的目标给得越多（按住 7 速的狼骑，比按住 3 速的枪兵更值钱）。
+ */
+export function rootTargetBonus(s: BattleState, u: BattleUnit, t: BattleUnit): number {
+  if (!rootApplies(s, u)) return 0;
+  if (hasEffect(t, ROOT_EFFECT)) return 0;
+  return Math.max(0, unitSpeed(s, t) - 1) * 0.5;
+}
+
+/**
+ * 实际速度：基础 + 加速 +2 −（减速 / 缠根，**取一次** −2），下限 1。
+ *
+ * 为什么减速与缠根不叠加：两者都是"速度 −2"的同一种手感，叠起来 −4 会把
+ * 一支 7 速的突击兵按成 3 速（等于两张控制牌废掉一整队），且玩家无法从界面上
+ * 分辨"我到底该再放一张减速吗"。取 max 之后规则一句话说得完。
+ *
+ * 事故**不**碰这条式子：反重力原来给"全场速度 +2"，实测会把 `紫晶→翠林 91%`
+ * 打成 `0~23%`（改的是接触时间，而紫晶就靠先射几轮活着），载荷因此搬到伤害轴。
+ */
 export function unitSpeed(_s: BattleState, u: BattleUnit): number {
   let v = getUnit(u.unitTypeId).speed;
   if (hasEffect(u, 'haste')) v += 2;
-  if (hasEffect(u, 'slow')) v -= 2;
+  if (hasEffect(u, 'slow') || hasEffect(u, ROOT_EFFECT)) v -= 2;
   return Math.max(1, v);
 }
 
@@ -590,6 +825,7 @@ export function estimateDamage(
     if (distance(atk.hex, def.hex) > LONG_RANGE) mod *= 0.5; // 远距离抛射衰减
     if (shotBlocked(s, atk, def)) mod *= 0.5; // 被自己人/敌人挡住
     if (hasEffect(def, 'shield')) mod *= 0.5; // 护盾
+    mod *= accidentDamageScale(s, true); // 反重力：远程少两成（同受）
   }
   return Math.max(1, Math.round(avg * mod));
 }
@@ -751,6 +987,12 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
   ev.push({ t: 'melee', unitId: u.id, targetId: target.id, damage: dmg, killed, from, to });
   ev.push(...afterHit(target));
 
+  // 翠林「缠根」：命中之后才缠（不是命中前），且只在本族近战兵**自己出手**时触发。
+  // 放在反击之前：藤蔓是先缠住才轮到对面回手，顺序上说得通；机制上互不影响（缠根不碰攻击力）。
+  if (target.count > 0 && applyRoot(s, u, target)) {
+    ev.push({ t: 'root', unitId: u.id, targetId: target.id });
+  }
+
   // 反击：每回合每支部队限一次，**全额**。
   //
   // 2026-10-20 恢复 HOMM3 原设计（原先是 ×0.5）。为什么取消减半：
@@ -864,6 +1106,7 @@ export function actShoot(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
   if (blocked) dmg = Math.max(1, Math.round(dmg * 0.5));
   if (longRange) dmg = Math.max(1, Math.round(dmg * 0.5));
   if (hasEffect(target, 'shield')) dmg = Math.max(1, Math.round(dmg * 0.5)); // 护盾
+  dmg = Math.max(1, Math.round(dmg * accidentDamageScale(s, true))); // 反重力
   u.shots -= 1;
   const killed = applyDamage(target, dmg);
   ev.push({ t: 'shoot', unitId: u.id, targetId: target.id, damage: dmg, killed, from, to, blocked, longRange });
@@ -1201,6 +1444,9 @@ function pickTarget(s: BattleState, u: BattleUnit, pool: BattleUnit[], ranged: b
     if (!ranged) {
       score -= (estimateRetaliation(s, u, t, false, dmg) / Math.max(1, poolOf(u))) * 400;
     }
+    // 翠林「缠根」：同分时的偏好（打谁不是只看这一下的伤害，还看能按住谁）。
+    // 权重刻意压得很小（≤ 3 分，对比威胁值 20~60 分）——它只该在"两个目标差不多"时说话。
+    score += rootTargetBonus(s, u, t);
     if (score > bestScore) {
       bestScore = score;
       best = t;
@@ -1364,6 +1610,8 @@ export function aiAct(s: BattleState, u: BattleUnit): BattleEvent[] {
       let score = dmg + threatOf(f) * 0.5;
       if (dmg >= poolOf(f)) score += 100000;
       score -= path.length * 2; // 同等条件下少走两步
+      // 走出去打也要看"能按住谁"：同一档威胁里，优先去缠那支快的（见 `rootTargetBonus`）。
+      score += rootTargetBonus(s, u, f);
       // 全额反击：走过去打也要付反击成本（能一击打死就不付）——
       // 否则 AI 会为了"多走两步的冲锋"去换一个打不死的坦克，白吃一整轮反击。
       score -= (estimateRetaliation(s, u, f, false, dmg, path.length) / Math.max(1, poolOf(u))) * 400;
@@ -1540,6 +1788,9 @@ export function toOutcome(s: BattleState): BattleOutcome {
     enemySurvivors: survivorsOf(1),
     fled: s.fled || undefined,
     casterMana: s.casters[0]?.mana,
+    // 战前预估也要把它带回去：事故会把胜负摆动几十个百分点，
+    // 玩家必须在**按下开战之前**看到（详见 ACCIDENT_TABLE 上面那段读数）。
+    accident: s.accident ?? null,
   };
 }
 
@@ -1567,6 +1818,8 @@ export function describeEvent(s: BattleState, e: BattleEvent): string {
       return `${name(e.unitId)} 反击 ${name(e.targetId)}，造成 ${e.damage} 伤害${e.killed ? `，击杀 ${e.killed}` : ''}`;
     case 'bounce':
       return `${name(e.unitId)} 弹跳袭击，${name(e.targetId)} 来不及反击`;
+    case 'root':
+      return `${name(e.unitId)} 缠根：${name(e.targetId)} 速度 −${ROOT_SPEED_PENALTY}（到它下次行动）`;
     case 'machine': {
       const m = WAR_MACHINES[e.machine];
       const what = e.structureId
@@ -1623,6 +1876,17 @@ export function lossGrade(ratio: number): { text: string; tone: 'win' | 'loss' }
   if (ratio < 0.4) return { text: '中等损失', tone: 'loss' };
   if (ratio < 0.7) return { text: '惨重损失', tone: 'loss' };
   return { text: '几乎全灭', tone: 'loss' };
+}
+
+/**
+ * 战前公示的一行（没有事故 = 空串）。
+ *
+ * 为什么必须公示：三条事故会把 p4 六格的胜率摆动 19~60 个百分点（§11.10 读数），
+ * 也就是说"打不打"的答案会随开战骰改变。玩家在**按下开战之前**就该看到它，
+ * 否则等于用一次掷骰替玩家做决定。预估与实战同一个种子 ⇒ 同一条事故。
+ */
+export function accidentNotice(o: BattleOutcome): string {
+  return o.accident ? `\n${accidentLabel(o.accident)}` : '';
 }
 
 /** 按血量加权的总损失比例（0~1）。 */

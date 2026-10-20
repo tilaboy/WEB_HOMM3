@@ -18,6 +18,7 @@ import {
   actShoot,
   actSiege,
   actWait,
+  accidentLabel,
   aiAct,
   aliveOf,
   canCast,
@@ -27,19 +28,23 @@ import {
   createBattle,
   currentUnit,
   describeEvent,
+  effectLabel,
   endActivation,
   estimateDamage,
   estimateRetaliation,
   estimateSiegeDamage,
+  hasEffect,
   meleeTargets,
   overtimeHint,
   poolOf,
   reachable,
+  rootHint,
   shootTargets,
   siegeTargets,
   toOutcome,
   unitAt,
   unitById,
+  unitSpeed,
   type BattleEvent,
   type BattleOutcome,
   type BattleSide,
@@ -138,7 +143,13 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   }
   const headActions = document.createElement('div');
   headActions.className = 'bt-head-actions';
-  head.append(title, roundEl, statsEl, manaEl, machineEl, headActions);
+  // 紫晶「实验事故」：规则变了一整场都得看得见，所以做成头部标签（和攻城器械同一行）。
+  // 文案由 core 的 `accidentLabel` 生成 —— 战报、标签、探针读的是同一句。
+  const accidentEl = document.createElement('div');
+  accidentEl.className = 'bt-accident';
+  if (battle.accident) accidentEl.textContent = accidentLabel(battle.accident);
+  else accidentEl.style.display = 'none';
+  head.append(title, roundEl, statsEl, manaEl, machineEl, accidentEl, headActions);
   root.appendChild(head);
 
   const body = document.createElement('div');
@@ -224,15 +235,23 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
 
   function unitTipText(u: BattleUnit, isActive: boolean): string {
     const def = getUnit(u.unitTypeId);
+    // 速度必须印**实际值**：减速、缠根都在改它，印基础值等于骗玩家
+    const sp = unitSpeed(battle, u);
+    const spMods: string[] = [];
+    if (hasEffect(u, 'slow')) spMods.push('减速 −2');
+    if (hasEffect(u, 'root')) spMods.push('缠根 −2');
     const lines = [
       `${def.name} ×${u.count}${isActive ? '　▶ 正在行动' : ''}`,
-      `攻 ${def.attack}　防 ${def.defense}　速 ${def.speed}`,
+      `攻 ${def.attack}　防 ${def.defense}　速 ${sp}${spMods.length ? `（${spMods.join('，')}）` : ''}`,
       `总生命 ${Math.round(poolOf(u))}${def.shots ? `　弹药 ${u.shots}` : ''}`,
     ];
-    for (const e of u.effects) lines.push(`${getSpell(e.spellId).name} · 剩 ${e.rounds} 回合`);
-    // 族动词：赤焰「冲锋」+ 晨曦「加班」。1 行文字 = 1 个数字，不弹窗、不加面板。
-    // 文案由 core 的 `chargeHint` / `overtimeHint` 生成，探针可以直接断言（见 factionverbs.mjs）。
-    for (const hint of [chargeHint(battle, u), overtimeHint(battle, u)]) {
+    for (const e of u.effects) {
+      // 「缠根」不是法术，没有"剩 N 回合"（它只在目标的下一次行动生效），单独说清
+      lines.push(e.spellId === 'root' ? `${effectLabel(e.spellId)} · 下次行动速度 −2` : `${effectLabel(e.spellId)} · 剩 ${e.rounds} 回合`);
+    }
+    // 族动词：赤焰「冲锋」+ 晨曦「加班」+ 翠林「缠根」（1 行文字 = 1 条规则）。
+    // 文案由 core 生成，探针可以直接断言（见 factionverbs.mjs）。
+    for (const hint of [chargeHint(battle, u), overtimeHint(battle, u), rootHint(battle, u)]) {
       if (hint) lines.push(hint);
     }
     if (u.defending) lines.push('防御中');
@@ -723,6 +742,13 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         // 弹跳袭击：砸完弹开，守方没来得及回手。只给一行浮字，不做位移
         //（攻方的出击动作已经在这条事件之前演完了）
         addFloat('弹开！', hexOf(e.unitId), '#c9b6ff');
+        anim = { t: 0, dur: 380, step: () => undefined };
+        break;
+      }
+      case 'root': {
+        // 缠根：藤蔓从地面缠上目标（浮字挂在守方脚下，一眼看得出"谁被按住了"）
+        addFloat('缠根！', hexOf(e.targetId), '#9ed07a');
+        spellFx.push({ hex: hexOf(e.targetId), life: 1, color: '#9ed07a' });
         anim = { t: 0, dur: 380, step: () => undefined };
         break;
       }
@@ -1365,6 +1391,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   fit();
   recomputeOptions();
   pushLog('战斗开始');
+  // 事故必须在第一条战报里（规则变了一整场，不能只留在头部标签里）
+  if (battle.accident) pushLog(accidentLabel(battle.accident));
   hint('鼠标停在部队上（或右键点击）查看它的属性');
   // 调试：?devspell=1 进场就展开法术面板（截图验证用）
   if (new URLSearchParams(location.search).has('devspell')) renderSpellBook();

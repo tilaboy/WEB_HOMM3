@@ -24,16 +24,23 @@ npm run audit:b0 && npm run audit:atlas && npm run audit:townart && npm run audi
 | 项 | 退出码 | 说明 |
 |---|---|---|
 | `build` / `smoke` / `audit:b0` / `audit:atlas` / `audit:townart` / `audit:neutral` / `audit:scenario` / `audit:tutorial` / `audit:score` | **0 × 9** | D1 改动后全绿 |
-| `probe:factionverbs`（正常） | **0** | **49/49** 断言：[A] 周产 · [B] 英雄映射 · [C] 冲锋（20 条） · [D] 弹跳袭击（8 条） · **[E] 加班（11 条）** |
+| `probe:factionverbs`（正常） | **0** | **89/89** 断言：[A] 周产 · [B] 英雄映射 · [C] 冲锋（20 条） · [D] 弹跳袭击（8 条） · [E] 加班（11 条） · **[F] 缠根（20 条）** · **[G] 实验事故（20 条）** |
 | `probe:factionverbs`（冲锋深层桩） | **1** | 把 dist 里 `chargeAtkBonus` 首行改成 `return 0` ⇒ 6 条红 |
 | **`probe:factionverbs`（关掉 `noRetaliate`）** | **1** | dist `units.js` 里 `noRetaliate: true` → `false` ⇒ **[D] 4 条红** |
 | **`probe:factionverbs`（删掉移动前提）** | **1** | 把 `actMelee` 条件里的 `u.moveDist > 0` 删掉 ⇒ **[D3] 1 条红** |
 | **`probe:factionverbs`（关掉加班）** | **1** | dist 里 `overtimeAtkBonus` 首行 `return 0` ⇒ **[E] 4 条红** |
 | **`probe:factionverbs`（反击不吃加班）** | **1** | `retaliationAtkBonus` 去掉加班项 ⇒ **只有 [E4] 1 条红**（证明这条断言是特异的） |
+| **`probe:factionverbs`（关掉缠根）** | **1** | dist 里 `rootApplies` 首行 `return false` ⇒ **[F] 12 条红**（89→77 过） |
+| **`probe:factionverbs`（缠根一律挂 2 轮）** | **1** | 把 `actedThisRound(...) ? 2 : 1` 改成 `2` ⇒ **只有 1 条红**（"只吃一次行动"） |
+| **`probe:factionverbs`（AI 不偏爱未缠目标）** | **1** | 注掉 `score += rootTargetBonus(...)` ⇒ **只有 1 条红** |
+| **`probe:factionverbs`（关掉事故）** | **1** | dist 里 `rollAccident` 首行 `return null` ⇒ **9 条红**（另 6 条走"找不到种子"分支） |
+| **`probe:factionverbs`（事故只坑攻方）** | **1** | 泄漏 `&& u.side === 0`、爆炸跳过 side 1 ⇒ **2 条红**（"同受"名存实亡） |
+| **`probe:factionverbs`（预估漏 faction）** | **1** | `interaction.js::sides()` 注掉 `faction: hero.owner` ⇒ **2 条红**（预估≠实战 + 公示缺失） |
+| **`probe:factionverbs`（事故污染主随机流）** | **1** | 把 `s.accidentRng()` 改回 `s.rng()` ⇒ **只有 [G11] 1 条红** |
 | `probe:sidebias`（报告模式） | **0** | 只诊断，不判定 |
 | **`probe:d1`（正常）** | **0** | 9 条 D1 断言全绿 |
 | **`probe:d1`（深层桩）** | **1** | dist `incomingAt` 首行 `return 0`（威胁区失效）⇒ **5 条红**：合计 68%、攻方首杀 25% |
-| **`probe:d2`（正常）** | **0** | 14 条 D2 断言全绿（首击→反击 0.71~0.96、贴脸 45~70%、整军 63~85%） |
+| **`probe:d2`（正常）** | **0** | 15 条 D2 断言全绿（首击→反击 0.69~0.96、贴脸 48~73%、整军 67~85%） |
 | **`probe:d2`（把 ×0.5 注回 dist）** | **1** | **7 条红**：首击→反击掉回 0.36~0.48，翠林整军 98% |
 | **`probe:d2`（把同速排序改成洗牌）** | **1** | **3 条红**：回合首发 0 侧 49%、赤焰整军 30% |
 | `probe:sidebias --gate`（D1+D2 一起） | **0** | 两个闸都绿；这条不再是"预期红" |

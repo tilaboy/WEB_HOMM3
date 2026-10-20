@@ -15,7 +15,7 @@ import { MINE_NAME } from '../data/mines.js';
 import { getUnit } from '../data/units.js';
 import { factionName } from '../data/factions.js';
 import { idx, isPassable, objectAt } from '../map/grid.js';
-import { lossGrade, lossRatio, quickBattle } from '../combat/battle.js';
+import { accidentNotice, lossGrade, lossRatio, quickBattle } from '../combat/battle.js';
 import type { BattleOutcome, BattleSide } from '../combat/battle.js';
 import { wallLevelOf } from '../combat/siege.js';
 import { WAR_MACHINES } from '../data/warmachines.js';
@@ -108,6 +108,11 @@ function sides(state: GameState, heroId: string, obj: MapObject) {
       army: hero.army,
       attack: p.attack,
       defense: p.defense,
+      // ⚠️ `faction` 不能省：族动词（冲锋 / 加班 / 缠根 / 事故 / 弹跳）全靠它开关。
+      // 2026-10-20 发现漏了这一个字段 ⇒ 野怪与宝库的**战前预估**跑的是"无族"规则，
+      // 而 `battleSetup` 传给实战的是带族的一侧 —— 同一场仗两套规则。
+      // 探针 `factionverbs [G]` 用"预估 === 实战"这一条把这个洞钉住。
+      faction: hero.owner,
       caster: { spells: hero.spells, spellPower: p.spellPower, mana: hero.mana },
       warMachines: hero.warMachines,
     },
@@ -144,7 +149,8 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
         title: `遭遇${tierName}`,
         message:
           `${describeArmy(payload.army)}${guardText ? `，看守 ${guardText}` : ''}` +
-          `\n${outcome.win ? '可以取胜' : '难以攻克'} · ${grade.text}（约损失 ${Math.round(ratio * 100)}% 兵力）`,
+          `\n${outcome.win ? '可以取胜' : '难以攻克'} · ${grade.text}（约损失 ${Math.round(ratio * 100)}% 兵力）` +
+          accidentNotice(outcome),
         confirmLabel: '开战',
         cancelLabel: '撤退',
         estimate: outcome,
@@ -192,7 +198,8 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
         title: payload.tier === 'strong' ? '重兵把守的宝库' : '宝库',
         message:
           `${describeArmy(payload.army)}，库中财物：${describeVaultReward(payload.reward)}` +
-          `\n${outcome.win ? '可以攻下' : '难以攻克'} · ${grade.text}（约损失 ${Math.round(ratio * 100)}% 兵力）`,
+          `\n${outcome.win ? '可以攻下' : '难以攻克'} · ${grade.text}（约损失 ${Math.round(ratio * 100)}% 兵力）` +
+          accidentNotice(outcome),
         confirmLabel: '强攻',
         cancelLabel: '撤退',
         estimate: outcome,
@@ -252,7 +259,8 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
         title: `进攻 ${town.name}`,
         message:
           `守军：${describeArmy(garrison)}　${fort}` +
-          `\n${outcome.win ? '可以攻下' : '难以攻克'} · ${lossGrade(ratio).text}（约损失 ${Math.round(ratio * 100)}% 兵力）`,
+          `\n${outcome.win ? '可以攻下' : '难以攻克'} · ${lossGrade(ratio).text}（约损失 ${Math.round(ratio * 100)}% 兵力）` +
+          accidentNotice(outcome),
         confirmLabel: '攻城',
         cancelLabel: '撤退',
         estimate: outcome,
