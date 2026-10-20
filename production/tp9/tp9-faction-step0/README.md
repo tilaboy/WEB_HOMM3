@@ -1,7 +1,7 @@
 # 四族差异化 Step 0 + Step 2 证据（2026-10-20）
 
 对应设计与拍板：`production/faction-gameplay-review-2026-10-20.md` §11。
-本轮落地：`growthPerWeek` 接活 · 英雄模板按族映射 · 赤焰「冲锋」动词 · 侧别偏置 probe。
+本轮落地：`growthPerWeek` 接活 · 英雄模板按族映射 · 赤焰「冲锋」动词 · 侧别偏置 probe · **D1 走位让先修复**。
 
 > ⚠️ 本目录下的 `*.log` 被 `.gitignore` 忽略（项目惯例：证据目录只提交图片/文档）。
 > 关键读数已经抄进本文与 §11，日志本身可用下面的命令随时复跑。
@@ -13,7 +13,7 @@ cd homm-web
 npm run build
 npm run probe:factionverbs        # node tools/probes/factionverbs.mjs
 npm run probe:sidebias            # 报告模式（不判定退出码）
-node tools/probes/sidebias.mjs --gate   # 闸模式（修好后接入）
+npm run probe:d1                  # D1 走位闸（= sidebias.mjs --gate=d1）
 npm run smoke
 npm run audit:b0 && npm run audit:atlas && npm run audit:townart && npm run audit:neutral
 ```
@@ -22,11 +22,13 @@ npm run audit:b0 && npm run audit:atlas && npm run audit:townart && npm run audi
 
 | 项 | 退出码 | 说明 |
 |---|---|---|
-| `build` / `smoke` / `audit:b0` / `audit:atlas` / `audit:townart` / `audit:neutral` / `audit:scenario` / `audit:tutorial` | **0 / 0 / 0 / 0 / 0 / 0 / 0 / 0** | 本轮改动后全绿 |
+| `build` / `smoke` / `audit:b0` / `audit:atlas` / `audit:townart` / `audit:neutral` / `audit:scenario` / `audit:tutorial` / `audit:score` | **0 × 9** | D1 改动后全绿 |
 | `probe:factionverbs`（正常） | **0** | 30/30 断言 |
-| `probe:factionverbs`（深层桩） | **1** | 把 dist 里 `chargeAtkBonus` 首行改成 `return 0` ⇒ 5 条红 |
+| `probe:factionverbs`（深层桩） | **1** | 把 dist 里 `chargeAtkBonus` 首行改成 `return 0` ⇒ 6 条红 |
 | `probe:sidebias`（报告模式） | **0** | 只诊断，不判定 |
-| `probe:sidebias --gate` | **1** | 12 条对称性断言里 9 条红（已知缺陷，未修） |
+| **`probe:d1`（正常）** | **0** | 9 条 D1 断言全绿 |
+| **`probe:d1`（深层桩）** | **1** | dist `incomingAt` 首行 `return 0`（威胁区失效）⇒ **5 条红**：合计 68%、攻方首杀 25% |
+| `probe:sidebias --gate` | **1** | 对称性 12 条里 9 条红 —— **D2 未修，预期红** |
 
 ## 关键读数
 
@@ -51,9 +53,30 @@ npm run audit:b0 && npm run audit:atlas && npm run audit:townart && npm run audi
 
 对照：晨曦 T3 同条件 **46 / 46 / 46**（无变化）；赤焰远程 T2 **44 / 44**（整条不参与）；反击 **16 / 16**（不吃冲锋）。
 
-AI 使用率（整军对局，30 seeds）：攻晨曦 **37%** / 攻翠林 **39%** / 攻紫晶 **54%** 的近战是"冲起来"的。
+AI 使用率（整军对局，30 seeds，**D1 修后**）：攻晨曦 **19%** / 攻翠林 **39%** / 攻紫晶 **30%**，合计 **264/917 = 29%**。
+（D1 修前是 37 / 39 / 54%。下降原因：AI 不再"走到最远格"，接战距离从 5~6 格缩到 1~2 格，
+"跑 3 格再打"的机会窗口变少 —— 走位变聪明的代价，不是动词失效。`factionverbs` [C9] 因此改判**合计** ≥25%。）
+
+### D1 走位让先（修前 / 修后，同一把尺子）
+
+"推进了但没打出去"最后停在**近战敌人一步之内**的比例（= 把"走一步+打一下"白送）：
+
+| 族 | 修前（深层桩复现） | 修后 |
+|---|---|---|
+| 晨曦 | 80% | **53%** |
+| 赤焰 | 92% | **34%** |
+| 翠林 | 54% | **39%** |
+| 紫晶 | 65% | **51%** |
+| **合计** | **68%** | **43%** |
+
+配套读数：首次近战归**攻方**从 25% → **100%**；平局仍为 0；平均回合 8~12（未把仗拖长）。
+
+> 旧诊断"AI 走到脸前结束回合"是**错的**（实测 `endAdjNoHit = 0`）：它停在离敌人 2 格处。
+> 详见 §11.2 ①。
 
 ### 侧别偏置（整军镜像，60 seeds）
+
+**修前**
 
 | 族 | 攻方胜率 | 贴脸对峙攻方胜率 | 首次近战由后动方拿到 |
 |---|---|---|---|
@@ -62,9 +85,23 @@ AI 使用率（整军对局，30 seeds）：攻晨曦 **37%** / 攻翠林 **39%*
 | 翠林 | 78% | 68% | 0% |
 | 紫晶 | 58% | 92% | 100% |
 
-结论：**D1 走位让先 + D2 先手决定性**，两者叠加。详见 §11.2。
+**修后**
+
+| 族 | 攻方胜率 | 贴脸对峙攻方胜率 | 首次近战归攻方 |
+|---|---|---|---|
+| 晨曦 | 90% | 75% | 100% |
+| 赤焰 | 68% | 92% | 100% |
+| 翠林 | 98% | 68% | 100% |
+| 紫晶 | 63% | 92% | 100% |
+
+结论：**D1 已修**（不再白送先手），**D2 未修**（贴脸 68~92% 原封不动）。
+镜像胜率偏置没消失、只是翻了向 ⇒ 证明胜率主因是 D2。详见 §11.2 / §11.4。
 
 ### 冲锋对矩阵的影响（2 周产量，60 seeds，攻方胜率%）
+
+> ⚠️ **D1 修前旧口径**，只留作"冲锋接入前后"的对照；D1 改走位后这些数已经过期。
+> D2 修完前不重跑：镜像胜负是刀刃式（同一对局 60 个种子几乎同向），重跑只会把 100/0 换个方向，
+> 读不出平衡信息。等 D2 落地、探针 `--gate` 能绿之后再重建这张表。
 
 | 攻\守 | 晨曦 | 赤焰 | 翠林 | 紫晶 |
 |---|---|---|---|---|
@@ -78,9 +115,18 @@ AI 使用率（整军对局，30 seeds）：攻晨曦 **37%** / 攻翠林 **39%*
 ## 深层桩复跑方法（负向对照）
 
 ```bash
+# ① 动词桩（factionverbs）
 cp dist/core/combat/battle.js /tmp/battle.bak
 # 在 dist/core/combat/battle.js 的 chargeAtkBonus 首行插入： return 0;
 node tools/probes/factionverbs.mjs ; echo $?   # 期望 1，且 [C1]/[C5]/[C6] 变红
 cp /tmp/battle.bak dist/core/combat/battle.js  # 恢复
 node tools/probes/factionverbs.mjs ; echo $?   # 期望 0
+
+# ② 威胁区桩（probe:d1）
+md5 -q dist/core/combat/battle.js > /tmp/md5.txt
+# 在 dist/core/combat/battle.js 的 incomingAt 首行插入： return 0;
+node tools/probes/sidebias.mjs --gate=d1 ; echo $?   # 期望 1，合计 68% / 攻方首杀 25%
+cp /tmp/battle.bak dist/core/combat/battle.js
+md5 -q dist/core/combat/battle.js | diff - /tmp/md5.txt && echo restored
+# （或直接 npm run build 重建）
 ```

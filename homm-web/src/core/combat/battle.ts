@@ -1101,9 +1101,61 @@ function foeThreat(foes: BattleUnit[]): BattleUnit {
   return foes.slice().sort((a, b) => threatOf(b) - threatOf(a))[0] ?? foes[0];
 }
 
+/* ---------------- 走位：威胁区（D1 修法，2026-10-20） ----------------
+ *
+ * 缺陷（`probe:sidebias` 实测）：AI 够不着时只会"走到能到的最远格"，
+ * 整军镜像里 **54~95% 的不攻击推进最后都停在某个近战敌人的一步之内**。
+ * 于是它这一回合只完成"走到脸前"，下一手由对方完成"走一步 + 打一下" ——
+ * 先手等于白送。探针里表现为"后动方拿首次近战"（3/4 族 100%）。
+ *
+ * 这里把"推进"改成三档：
+ *   ① 安全落点：站上去不会被任何近战敌人在它下一次行动里打到 —— 优先，且尽量少浪费步数；
+ *   ② 没有安全落点：**等待**（每回合一次）—— 把行动推到本回合末尾，
+ *      对方要是先动进来，就轮到我们打它；这也正是 HOMM 里"等待"的用处；
+ *   ③ 等待已经用过（或本回合后面没人可等）：**在有暴露的落点里挑最不亏的**，
+ *      而不是走到最远格。
+ *
+ * 三条边界：
+ *   - 远程敌人不算进威胁区：它站多远都能射你，换落点躲不掉，算了只会让 AI 原地不动。
+ *   - 判据用"敌人走到贴身还要打一下"（`unitSpeed + 1`），并且把对方的冲锋算进去
+ *     （远一点反而更容易被 +2 冲进来，这个反直觉的结论必须让 AI 看得到）。
+ *   - 会被一击打死的落点直接排除（除非没有别的可走）。
+ *
+ * 试过但**没用**的做法（别再加一遍）：给"能冲锋的落点 +8"补偿 —— 走位改完后
+ * 冲锋使用率 37%→19%，可在落点评分里加偏好实测**完全无变化**：能冲锋时 AI 已经在 2 格内，
+ * 落点全是 1 格，机会窗口根本不在这里。使用率下降是接战距离缩短的必然结果（记在 §11.3）。
+ */
+
+/** 这个单位是"靠走过来打人"的吗（有箭的远程不算威胁区）。 */
+function isMeleeThreat(u: BattleUnit): boolean {
+  const d = getUnit(u.unitTypeId);
+  return d.shots === undefined || u.shots <= 0;
+}
+
+/** 站到 `h` 上、还没出手时，会被哪些敌人先打一下：预计总伤害。 */
+function incomingAt(s: BattleState, u: BattleUnit, h: Hex, foes: BattleUnit[]): number {
+  let dmg = 0;
+  for (const f of foes) {
+    if (!isMeleeThreat(f)) continue;
+    const d = distance(h, f.hex);
+    // 走 d−1 步贴身再打；够不到就不是威胁
+    if (d - 1 > unitSpeed(s, f)) continue;
+    dmg += estimateDamage(s, f, u, false, Math.max(0, d - 1));
+  }
+  return dmg;
+}
+
+/** 离最近敌人几格。 */
+function nearestDistance(h: Hex, foes: BattleUnit[]): number {
+  let d = Infinity;
+  for (const f of foes) d = Math.min(d, distance(h, f.hex));
+  return d;
+}
+
 /**
  * 敌方 AI 的一次完整行动。
- * 优先级：先施法 → 能射就射 → 身边有敌人就砍 → 能走过去砍就走过去砍 → 否则尽量靠近。
+ * 优先级：先施法 → 能射就射 → 身边有敌人就砍 → 能走过去砍就走过去砍
+ *        → 否则推进到"不会白挨一下"的落点（见文件头"走位：威胁区"）。
  */
 export function aiAct(s: BattleState, u: BattleUnit): BattleEvent[] {
   const ev: BattleEvent[] = [];
@@ -1195,7 +1247,51 @@ export function aiAct(s: BattleState, u: BattleUnit): BattleEvent[] {
     }
   }
 
-  // 够不着：朝最近的敌人推进
+  // 够不着：推进。先找"站上去不会立刻挨打"的落点（见文件头"威胁区"说明）。
+  const dNow = nearestDistance(u.hex, foes);
+  const myPool = Math.max(1, poolOf(u));
+  let safeStep: Hex | null = null;
+  let safeScore = -Infinity;
+  let riskyStep: Hex | null = null;
+  let riskyScore = -Infinity;
+  for (const [k, path] of paths) {
+    if (!path.length) continue;
+    const [c, r] = k.split(',').map(Number);
+    const h: Hex = { col: c, row: r };
+    const prog = dNow - nearestDistance(h, foes);
+    if (prog <= 0) continue; // 不后退：只考虑"更靠近"的格子
+    const inc = incomingAt(s, u, h, foes);
+    if (inc <= 0) {
+      // ① 安全：同等靠近时少走两步（别为了摆姿势把移动力烧光）
+      const score = prog * 10 - path.length * 0.1;
+      if (score > safeScore) {
+        safeScore = score;
+        safeStep = h;
+      }
+    } else if (inc < myPool) {
+      // ③ 必须交火时的备选：推进量打折后减去"要挨的那一下"
+      const score = prog - (inc / myPool) * 6;
+      if (score > riskyScore) {
+        riskyScore = score;
+        riskyStep = h;
+      }
+    }
+    // inc >= pool：站上去就被打死，除非无处可去，否则不选
+  }
+  if (safeStep) {
+    ev.push(...actMove(s, u, safeStep));
+    return ev;
+  }
+  if (!u.waited && s.idx < s.order.length - 1) {
+    // ② 让一手：本回合后面还有人，等一下再动；对方先动进来就是我们打它
+    return actWait(s, u);
+  }
+  if (riskyStep) {
+    ev.push(...actMove(s, u, riskyStep));
+    return ev;
+  }
+
+  // 兜底：连"挨打但能推进"的格子都没有（全是一击必死），退回老逻辑朝最近的敌人挪
   let nearest = foes[0];
   let nd = Infinity;
   for (const f of foes) {
