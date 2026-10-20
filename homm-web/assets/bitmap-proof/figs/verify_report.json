@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-09-21T02:42:11.622Z",
+  "checkedAt": "2026-10-20T14:10:23.081Z",
   "items": [
     {
       "artifact": "assets/_pipeline/out/b_crestL_p1.png",
@@ -36,12 +36,12 @@
         ],
         [
           "文件字节",
-          "5704 B（预算 ≤24576）",
+          "5669 B（预算 ≤24576）",
           "PASS"
         ],
         [
           "内联 base64 预估",
-          "7608 B",
+          "7560 B",
           "—"
         ],
         [
@@ -89,7 +89,7 @@
       "trnsLen": 24
     },
     "colors": 23,
-    "bytes": 5704,
+    "bytes": 5669,
     "residualPink": 0,
     "watermarkOpaquePx": 0
   },

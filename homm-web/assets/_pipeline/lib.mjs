@@ -376,7 +376,12 @@ export function buildPalette() {
     p2: ['#e04a34', '#f79a7a', '#9a2519', '#c98a4e', '#8a5a30', '#2fbfa0'],
     p3: ['#3fbe6e', '#93e8a8', '#1f7a45', '#7a7a48', '#4f5130', '#e0538f'],
     p4: ['#a165e8', '#d4aefc', '#6232a8', '#58526e', '#38334a', '#3fe0d0'],
-    neutral: ['#a08a72', '#6b5b48', '#cfc6b4', '#d0d0d8'],
+    // ⚠️ `neutral` **不是第五族** —— D-11 定的是四族全开，中立怪用的是石/木/金属。
+    // 这一组原先写着 #a08a72 / #6b5b48 / #d0d0d8，三个都**不在**游戏的 `B0_PALETTE` 里，
+    // 于是钳色把大量像素钳到"游戏里不存在的颜色"上：crestL_p1 实测 1936 px（占 4.99%）。
+    // 改成本族真实存在的三个石材档 + 金属亮档（ΔE 4.9 / 7.0 / 3.7，肉眼不可分）。
+    // 回归闸：`tools/tp8crest.mjs` 的 [Ppipe]（管线色板 ⊆ B0_PALETTE）。
+    neutral: ['#a9a093', '#6f6858', '#cfc6b4', '#dfe6f0'],
   };
   const out = [];
   for (const [name, hex] of Object.entries(base)) out.push({ name, hex, ...hslOf(hex) });

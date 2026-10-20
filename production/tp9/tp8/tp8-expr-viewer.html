@@ -1,0 +1,35 @@
+<!doctype html><meta charset="utf-8"><title>TP-8② 表情可读 · 查看器</title>
+<style>
+  body{margin:0;background:#111;color:#ddd;font:13px/1.5 system-ui,sans-serif;padding:16px}
+  h1{font-size:15px;margin:0 0 4px} p{margin:0 0 12px;color:#9a9a9a}
+  .bar{position:sticky;top:0;background:#111;padding:8px 0;z-index:2}
+  button{background:#222;color:#ddd;border:1px solid #444;border-radius:4px;padding:4px 10px;margin-right:6px;cursor:pointer}
+  button.on{background:#3b6;color:#000;border-color:#3b6}
+  img{image-rendering:pixelated;display:block;background:#d0d0d0;margin-top:8px}
+</style>
+<h1>TP-8② 手机表情可读 · 1:1 设备像素</h1>
+<p>默认 <b>1×</b>：这就是手机上这块画面的物理像素。放大档只用于看清"它到底画了什么"，<b>不要用放大档打分</b>。</p>
+<div class="bar"><span id="tag"></span></div>
+<div class="bar">
+  <button data-k="1" class="on">1×（评分用）</button>
+  <button data-k="2">2×</button>
+  <button data-k="3">3×</button>
+  <button id="round">下一轮</button>
+</div>
+<img id="v" src="tp8-expr-E-r1.png">
+<script>
+  let k = 1, r = 1, R = 3;
+  const img = document.getElementById('v');
+  const tag = document.getElementById('tag');
+  const draw = () => {
+    img.style.width = img.naturalWidth * k + 'px';
+    tag.textContent = 'Round ' + r + '/' + R + ' · ' + k + '×';
+  };
+  document.querySelectorAll('button[data-k]').forEach((b) => b.onclick = () => {
+    k = +b.dataset.k;
+    document.querySelectorAll('button[data-k]').forEach((x) => x.classList.toggle('on', x === b));
+    draw();
+  });
+  document.getElementById('round').onclick = () => { r = r % R + 1; img.src = 'tp8-expr-E-r' + r + '.png'; img.onload = draw; };
+  img.onload = draw;
+</script>

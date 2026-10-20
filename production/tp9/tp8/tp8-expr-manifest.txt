@@ -1,0 +1,45 @@
+# TP-8② 手机表情可读 · 素材清单
+dist: /Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist
+指纹: {"dir":"/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist","md5":"5c993900e22fca998f31bc854c3a4b68","sha256":"17a62674f08236af","mtime":"2026-10-20T14:33:56.914Z","files":["main.js","style.css","index.html"]}
+seed: 20261020   rounds: 3
+口径: 792×320 CSS @ dpr3 · 战场 BASE 603×388（BattleRenderer.ts:18-19）
+      s = 0.8247（缩放）· k = 2.4742 设备像素/美术像素
+底景: L=208（与 ① 同）· 格 52×42 · 间距 8
+帧数: 20 个 cu_ idle（中立怪 wolf/boar/ogre 不进人类闸，H3 对兽类是另一条）
+通道: h3 13 · glow 6 · profile 1
+查看: tp8-expr-viewer.html（pixelated；1× 档 = 评分口径）
+files:
+  tp8-expr-E-r1.png
+  tp8-expr-Ecss-r1.png
+  tp8-expr-E-r2.png
+  tp8-expr-Ecss-r2.png
+  tp8-expr-E-r3.png
+  tp8-expr-Ecss-r3.png
+轮次排列（Round 1 即答案钥）:
+  R1: cu_p3_unicorn cu_p4_hopgolem cu_p3_thornarcher cu_p4_colossus cu_p2_axethrower cu_p3_vineguard cu_p4_fireapprentice cu_p4_stoneimp cu_p1_templar cu_p3_treant cu_p4_librarian cu_p1_lampbearer cu_p2_wolfrider cu_p2_lavatroll cu_p1_overangel cu_p2_firebrand cu_p1_oathpike cu_p1_hornxbow cu_p3_dwarf cu_p2_scavenger
+  R2: cu_p2_firebrand cu_p4_hopgolem cu_p4_colossus cu_p3_dwarf cu_p3_unicorn cu_p2_wolfrider cu_p1_oathpike cu_p1_lampbearer cu_p2_axethrower cu_p3_treant cu_p2_lavatroll cu_p4_stoneimp cu_p2_scavenger cu_p3_vineguard cu_p3_thornarcher cu_p1_overangel cu_p4_librarian cu_p4_fireapprentice cu_p1_hornxbow cu_p1_templar
+  R3: cu_p4_librarian cu_p3_treant cu_p1_hornxbow cu_p1_templar cu_p1_overangel cu_p4_fireapprentice cu_p2_axethrower cu_p2_firebrand cu_p4_colossus cu_p3_unicorn cu_p1_lampbearer cu_p3_dwarf cu_p3_vineguard cu_p2_wolfrider cu_p3_thornarcher cu_p4_hopgolem cu_p1_oathpike cu_p4_stoneimp cu_p2_lavatroll cu_p2_scavenger
+
+声明式例外（FACE_LAW）:
+  cu_p4_stoneimp → glow：构装：glowEye 画 2×2 p4emissive（§1.4「唯一高光」不适用），石像兽无嘴
+  cu_p4_fireapprentice → glow：火人：面就是火，2×2 p4emissive 眼，无嘴
+  cu_p4_hopgolem → glow：魔偶：2×2 p4emissive 眼，无嘴
+  cu_p4_librarian → glow：亡灵：眼窝是发光点（无 hi0），无嘴
+  cu_p4_colossus → glow：大魔像：2×2 p4emissive 眼，无嘴
+  cu_p2_lavatroll → glow：熔岩巨魔：2×2 p2emissive 眼 + 1px×9 stone0 嘴线（大地精体量，嘴在眼下 6 行）
+  cu_p3_unicorn → profile：侧脸母题（§5.6.4 兽形）：只画一只眼，无独立嘴线
+
+机器预检（本次）:
+  [PASS] Law:table 声明表自洽：h3/glow/profile = 13/6/1（应为 13/6/1） 
+  [PASS] Law 20 个 cu_ idle 帧都认出 1 张脸 20/20
+  [PASS] Eye 每只眼都是 2×2（间距 ≥1，不粘成一条） 20/20
+  [PASS] Mouth 嘴线：1~2 行高、3~14 宽、在眼下 1~8 行（h3 恒有 / glow 仅声明帧 / profile 无） 13 个 h3 帧 · 0 红
+  [PASS] Contr 最小 ΔE76 ≥ 20 最低 22.2 · 次低 28.2 · 中位 65.5
+  [PASS] Phone 眼块在设备像素里仍 ≥2×2（没被采样掉一行/一列） 最小 4×5 设备px（≈1.65 CSS px）
+  [PASS] Mat 3 轮素材都生成了（设备像素 + CSS 像素两版） tp8-expr-E-r1.png / tp8-expr-Ecss-r1.png / tp8-expr-E-r2.png / tp8-expr-Ecss-r2.png / tp8-expr-E-r3.png / tp8-expr-Ecss-r3.png
+
+协议口径:
+  E   = 设备像素：按 k=2.474 最近邻放大 ⇒ 与手机上看到的物理像素一一对应（评分用这张）。
+  Ecss= CSS 像素：按 s=0.825 降采样 ⇒ 布局实际给的尺寸（**只作参照**，用来解释
+        "为什么设备像素够大、但玩家还是可能看不清"——两者差 dpr 倍）。
+  脸窗 = 左眼左上 (-5,-4) 到 右眼/嘴 右侧 (+6/+2)、下 (+4)，裁自 cu_* idle 帧，不含全身。

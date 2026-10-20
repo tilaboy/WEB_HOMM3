@@ -104,7 +104,9 @@ check('PLTE ≤ 24（asset-spec §3.4 每精灵上限）', paletteEntries <= 24,
 const trnsVals = chunks.trns ? [...new Set([...chunks.trns])] : [];
 check('tRNS 存在且 alpha ∈ {0,255}（无半透明）', chunks.trns && trnsVals.every((v) => v === 0 || v === 255), `tRNS 去重 = [${trnsVals.join(',')}]`);
 
-check('字节数 = 5704', buf.length === 5704, `${buf.length} B（声明 5704 B）`);
+// ⚠️ 这个数是**交付物的标识**，不是预算（预算 ≤24 KB 见上一行）。TP-8③ 修色板后重跑管线：
+// 5704 B（24 色）→ **5669 B**（PLTE 24 槽 / 不透明区 23 色）。改了这一行就必须同步 AUDIT.md。
+check('字节数 = 5669', buf.length === 5669, `${buf.length} B（声明 5669 B）`);
 
 const { width: W, height: H, rgba } = decodePng(buf);
 const opaque = (() => {

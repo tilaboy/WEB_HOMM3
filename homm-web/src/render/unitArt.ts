@@ -1805,7 +1805,10 @@ function drawOathpikeCombat(pb: PixBuf, atk: boolean): void {
     pb.ellipse(cx, 26, 5.5, 2, C.wood0);
     pb.rect(13, 24, 13, 3, C.metal4);
     pb.rect(cx, 21, 2, 3, C.p1clash);
-    face(pb, 16, 21, 30, 33, 3, false);
+    // ⚠️ 嘴线必须落在 y=32（下巴那一行），**不能是 y=33** —— 下一行 `bigShield(14,33,…)`
+    // 从 y33 起画盾面，会把 3px 嘴线整条盖掉。TP-8② 的表情探针就是这么发现它的：
+    // 帧里眼睛 2×2 齐全、嘴却被盾吃掉 ⇒ [Mouth] 红。attack 帧盾在 y35、嘴在 y34，不受影响。
+    face(pb, 16, 21, 30, 32, 3, false);
     // 矩形大盾正对镜头
     bigShield(pb, 14, 33, 16, 18);
     // 竖直长枪（唯一失调：比人高）

@@ -22,6 +22,8 @@
     "audit:townart": "node tools/townartaudit.mjs",
     "audit:neutral": "node tools/neutralaudit.mjs",
     "tp8:blindtest": "node tools/tp8blindtest.mjs",
+    "audit:expr": "node tools/tp8exprtest.mjs ../production/tp9/tp8",
+    "audit:crest": "node tools/tp8crest.mjs",
     "probe:factionverbs": "node tools/probes/factionverbs.mjs",
     "probe:sidebias": "node tools/probes/sidebias.mjs",
     "probe:d1": "node tools/probes/sidebias.mjs --gate=d1",
