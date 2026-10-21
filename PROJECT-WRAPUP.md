@@ -448,3 +448,27 @@ C. 保持现状——只有首次能玩到
 `panelgate` **10** · `androidsync` 133 文件逐 md5 一致 · `verify-static-map` **24**
 `audit:hover` 偶发 rc=2（CDP 竞态，连跑 3/3 绿）⇒ **既有抖动，未修，别声称修好了**。
 工作树干净、与 `origin/main` 同步（HEAD = `8acc7d7`）。
+
+---
+
+## 14. 2026-10-21 真机第二轮：地图边带 + 触屏文案
+
+> 入口证据：`production/tp9/tp10/phone-smoke-2026-10-21.md`（第一轮读数）·
+> `production/tp9/tp10/map-band-and-touch-2026-10-21.md`（本轮改动全账）。
+
+| 项 | 结论 | 尺子 |
+|---|---|---|
+| 可达边带把树/水/山描成方框（主理人反馈） | 默认改 `soft`：亮芯 1px + 墨 1px，**自带形体（物件/水面）不描**；旧路径 `?devband=full` 保留 | `npm run audit:bandflip`：default≡soft（0 块）· default≠full（745 块）· 落笔面积 320 vs 7680（−95.8%）· artSkip 52 |
+| D-1 触屏上教键鼠 | 按 `(hover: none)` 分叉：按钮 `防御/等待/施法`、提示「点一下部队查看属性」、点自己人/够不着的敌人**都弹属性牌**、点空地收牌 | `npm run probe:touchtap`（15 条，触屏 + 桌面两臂） |
+| D-2 `?devbattle=1` 被开局页盖住 | devbattle 生效时把 `#start-screen` 置 `display:none` | 同上：**命中测试** 4 点全在 `.battle`（读 `display` 无用，被盖住时它照样 `flex`） |
+| `#154` 口径 | ⚠️ **欠账**：红族被设计性移除 ⇒ `tintab` 默认跑「0 命中族」非零退出。旧栈数用 `--extra=devband=full` 取（红族 7094 px @0.22 grass，旧路径完好）。要么给它加显式 `--drop=edge` 声明，要么把判据重钉为双锚——**归属 `engineering-lead-2`，本文件冻结** | — |
+
+两条踩过的坑（写进 `probe:touchtap` 头注，别重犯）：
+
+1. **`Emulation.setEmulatedMedia{features:[{name:'hover'}]}` 不生效**（Chrome 151 实测）⇒ 首版被它骗成"触屏臂全红"；
+   真正翻转 `hover:none` 的是 `Emulation.setTouchEmulationEnabled`。
+2. **"没有对象也算过"**：没存档时 boot 走教学场，`#start-screen` 不存在 ⇒ 命中测试全绿。
+   所以门里先造存档、再断言"开局页确实在场"。
+
+第三轮开工前该做的：**把改完的包装回手机复看一张教学场截图**（本轮手机锁屏、无解锁方式，图是 792×320@3 仿真）。
+

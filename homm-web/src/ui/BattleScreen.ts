@@ -61,6 +61,24 @@ import type { FloatText } from '../render/BattleRenderer.js';
 // 把音乐接在屏自身比在 main.ts 逐点包一层漏不了。
 import { play as playMusic } from '../audio/music.js';
 
+/**
+ * 这台设备**有没有"悬停"**（鼠标那套）。
+ *
+ * 真机走查 D-1（2026-10-21）：OPPO PMA110 上战斗界面还在教人「鼠标停在部队上（或右键点击）」，
+ * 三个按钮也还挂着 `(D)` / `(空格)` / `(C)` —— 手机上既没有鼠标也没有那几个键。
+ *
+ * 判据用**媒体查询**而不是 UA：`(hover: none)` 描述的是**输入设备能力**，
+ * 带触屏的笔记本仍会命中 `hover: hover`（它照样能用鼠标），UA 串做不到这件事。
+ * 只在模块加载时取一次：战斗中插拔鼠标不是要支持的场景，而每次渲染都查媒体查询是白花开销。
+ */
+const HOVERLESS = ((): boolean => {
+  try {
+    return window.matchMedia('(hover: none)').matches;
+  } catch {
+    return false; // 老 WebView 没有 matchMedia ⇒ 按桌面处理（保持原文案，不静默变成触屏版）
+  }
+})();
+
 export interface BattleOptions {
   state: GameState;
   heroId: string;
@@ -1067,7 +1085,11 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
 
     if (target && target.side !== u.side) {
       if (attackableSet?.has(hexKey(h))) playerAttack(target);
-      else hint('够不着，先移动过去');
+      else if (HOVERLESS) {
+        // 触屏没有右键 ⇒ 「够不着」这一下顺手把属性牌弹出来，别让玩家白点一次。
+        showTip(unitTipText(target, currentUnit(battle)?.id === target.id), e.clientX, e.clientY);
+        hint('够不着，先移动过去');
+      } else hint('够不着，先移动过去');
       return;
     }
     // 攻城：点城墙/城门/箭塔就是砸它
@@ -1078,9 +1100,13 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       return;
     }
     if (target) {
-      hint('这是自己的部队');
+      // 自己的部队：这一下本来就**不会下任何指令**（移动/攻击都在上面分支里排除了），
+      // 所以触屏上把它兑现成"看属性"——不然那一下就是纯空点。
+      if (HOVERLESS) showTip(unitTipText(target, currentUnit(battle)?.id === target.id), e.clientX, e.clientY);
+      else hint('这是自己的部队');
       return;
     }
+    if (HOVERLESS) tip.style.display = 'none'; // 点空地 = 收掉属性牌（触屏没有 pointerleave 可依）
     if (playerMove(h)) return;
   });
 
@@ -1127,7 +1153,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   btnSpeed.className = 'btn';
   const syncSpeed = (): void => {
     btnSpeed.textContent = `速度 ${speed}×`;
-    btnSpeed.title = '演出速度（键盘 1/2/3 直选）';
+    btnSpeed.title = HOVERLESS ? '演出速度' : '演出速度（键盘 1/2/3 直选）';
   };
   const setSpeed = (v: number): void => {
     speed = v === 1 || v === 2 || v === 3 ? v : 1;
@@ -1140,17 +1166,18 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
 
   const btnDefend = document.createElement('button');
   btnDefend.className = 'btn';
-  btnDefend.textContent = '防御 (D)';
+  // 触屏不印快捷键：手机上 `(D)` 是死键，印出来只会让人以为按不到是自己不会用。
+  btnDefend.textContent = HOVERLESS ? '防御' : '防御 (D)';
   btnDefend.addEventListener('click', doDefend);
 
   const btnWait = document.createElement('button');
   btnWait.className = 'btn';
-  btnWait.textContent = '等待 (空格)';
+  btnWait.textContent = HOVERLESS ? '等待' : '等待 (空格)';
   btnWait.addEventListener('click', doWait);
 
   const btnCast = document.createElement('button');
   btnCast.className = 'btn';
-  btnCast.textContent = '施法 (C)';
+  btnCast.textContent = HOVERLESS ? '施法' : '施法 (C)';
   btnCast.addEventListener('click', () => {
     if (!combatSpells().length) {
       hint('这位英雄还没学会战斗魔法（去城建魔法行会）');
@@ -1393,7 +1420,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   pushLog('战斗开始');
   // 事故必须在第一条战报里（规则变了一整场，不能只留在头部标签里）
   if (battle.accident) pushLog(accidentLabel(battle.accident));
-  hint('鼠标停在部队上（或右键点击）查看它的属性');
+  hint(HOVERLESS ? '点一下部队查看属性' : '鼠标停在部队上（或右键点击）查看它的属性');
   // 调试：?devspell=1 进场就展开法术面板（截图验证用）
   if (new URLSearchParams(location.search).has('devspell')) renderSpellBook();
   raf = requestAnimationFrame(frame);

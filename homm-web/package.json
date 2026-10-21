@@ -28,6 +28,7 @@
     "probe:sidebias": "node tools/probes/sidebias.mjs",
     "probe:d1": "node tools/probes/sidebias.mjs --gate=d1",
     "probe:d2": "node tools/probes/sidebias.mjs --gate=d2",
+    "probe:touchtap": "node tools/probes/touchtap.mjs",
     "audit:ai-diag": "node tools/aidiagnose.mjs",
     "audit:badge": "node tools/mapbadgeaudit.mjs",
     "audit:contact": "node tools/contactaudit.mjs",
@@ -37,6 +38,7 @@
     "audit:tutorial": "node tools/tutorialgate.mjs",
     "audit:hpbudget": "node tools/hpbudget.mjs",
     "audit:haloflip": "node tools/haloflip.mjs",
+    "audit:bandflip": "node tools/bandflip.mjs",
     "audit:panelgate": "node tools/panelgate.mjs",
     "audit:androidsync": "node tools/androidsync.mjs"
   },

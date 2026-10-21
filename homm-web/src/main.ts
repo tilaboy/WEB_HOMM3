@@ -2186,6 +2186,12 @@ if (Number.isFinite(devDays) && devDays > 0) {
 //   而**任何断言都不响**（断言只查"已注册的帧画得对不对"）。这条入口是那把人工验收的输入。
 //   ⚠️ `=1`（缺省）的阵容**逐字不变**，否则既有截图基线的可比性就没了。
 if (bootParams.has('devbattle') && selected && state.heroes[selected]) {
+  // D-2（2026-10-21 真机走查）：开局页是 `position:fixed; z-index:900`，`.battle` 只有 150
+  // ⇒ 调试战斗开在底下，截出来是开局页（04-devbattle.png），而"战斗已开"只存在于 DOM 里。
+  // 这条入口本来就是**整屏接管**（用于截图/验收），所以把开局页收起来；
+  // 用 `display` 而不是 `remove()`：开局页的 handle 还持有这个节点。
+  const startScreenEl = document.getElementById('start-screen');
+  if (startScreenEl) startScreenEl.style.display = 'none';
   const t5 = bootParams.get('devbattle') === 't5';
   openBattleScreen(stage, {
     state,

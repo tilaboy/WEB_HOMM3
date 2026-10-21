@@ -225,6 +225,59 @@ const DEV_FOG_CLOSE = ((): boolean => {
   }
 })();
 
+/**
+ * ④ 边界带的**形态**（`?devband=full|thin|art|soft|off`）。
+ *
+ * 起因（2026-10-21 真机走查 · 主理人反馈）：`phone-01-tutorial.png` 上「英雄能走的地方」
+ * 与树 / 水 / 山之间**被直线切开**，每个障碍物都像被套了一只方框。
+ *
+ * 读码：那不是地图美术，是 ④ 的**三色边带** —— 每一格不可走、只要有一侧贴可达区，
+ * 就在那一侧画 `红 2px + 亮芯 2px + 墨 2px`。**1×1 的树四侧全贴可达区 ⇒ 得到一只闭合方框**；
+ * 6 世界 px 在真机 `s=0.784 × DPR3` 下 ≈ **14 物理 px**，比任何一格美术都粗。
+ * 于是"可达性提示"变成了地图上最响的图形元素 —— 这是**层的作用域**问题，不是配色问题。
+ *
+ * **默认 = `soft`**（2026-10-21 主理人裁定「让地图更自然一点」）。四臂 A/B 的图在
+ * `production/tp9/tp10/phone-band-ab/`；判据是"障碍物不再被套方框"，不是"边带消失"：
+ *   · `soft`（**默认**）＝ `thin + art`：亮芯 1px + 墨 1px，且**自带形体的格子不描**；
+ *   · `full`（**旧路径，可复现**）＝ 旧版：红 + 亮芯 + 墨 各 2px，所有贴可达区的一侧都画；
+ *   · `thin`  ＝ 只换**厚度与色栈**：`亮芯 1px + 墨 1px`（去掉红色色相锚），作用域不变；
+ *   · `art`   ＝ 只换**作用域**：**自带形体的不可走格（物件精灵 / 水面岸线）不再描边**，
+ *               因为它们的轮廓已经由美术给出；仅"看不出来为什么不能走"的格子才描；
+ *   · `off`   ＝ 只关边带、保留蓝色水洗（`?devtint=0` 是连水洗一起关）。
+ * ⚠️ `art` / `soft` **只作用于已揭开的格子** —— 未探索格贴可达区那一侧是 `#155` 的雾界闭合段，
+ *   必须原样保留（否则会把 `#155` 修好的洞重新打开）。
+ * ⚠️ 改形态 = 动 `#154` / `#155` 的验收口径 ⇒ 落地前须重跑 `reachmeas` / `tintab`。
+ * ⚠️ **翻默认必须留旧路径**（`haloflip` 那条规矩）：`?devband=full` 能逐块取回旧画面，
+ *   两向由 `tools/bandflip.mjs`（`npm run audit:bandflip`）机检 —— 默认≡soft、默认≠full。
+ */
+const BAND_MODE = ((): 'full' | 'thin' | 'art' | 'soft' | 'off' => {
+  try {
+    const v = new URLSearchParams(location.search).get('devband');
+    return v === 'full' || v === 'thin' || v === 'art' || v === 'off' ? v : 'soft';
+  } catch {
+    return 'soft';
+  }
+})();
+/** 色栈换薄（`thin` / `soft`）：去掉红色色相锚，两条亮度锚各压到 1px。 */
+const BAND_THIN = BAND_MODE === 'thin' || BAND_MODE === 'soft';
+/** 作用域收窄（`art` / `soft`）：自带形体的不可走格不描边。 */
+const BAND_ART_ONLY = BAND_MODE === 'art' || BAND_MODE === 'soft';
+/**
+ * `?devbandstats=1`：把**本帧边带的落笔量**写进 `window.__bandStats`（`tools/bandflip.mjs` 用）。
+ *
+ * 为什么数"落笔面积"而不是数像素颜色：`NOGO_EDGE_INK`/`GLOW` 与美术调色板的
+ * `ink0`/`hi1` **同值**（`#2a1a12` / `#fff3c8`，见 `unitArt.ts`）⇒ 逐像素数色会被树/兵/描边
+ * 污染，量到的不是边带。落笔面积是这条通道**唯一干净**的尺：它只由本函数的 `band()` 累加。
+ * 只计数、不改绘制 ⇒ 不带此旗标时与不计数逐字节同。
+ */
+const BAND_STATS = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).has('devbandstats');
+  } catch {
+    return false;
+  }
+})();
+
 /** 单条（或四边）边带的绘制参数：世界坐标下的一个矩形 + 填充色。 */
 interface BandRect {
   x: number;
@@ -663,7 +716,13 @@ export class MapRenderer {
     // 修法 (1)（默认开；`?devhaloafter=0` 回退）：边带**推迟到光照之后**画 ⇒ 先登记、不立即填充。
     const afterBands: BandRect[] | null = this.haloAfter ? [] : null;
     // 边带落笔：默认（`afterBands===null`）立即填充，与原实现逐像素一致；开启 (1) 时只登记。
+    // `statRects/statPx` 只累加、不参与绘制（见 `BAND_STATS`）。
+    let statRects = 0;
+    let statPx = 0;
+    let statArtSkip = 0;
     const band = (c: string, bx: number, by: number, bw: number, bh: number): void => {
+      statRects++;
+      statPx += bw * bh;
       if (afterBands) afterBands.push({ x: bx, y: by, w: bw, h: bh, c });
       else {
         ctx.fillStyle = c;
@@ -673,12 +732,23 @@ export class MapRenderer {
     // `?devtint=0` ⇒ `tintEnabled === false` ⇒ 整块跳过（染色层空操作）；
     // 不传旗标时 `tintEnabled === true` ⇒ `cost && true` ≡ `cost` ⇒ 与今天逐字节一致。
     if (cost && this.tintEnabled) {
+      // 边带**色栈**：从"贴可达区那一侧"往外依次落笔。`full` = 现网三段（3×2px = 6px）；
+      // `thin` = 亮芯 1px + 墨 1px（见 `BAND_MODE`）。每帧只建一次，不进逐格热循环。
+      const stack: ReadonlyArray<readonly [string, number]> = BAND_THIN
+        ? [[edgeGlow, 1], [edgeInk, 1]]
+        : [[edgeRed, EDGE_W], [edgeGlow, EDGE_W], [edgeInk, EDGE_W]];
       // 前沿判定：**含英雄自身格**（Dijkstra 起点 cost===0 也属于可达区），
       // 并要求相邻格**已揭开**（未探索处不出红线，否则红线会顺迷雾边界乱爬）。
       const inRegion = (x: number, y: number): boolean => {
         if (x < 0 || y < 0 || x >= map.width || y >= map.height) return false;
         if (!isRevealed(state, player, x, y)) return false;
         return isFinite(cost[idx(map, x, y)]);
+      };
+      // 「自带形体」：物件精灵（树/岩石/山/矿/城/怪）或水面岸线 —— 它们的轮廓已由美术给出，
+      // 再套一圈 6px 方框只会把 1×1 的树描成一只方框（`BAND_ART_ONLY`）。
+      const hasOwnArt = (i: number): boolean => {
+        const t = map.tiles[i];
+        return !!t.objectId || t.terrain === 'water';
       };
       for (let y = y0; y <= y1; y++) {
         for (let x = x0; x <= x1; x++) {
@@ -687,7 +757,8 @@ export class MapRenderer {
           // "贴可达区那一侧"的边界带上（见下方 `top/bot/lft/rgt`）；`?devfogclose=0` ⇒ 未探索格
           // 在此 `continue` ⇒ 与旧版**同路**（逐像素回到旧版）。
           if (!rev && !this.fogClose) continue; // `?devfogclose=0` 时未探索不染色
-          const c = cost[idx(map, x, y)];
+          const i = idx(map, x, y);
+          const c = cost[i];
           // `rev &&` 两道守卫：未探索格**永不填蓝、永不当英雄自身格** —— 即便默认开
           // 且它在迷雾里其实可走（`computePaths` 不看 `isRevealed`，故 fog 格可能有有限 cost）。
           if (rev && isFinite(c) && c > 0) {
@@ -698,6 +769,13 @@ export class MapRenderer {
           if (rev && isFinite(c)) continue; // 英雄自身格（c===0）：在可达区内部，不填不描
           // ↓ 未探索格（**默认开**时）也会落到这里：`inRegion()` 要求相邻格**已揭开且可达**
           //   ⇒ 只有"贴可达区的那一侧"为真 ⇒ 恰好补上贴雾的缺口，且不在雾内部乱描。
+          if (BAND_MODE === 'off') continue;
+          // 作用域收窄：已揭开、且自带形体的不可走格 —— 不描（美术轮廓即边界）。
+          // 未探索格**不参与**这条例外（雾界那一段是 `#155` 的修法本体）。
+          if (BAND_ART_ONLY && rev && hasOwnArt(i)) {
+            statArtSkip++;
+            continue;
+          }
           // 不可走：紧邻可达区的那一侧画**三线 = 红（色相锚）+ 亮芯 + 暗墨（双色 halo）**。
           // 顺序（贴可达区 → 不可走侧）：红(0) → 亮芯(EDGE_W) → 暗墨(2*EDGE_W)；亮/暗两锚落在**同一格地形**
           // ⇒ 暗底吃亮芯、亮底吃暗边 ⇒ 任何底色下两极其一必 ≥3:1（§4.6 (a-1)/(ii)）。
@@ -707,19 +785,23 @@ export class MapRenderer {
           const bot = inRegion(x, y + 1);
           const lft = inRegion(x - 1, y);
           const rgt = inRegion(x + 1, y);
-          if (top) band(edgeRed, px, py, TILE, EDGE_W); // ① 内侧红（色相锚，贴可达区一侧）
-          if (bot) band(edgeRed, px, py + TILE - EDGE_W, TILE, EDGE_W);
-          if (lft) band(edgeRed, px, py, EDGE_W, TILE);
-          if (rgt) band(edgeRed, px + TILE - EDGE_W, py, EDGE_W, TILE);
-          if (top) band(edgeGlow, px, py + EDGE_W, TILE, EDGE_W); // ② 亮芯（明度锚·亮极，不透明）
-          if (bot) band(edgeGlow, px, py + TILE - EDGE_W * 2, TILE, EDGE_W);
-          if (lft) band(edgeGlow, px + EDGE_W, py, EDGE_W, TILE);
-          if (rgt) band(edgeGlow, px + TILE - EDGE_W * 2, py, EDGE_W, TILE);
-          if (top) band(edgeInk, px, py + EDGE_W * 2, TILE, EDGE_W); // ③ 暗边墨（明度锚·暗极，不透明）
-          if (bot) band(edgeInk, px, py + TILE - EDGE_W * 3, TILE, EDGE_W);
-          if (lft) band(edgeInk, px + EDGE_W * 2, py, EDGE_W, TILE);
-          if (rgt) band(edgeInk, px + TILE - EDGE_W * 3, py, EDGE_W, TILE);
+          let off = 0;
+          for (const [c2, w] of stack) {
+            if (top) band(c2, px, py + off, TILE, w);
+            if (bot) band(c2, px, py + TILE - off - w, TILE, w);
+            if (lft) band(c2, px + off, py, w, TILE);
+            if (rgt) band(c2, px + TILE - off - w, py, w, TILE);
+            off += w;
+          }
         }
+      }
+      if (BAND_STATS) {
+        (window as unknown as { __bandStats?: unknown }).__bandStats = {
+          mode: BAND_MODE,
+          rects: statRects, // 画了多少条矩形
+          px: statPx, // 这些矩形的总面积（世界 px²）—— 「边带有多响」的干净读数
+          artSkip: statArtSkip, // 因「自带形体」而整格跳过的数量
+        };
       }
     }
 

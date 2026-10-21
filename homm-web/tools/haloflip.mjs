@@ -61,7 +61,13 @@ if (!(await serveInProcess(DIST, PORT))) {
   process.exit(2);
 }
 const BASE =
-  `http://127.0.0.1:${PORT}/?devquick=0&devsize=medium&devseed=20260917&devreveal=1&devlight=0.22`;
+  `http://127.0.0.1:${PORT}/?devquick=0&devsize=medium&devseed=20260917&devreveal=1&devlight=0.22` +
+  /* ★ 把边带**钉在 full**（2026-10-21）：本门量的是**层序**（边带在光照前 / 后画），
+   *   不是边带形态。`devband` 默认翻成 `soft` 后，边带落笔面积掉到 4.2%，本门的信号
+   *   从 **676 块**掉到 **93 块**（< 阈值 200）⇒ 会**假红**。钉 `full` 让本门回到标定时
+   *   的量级与人口，判据与阈值**一个字不改** —— 改的是尺子的量程，不是门槛。
+   *   ⚠️ 因此**不能**把它读成"默认形态下的层序验收"；形态看 `bandflip`。 */
+  `&devband=full`;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let bad = 0;

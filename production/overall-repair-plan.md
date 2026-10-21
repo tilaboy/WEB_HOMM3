@@ -360,6 +360,12 @@
 ### TP-10 · 发布卫生 + alpha 候选构建（P3 · ≈2-3 人日 + 用户配合 · 工程）
 - **范围**：① keystore 生成（离线备份、绝不入库）② APK 剥 sourcemap + 4 测试页 ③ `#162` 启动图接进 `android/.../res/` ④ 真机档位实测 + 走查（**需用户手机 adb**）⑤ alpha 候选构建 = 全门绿 + 真机三图 + 录屏
 - **验收**：能从手机拉回包逐字节对 md5（项目既有纪律）；alpha 三件套在案
+- **进展（2026-10-21 · ④ 第一轮）**：OPPO PMA110 跑通（装得上 / 进得去 / 打得完 6 回合），
+  读 `production/tp9/tp10/phone-smoke-2026-10-21.md`。同轮抓到 **D-1**（触屏教键鼠）与
+  **D-2**（`?devbattle=1` 被开局页盖住）——**两条都已修并各有门 + 反证**：
+  `npm run probe:touchtap`（15 条、两臂）、`npm run audit:bandflip`。
+  ⚠️ 顺带按主理人反馈把 ④ 可达边带**默认翻成 `soft`**（旧路径 `?devband=full` 保留）——
+  细则与欠账见 `production/tp9/tp10/map-band-and-touch-2026-10-21.md`。
 - **依赖**：TP-1~8 主要项完成；**外部试玩 = alpha 门准入项**（D-4 已决）
 
 **缓判**：iOS（触发条件未达成，wrapup §7）。
