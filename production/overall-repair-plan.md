@@ -366,6 +366,12 @@
   `npm run probe:touchtap`（15 条、两臂）、`npm run audit:bandflip`。
   ⚠️ 顺带按主理人反馈把 ④ 可达边带**默认翻成 `soft`**（旧路径 `?devband=full` 保留）——
   细则与欠账见 `production/tp9/tp10/map-band-and-touch-2026-10-21.md`。
+- **进展（2026-10-21 · ④ 第二轮）**：改完的包装回真机（APK 5,370,849 B / md5 `158301d6…`，
+  157 文件逐 md5 一致），**同构建 A/B**（Capacitor 的 `https://localhost/` 会保留查询串 ⇒ 一个包跑两臂）：
+  `?devband=full` 186 块 / 11904 px / artSkip 0 ⇒ 默认 `soft` 16 块 / 512 px / artSkip 25（**−95.7%**）。
+  D-1/D-2 升级为真机实拍（`hover:none`=true、`#start-screen`=none、按钮「防御/等待/施法」、
+  点部队弹属性牌），见 `production/tp9/tp10/phone-round2-2026-10-21.md`。
+  ⇒ **④ 的"真机复看"欠账已清**；①②③⑤ 仍未做。
 - **依赖**：TP-1~8 主要项完成；**外部试玩 = alpha 门准入项**（D-4 已决）
 
 **缓判**：iOS（触发条件未达成，wrapup §7）。
