@@ -13,6 +13,28 @@
   --ok: #7ab55a;
   --line: rgba(240, 212, 136, 0.32);
   --frame: #8a6a34;
+
+  /* ---------- 字阶（2026-10-22 P0 #1） ----------
+   * 改前：89 条 font-size 里 61 条 ≤12px（12px×33 / 11px×19 / 10px×8 / 9px×1），
+   * 一屏能同时出现 5 档、最大正文只有 15px ⇒ 层级只能靠"更亮的颜色"表达，读起来全一样重。
+   * 现在**只留四档**，且只以 token 形式出现（`grep -c "font-size: [0-9]"` 应为 0）：
+   *   display 品牌/结算大标题 · h 面板与段落标题 · body 正文/按钮/列表 · cap 标签与密集读数
+   * 口径来自 ui-review-2026-10-22.md §3：走系统衬线（未换像素字体）⇒ 正文 ≥15px；
+   * 若日后改像素字体（12 的整数倍才清晰），只需改这四个值，89 条规则自动跟随。
+   * ⚠️ 16px 刻意不设：横屏 390 高，15 是"读得清且塞得下"的实测上限。 */
+  --t-display: 28px;
+  --t-h: 20px;
+  --t-body: 15px;
+  --t-cap: 12px;
+  --lh-body: 1.45;
+
+  /* ---------- 材质三层（P0 #3） ----------
+   * 改前三层长得一样：深棕底 + 1px 金边 + 圆角，用在哪都成立 ⇒ 也就哪里都不成立。
+   * oak 木质=容器（面板/弹窗）· parch 羊皮纸=阅读面（改前全项目 0 处）· iron 铁牌=浮动读数 */
+  --parch-bg-a: #f6ead0;
+  --parch-bg-b: #e2cda3;
+  --parch-edge: #b9a273;
+  --parch-ink: #3a2a12;
 }
 
 * {
@@ -67,7 +89,11 @@ body {
   background: var(--stone-3);
   color: var(--text);
   font-family: "Palatino", "Palatino Linotype", "Songti SC", "STSong", Georgia, serif;
-  font-size: 13px;
+  font-size: var(--t-body);
+  /* P0 #1：正文行高。改前是 `normal`（≈1.2）—— 15px 中文在 1.2 下像"一行行挤在一起"，
+     1.45 是横屏手机中文的舒适值。密集格（.slot/.hp-uname/.hp-ucount）各自写死 1.1~1.2，
+     不受这条影响。 */
+  line-height: var(--lh-body);
 }
 
 #app {
@@ -206,7 +232,7 @@ body {
   gap: 14px;
   width: 100%;
   /* 顶栏整条 `pointer-events:none`（R7）⇒ 目标清单**只读**、零可点目标。 */
-  font-size: 12px;
+  font-size: var(--t-body);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -246,7 +272,7 @@ body {
   box-shadow: inset 0 1px 0 rgba(255, 232, 170, 0.22), inset 0 -2px 0 rgba(0, 0, 0, 0.28);
   padding: 6px 14px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--t-body);
   font-family: inherit;
   /* M-09：触摸目标下限 44px（iOS HIG / Material 均以此为准），主操作 48px。 */
   min-height: 44px;
@@ -259,7 +285,9 @@ body {
 
 .btn.primary {
   background: linear-gradient(180deg, #b08a3c, #7d5f20);
-  color: #fff8e6;
+  /* 金底必须配深字：原 #fff8e6 对 #b08a3c 只有 2.3:1（WCAG AA 要 4.5:1），
+   * 而且羊皮纸弹窗上了之后，白字金块在浅底上更糊。深字 5.4:1，深色底上也一样读得清。 */
+  color: #241708;
   border-color: var(--gold);
   /* 主操作（结束一天）再抬 4px，视觉与触摸都更突出 */
   min-height: 48px;
@@ -315,7 +343,7 @@ body {
   min-width: 44px;
   height: 44px;
   padding: 0 12px;
-  font-size: 13px;
+  font-size: var(--t-body);
   flex: 0 0 auto;
   /* 浮在半透明底上：实心渐变会显得像贴上去的膏药，改成半透明 + 描边 */
   background: rgba(64, 46, 24, 0.72);
@@ -366,7 +394,7 @@ body {
   border-radius: 8px;
   background: var(--danger);
   color: #fff;
-  font-size: 10px;
+  font-size: var(--t-cap);
   line-height: 16px;
   text-align: center;
   vertical-align: middle;
@@ -403,7 +431,7 @@ body {
 #obj-banner .ob-text {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--t-body);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -453,7 +481,7 @@ body {
   /* 标题横跨两列，否则会被挤进第 1 格 */
   grid-column: 1 / -1;
   margin: 0 0 4px;
-  font-size: 15px;
+  font-size: var(--t-h);
   font-weight: 500;
   color: var(--gold);
   letter-spacing: 2px;
@@ -499,7 +527,7 @@ body {
 
 .lp-head h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--t-h);
   color: var(--gold);
   letter-spacing: 2px;
 }
@@ -518,7 +546,7 @@ body {
   background: rgba(30, 21, 9, 0.6);
   border-left: 2px solid var(--gold-dim);
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: var(--t-body);
   color: var(--text);
 }
 
@@ -566,7 +594,7 @@ body {
   border: 1px solid var(--frame);
   border-radius: 3px;
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--t-body);
   cursor: pointer;
 }
 
@@ -595,7 +623,7 @@ body {
 .setup-note {
   margin: 4px 0 0;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--t-body);
 }
 
 /* ---------- stage ---------- */
@@ -642,7 +670,7 @@ body {
 
 #side h3 {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: var(--t-h);
   font-weight: 500;
   color: var(--gold);
   letter-spacing: 2px;
@@ -703,7 +731,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: var(--t-cap);
   color: var(--text-dim);
   text-align: center;
   padding: 2px;
@@ -792,7 +820,7 @@ body {
 
 .modal h2 {
   margin: 0 0 10px;
-  font-size: 15px;
+  font-size: var(--t-h);
   font-weight: 500;
   color: var(--gold);
 }
@@ -825,7 +853,7 @@ body {
 /* TP-7（F-2.2）：过天「对手动向」摘要。分组头 + 逐行；打到玩家头上的行按好坏着色。 */
 .modal .ai-head {
   margin: 10px 0 4px;
-  font-size: 13px;
+  font-size: var(--t-body);
   font-weight: 500;
   color: var(--gold);
 }
@@ -907,7 +935,7 @@ table.est td:last-child {
 
 .modal-head h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--t-h);
 }
 
 /* ---------- town panel ---------- */
@@ -930,7 +958,7 @@ table.est td:last-child {
 }
 
 .town-meta .chip-info {
-  font-size: 11px;
+  font-size: var(--t-cap);
   padding: 2px 6px;
 }
 
@@ -968,12 +996,12 @@ table.est td:last-child {
 
 .my-res-k {
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--t-cap);
   margin-right: 2px;
 }
 
 .my-res .chip-info {
-  font-size: 11px;
+  font-size: var(--t-cap);
   padding: 2px 6px;
 }
 
@@ -982,7 +1010,7 @@ table.est td:last-child {
   border: 1px solid var(--frame);
   border-radius: 3px;
   padding: 3px 8px;
-  font-size: 12px;
+  font-size: var(--t-cap);
   color: var(--parchment);
   font-variant-numeric: tabular-nums;
 }
@@ -997,7 +1025,7 @@ table.est td:last-child {
 
 .town .th {
   margin: 14px 0 6px;
-  font-size: 13px;
+  font-size: var(--t-body);
   font-weight: 500;
   color: var(--gold);
   border-bottom: 1px solid var(--line);
@@ -1060,7 +1088,7 @@ table.est td:last-child {
   border: 1px solid var(--gold-dim, var(--frame));
   border-radius: 3px;
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: var(--t-body);
   line-height: 1.5;
   color: var(--text);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
@@ -1079,7 +1107,7 @@ table.est td:last-child {
 /* 次行整宽：造价 / 「还差」，单行不折、超长才省略。 */
 .bcard .bs {
   color: var(--gold-dim);
-  font-size: 11px;
+  font-size: var(--t-cap);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
@@ -1120,7 +1148,7 @@ table.est td:last-child {
 
 .town-sub {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--t-cap);
   margin-bottom: 8px;
 }
 
@@ -1136,7 +1164,7 @@ table.est td:last-child {
 
 .trow .tn {
   flex: 1 1 100%;
-  font-size: 12px;
+  font-size: var(--t-body);
   color: var(--text);
 }
 
@@ -1146,7 +1174,7 @@ table.est td:last-child {
 
 .trow .tm {
   flex: 1 1 auto;
-  font-size: 10px;
+  font-size: var(--t-cap);
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
@@ -1158,7 +1186,7 @@ table.est td:last-child {
 
 .kv.dim {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--t-cap);
 }
 
 .rlist {
@@ -1186,13 +1214,13 @@ table.est td:last-child {
 
 .rrow .uc {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--t-cap);
   font-variant-numeric: tabular-nums;
 }
 
 .town .empty {
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--t-body);
   padding: 2px 0;
 }
 
@@ -1211,7 +1239,7 @@ table.est td:last-child {
   border: 1px solid rgba(240, 212, 136, 0.16);
   border-radius: 3px;
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: var(--t-body);
   color: var(--text);
 }
 
@@ -1226,7 +1254,7 @@ table.est td:last-child {
 .btn.tiny {
   position: relative;
   padding: 3px 9px;
-  font-size: 12px;
+  font-size: var(--t-cap);
   /* 40px：依 ux-ia《in-game IA》§5.2/§5.3 —— 密集区元素 ≥40×40、相邻中心距 ≥48px；
      32px 按实测 p90=23px 落点散布判为违规。
      特异性说明：本条是"两个类"(0,2,0)，按**特异性**稳压 .btn(0,1,0, min-height:44px)，
@@ -1295,7 +1323,7 @@ table.est td:last-child {
   }
 
   .res {
-    font-size: 12px;
+    font-size: var(--t-cap);
   }
 
   /* §9 F3 的**根因修正**：原规则把 #side 变成 `bottom:0; left:0; right:0; max-height:46%` 的
@@ -1304,7 +1332,7 @@ table.est td:last-child {
      已在基础样式里定义，移动端**不再改变方向**（§10：位置稳定优先）。
      ⚠️ 顺带解掉 `#side.collapsed` 的 `overflow:visible` 补丁 —— 那是给抽屉形态打的补丁。 */
   #hint {
-    font-size: 12px;
+    font-size: var(--t-body);
   }
 }
 
@@ -1328,7 +1356,7 @@ table.est td:last-child {
     background: rgba(30, 21, 9, 0.92);
     border: 1px solid var(--frame);
     color: var(--gold);
-    font-size: 12px;
+    font-size: var(--t-body);
     white-space: nowrap;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
   }
@@ -1404,7 +1432,7 @@ table.est td:last-child {
   background: rgba(18, 12, 5, 0.9);
   border: 1px solid var(--frame);
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--t-body);
   line-height: 1.7;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
 }
@@ -1419,7 +1447,7 @@ table.est td:last-child {
 
 .bt-title {
   color: var(--gold);
-  font-size: 14px;
+  font-size: var(--t-h);
   font-weight: 500;
   letter-spacing: 0.5px;
 }
@@ -1436,7 +1464,7 @@ table.est td:last-child {
 /* 攻城器械：只有攻城战、且攻方带了器械时才出现 */
 .bt-machines {
   color: #e8c35a;
-  font-size: 12px;
+  font-size: var(--t-cap);
   padding: 2px 8px;
   border: 1px solid rgba(232, 195, 90, 0.45);
   border-radius: 10px;
@@ -1450,7 +1478,7 @@ table.est td:last-child {
 /* 紫晶「实验事故」：只有 p4 参战时才出现，一整场都得挂着（规则变了不能只闪一下） */
 .bt-accident {
   color: #d9b6ff;
-  font-size: 12px;
+  font-size: var(--t-body);
   padding: 2px 8px;
   border: 1px solid rgba(201, 182, 255, 0.45);
   border-radius: 10px;
@@ -1507,7 +1535,7 @@ body.in-battle #thumb {
   border: 1px solid var(--gold);
   border-radius: 4px;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--t-body);
   line-height: 1.55;
   white-space: pre-line;
   pointer-events: none;
@@ -1581,7 +1609,7 @@ body.in-battle #thumb {
 }
 
 .bt-side-h {
-  font-size: 11px;
+  font-size: var(--t-cap);
   letter-spacing: 0.5px;
   color: var(--gold);
   opacity: 0.85;
@@ -1598,7 +1626,7 @@ body.in-battle #thumb {
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 2px 6px;
-  font-size: 12px;
+  font-size: var(--t-cap);
   line-height: 1.2;
 }
 
@@ -1649,7 +1677,7 @@ body.in-battle #thumb {
   background: rgba(24, 16, 7, 0.55);
   border: 1px solid rgba(255, 232, 170, 0.14);
   color: var(--gold);
-  font-size: 12px;
+  font-size: var(--t-body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1676,7 +1704,7 @@ body.in-battle #thumb {
   max-height: 62px;
   overflow: hidden;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--t-cap);
   line-height: 1.5;
   pointer-events: none;
   text-shadow: 0 1px 2px #000;
@@ -1696,7 +1724,7 @@ body.in-battle #thumb {
 
 .bt-result h3 {
   margin: 0;
-  font-size: 24px;
+  font-size: var(--t-display);
   font-weight: 500;
   letter-spacing: 2px;
 }
@@ -1757,7 +1785,7 @@ body.in-battle #thumb {
 
 .btn.spell {
   padding: 3px 8px;
-  font-size: 12px;
+  font-size: var(--t-cap);
   color: var(--parchment);
   border-color: #6b4f8a;
   background: linear-gradient(180deg, #43305c, #2b1e3d);
@@ -1787,7 +1815,7 @@ body.in-battle #thumb {
   padding: 4px 6px;
   text-align: left;
   border-bottom: 1px solid var(--line);
-  font-size: 13px;
+  font-size: var(--t-body);
 }
 
 .spellbook th {
@@ -1808,7 +1836,7 @@ body.in-battle #thumb {
 
 .spellbook .sub {
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--t-cap);
   margin: 4px 0 8px;
 }
 
@@ -1859,7 +1887,7 @@ body.in-battle #thumb {
   border: 1px solid #8a6a34;
   background: #5a4326;
   color: var(--gold);
-  font-size: 18px;
+  font-size: var(--t-h);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1881,7 +1909,7 @@ body.in-battle #thumb {
   align-items: baseline;
   gap: 6px;
   color: var(--parchment);
-  font-size: 14px;
+  font-size: var(--t-body);
   /* `#156`：`meta` 窄（`nav` 占宽）时名与等级**各换行成 3 行**（实测 `hp-name` 60px）⇒ 加 nowrap。
      多英雄时 `nav` 有 ‹ › 两个按钮、`meta` 更窄 ⇒ 名字**省略号**收尾（等级永远完整）。 */
   flex-wrap: nowrap;
@@ -1897,7 +1925,7 @@ body.in-battle #thumb {
 
 .hp-lv {
   color: var(--gold);
-  font-size: 12px;
+  font-size: var(--t-cap);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   flex: 0 0 auto;
@@ -1905,7 +1933,7 @@ body.in-battle #thumb {
 
 .hp-sub {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--t-cap);
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -1963,7 +1991,7 @@ body.in-battle #thumb {
   align-items: center;
   min-height: 40px; /* a11y：可点行 ≥40px（不靠缩字号腾空间） */
   padding: 0 4px;
-  font-size: 13px;
+  font-size: var(--t-body);
 }
 /* `#156` ★（b）「段内滚动」：只有**当前段**可滚，`#side` 自身**不滚**。
    做法 = 把 `#side → .side-body → .hp-seg → .hp-pane` 拉成一条**列 flex + min-height:0** 链，
@@ -2019,12 +2047,12 @@ body.in-battle #thumb {
 
 .hp-bar-k {
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--t-cap);
 }
 
 .hp-bar-v {
   color: var(--parchment);
-  font-size: 12px;
+  font-size: var(--t-cap);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2037,12 +2065,12 @@ body.in-battle #thumb {
 
 .hp-stat-k {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--t-cap);
 }
 
 .hp-stat-v {
   color: var(--gold);
-  font-size: 14px;
+  font-size: var(--t-body);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2050,7 +2078,7 @@ body.in-battle #thumb {
   grid-column: 1 / -1;
   margin-top: 5px;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--t-cap);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2083,7 +2111,7 @@ body.in-battle #thumb {
   grid-column: 1 / -1;
   height: 32px;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--t-cap);
 }
 
 .hp-dot {
@@ -2093,7 +2121,7 @@ body.in-battle #thumb {
 }
 
 .hp-uname {
-  font-size: 10px;
+  font-size: var(--t-cap);
   color: var(--parchment);
   line-height: 1.2;
   max-width: 100%;
@@ -2103,7 +2131,7 @@ body.in-battle #thumb {
 }
 
 .hp-ucount {
-  font-size: 12px;
+  font-size: var(--t-cap);
   color: var(--gold);
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
@@ -2123,7 +2151,7 @@ body.in-battle #thumb {
   align-items: center;
   gap: 6px;
   padding: 3px 0;
-  font-size: 12px;
+  font-size: var(--t-cap);
 }
 
 .hp-tdot {
@@ -2149,7 +2177,7 @@ body.in-battle #thumb {
 
 .hp-tmeta {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--t-cap);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -2163,7 +2191,7 @@ body.in-battle #thumb {
 
 .hp-tbtns .btn.tiny {
   padding: 0 8px;
-  font-size: 11px;
+  font-size: var(--t-cap);
 }
 
 /* §14.2 教学清单（#52）：与「本族被动」同族的**只读**行 —— 密排、每行 ≤24px（显示型，非可点）
@@ -2179,7 +2207,7 @@ body.in-battle #thumb {
   align-items: center;
   gap: 6px;
   min-height: 20px;
-  font-size: 12px;
+  font-size: var(--t-body);
   color: var(--text-dim);
 }
 
@@ -2205,7 +2233,7 @@ body.in-battle #thumb {
 
 .hp-obj-flag {
   flex: 0 0 auto;
-  font-size: 10px;
+  font-size: var(--t-cap);
   color: var(--text-dim);
 }
 
@@ -2235,7 +2263,7 @@ body.in-battle #thumb {
   align-items: center;
   gap: 6px;
   padding: 3px 0;
-  font-size: 12px;
+  font-size: var(--t-body);
 }
 
 .hp-frow.dead {
@@ -2262,7 +2290,7 @@ body.in-battle #thumb {
 
 .hp-fmeta {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--t-cap);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -2300,7 +2328,7 @@ body.in-battle #thumb {
 
 .ss-brand h1 {
   margin: 0;
-  font-size: 40px;
+  font-size: var(--t-display);
   letter-spacing: 6px;
   color: var(--gold);
   text-shadow: 0 2px 0 #2a1c0c, 0 0 22px rgba(240, 212, 136, 0.25);
@@ -2321,14 +2349,14 @@ body.in-battle #thumb {
 .ss-field > label {
   display: block;
   margin-bottom: 6px;
-  font-size: 12px;
+  font-size: var(--t-cap);
   letter-spacing: 2px;
   color: var(--gold-dim);
 }
 
 .ss-hint {
   margin-top: 5px;
-  font-size: 11px;
+  font-size: var(--t-cap);
   color: var(--text-dim);
 }
 
@@ -2351,7 +2379,7 @@ body.in-battle #thumb {
   background: rgba(0, 0, 0, 0.28);
   color: var(--text);
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--t-body);
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
 }
@@ -2368,7 +2396,7 @@ body.in-battle #thumb {
 }
 
 .ss-seg-item .s {
-  font-size: 10px;
+  font-size: var(--t-cap);
   color: var(--text-dim);
   line-height: 1.3;
   text-align: center;
@@ -2425,7 +2453,7 @@ body.in-battle #thumb {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--t-cap);
   color: var(--text-dim);
 }
 
@@ -2454,7 +2482,7 @@ body.in-battle #thumb {
   justify-content: space-between;
   gap: 12px;
   padding: 3px 0;
-  font-size: 12px;
+  font-size: var(--t-body);
 }
 
 .ss-line .k {
@@ -2476,12 +2504,12 @@ body.in-battle #thumb {
 
 .btn.big {
   padding: 10px 26px;
-  font-size: 15px;
+  font-size: var(--t-h);
   letter-spacing: 2px;
 }
 
 .ss-note {
-  font-size: 11px;
+  font-size: var(--t-cap);
   color: var(--text-dim);
 }
 
@@ -2494,7 +2522,7 @@ body.in-battle #thumb {
     padding: 24px 18px;
   }
   .ss-brand h1 {
-    font-size: 30px;
+    font-size: calc(var(--t-display) * 0.75);
   }
 }
 
@@ -2520,14 +2548,14 @@ body.in-battle #thumb {
 }
 
 .ss-mapcard-name {
-  font-size: 20px;
+  font-size: var(--t-h);
   letter-spacing: 3px;
   color: var(--gold);
 }
 
 .ss-mapcard-sub {
   margin-top: 3px;
-  font-size: 12px;
+  font-size: var(--t-cap);
   color: var(--parchment);
 }
 
@@ -2551,7 +2579,7 @@ body.in-battle #thumb {
   border-radius: 0;
   background: none;
   color: var(--text-dim);
-  font-size: 14px;
+  font-size: var(--t-body);
   letter-spacing: 1px;
   cursor: pointer;
   transition:
@@ -2603,7 +2631,7 @@ body.in-battle #thumb {
   }
 
   .ss-brand h1 {
-    font-size: 20px;
+    font-size: calc(var(--t-display) * 0.7);
     letter-spacing: 2px;
   }
 
@@ -2620,13 +2648,13 @@ body.in-battle #thumb {
 
   .ss-field > label {
     margin-bottom: 1px;
-    font-size: 10px;
+    font-size: var(--t-cap);
     letter-spacing: 1px;
   }
 
   .ss-field input[type='text'] {
     padding: 4px 6px;
-    font-size: 12px;
+    font-size: var(--t-body);
   }
 
   .ss-hint {
@@ -2642,7 +2670,7 @@ body.in-battle #thumb {
     flex: 1 1 0;
     min-width: 0;
     padding: 3px 2px;
-    font-size: 11px;
+    font-size: var(--t-cap);
     gap: 1px;
   }
 
@@ -2658,7 +2686,7 @@ body.in-battle #thumb {
     border-bottom: 2px solid transparent;
     border-radius: 0;
     background: none;
-    font-size: 13px;
+    font-size: var(--t-body);
     letter-spacing: 1px;
   }
 
@@ -2674,7 +2702,7 @@ body.in-battle #thumb {
   }
 
   .ss-seg-item .s {
-    font-size: 9px;
+    font-size: var(--t-cap);
     max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
@@ -2708,7 +2736,7 @@ body.in-battle #thumb {
 
   .ss-line {
     padding: 0;
-    font-size: 10px;
+    font-size: var(--t-body);
     line-height: 1.4;
   }
 
@@ -2724,7 +2752,7 @@ body.in-battle #thumb {
 
   .ss-actions .btn.big {
     padding: 9px 10px;
-    font-size: 13px;
+    font-size: var(--t-body);
     letter-spacing: 2px;
     flex: 0 0 auto;
     width: 100%;
@@ -2732,7 +2760,231 @@ body.in-battle #thumb {
 
   .ss-note {
     flex: 0 0 auto;
-    font-size: 10px;
+    font-size: var(--t-cap);
     text-align: center;
   }
+}
+
+/* ==========================================================================
+ * P0 · 界面语法层（2026-10-22）
+ *
+ * 依据 `production/ui-review-2026-10-22.md` §3 P0 五条。全部是 CSS，不动 TS/DOM，
+ * 因此所有既有门控（`audit:touch` / `probe:panelgate` / `probe:dockoverlap` …）的
+ * 选择器与断言对象都还在。
+ *
+ * ⚠️ 本段**必须留在文件末尾**：L2587 起的 `orientation:landscape` 媒体查询把若干尺寸
+ *    压小过（9/10/11px、`padding:3px 2px`…），同特异性下要靠源码顺序才压得住。
+ * ========================================================================== */
+
+/* ---------- #3 材质三层 ----------
+ * 改前：菜单 / 城镇 / 英雄栏 / 战斗侧栏 / 弹窗 全是「深棕底 + 1px 金边 + 圆角」，
+ * 层级只能靠"更大的框"表达 ⇒ 大框看起来只是更大的框（用户原话「全是 text box」）。
+ * 现在按**功能**分三层，而不是按"大中小"：
+ *   oak   木质 = 容器（放东西的）
+ *   parch 羊皮纸 = 阅读面（读字的地方）—— 改前全项目 0 处
+ *   iron  铁牌 = 浮动只读读数（贴在画面上、会动） */
+
+/* 木质：更深的底 + 顶部一道受光 + 底部内阴影 = "有厚度"，不是一片纯色。
+ * ⚠️ 一律「background-color + background-image」分开写，不用 `background` 简写：
+ *    简写会把 color 重置成 transparent，`probe:uip0` 就没有可读的材质读数了。 */
+.menu-panel,
+.modal.wide,
+.lp-panel {
+  background-color: #241806;
+  background-image:
+    linear-gradient(180deg, rgba(255, 236, 190, 0.07), transparent 32%),
+    linear-gradient(180deg, #2e2011, #1b1207);
+  box-shadow:
+    0 18px 46px -20px #000,
+    inset 0 1px 0 rgba(255, 226, 168, 0.2),
+    inset 0 -18px 32px -24px rgba(0, 0, 0, 0.8);
+}
+
+#side {
+  background-color: #1f1508;
+  background-image:
+    linear-gradient(180deg, rgba(255, 236, 190, 0.05), transparent 26%),
+    linear-gradient(180deg, #2a1e10, #1a1207);
+}
+
+/* 羊皮纸：深字浅底。**这是本次"最不像同一个游戏"的一刀** ——
+ * 深底浅字适合短标签；超过两行的说明在深棕上会糊成一团，玩家读起来"全是字"。
+ * 只给**阅读面**：普通弹窗（事件/战报/AI 动向/法术书）、地图物件信息浮层、建筑描述浮层。
+ * 城镇面板（.wide）不动：它是容器，不是阅读面（它的内容后续走 P1 #6 三列改造）。 */
+.modal:not(.wide),
+#popup,
+.bdesc {
+  background-color: var(--parch-bg-b);
+  background-image: linear-gradient(180deg, var(--parch-bg-a), var(--parch-bg-b));
+  border: 1px solid var(--parch-edge);
+  color: var(--parch-ink);
+}
+
+.modal:not(.wide) {
+  outline: 1px solid rgba(60, 40, 16, 0.5);
+  box-shadow:
+    0 20px 50px -22px #000,
+    inset 0 0 0 1px rgba(255, 255, 255, 0.5),
+    inset 0 -20px 34px -26px rgba(120, 90, 40, 0.45);
+}
+
+.modal:not(.wide) h2 {
+  color: #6b4415;
+}
+
+.modal:not(.wide) p,
+.modal:not(.wide) .ai-line {
+  color: var(--parch-ink);
+}
+
+.modal:not(.wide) .ai-head {
+  /* 实测 #7d5416 对羊皮纸底（#e2cda3）只有 4.28:1，差一点点不够 AA。
+   * 压到 #6b4415 → 5.48:1，肉眼几乎看不出区别，但过线。 */
+  color: #6b4415;
+}
+
+.modal:not(.wide) table.est td {
+  border-bottom-color: rgba(58, 42, 18, 0.2);
+}
+
+.modal:not(.wide) table.est td:last-child {
+  color: #2f2412;
+}
+
+/* 好/坏着色要按**浅底**重配，直接沿用深底那套会掉到 3:1 以下 */
+.modal:not(.wide) .loss {
+  color: #9c3220;
+}
+
+.modal:not(.wide) .win {
+  color: #3d6b26;
+}
+
+.modal:not(.wide) .spellbook th {
+  color: #6b4415;
+}
+
+.modal:not(.wide) .spellbook th,
+.modal:not(.wide) .spellbook td {
+  border-bottom-color: rgba(58, 42, 18, 0.2);
+}
+
+.modal:not(.wide) .spellbook td.cost {
+  color: #1c5680;
+}
+
+.modal:not(.wide) .spellbook td.lv,
+.modal:not(.wide) .spellbook .sub {
+  color: #5b4620;
+}
+
+#popup .t {
+  color: #6b4415;
+}
+
+#popup .d {
+  color: #4a3618;
+}
+
+.bdesc {
+  box-shadow: 0 8px 22px -10px rgba(0, 0, 0, 0.7);
+}
+
+/* 铁牌：半透明 + 模糊 = "浮在画面之上"，与不透明木框区分开 */
+#hint,
+#rotate-hint,
+.bt-info {
+  background-color: rgba(12, 8, 3, 0.66);
+  border: 1px solid rgba(255, 232, 170, 0.16);
+  backdrop-filter: blur(8px);
+}
+
+#hint {
+  color: var(--parchment);
+  border-radius: 999px;
+  padding: 7px 14px;
+}
+
+/* ---------- #2 触屏按压 ----------
+ * 改前：2,738 行 CSS 里 `:active` 只有 1 条（`.bt-chip`），所有 `.btn` 只有 `:hover`
+ * —— 手机上永不触发。按下去什么都不发生，这就是"不流畅"最直接的来源。
+ * 判据：任一按钮在按压时 `getComputedStyle().transform !== 'none'`。
+ * `translateY(1px)` 用整数像素：CSS 像素在 DPR2 上正好落两物理像素，不产生半像素模糊。 */
+:is(button, .btn, .ss-seg-item, .bcard .bn, .hp-face, .chip-info, .bt-chip) {
+  transition:
+    transform 120ms cubic-bezier(0.32, 0.7, 0.4, 1),
+    filter 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+:is(button, .btn, .ss-seg-item, .bcard .bn, .hp-face, .chip-info, .bt-chip):active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+  filter: brightness(0.9);
+}
+
+/* ---------- #5 主次 ----------
+ * 改前：「结束一天」与「菜单」同尺寸同色，而"结束一天"是**一局里按得最多的那个**。
+ * 现在主操作实心金 + 深字（浅底深字才叫"亮"），其余三项降到 ghost 档。 */
+#thumb .tb-btn {
+  padding: 0 10px;
+  background: rgba(38, 26, 12, 0.62);
+  border-color: rgba(255, 232, 170, 0.14);
+  color: var(--text-dim);
+}
+
+#thumb .tb-btn.primary {
+  background: linear-gradient(180deg, #e8c577, #a9832f);
+  border-color: #f8e5ad;
+  color: #241708;
+  font-weight: 600;
+  box-shadow:
+    0 6px 18px -6px rgba(240, 212, 136, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.btn.primary {
+  font-weight: 600;
+}
+
+/* ---------- #4 英雄栏数值压字（真 bug，不是观感） ----------
+ * 实测：`.hp-bar-top` 是 `nowrap` + `space-between` + 两项都不可收缩，
+ * 「移动力 1800 / 1800」一行需要 101px，而半宽格只有 87px ⇒ 溢出 14px，
+ * 直接压到隔壁「法力」上（`probe:uip0` 的 ⑤ 把下面这组回退成 row/nowrap 即可复现 101/87）。
+ *
+ * 修法：**标签一行、数值一行**。两格都如此 ⇒ 永远等高，进度条不会一高一低
+ * （试过"放不下才换行"，四位数时只有一格变两行，绿条就掉到蓝条下面，比压字更难看）。
+ * 不用省略号：那会把「1800 / 1800」截成「1800 / 1…」，丢的正是判断"够不够走"的那个数。
+ * 竖排后单行最宽的内容 = 数值本身（68px < 87px），四位数也放得下，且**不增加高度**：
+ * 改前 87px 塞不下时本来就会撑成两行（39px），竖排是 34px。 */
+.hp-bar-top {
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.hp-bar-k {
+  flex: 0 0 auto;
+}
+
+.hp-bar-v {
+  flex: 0 0 auto;
+  text-align: left;
+}
+
+/* ---------- 附带：难度档的触摸目标 ----------
+ * 实测 28×27px（远低于 44 下限），且它是开局页**唯一**可改的设置。
+ * 只抬真实尺寸（不靠 ::after 扩），因为它周边是留白，抬起来不挤别人。 */
+.ss-seg-item {
+  min-height: 44px;
+  justify-content: center;
+}
+
+.ss-diff .ss-seg-item {
+  min-height: 44px;
+  min-width: 44px;
+  justify-content: center;
 }
