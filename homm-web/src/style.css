@@ -185,10 +185,10 @@ body {
  */
 #topbar.showcase {
   /* 目标清单比资源条长得多：让它在展示图里重新拉满宽度，但仍是浮层、不再压地图。
-     右侧让出 56px = 收起态 `#side`（48px 竖条 + 8px 间隙）—— 否则胶囊会钻到
-     `#panel-toggle`（那枚「英雄」标签）底下，两个浮层叠在一起（真机 792×360 实测）。 */
+     ~~右侧让出 56px = 收起态 `#side`（48px 竖条 + 8px 间隙）~~
+     2026-10-22：48px 竖条已撤（收起态 `display:none`）⇒ 右侧只留 8px 安全间隙。 */
   left: calc(env(safe-area-inset-left, 0px) + 8px);
-  right: calc(env(safe-area-inset-right, 0px) + 56px);
+  right: calc(env(safe-area-inset-right, 0px) + 8px);
   max-width: none;
   border-radius: 10px;
 }
@@ -632,33 +632,11 @@ body {
   padding: 8px;
 }
 
-/* 收起态（默认）：48px 竖条，只把地图留给探索主面。
-   ⚠️ 不再用 max-height + overflow:hidden 裁容器 —— 那正是"44px 按钮被裁到 34px"的旧病根
-   （§5.2 违规 / §8-B 额外硬伤）。这里改宽度，高度始终是满高。 */
+/* 收起态（默认）：**整条不渲染**（2026-10-22 主理人：「右面那条竖条修掉吧」）。
+   旧形态是 48px 竖条 + 条内一枚「英雄」按钮；但拇指带圆盘里已有同一枚开关 ⇒
+   那 48px 纯重复，还永久吃掉地图右缘并逼顶栏让出 56px。现在收起 = display:none，
+   入口/出口都只剩拇指带一处。`classList` 的开关语义不变（`panelgate` 仍按 collapsed 判）。 */
 #side.collapsed {
-  width: 48px;
-  padding: 6px 4px;
-  overflow: hidden;
-}
-
-#side.collapsed > div {
-  display: none;
-}
-
-#panel-toggle {
-  display: block;
-  width: 100%;
-  min-width: 40px;
-  margin-bottom: 8px;
-  padding: 0 2px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-/* `#156` 终版：**展开态隐藏** `#panel-toggle`（拇指带的「英雄」已是同一开关）⇒ 让出 52px（44 按钮 + 8 margin）
-   给内容；**收起态（48px 条）仍保留**这个 44px 入口 ⇒ 可达性不丢。
-   用 CSS 隐藏、**不删元素**（`syncToggle()` 仍照用，零 JS 删减风险）。 */
-#side:not(.collapsed) #panel-toggle {
   display: none;
 }
 

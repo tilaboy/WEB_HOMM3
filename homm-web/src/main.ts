@@ -80,27 +80,16 @@ stage.appendChild(canvas);
 
 const side = document.createElement('aside');
 side.id = 'side';
-// IA §4.2 / §9 F3：右侧**竖栏**，宽 ≤200px，**默认收起为 48px**（把地图留给探索主面）。
-// 入口/出口同一处（R2）：拇指带「英雄」展开，栏内「收起」关闭 —— 两步都常驻、都在顶/底。
+/**
+ * 右侧英雄栏。**收起态整条不渲染**（2026-10-22 主理人：「右面那条竖条修掉吧」）。
+ *
+ * 旧形态：收起 = 48px 竖条，条内留一枚 `#panel-toggle`「英雄」按钮。但拇指带圆盘里
+ * 已经有同一枚「英雄」开关 ⇒ 那 48px 既重复又永久吃掉地图右缘，还逼得顶栏 `.showcase`
+ * 让出 56px。现在收起 = `display:none`（见 `#side.collapsed`），入口/出口都只剩拇指带一处，
+ * 地图拿回完整右缘。元素仍在 DOM（`classList` 的开关语义不变），只是不参与布局。
+ */
 side.classList.add('collapsed');
 stage.appendChild(side);
-
-const toggle = document.createElement('button');
-toggle.id = 'panel-toggle';
-toggle.className = 'btn';
-function syncToggle(): void {
-  const collapsed = side.classList.contains('collapsed');
-  toggle.textContent = collapsed ? '英雄' : '收起';
-  toggle.setAttribute('aria-label', collapsed ? '展开英雄面板' : '收起英雄面板');
-  toggle.setAttribute('aria-expanded', String(!collapsed));
-}
-toggle.addEventListener('click', () => {
-  side.classList.toggle('collapsed');
-  syncToggle();
-  if (!side.classList.contains('collapsed')) side.scrollTop = 0;
-});
-side.appendChild(toggle);
-syncToggle();
 
 const sideBody = document.createElement('div');
 // `#156`（b）：面板内容容器需要类名才能进「列 flex + 段内滚动」的样式链（见 `.side-body`）。
@@ -320,14 +309,13 @@ function updateThumb(): void {
 
 /**
  * 「英雄」= **开关**右侧英雄栏（探索侧信息面）。
- * `#156` 终版（team-lead）：拇指带入口改成 **toggle**（原只展开）；配合 CSS **展开态隐藏 `#panel-toggle`**
- * ⇒ 让出 52px 给内容。收起态仍可用拇指带「英雄」展开（入口不丢，R2 入口=出口重定义为同一 toggle）。
+ * 入口/出口同一处（R2）：拇指带「英雄」是唯一开关 —— 面板内那枚 `#panel-toggle` 已随
+ * 48px 竖条一起撤掉（2026-10-22），开与关都走同一个按钮，肌肉记忆只有一条。
  */
 function toggleHeroPanel(): void {
   if (isModalOpen() || isBattleOpen()) return;
   const collapsed = side.classList.contains('collapsed');
   side.classList.toggle('collapsed');
-  syncToggle();
   if (collapsed) side.scrollTop = 0;
 }
 

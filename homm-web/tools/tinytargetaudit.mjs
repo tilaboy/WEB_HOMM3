@@ -23,7 +23,7 @@
  *   - .btn（普通）          视觉高 ≥ 44px
  *   - .spellbook .btn.tiny  视觉高 ≥ 44px
  *   - .btn.tiny.tap         有效命中高 ≥ 43px（::after 纵向扩张）
- *   - 密集区 .hp-nav / .hp-tbtns  视觉高 ≥ 40px，间距满足 §5.2
+ *   - 密集区 .hp-nav / .hp-ctbtns  视觉高 ≥ 40px，间距满足 §5.2
  *   移动（792×360 @3x，合成探针）：
  *   - #side.collapsed 的 #panel-toggle 有效命中高 ≥ 44px（不被容器裁掉）
  *   - 各 .btn.tiny 同桌面阈值（防将来加移动规则把靶子改小）
@@ -126,8 +126,8 @@ writeFileSync(
     <!-- 侧栏 #side 的内容宽 = 264px − 2×10px padding = 244px；给个同宽的容器，
          避免纵列 .hp-nav 被拉伸到整页宽（宽度不参与断言，但表格要如实）。 -->
     <div style="width:244px">
-      <div class="hp-tlist">
-        ${rep(3, '<div class="hp-trow"><div class="hp-tdot mine"></div><div class="hp-tname">城镇</div><div class="hp-tmeta">驻军 3</div><div class="hp-tbtns"><button class="btn tiny">管理</button><button class="btn tiny">定位</button></div></div>')}
+      <div class="hp-city-list">
+        ${rep(3, '<div class="hp-crow"><div class="hp-ctdot mine"></div><div class="hp-ctname">城镇</div><div class="hp-ctmeta">驻军 3</div><div class="hp-ctbtns"><button class="btn tiny">管理</button><button class="btn tiny">定位</button></div></div>')}
       </div>
 
       <div class="hp-nav"><button class="btn tiny">‹</button><button class="btn tiny">›</button><button class="btn tiny">宝物▾</button></div>
@@ -135,11 +135,11 @@ writeFileSync(
       <div class="sec hp-bars"><button class="btn tiny tap" style="margin-top:6px">魔法书</button></div>
     </div>
 
-    <!-- #side.collapsed：**默认收起态**（48px 竖条，IA §4.2 / §9 F3）。
-         旧缺陷是 max-height:34px + overflow:hidden 会把 44px 的 #panel-toggle 一起裁掉 ——
-         这里放同构 DOM，供移动视口量「有效命中高」。 -->
+    <!-- #side.collapsed：**收起态整条不渲染**（2026-10-22 撤掉「48px 竖条 + 条内英雄按钮」）。
+         旧缺陷是 max-height:34px + overflow:hidden 把 44px 的入口裁到 34 —— 那条竖条已不存在，
+         现在守的是新不变量：收起态 #side 的盒宽 = 0 / display:none（不再吃地图右缘）。
+         注意：本文件是反引号模板，注释里不得出现反引号。 -->
     <aside id="side" class="collapsed">
-      <button id="panel-toggle" class="btn">英雄</button>
       <div><div class="sec">面板内容（收起时应整体隐藏）</div></div>
     </aside>
   </div>
@@ -270,61 +270,93 @@ const MEASURE = `(() => {
     return { label: label(el), w: +r.width.toFixed(1), h: +r.height.toFixed(1), up, down, hit: +(r.height + up + down).toFixed(1) };
   };
   const g = (sel) => all(sel).map(measure);
-  const gapH = (e) => (e.length >= 2 ? +(rect(e[1]).left - rect(e[0]).right).toFixed(1) : null);
-  const gapV = (e) => (e.length >= 2 ? +(rect(e[1]).top - rect(e[0]).bottom).toFixed(1) : null);
+  /**
+   * **同一密集簇内**相邻按钮的最小净间距，沿它们实际排列的那根轴量。
+   *
+   * 旧版写死轴：gapH 取 e[1].left − e[0].right、gapV 取 e[1].top − e[0].bottom。
+   * 但同一份 CSS 在不同容器宽度下会换轴（同一组按钮可能横排、也可能被挤成竖排）⇒
+   * 旧版量到的是 **0px / −40px 这种"轴错了"的假数**，两条 [间距] 常年红着却与真实间距无关。
+   *
+   * 现在：① 先按 parentElement **分簇** —— 不同列表行里的按钮是"行与行的距离"，
+   * 不是同一簇内的相邻按钮，混在一起量会把 .hp-crow 的 6px 行距算成按钮间距；
+   * ② 簇内按几何自己判轴：同一行（top 差 &lt;1px）→ 横向相邻；同一列（left 差 &lt;1px）→ 纵向相邻；
+   * 网格换行 → 每行内 + 每列内都量；③ 全簇取最小，返回 { axis, gap }（axis 是取到最小值那根轴）。
+   * 注意：本段在反引号模板里，注释中不得出现反引号，尖括号用 &lt; 转义。
+   */
+  const minGap = (els) => {
+    if (els.length < 2) return { axis: null, gap: null };
+    const byParent = new Map();
+    for (const el of els) {
+      const p = el.parentElement;
+      if (!byParent.has(p)) byParent.set(p, []);
+      byParent.get(p).push(el);
+    }
+    let best = null; let axis = null;
+    for (const group of byParent.values()) {
+      if (group.length < 2) continue;
+      const rs = group.map(rect);
+      const rows = new Map(); const cols = new Map();
+      const push = (m, k, r) => { if (!m.has(k)) m.set(k, []); m.get(k).push(r); };
+      for (const r of rs) { push(rows, Math.round(r.top), r); push(cols, Math.round(r.left), r); }
+      for (const line of rows.values()) {
+        if (line.length < 2) continue;
+        line.sort((a, b) => a.left - b.left);
+        for (let i = 1; i < line.length; i++) {
+          const v = +(line[i].left - line[i - 1].right).toFixed(1);
+          if (best === null || v < best) { best = v; axis = 'row'; }
+        }
+      }
+      for (const line of cols.values()) {
+        if (line.length < 2) continue;
+        line.sort((a, b) => a.top - b.top);
+        for (let i = 1; i < line.length; i++) {
+          const v = +(line[i].top - line[i - 1].bottom).toFixed(1);
+          if (best === null || v < best) { best = v; axis = 'col'; }
+        }
+      }
+    }
+    return { axis, gap: best };
+  };
   const out = { groups: {}, gaps: {} };
   out.groups.primary   = g('#topbar .btn.primary, .modal .actions .btn.primary');
   out.groups.normal    = g('#topbar .btn:not(.primary):not(.tiny), .modal .actions .btn:not(.primary)');
   out.groups.spellbook = g('.spellbook .btn.tiny');
   out.groups.rrowTap   = g('.rrow .btn.tiny.tap');
-  out.groups.hpTbtns   = g('.hp-tbtns .btn.tiny');
+  out.groups.hpCtbts   = g('.hp-ctbtns .btn.tiny');
   out.groups.hpNav     = g('.hp-nav .btn.tiny');
   out.groups.magicTap  = g('.hp-bars .btn.tiny.tap');
-  out.gaps.hpTbtns = gapH(all('.hp-tbtns .btn.tiny'));
-  out.gaps.hpNav = gapV(all('.hp-nav .btn.tiny'));
+  out.gaps.hpCtbts = minGap(all('.hp-ctbtns .btn.tiny'));
+  out.gaps.hpNav = minGap(all('.hp-nav .btn.tiny'));
   return out;
 })()`;
 
 /**
- * 移动视口（≤860px，792×360 @3x）量测 —— 只量这里才有意义的 #side.collapsed 开关。
- * 用 `effectiveHit` 沿纵轴**逐像素**求"真正命中"的连续区间，
- * 能识破「视觉高 44、却被容器 overflow 裁到 34」这类缺陷
- * （`getBoundingClientRect` 量不出裁切：被裁的部分 rect 仍在，只是点不到了）。
+ * 移动视口（≤860px，792×360 @3x）量测 —— 只量这里才有意义的 #side.collapsed 形态。
+ * 旧版用 `effectiveHit` 沿纵轴**逐像素**求"真正命中"的连续区间，识破「视觉高 44、却被容器
+ * overflow 裁到 34」这类缺陷；2026-10-22 竖条撤掉后，收起态根本没有可量目标 ⇒ 判据改成
+ * **盒宽必须为 0 / display:none**（这才是"右缘不再被吃掉"的直接证据）。
  */
 const MOBILE_MEASURE = `(async () => {
   const raf = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   await raf();
   const rect = (el) => el.getBoundingClientRect();
-  const hitIs = (el, x, y) => { const e = document.elementFromPoint(x, y); return !!e && (e === el || el.contains(e)); };
   const all = (s) => [...document.querySelectorAll(s)];
-  const label = (el) => ((el.textContent || '').trim().slice(0, 12) || el.className);
 
-  // 逐像素求"有效命中高"：能识破被 overflow 裁掉的部分（rect 量不出裁切）。
-  const effectiveHit = (el) => {
-    const r = rect(el); const cx = r.left + r.width / 2;
-    let first = null, last = null;
-    for (let y = Math.floor(r.top); y <= Math.ceil(r.bottom); y++) {
-      if (hitIs(el, cx, y + 0.5)) { if (first === null) first = y; last = y; }
-    }
-    let up = 0; for (let d = 1; d <= 24; d++) { if (hitIs(el, cx, r.top - d + 0.5)) up = d; else break; }
-    let down = 0; for (let d = 1; d <= 24; d++) { if (hitIs(el, cx, r.bottom + d - 0.5)) down = d; else break; }
-    return { label: label(el), w: +r.width.toFixed(1), h: +r.height.toFixed(1), up, down,
-             hit: first === null ? 0 : (last - first + 1) };
-  };
-
-  const toggle = all('#panel-toggle').map(effectiveHit);
+  const side = document.querySelector('#side');
+  const sr = side ? rect(side) : null;
+  const sideHidden = !!side && (getComputedStyle(side).display === 'none' || (sr.width === 0 && sr.height === 0));
   const de = document.scrollingElement || document.documentElement;
   return {
-    toggle,
+    sideHidden,
     debug: (() => {
-      const s = document.querySelector('#side');
-      const t = document.querySelector('#panel-toggle');
       const r = (el) => { const b = el.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) }; };
       return {
         mq860: matchMedia('(max-width:860px)').matches,
         innerW: window.innerWidth, innerH: window.innerHeight,
-        side: s ? r(s) : null, toggle: t ? r(t) : null,
-        sideW: s ? getComputedStyle(s).width : null,
+        side: sr ? r(side) : null,
+        sideW: side ? getComputedStyle(side).width : null,
+        sideDisplay: side ? getComputedStyle(side).display : null,
+        toggleInDom: !!document.querySelector('#panel-toggle'),
       };
     })(),
     viewport: { w: de.clientWidth, h: window.innerHeight, dpr: window.devicePixelRatio },
@@ -352,7 +384,7 @@ const MOBILE_TARGETS = `(() => {
     groups: {
       spellbook: g('.spellbook .btn.tiny'),
       rrowTap: g('.rrow .btn.tiny.tap'),
-      hpTbtns: g('.hp-tbtns .btn.tiny'),
+      hpCtbts: g('.hp-ctbtns .btn.tiny'),
       hpNav: g('.hp-nav .btn.tiny'),
       magicTap: g('.hp-bars .btn.tiny.tap'),
     },
@@ -773,7 +805,7 @@ reportGroup('primary', res.groups.primary, (m) => m.h >= 48, '.btn.primary 视�
 reportGroup('normal', res.groups.normal, (m) => m.h >= 44, '.btn 普通 视觉高 ≥ 44px');
 reportGroup('spellbook', res.groups.spellbook, (m) => m.h >= 44, '.spellbook .btn.tiny 视觉高 ≥ 44px');
 reportGroup('rrow .tap', res.groups.rrowTap, (m) => m.hit >= 43, '.btn.tiny.tap 有效命中高 ≥ 43px');
-reportGroup('hp-tbtns', res.groups.hpTbtns, (m) => m.h >= 40, '密集区 .hp-tbtns 视觉高 ≥ 40px（§5.2 密集区 ≥40×40）');
+reportGroup('hp-ctbtns', res.groups.hpCtbts, (m) => m.h >= 40, '密集区 .hp-ctbtns 视觉高 ≥ 40px（§5.2 密集区 ≥40×40）');
 reportGroup('hp-nav', res.groups.hpNav, (m) => m.h >= 40, '密集区 .hp-nav 视觉高 ≥ 40px（§5.2 密集区 ≥40×40）');
 reportGroup('魔法书 .tap', res.groups.magicTap, (m) => m.hit >= 43, '孤立 .btn.tiny.tap 有效命中高 ≥ 43px');
 
@@ -781,7 +813,7 @@ reportGroup('魔法书 .tap', res.groups.magicTap, (m) => m.hit >= 43, '孤立 .
 const allTiny = [].concat(
   res.groups.spellbook,
   res.groups.rrowTap,
-  res.groups.hpTbtns,
+  res.groups.hpCtbts,
   res.groups.hpNav,
   res.groups.magicTap,
 );
@@ -789,33 +821,35 @@ const tinyFloor = allTiny.every((m) => m.h >= 40);
 if (!tinyFloor) bad++;
 console.log(`\n[底线] 所有 .btn.tiny 真实盒子 ≥ 40px —— ${tinyFloor ? 'PASS' : 'FAIL'}`);
 
-// 密集区间距
-const gapT = res.gaps.hpTbtns;
-const gapN = res.gaps.hpNav;
-const okGapT = typeof gapT === 'number' && gapT >= 8;
+// 密集区间距（沿实际排列轴量；见 MEASURE 里 minGap 的注释：写死轴会量出 0 / −40 的假数）
+const gT = res.gaps.hpCtbts;
+const gN = res.gaps.hpNav;
+const axisName = (a) => (a === 'row' ? '横向' : a === 'col' ? '纵向' : '?');
+const okGapT = typeof gT.gap === 'number' && gT.gap >= 8;
 // §5.2 密集区「中心距 ≥ 48px」：40px 盒 + gap ≥ 8 = 48。
-const okGapN = typeof gapN === 'number' && gapN >= 8;
+const okGapN = typeof gN.gap === 'number' && gN.gap >= 8;
 if (!okGapT) bad++;
 if (!okGapN) bad++;
-console.log(`[间距] .hp-tbtns 横向间距 ${gapT}px ≥ 8 —— ${okGapT ? 'PASS' : 'FAIL'}`);
-console.log(`[间距] .hp-nav 纵向间距 ${gapN}px ≥ 8（§5.2 中心距 ≥48）—— ${okGapN ? 'PASS' : 'FAIL'}`);
+console.log(`[间距] .hp-ctbtns ${axisName(gT.axis)}间距 ${gT.gap}px ≥ 8 —— ${okGapT ? 'PASS' : 'FAIL'}`);
+console.log(`[间距] .hp-nav ${axisName(gN.axis)}间距 ${gN.gap}px ≥ 8（§5.2 中心距 ≥48）—— ${okGapN ? 'PASS' : 'FAIL'}`);
 
 /* ---------------- 移动视口（≤860px，合成探针）：只有在此，移动规则才被激活 ---------------- */
 
 const vp = mobile.viewport;
 console.log(`\n── 合成探针 · 移动视口 ${vp.w}×${vp.h} @${vp.dpr}x（≤860px 规则在此激活） ──`);
 
-// ① #side.collapsed：开关不被容器裁掉（§5.3 / §8-B）。
-//    用 effectiveHit ——「视觉高 44 但被容器裁到 34」这种，只有逐像素命中才看得出来。
-reportGroup('side.collapsed', mobile.toggle, (m) => m.hit >= 44,
-  '#side.collapsed 的 #panel-toggle 有效命中高 ≥ 44px（不被 34px 容器裁掉）');
+// ① #side.collapsed：**收起态不渲染**（2026-10-22 撤掉 48px 竖条；「英雄」入口只剩拇指带）。
+//    旧断言是"竖条里的入口不被 34px 容器裁掉"——竖条本身没了，那条判据跟着失去对象。
+const sideHidden = mobile.sideHidden === true;
+if (!sideHidden) bad++;
+console.log(`[${sideHidden ? 'PASS' : 'FAIL'}] 收起态 #side 盒宽=${mobile.debug.side ? mobile.debug.side.w : 'n/a'} · display=${mobile.debug.sideDisplay} · #panel-toggle 在 DOM=${mobile.debug.toggleInDom} —— 右缘无 48px 竖条（收起态不得吃地图）`);
 
 // ② .btn.tiny 的移动口径尺寸（792 宽 × 1000 高量；宽≤860 目前无覆盖，量上防将来加移动规则）。
 const mt = mobileTall.viewport;
 console.log(`\n── 合成探针 · 移动口径 .btn.tiny（${mt.w} 宽 × ${mt.h} 高） ──`);
 reportGroup('m.spellbook', mobileTall.groups.spellbook, (m) => m.h >= 44, '移动 · .spellbook .btn.tiny 视觉高 ≥ 44px');
 reportGroup('m.rrow .tap', mobileTall.groups.rrowTap, (m) => m.hit >= 43, '移动 · .btn.tiny.tap 有效命中高 ≥ 43px');
-reportGroup('m.hp-tbtns', mobileTall.groups.hpTbtns, (m) => m.h >= 40, '移动 · 密集区 .hp-tbtns 视觉高 ≥ 40px');
+reportGroup('m.hp-ctbtns', mobileTall.groups.hpCtbts, (m) => m.h >= 40, '移动 · 密集区 .hp-ctbtns 视觉高 ≥ 40px');
 reportGroup('m.hp-nav', mobileTall.groups.hpNav, (m) => m.h >= 40, '移动 · 密集区 .hp-nav 视觉高 ≥ 40px');
 reportGroup('m.魔法书 .tap', mobileTall.groups.magicTap, (m) => m.hit >= 43, '移动 · 孤立 .btn.tiny.tap 有效命中高 ≥ 43px');
 

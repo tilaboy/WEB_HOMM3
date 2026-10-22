@@ -11,15 +11,18 @@
  * 由 DOM 顺序（后者覆盖前者）决定 ⇒ **想点「菜单」却打开了英雄栏**。
  * 这类错 `audit:touch` 抓不到：它量的是**中心距 vs 尺寸**，两个盒子叠一角时中心距仍然够。
  *
- * ## 判据（四条，都是几何真值，不看样式字符串）
+ * ## 判据（五条，都是几何真值，不看样式字符串）
  *   ① 盘在、且恰好 4 个 `.tb-btn`（结构前提，没有就无从量）；
  *   ② 每个按钮**命中高 ≥ 44px**（§5.2；`height` 写了也可能被 `min-height` 覆盖，故量 rect）；
  *   ③ **两两矩形零重叠**（重叠面积必须 = 0）；
- *   ④ 每个按钮**完整落在 `#thumb` 的盒子里**（坐标是相对盘的 `left/top`，算错就跑到盘外）。
+ *   ④ 每个按钮**完整落在 `#thumb` 的盒子里**（坐标是相对盘的 `left/top`，算错就跑到盘外）；
+ *   ⑤ **右缘无 48px 竖条**（2026-10-22 主理人：「右面那条竖条修掉吧」）——
+ *      `#side` 收起态盒宽 = 0，且 `#panel-toggle` 不在 DOM（「英雄」入口只在盘里）。
  *
  * ## 负向对照（每次都验，别偷懒）
  *   把 `style.css` 的四组 `left/top` 改回首版（20/74 · 52/36 · 132/36 · 152/72）⇒ ③ 必红
  *   （两组各咬 20×6 / 24×8）；改回现位 ⇒ 全绿。
+ *   ⑤ 的负向对照：把 `#side.collapsed` 改回 `width:48px`（不 display:none）⇒ ⑤ 必红。
  *
  * 退出码：0 全过 · 1 有断言不过 · 2 前置不满足
  */
@@ -69,7 +72,15 @@ const MEASURE = `(() => {
   const outside = btns.filter((b) =>
     b.x < d.x - 0.5 || b.y < d.y - 0.5 || b.x + b.w > d.x + d.w + 0.5 || b.y + b.h > d.y + d.h + 0.5,
   ).map((b) => b.t);
-  return { ok: true, dock: d, btns, overlaps, outside };
+  /* ⑤ 右缘竖条：收起态 #side 必须不占宽；#panel-toggle 整个不该在 DOM 里。 */
+  const side = document.querySelector('#side');
+  const sr = side ? side.getBoundingClientRect() : null;
+  const rail = {
+    sideW: sr ? sr.width : null,
+    sideDisplay: side ? getComputedStyle(side).display : 'MISSING',
+    toggle: !!document.querySelector('#panel-toggle'),
+  };
+  return { ok: true, dock: d, btns, overlaps, outside, rail };
 })()`;
 
 try {
@@ -104,6 +115,12 @@ try {
     );
 
     PASS(m.outside.length === 0, `④ 按钮不出盘（${m.outside.length ? `出界：${m.outside.join('、')}` : '全部在盘内'}）`);
+
+    const r = m.rail || {};
+    PASS(
+      r.sideW === 0 && r.toggle === false,
+      `⑤ 右缘无 48px 竖条（收起态 #side 宽=${r.sideW}px · display=${r.sideDisplay} · #panel-toggle 在 DOM=${r.toggle}）`,
+    );
   });
 } catch (e) {
   console.error(`✗ 运行失败：${e && e.message ? e.message : e}`);

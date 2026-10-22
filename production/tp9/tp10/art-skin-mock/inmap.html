@@ -1,0 +1,72 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>在真实地图上 · 新 UI 合成</title>
+<style>
+  @font-face { font-family: "FP"; src: url("./fusion-pixel-12px-proportional-sc-latin-400-normal.woff2") format("woff2"); font-display: block; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 792px; height: 360px; overflow: hidden; background: #0b0803; }
+  .scene { position: relative; width: 792px; height: 360px; }
+  .scene img.map { position: absolute; inset: 0; width: 792px; height: 360px; image-rendering: pixelated; }
+  .ui { position: absolute; inset: 0; font-family: "FP", monospace; font-size: 12px; line-height: 12px;
+        color: #e8d9b5; -webkit-font-smoothing: none; }
+  .px { shape-rendering: crispEdges; }
+
+  /* 左上：资源胶囊（仍只读、仍 34px 高，但换成硬描边 + 点阵字） */
+  .chip { position: absolute; left: 8px; top: 6px; display: inline-flex; align-items: stretch; height: 34px;
+    background: rgba(26,16,7,.82); border: 2px solid #0d0803;
+    box-shadow: inset 0 2px 0 #7a5526, inset 0 -2px 0 #150d05, 0 2px 0 rgba(0,0,0,.5);
+    clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px); }
+  .res { display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; }
+  .res + .res { border-left: 2px solid #0d0803; box-shadow: -2px 0 0 #6b4a20; }
+  .res .n { color: #f0dfae; }
+  .res .n.dim { color: #b9a67e; }
+  .date { display: inline-flex; align-items: center; padding: 0 10px; color: #e0b62a; border-left: 2px solid #0d0803; box-shadow: -2px 0 0 #6b4a20; }
+
+  /* 右下：圆盘 —— 四个**真正的圆**，无圆角矩形 */
+  .dock { position: absolute; right: 4px; bottom: 0; width: 240px; height: 124px;
+    border-radius: 240px 240px 0 0;
+    background: radial-gradient(circle at 50% 118%, rgba(58,41,21,.55), rgba(24,16,7,.28) 72%);
+    box-shadow: inset 0 0 0 2px rgba(122,85,38,.35), 0 -4px 22px rgba(0,0,0,.35); }
+  .orb { position: absolute; width: 56px; height: 56px; border-radius: 50%;
+    background: radial-gradient(circle at 34% 26%, #6a4a22, #33200d 68%);
+    border: 2px solid #0d0803;
+    box-shadow: 0 0 0 2px #7a5526, inset 0 3px 0 rgba(255,220,150,.16), inset 0 -4px 0 rgba(0,0,0,.45), 0 3px 0 rgba(0,0,0,.45);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+  .orb .lb { font-size: 12px; color: #e8d9b5; }
+  .orb.primary { width: 64px; height: 64px;
+    background: radial-gradient(circle at 34% 26%, #c79a3d, #7d5a1c 70%);
+    box-shadow: 0 0 0 2px #d8b04a, inset 0 3px 0 rgba(255,240,190,.32), inset 0 -4px 0 rgba(0,0,0,.4), 0 3px 0 rgba(0,0,0,.45); }
+  .orb.primary .lb { color: #fff6dc; }
+  /* 摆位：与现行 #thumb 的两排坐标同构（上排 y=26 / 下排 y=62），几何仍由 probe:dockoverlap 盯 */
+  .orb.menu  { left: 12px;  top: 62px; }
+  .orb.hero  { left: 50px;  top: 12px; }
+  .orb.town  { left: 114px; top: 12px; }
+  .orb.end   { left: 168px; top: 56px; }
+
+  /* 左下：一条极短的提示，像素描边，不挡地图 */
+  .hint { position: absolute; left: 8px; bottom: 8px; padding: 4px 8px;
+    background: rgba(26,16,7,.8); border: 2px solid #0d0803; box-shadow: inset 0 2px 0 #6b4a20;
+    color: #cbbf9f; }
+</style>
+
+<div class="scene">
+  <img class="map" src="./map-base.png" alt="">
+  <div class="ui">
+    <div class="chip">
+      <span class="res"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="6" y="2" width="4" height="12" fill="#e0b62a"/><rect x="2" y="6" width="12" height="4" fill="#e0b62a"/><rect x="6" y="2" width="2" height="2" fill="#f5e6b8"/></svg><span class="n">2500</span></span>
+      <span class="res"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" fill="#8a5f34"/><rect x="3" y="3" width="10" height="2" fill="#b08050"/><rect x="3" y="11" width="10" height="2" fill="#5f3f20"/></svg><span class="n">10</span></span>
+      <span class="res"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="3" y="8" width="10" height="6" fill="#8a857e"/><rect x="5" y="4" width="6" height="4" fill="#a9a49c"/><rect x="7" y="2" width="2" height="2" fill="#c6c1b8"/></svg><span class="n">10</span></span>
+      <span class="res"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="7" y="2" width="2" height="12" fill="#8f6fb0"/><rect x="5" y="5" width="6" height="2" fill="#b48fd6"/></svg><span class="n dim">0</span></span>
+      <span class="date">1周1日</span>
+    </div>
+
+    <div class="hint">指挥官 · 点击英雄移动</div>
+
+    <div class="dock">
+      <div class="orb menu"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="2" fill="#e8d9b5"/><rect x="2" y="7" width="12" height="2" fill="#e8d9b5"/><rect x="2" y="11" width="12" height="2" fill="#e8d9b5"/></svg><span class="lb">菜单</span></div>
+      <div class="orb hero"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="4" y="2" width="8" height="4" fill="#e8d9b5"/><rect x="3" y="6" width="10" height="6" fill="#c9a227"/><rect x="5" y="8" width="2" height="2" fill="#2a1a0b"/><rect x="9" y="8" width="2" height="2" fill="#2a1a0b"/><rect x="4" y="12" width="8" height="2" fill="#e8d9b5"/></svg><span class="lb">英雄</span></div>
+      <div class="orb town"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="5" width="12" height="9" fill="#c9a227"/><rect x="2" y="2" width="3" height="4" fill="#e8d9b5"/><rect x="11" y="2" width="3" height="4" fill="#e8d9b5"/><rect x="6" y="8" width="4" height="6" fill="#2a1a0b"/></svg><span class="lb">城</span></div>
+      <div class="orb end primary"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="4" y="2" width="2" height="12" fill="#fff6dc"/><rect x="10" y="2" width="2" height="12" fill="#fff6dc"/><rect x="4" y="2" width="8" height="2" fill="#fff6dc"/><rect x="4" y="12" width="8" height="2" fill="#fff6dc"/><rect x="7" y="6" width="2" height="2" fill="#fff6dc"/></svg><span class="lb">结束一天</span></div>
+    </div>
+  </div>
+</div>

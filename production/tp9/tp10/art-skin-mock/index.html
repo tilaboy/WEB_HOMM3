@@ -1,0 +1,189 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>UI 皮肤提案</title>
+<style>
+  @font-face {
+    font-family: "FP";
+    src: url("./fusion-pixel-12px-proportional-sc-latin-400-normal.woff2") format("woff2");
+    font-display: block;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #120c06; }
+  body { width: 900px; height: 580px; overflow: hidden; }
+
+  .sheet { padding: 14px 16px; }
+  .cap {
+    font-family: "FP", monospace;
+    font-size: 12px; line-height: 12px; color: #c9a227;
+    -webkit-font-smoothing: none; letter-spacing: 0;
+    margin: 0 0 8px;
+  }
+  .cap b { color: #f0dfae; font-weight: 400; }
+  .band { display: flex; gap: 18px; align-items: flex-start; margin-bottom: 14px; }
+  .tag {
+    font-family: "FP", monospace; font-size: 12px; line-height: 12px;
+    -webkit-font-smoothing: none; color: #8d7a55; width: 46px; padding-top: 4px;
+  }
+
+  /* ---------- 旧：直接照抄当前 style.css 的取值 ---------- */
+  .old { font-family: "Palatino", "Songti SC", Georgia, serif; color: #e8dcc0; }
+  .old-chip {
+    display: inline-flex; align-items: center; gap: 12px; height: 30px;
+    padding: 0 12px; border-radius: 999px;
+    background: rgba(24, 16, 7, 0.55);
+    border: 1px solid rgba(255, 232, 170, 0.18);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+    font-size: 13px;
+  }
+  .old-chip .v { color: #e8dcc0; }
+  .old-chip .d { color: #c9a227; min-width: 58px; text-align: right; }
+  .old-dock { display: flex; gap: 8px; margin-top: 10px; }
+  .old-btn {
+    min-height: 44px; padding: 0 14px; border-radius: 3px;
+    background: linear-gradient(180deg, #6b5230, #46331c);
+    border: 1px solid #6d4a21;
+    box-shadow: inset 0 1px 0 rgba(255,232,170,.22), inset 0 -2px 0 rgba(0,0,0,.28);
+    font-size: 13px; color: #e8dcc0; display: inline-flex; align-items: center;
+  }
+  .old-btn.primary { background: linear-gradient(180deg, #b08a3c, #7d5f20); border-color: #c9a227; min-height: 48px; }
+  .old-panel {
+    width: 178px; padding: 8px; border-left: 2px solid #6d4a21;
+    background: linear-gradient(180deg, #4a3620, #33240f);
+  }
+  .old-panel h3 { margin: 0 0 8px; font-size: 13px; font-weight: 500; letter-spacing: 2px; color: #c9a227; }
+  .old-kv { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; color: #cbbf9f; }
+  .old-kv b { font-weight: 400; color: #e8dcc0; }
+  .old-sec { border-bottom: 1px solid rgba(255,255,255,.06); padding-bottom: 6px; margin-bottom: 6px; }
+
+  /* ---------- 新：像素描边 + 点阵字 + 图标 ---------- */
+  .new { font-family: "FP", monospace; color: #e8d9b5; -webkit-font-smoothing: none; font-size: 12px; line-height: 12px; }
+  .px { image-rendering: pixelated; shape-rendering: crispEdges; }
+
+  .new-chip {
+    display: inline-flex; align-items: stretch; height: 34px;
+    background: #241708; border: 2px solid #0d0803;
+    box-shadow: inset 0 2px 0 #7a5526, inset 0 -2px 0 #150d05, 0 2px 0 rgba(0,0,0,.5);
+    clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px);
+  }
+  .new-res { display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; }
+  .new-res + .new-res { border-left: 2px solid #0d0803; box-shadow: -2px 0 0 #6b4a20; }
+  .new-res .n { color: #f0dfae; }
+  .new-res .n.dim { color: #b9a67e; }
+  .new-date { display: inline-flex; align-items: center; padding: 0 10px; color: #e0b62a; border-left: 2px solid #0d0803; box-shadow: -2px 0 0 #6b4a20; }
+
+  .new-dock { display: flex; gap: 10px; margin-top: 12px; align-items: flex-start; }
+  .orb {
+    width: 58px; height: 58px; border-radius: 50%;
+    background: radial-gradient(circle at 34% 26%, #6a4a22, #33200d 68%);
+    border: 2px solid #0d0803;
+    box-shadow: 0 0 0 2px #7a5526, inset 0 3px 0 rgba(255,220,150,.18), inset 0 -4px 0 rgba(0,0,0,.45), 0 3px 0 rgba(0,0,0,.5);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    position: relative;
+  }
+  .orb .lb { font-size: 12px; color: #e8d9b5; }
+  .orb.primary {
+    width: 66px; height: 66px; margin-top: -4px;
+    background: radial-gradient(circle at 34% 26%, #c79a3d, #7d5a1c 70%);
+    box-shadow: 0 0 0 2px #d8b04a, inset 0 3px 0 rgba(255,240,190,.35), inset 0 -4px 0 rgba(0,0,0,.4), 0 3px 0 rgba(0,0,0,.5);
+  }
+  .orb.primary .lb { color: #fff6dc; }
+
+  .new-panel { width: 206px; padding: 3px; background: #0d0803;
+    clip-path: polygon(5px 0, calc(100% - 5px) 0, 100% 5px, 100% calc(100% - 5px), calc(100% - 5px) 100%, 5px 100%, 0 calc(100% - 5px), 0 5px); }
+  .new-panel-in { background: linear-gradient(180deg, #3a2713, #2a1a0b); padding: 8px; box-shadow: inset 0 0 0 2px #6d4a21; }
+  .new-head { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; margin-bottom: 6px;
+    border-bottom: 2px solid #0d0803; box-shadow: 0 2px 0 #6b4a20; }
+  .new-head .t { color: #e0b62a; }
+  .new-hero { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .new-face { width: 38px; height: 38px; background: #1a1008; border: 2px solid #0d0803; box-shadow: inset 0 0 0 2px #6d4a21; }
+  .new-kv { display: flex; justify-content: space-between; padding: 3px 0; color: #b9a67e; }
+  .new-kv b { font-weight: 400; color: #f0dfae; }
+  .new-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; color: #d9c9a3; }
+  .new-row + .new-row { border-top: 2px solid #0d0803; box-shadow: inset 0 2px 0 #4a3117; }
+  .dot { width: 7px; height: 7px; background: #6fae55; box-shadow: 0 0 0 2px #0d0803; }
+  .new-tag { margin-left: auto; color: #8d7a55; }
+  .new-btn { padding: 5px 8px; background: #4a3117; border: 2px solid #0d0803; box-shadow: inset 0 2px 0 #a8792f, 0 0 0 2px #6d4a21; color: #f0dfae; }
+
+  .new-dialog { width: 300px; padding: 3px; background: #0d0803;
+    clip-path: polygon(5px 0, calc(100% - 5px) 0, 100% 5px, 100% calc(100% - 5px), calc(100% - 5px) 100%, 5px 100%, 0 calc(100% - 5px), 0 5px); }
+  .new-dialog-in { background: #2a1a0b; box-shadow: inset 0 0 0 2px #6d4a21; }
+  .dt { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px;
+    background: linear-gradient(180deg, #6a4a22, #4a3117); border-bottom: 2px solid #0d0803; color: #f5e6b8; }
+  .db { padding: 9px 8px 10px; color: #cbbf9f; line-height: 18px; }
+  .dact { display: flex; gap: 6px; padding: 0 8px 9px; }
+  .foot { font-family: "FP", monospace; font-size: 12px; color: #6f6047; -webkit-font-smoothing: none; margin-top: 2px; }
+</style>
+
+<div class="sheet">
+  <p class="cap">■ <b>UI 皮肤提案</b> —— 上下同字号 / 同内容，只换「字体 · 描边 · 图标 · 形状」</p>
+
+  <div class="band">
+    <div class="tag">旧</div>
+    <div class="old">
+      <div class="old-chip">
+        <span class="v">2500</span><span class="v">10</span><span class="v">10</span><span class="v">0</span>
+        <span class="d">3周2日</span>
+      </div>
+      <div class="old-dock">
+        <span class="old-btn">菜单</span><span class="old-btn">英雄</span><span class="old-btn">城</span><span class="old-btn primary">结束一天</span>
+      </div>
+      <div class="old-panel" style="margin-top:10px">
+        <h3>英雄</h3>
+        <div class="old-sec"><div class="old-kv"><span>等级</span><b>3</b></div><div class="old-kv"><span>攻击</span><b>12</b></div><div class="old-kv"><span>防御</span><b>8</b></div></div>
+        <div class="old-kv"><span>移动力</span><b>6 / 8</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="band">
+    <div class="tag">新</div>
+    <div class="new">
+      <div style="display:flex; gap:10px; align-items:flex-start">
+        <div>
+          <div class="new-chip">
+            <span class="new-res"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="6" y="2" width="4" height="12" fill="#e0b62a"/><rect x="2" y="6" width="12" height="4" fill="#e0b62a"/><rect x="6" y="2" width="2" height="2" fill="#f5e6b8"/></svg><span class="n">2500</span></span>
+            <span class="new-res"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" fill="#8a5f34"/><rect x="3" y="3" width="10" height="2" fill="#b08050"/><rect x="3" y="11" width="10" height="2" fill="#5f3f20"/></svg><span class="n">10</span></span>
+            <span class="new-res"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="3" y="8" width="10" height="6" fill="#8a857e"/><rect x="5" y="4" width="6" height="4" fill="#a9a49c"/><rect x="7" y="2" width="2" height="2" fill="#c6c1b8"/></svg><span class="n">10</span></span>
+            <span class="new-res"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="7" y="2" width="2" height="12" fill="#8f6fb0"/><rect x="5" y="5" width="6" height="2" fill="#b48fd6"/></svg><span class="n dim">0</span></span>
+            <span class="new-date">3周2日</span>
+          </div>
+
+          <div class="new-dock">
+            <div class="orb"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="2" fill="#e8d9b5"/><rect x="2" y="7" width="12" height="2" fill="#e8d9b5"/><rect x="2" y="11" width="12" height="2" fill="#e8d9b5"/></svg><span class="lb">菜单</span></div>
+            <div class="orb"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="4" y="2" width="8" height="4" fill="#e8d9b5"/><rect x="3" y="6" width="10" height="6" fill="#c9a227"/><rect x="5" y="8" width="2" height="2" fill="#2a1a0b"/><rect x="9" y="8" width="2" height="2" fill="#2a1a0b"/><rect x="4" y="12" width="8" height="2" fill="#e8d9b5"/></svg><span class="lb">英雄</span></div>
+            <div class="orb"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="5" width="12" height="9" fill="#c9a227"/><rect x="2" y="2" width="3" height="4" fill="#e8d9b5"/><rect x="11" y="2" width="3" height="4" fill="#e8d9b5"/><rect x="6" y="8" width="4" height="6" fill="#2a1a0b"/></svg><span class="lb">城</span></div>
+            <div class="orb primary"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="4" y="2" width="2" height="12" fill="#fff6dc"/><rect x="10" y="2" width="2" height="12" fill="#fff6dc"/><rect x="4" y="2" width="8" height="2" fill="#fff6dc"/><rect x="4" y="12" width="8" height="2" fill="#fff6dc"/><rect x="7" y="6" width="2" height="2" fill="#fff6dc"/></svg><span class="lb">结束一天</span></div>
+          </div>
+        </div>
+
+        <div class="new-panel">
+          <div class="new-panel-in">
+            <div class="new-head"><svg class="px" width="16" height="16" viewBox="0 0 16 16"><rect x="4" y="2" width="8" height="4" fill="#e0b62a"/><rect x="3" y="6" width="10" height="6" fill="#c9a227"/><rect x="4" y="12" width="8" height="2" fill="#e0b62a"/></svg><span class="t">英雄</span></div>
+            <div class="new-hero">
+              <div class="new-face"><svg class="px" width="34" height="34" viewBox="0 0 16 16"><rect x="4" y="3" width="8" height="7" fill="#d9b98a"/><rect x="3" y="2" width="10" height="2" fill="#8a5f34"/><rect x="5" y="6" width="2" height="2" fill="#241a10"/><rect x="9" y="6" width="2" height="2" fill="#241a10"/><rect x="6" y="10" width="4" height="2" fill="#b06a4a"/><rect x="3" y="12" width="10" height="3" fill="#6d4a21"/></svg></div>
+              <div>
+                <div style="color:#f0dfae">莉亚 · 骑士</div>
+                <div style="color:#8d7a55; margin-top:4px">等级 3 · 移动 6/8</div>
+              </div>
+            </div>
+            <div class="new-kv"><span>攻击</span><b>12</b></div>
+            <div class="new-kv"><span>防御</span><b>8</b></div>
+            <div class="new-kv"><span>兵力</span><b>42 / 60</b></div>
+            <div class="new-row"><span class="dot"></span><span>王城</span><span class="new-tag">驻军 3</span><span class="new-btn">管理</span></div>
+            <div class="new-row"><span class="dot"></span><span>木矿</span><span class="new-tag">+2/日</span><span class="new-btn">定位</span></div>
+          </div>
+        </div>
+
+        <div class="new-dialog">
+          <div class="new-dialog-in">
+            <div class="dt"><span>城镇 · 王城</span><span style="color:#c9a227">×</span></div>
+            <div class="db">「石匠说，再给三天就能把箭塔垒起来。」<br>现有资源：金 2500 · 木 10 · 矿 10</div>
+            <div class="dact"><span class="new-btn">建造</span><span class="new-btn">招募</span><span class="new-btn" style="margin-left:auto">关闭</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">IF = 缝合像素字体 12px（OFL）· 边框 = 2px 硬描边 + 1px 高光/暗边（零图片）· 图标 = 16×16 内联像素 SVG</p>
+</div>
