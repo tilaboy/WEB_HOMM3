@@ -231,7 +231,13 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   };
   const foeSide = mkSide('敌方');
   const ourSide = mkSide('我方');
-  body.append(foeSide.col, fieldWrap, ourSide.col);
+  /**
+   * 顺序 = **战场上的实际左右**：`side 0`（玩家，见 `hexCenter(side===0 ? col 0 : col W-1)`）
+   * 永远画在场地左侧 ⇒ 名单也必须「我方在左、敌方在右」。
+   * 首版写反了（左列挂着「敌方」、列的却是右侧那批敌人），真机截图一眼能看出
+   * 蓝披风的弓手站在「敌方」标题下面。类名/copy 都没错，错的是**列与边的对应**。
+   */
+  body.append(ourSide.col, fieldWrap, foeSide.col);
   root.appendChild(body);
 
   /**
@@ -314,7 +320,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       battle.units.map((u) => `${u.id}:${u.count}:${Math.round(poolOf(u))}`).join(',');
     if (sig === sideSig) return;
     sideSig = sig;
-    const cols: Array<[typeof foeSide, 0 | 1]> = [[foeSide, 1], [ourSide, 0]];
+    const cols: Array<[typeof foeSide, 0 | 1]> = [[ourSide, 0], [foeSide, 1]];
     for (const [col, side] of cols) {
       col.list.textContent = '';
       for (const u of battle.units) {
@@ -1481,6 +1487,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
             const fr = renderer.lastFrame.get(u.id);
             return {
               id: u.id, unitTypeId: u.unitTypeId, side: u.side,
+              /* `name` 只给探针用：`probe:touchtap` 要断言「左列名单 ↔ 场地左侧那批单位」
+               * 是同一批人。没有名字就只能比条数，而"3 打 3"时写反了也照样相等（踩过）。 */
+              name: getUnit(u.unitTypeId).name,
               fx: p.x, fy: p.y,
               bx: bl ? bl.x : null, by: bl ? bl.y : null, bw: bl ? bl.w : null, bh: bl ? bl.h : null,
               frame: fr ? { name: fr.name, x: fr.x, y: fr.y, w: fr.w, h: fr.h } : null,

@@ -14,6 +14,11 @@
  * 判据 = **命中测试**：战场上 4 个采样点 `elementFromPoint` 必须都落在 `.battle` 里。
  * 只读 `display` 没有用：被盖住时它照样是 `flex`。
  *
+ * ## 它还守什么（2026-10-22：两侧名单写反）
+ * 战斗两侧的紧凑名单首版把「敌方」列放在左边，而场地约定 `side 0`（玩家）永远在左
+ * ⇒ 蓝披风的弓手站在「敌方」标题下面。每列内部自洽（标题配自己那批人），
+ * 数条数也相等（3 打 3），只有**跨两侧比对**（左列名单 = side 0 的名字多重集 + fx 排序）才抓得到。
+ *
  * ## 为什么两向都要测
  * 只测 `hover:none`，一个"文案写死成触屏版"的回归会绿；只测 `hover:hover`，
  * 一个"分支没生效"的回归也会绿。两臂都跑，才证明**分支存在且方向对**。
@@ -139,7 +144,7 @@ try {
      *   · 自己部队（side 0）：点了本身就是空指令 ⇒ 必须直接弹牌；
      *   · 敌方且够不着：弹牌 + 「够不着」提示。
      * 点我方永远不会起动画（`playerMove/playerAttack` 都排除了），所以这串点击不会把 `busy()` 打开。 */
-    const units = await evaluate(`((window.__battleScene || {}).units || []).map((u) => ({ id: u.id, side: u.side, fx: u.fx, fy: u.fy }))`);
+    const units = await evaluate(`((window.__battleScene || {}).units || []).map((u) => ({ id: u.id, side: u.side, fx: u.fx, fy: u.fy, name: u.name }))`);
     PASS(units.length > 0, `[触屏] 渲染器给出了当帧单位真值（${units.length} 支）`);
     const box = await evaluate(`(() => { const cv = document.querySelector('.bt-canvas'); const b = cv.getBoundingClientRect(); return { l: b.left, t: b.top, w: b.width, h: b.height }; })()`);
     const BASE_W = 603, BASE_H = 388, PAD = 6; // = BattleRenderer 的 BASE_W/BASE_H/PAD
@@ -168,6 +173,31 @@ try {
     }
     console.log(`[触屏] 点敌方部队 → ${JSON.stringify(foeTip || null)}`);
     PASS(!!foeTip, `[触屏] 点敌方部队也弹属性牌${foeTip ? '：' + foeTip.text : ''}`);
+
+    /* ③ 两侧名单必须与场地**同边同人**（2026-10-22 真机截图抓到写反了）。
+     * 战场约定：`side 0`（玩家）永远画在左侧（`hexCenter(side===0 ? col 0 : col W-1)`）。
+     * 首版名单把「敌方」列放在左边 —— 每列内部自洽（标题配自己那批人），
+     * 所以任何"数条数/看标题"的弱判据都绿；只有**跨两侧比对**才抓得到：
+     *   · 左列标题 = 我方、右列 = 敌方；
+     *   · 左列名单 = 场地左侧那批（side 0）的**名字多重集**，右列同理；
+     *   · 几何自证：所有 side 0 的 fx 都小于所有 side 1 的 fx。
+     * 名单只在 body ≥620px 时出现（桌面窄窗会摘掉 has-sides）⇒ 先确认它在场。 */
+    const sides = await evaluate(`(() => [...document.querySelectorAll('.bt-side')].map((c) => ({
+      head: ((c.querySelector('.bt-side-h') || {}).textContent || '').trim(),
+      rows: [...c.querySelectorAll('.bt-side-row .n')].map((n) => (n.textContent || '').trim()),
+    })))()`);
+    const ours = units.filter((u) => u.side === 0);
+    const foes = units.filter((u) => u.side !== 0);
+    const sort = (a) => [...a].sort().join('|');
+    console.log(`[触屏] 名单 ${JSON.stringify(sides.map((s) => `${s.head}:${s.rows.join('/')}`))} · 场上 我方=${ours.map((u) => u.name).join('/')} 敌方=${foes.map((u) => u.name).join('/')}`);
+    PASS(sides.length === 2 && sides[0].head === '我方' && sides[1].head === '敌方',
+      `[触屏] 左列=我方、右列=敌方（实测 ${sides.map((s) => s.head).join(' | ') || '(名单未显示)'}）`);
+    PASS(!!sides[0] && sort(sides[0].rows) === sort(ours.map((u) => u.name)),
+      '[触屏] 左列名单与场上左侧（side 0）是同一批人');
+    PASS(!!sides[1] && sort(sides[1].rows) === sort(foes.map((u) => u.name)),
+      '[触屏] 右列名单与场上右侧是同一批人');
+    PASS(Math.max(...ours.map((u) => u.fx)) < Math.min(...foes.map((u) => u.fx)),
+      `[触屏] 几何自证：side 0 全在左（max fx ${Math.round(Math.max(...ours.map((u) => u.fx)))} < min fx ${Math.round(Math.min(...foes.map((u) => u.fx)))}）`);
 
     /* ================= 臂 B：桌面（hover: hover）—— 原文案不许变 ================= */
     await setHover(send, 'hover');
