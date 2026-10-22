@@ -270,6 +270,21 @@ td .p{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;bor
     下面每一屏都是<b>上「现在」下「改后」</b>的同尺寸整幅对照 —— 下半张是真实游戏画布 + 新界面层，不是效果图。
   </p>
 
+  <div style="margin:22px 0 4px;padding:14px 18px;border:1px solid rgba(232,196,106,.45);border-radius:10px;
+       background:linear-gradient(180deg,rgba(232,196,106,.12),rgba(232,196,106,.04));">
+    <div style="font-size:12px;letter-spacing:.14em;color:#e8c46a;font-weight:600">P0 已落地 · 2026-10-22 · main@f80e771</div>
+    <div style="margin-top:6px;font-size:15px;line-height:1.6;color:#efe4cd">
+      五条全部实施（只改 <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">style.css</span>，未动 TS/DOM）。
+      本页下方的「改后」是<b>设计意图</b>；<b>真实成品</b>见
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">production/ui-p0-after/</span> 七张截图，
+      量化读数见同目录 <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">ui-review-2026-10-22.md §8</span>。
+      新门 <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">npm run probe:uip0</span> 六条判据全绿、6/6 负向对照能变红。
+    </div>
+  </div>
+
+  <div style="margin:26px 0 8px;font-size:12px;letter-spacing:.12em;color:#8a7b5f">
+    以下四条是 <b style="color:#b9a988">P0 改动前（main@efb8437）的基线读数</b>，不是当前值 —— 现在值见 §8 / probe:uip0
+  </div>
   <div class="readout">
     <div class="ro"><div class="n">33<small>处</small></div><div class="k"><b>font-size:12px</b> 是全站出现最多的字号，其次是 11px（19 处）</div></div>
     <div class="ro"><div class="n">1<small>处</small></div><div class="k"><b>:active</b> 全站在 2,738 行 CSS 里只有 1 条，还落在战斗回合胶囊上 —— 触屏点按钮零反馈</div></div>
