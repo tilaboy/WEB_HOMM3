@@ -13,21 +13,19 @@
  * > **凡"把某开关翻成默认"，必须同时留一条可复现的旧路径。**
  * 否则新对照臂退化成 `on vs on` ⇒ A/B 成恒等式。本门把"旧路径还在且不等价"钉在像素上：
  *
- *   ① **`default` ≡ `?devband=soft`**（逐块同）—— 证"默认 == soft"；
+ *   ① **`default` ≡ `?devband=shade`**（逐块同）—— 证"默认 == shade"；
  *   ② **`default` ≠ `?devband=full`**（逐块差够一个数量级）—— 证"旧路径可达**且**不等价"；
- *   ③ **`default` ≠ `?devband=off`**（同上）—— 证"关掉这条路也还在"；
- *      ⚠️ 这条的像素差**故意小**：实测 66 块（0.98%）—— 边带本来就被改轻了。
- *      所以门槛不沿用 `SIGNAL_MIN`，而是「`off` 的 `rects === 0` 且默认 `rects > 0`」+「> 本底 3 倍」。
- *   ④ **落笔量**（`?devbandstats=1` 的 `window.__bandStats`）：
- *      · `mode === 'soft'` —— 默认真的走在 soft 分支（不是"两臂恰好同色"）；
- *      · `artSkip > 0` —— 作用域收窄真的生效（否则"树被套方框"会**静默回潮**）；
- *      · `px(default) ≤ PX_RATIO × px(full)` —— "边带变轻了"是这条改动的**目的**，
- *        须有数，不能只靠"看着顺眼"。
- *   三条像素判据 + 一条语义判据，**缺一不可**：
- *     · 有人把默认改回 `full` ⇒ ① 红；
- *     · 有人删掉 `full` 分支（写死 soft）⇒ ② 红；
- *     · 有人删掉 `art` 例外 ⇒ ④ 的 `artSkip>0` 红；
- *     · 有人把 `thin` 的 1px 改回 2px ⇒ ④ 的 `px` 比值红。
+ *   ③ **`default` ≠ `?devband=off`** —— 证"压暗那一层真的在画"（off = 只铺蓝洗、不压暗）；
+ *   ④ **`?devband=soft` 仍在且与默认不同** —— 上一版形态可复现（翻默认必须留旧路径）；
+ *   ⑤ **语义**（`?devbandstats=1` 的 `window.__bandStats`）：
+ *      · `mode === 'shade'` —— 默认真的走在 shade 分支（不是"两臂恰好同色"）；
+ *      · `rects === 0` —— **一条线都不画**（这正是主理人要去掉的"白框"）；
+ *      · `shade > 0` —— 外圈压暗真的落笔（`walkable` 忘了传就是 0）；
+ *      · `full` 的 `rects/px > 0` —— 旧路径没被掏空。
+ *     · 有人把默认改回 `soft/full` ⇒ ① 红；
+ *     · 有人删掉 `full` 分支 ⇒ ② 红；
+ *     · 有人把线条加回默认 ⇒ ⑤ `rects===0` 红；
+ *     · 有人漏传 `walkable` ⇒ ⑤ `shade>0` 红。
  *
  * ## 口径（与 `haloflip` 对齐，不自创）
  *   · 视口 = 真机 **792×320 @DPR3**（OPPO PMA110 实测）；
@@ -149,7 +147,7 @@ async function capture(send, evaluate, extra, label) {
   const stable = diffBlocks(b1, b2) === 0;
   console.log(
     `[${label}] canvas ${b1.w}×${b1.h} · 块 ${b1.bw}×${b1.bh} · 冻帧后两次差异块 = ${diffBlocks(b1, b2)}` +
-      (st ? ` · 边带 mode=${st.mode} rects=${st.rects} px=${st.px} artSkip=${st.artSkip}` : ' · 边带 stats=(无)'),
+      (st ? ` · 边带 mode=${st.mode} rects=${st.rects} px=${st.px} artSkip=${st.artSkip} shade=${st.shade}` : ' · 边带 stats=(无)'),
   );
   PASS(stable, `${label} 冻帧稳定（连量两次逐块同）`);
   return { blocks: b1, st };
@@ -172,21 +170,23 @@ try {
     const A = await capture(send, evaluate, '', 'default');
     // 安慰剂臂：同 URL 再抓一次 ⇒ 量出导航噪声本底
     const A2 = await capture(send, evaluate, '', 'default#2(placebo)');
+    const SH = await capture(send, evaluate, '&devband=shade', '?devband=shade');
     const S = await capture(send, evaluate, '&devband=soft', '?devband=soft');
     const F = await capture(send, evaluate, '&devband=full', '?devband=full');
     const O = await capture(send, evaluate, '&devband=off', '?devband=off');
 
-    if (!A || !A2 || !S || !F || !O) {
-      PASS(false, '五条臂中有量不到的 ⇒ 无法判（见上）');
+    if (!A || !A2 || !SH || !S || !F || !O) {
+      PASS(false, '六条臂中有量不到的 ⇒ 无法判（见上）');
       return;
     }
     const floor = diffBlocks(A.blocks, A2.blocks);
+    const ash = diffBlocks(A.blocks, SH.blocks);
     const as = diffBlocks(A.blocks, S.blocks);
     const af = diffBlocks(A.blocks, F.blocks);
     const ao = diffBlocks(A.blocks, O.blocks);
     console.log(
       `--- 逐块差（单位=块，分母=${A.blocks.bw * A.blocks.bh}）： 本底(default vs default#2) → ${floor}；` +
-        ` default vs soft → ${as}； default vs full → ${af}； default vs off → ${ao}`,
+        ` default vs shade → ${ash}； vs soft → ${as}； vs full → ${af}； vs off → ${ao}`,
     );
 
     if (MEASURE) {
@@ -198,36 +198,42 @@ try {
     const SIGNAL_MIN = 200; // 块 · 分母 6705 ⇒ 2.98% · 每跑·每模式对（`haloflip` 同值）
     const K = 10; // 信号 / 本底 的倍数下限
     const sound = Math.max(K * Math.abs(floor), SIGNAL_MIN);
-    /* ③ 的尺度**不能**沿用 `SIGNAL_MIN`：这条改动的目的就是让边带变轻，
-     * 实测 default vs off 只有 **66 块**（0.98%）—— 拿 200 当门槛会红，而那不是缺陷。
-     * 所以 ③ 用「语义 + 像素」两条并存，像素那条只要**显著高于本底**（实测本底 0，66 ≥ 24）。
-     */
+    /* `off` 这一臂**只关边带、保留蓝洗** ⇒ 与默认的差就是"压暗那一层"本身，
+     * 面积比 full 小得多；门槛沿用"显著高于本底"而不是 SIGNAL_MIN。 */
     const OFF_MIN = Math.max(3 * Math.abs(floor), 24); // 块 · 分母 6705 ⇒ 0.36%
-    console.log(`    判据： ① 须 ≤ ${floor} + ${NOISE_MARGIN} = ${floor + NOISE_MARGIN}； ② 须 ≥ ${sound}； ③ 须 ≥ ${OFF_MIN} 且 off 的 rects=0`);
+    console.log(`    判据： ① 须 ≤ ${floor} + ${NOISE_MARGIN} = ${floor + NOISE_MARGIN}； ② 须 ≥ ${sound}； ③ 须 ≥ ${OFF_MIN}`);
 
-    /* ⚠️ ① / ② 必须同时验**那一臂自己解析成了什么 mode**（`__bandStats.mode`）。
-     *   NEG1 实测踩到的坑：把默认改回 `full` 时，若 `soft` 这个词也一起从解析器里掉了，
-     *   `?devband=soft` 会**回落成默认** ⇒ 两臂同色 ⇒ `as=0` ⇒ ①**假绿**（"对照臂被吞"）。
-     *   本门首版就是这么绿着过的，只有 ④a 响了。现在把"臂的身份"并进 ①/② 的判据里。 */
+    /* ⚠️ 每条都并验**那一臂自己解析成了什么 mode**（`__bandStats.mode`）：
+     *   NEG 实测踩到的坑：改默认时若解析器把某个词一起漏掉，对照臂会**回落成默认**
+     *   ⇒ 两臂同色 ⇒ 差=0 ⇒ 判据假绿（"对照臂被吞"）。 */
     PASS(
-      as <= Math.max(floor, 0) + NOISE_MARGIN && !!S.st && S.st.mode === 'soft',
-      `① default ≡ ?devband=soft（${as} ≤ ${Math.max(floor, 0) + NOISE_MARGIN}，且 soft 臂 mode=${S.st ? S.st.mode : '(无)'}）—— 证"默认 == soft"`,
+      ash <= Math.max(floor, 0) + NOISE_MARGIN && !!SH.st && SH.st.mode === 'shade',
+      `① default ≡ ?devband=shade（${ash} ≤ ${Math.max(floor, 0) + NOISE_MARGIN}，且 shade 臂 mode=${SH.st ? SH.st.mode : '(无)'}）—— 证"默认 == shade"`,
     );
     PASS(
       af >= sound && !!F.st && F.st.mode === 'full',
       `② default ≠ ?devband=full（${af} ≥ ${sound}，且 full 臂 mode=${F.st ? F.st.mode : '(无)'}）—— 证"旧路径可达且不等价"`,
     );
-    PASS(!!O.st && O.st.rects === 0 && !!A.st && A.st.rects > 0, `③a ?devband=off 真把边带关干净（off rects=${O.st ? O.st.rects : '(无)'}，默认 rects=${A.st ? A.st.rects : '(无)'}）`);
-    PASS(ao >= OFF_MIN, `③b default ≠ ?devband=off（${ao} ≥ ${OFF_MIN} 块）`);
+    PASS(
+      ao >= OFF_MIN && !!O.st && O.st.mode === 'off',
+      `③ default ≠ ?devband=off（${ao} ≥ ${OFF_MIN}，且 off 臂 mode=${O.st ? O.st.mode : '(无)'}）—— 证"压暗那一层真的在画"`,
+    );
+    PASS(
+      !!S.st && S.st.mode === 'soft' && as >= OFF_MIN,
+      `④ ?devband=soft 仍在且与默认不同（mode=${S.st ? S.st.mode : '(无)'}，${as} ≥ ${OFF_MIN} 块）—— 上一版形态可复现`,
+    );
 
-    /* ④ 落笔量：语义判据。`px` = 边带矩形总面积（世界 px²），只由 `band()` 累加 ⇒
-     * 不受美术里同值墨色（`#2a1a12`/`#fff3c8`）污染。 */
-    const pxA = A.st ? A.st.px : -1;
-    const pxF = F.st ? F.st.px : -1;
-    PASS(!!A.st && A.st.mode === 'soft', `④a 默认走 soft 分支（mode=${A.st ? A.st.mode : '(无)'}）`);
-    PASS(!!A.st && A.st.artSkip > 0, `④b 作用域收窄生效（artSkip=${A.st ? A.st.artSkip : '(无)'} > 0）—— 自带形体的格子没被描`);
-    const PX_RATIO = 0.12; // 默认落笔面积 / full 的上限；实测 **4.2%**（320 vs 7680）⇒ 留 2.9 倍余量
-    PASS(pxA > 0 && pxF > 0 && pxA <= PX_RATIO * pxF, `④c 边带落笔面积 default ${pxA} ≤ ${PX_RATIO}×full ${pxF}（= ${Math.round(PX_RATIO * pxF)}）`);
+    /* ⑤ 语义判据：默认必须**一条线都不画**，但压暗格数必须 > 0。
+     *   · 只删 `shade` 分支 ⇒ `shade === 0` ⇒ 红（"默认退化成只铺蓝洗"）；
+     *   · 有人把线条加回默认 ⇒ `rects > 0` ⇒ 红（这正是主理人要去掉的东西）；
+     *   · 有人把 `walkable` 忘了传 ⇒ `shade === 0` 或远小于全图 ⇒ 红。 */
+    PASS(!!A.st && A.st.mode === 'shade', `⑤a 默认走 shade 分支（mode=${A.st ? A.st.mode : '(无)'}）`);
+    PASS(!!A.st && A.st.rects === 0, `⑤b 默认一条边带都不画（rects=${A.st ? A.st.rects : '(无)'} === 0）`);
+    PASS(
+      !!A.st && A.st.shade > 0,
+      `⑤c 外圈压暗真的落笔（shade=${A.st ? A.st.shade : '(无)'} 格 · ${A.st ? A.st.shadePx : '?'} 世界 px²）`,
+    );
+    PASS(!!F.st && F.st.rects > 0 && F.st.px > 0, `⑤d full 旧路径仍画边带（rects=${F.st ? F.st.rects : '(无)'} · px=${F.st ? F.st.px : '(无)'}）`);
   });
 } catch (e) {
   console.error(`✗ 运行失败：${e && e.message ? e.message : e}`);

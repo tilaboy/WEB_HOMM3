@@ -25,6 +25,14 @@ export interface ViewModel {
   player: PlayerId;
   sight: number;
   reachable: Float64Array | null;
+  /**
+   * **不限移动力**的代价场（`computePaths(..., Infinity)`）。
+   *
+   * `reachable` 里"超出移动力"与"地形不可走"都是 `Infinity`，只靠它分不出这两种格；
+   * 而 `shade` 默认要压暗的**只有前者**（"路能走、但这回合走不到"）—— 后者（树/水/山/城）
+   * 由美术自己表达，压暗只会把湖面画脏。没有它时 `shade` 退化成"只铺蓝洗"。
+   */
+  walkable?: Float64Array | null;
   path: GridPos[] | null;
   hover: GridPos | null;
   /** 跨天行程的目的地：画一面小旗，提醒玩家"昨天没走完"。 */
@@ -236,32 +244,49 @@ const DEV_FOG_CLOSE = ((): boolean => {
  * 6 世界 px 在真机 `s=0.784 × DPR3` 下 ≈ **14 物理 px**，比任何一格美术都粗。
  * 于是"可达性提示"变成了地图上最响的图形元素 —— 这是**层的作用域**问题，不是配色问题。
  *
- * **默认 = `soft`**（2026-10-21 主理人裁定「让地图更自然一点」）。四臂 A/B 的图在
- * `production/tp9/tp10/phone-band-ab/`；判据是"障碍物不再被套方框"，不是"边带消失"：
- *   · `soft`（**默认**）＝ `thin + art`：亮芯 1px + 墨 1px，且**自带形体的格子不描**；
- *   · `full`（**旧路径，可复现**）＝ 旧版：红 + 亮芯 + 墨 各 2px，所有贴可达区的一侧都画；
- *   · `thin`  ＝ 只换**厚度与色栈**：`亮芯 1px + 墨 1px`（去掉红色色相锚），作用域不变；
- *   · `art`   ＝ 只换**作用域**：**自带形体的不可走格（物件精灵 / 水面岸线）不再描边**，
- *               因为它们的轮廓已经由美术给出；仅"看不出来为什么不能走"的格子才描；
+ * **默认暂置 `shade`**（2026-10-21：`soft` 仍被嫌"白框"，方案 D「外圈压暗」= 一条线都不画。
+ * ⚠️ 这是**待拍板的推荐值**，不是已定案；`production/design-session-2026-10-21.md` §1 给了 A/B/C/D 四案，
+ * 选别的只需改下面 `BAND_MODE` 的兜底串一行。先置成 D 是为了让你直接看实物再决定。）
+ * 做法：可达区铺 16% 蓝色水洗；**已揭开、地形本身能走但超出移动力**的格子压暗 16% ⇒
+ * 边界由两侧**明度差**读出来，像阴影而不是描边（与"暗缝用双色 halo"同源：一暗一亮，都不靠线条）。
+ * 自带形体的不可走格（树/岩/山/水/城）**一律不动** —— 它们的轮廓本来就由美术给出，
+ * 而且"压暗湖面"会把水画脏。雾界也不压（雾本来就比可达区暗，压了看不出差别）。
+ *
+ * 旧路径全部保留，`?devband=` 可逐块取回：
+ *   · `shade`（**默认**）＝ 蓝洗 + 外圈压暗，无任何线条；
+ *   · `soft`  ＝ 亮芯 1px + 墨 1px，且自带形体不描（上一版默认）；
+ *   · `full`  ＝ 旧版：红 + 亮芯 + 墨 各 2px，所有贴可达区的一侧都画；
+ *   · `thin`  ＝ 只换厚度与色栈：亮芯 1px + 墨 1px（去红锚），作用域不变；
+ *   · `art`   ＝ 只换作用域：自带形体的不可走格不描；
  *   · `off`   ＝ 只关边带、保留蓝色水洗（`?devtint=0` 是连水洗一起关）。
- * ⚠️ `art` / `soft` **只作用于已揭开的格子** —— 未探索格贴可达区那一侧是 `#155` 的雾界闭合段，
- *   必须原样保留（否则会把 `#155` 修好的洞重新打开）。
- * ⚠️ 改形态 = 动 `#154` / `#155` 的验收口径 ⇒ 落地前须重跑 `reachmeas` / `tintab`。
- * ⚠️ **翻默认必须留旧路径**（`haloflip` 那条规矩）：`?devband=full` 能逐块取回旧画面，
- *   两向由 `tools/bandflip.mjs`（`npm run audit:bandflip`）机检 —— 默认≡soft、默认≠full。
+ * ⚠️ `art` / `soft` 的"自带形体豁免"**只作用于已揭开的格子** —— 未探索格贴可达区那一侧是
+ *   `#155` 的雾界闭合段，必须原样保留（否则会把 `#155` 修好的洞重新打开）。
+ * ⚠️ `shade` 没有边带 ⇒ `#155`（雾界结构 274/274 全补）与 `#154`（3:1 对比度）两条判词
+ *   在默认路径上**不再适用**，需要按"两侧明度差"重钉尺子；旧尺子仍可用 `?devband=full` 复现。
+ * ⚠️ **翻默认必须留旧路径**（`haloflip` 那条规矩）：两向由 `tools/bandflip.mjs`
+ *   （`npm run audit:bandflip`）机检 —— 默认≡shade、默认≠full、默认≠soft。
  */
-const BAND_MODE = ((): 'full' | 'thin' | 'art' | 'soft' | 'off' => {
+const BAND_MODE = ((): 'shade' | 'full' | 'thin' | 'art' | 'soft' | 'off' => {
   try {
     const v = new URLSearchParams(location.search).get('devband');
-    return v === 'full' || v === 'thin' || v === 'art' || v === 'off' ? v : 'soft';
+    return v === 'full' || v === 'thin' || v === 'art' || v === 'soft' || v === 'off' ? v : 'shade';
   } catch {
-    return 'soft';
+    return 'shade';
   }
 })();
+/** 新默认：不画线，靠"外圈压暗"读边界。 */
+const BAND_SHADE = BAND_MODE === 'shade';
 /** 色栈换薄（`thin` / `soft`）：去掉红色色相锚，两条亮度锚各压到 1px。 */
 const BAND_THIN = BAND_MODE === 'thin' || BAND_MODE === 'soft';
 /** 作用域收窄（`art` / `soft`）：自带形体的不可走格不描边。 */
 const BAND_ART_ONLY = BAND_MODE === 'art' || BAND_MODE === 'soft';
+/**
+ * `shade` 的外圈压暗强度。
+ *
+ * 0.16 与蓝色水洗的 0.16 同量级 ⇒ 两侧对底色的改动**等量相反**（一边加蓝光、一边减亮），
+ * 任何底色下都能读出差；再深（≥0.25）草地会像入夜，再浅（≤0.10）在 0.22 正午光照下几乎看不出。
+ */
+const SHADE_OUT = 'rgba(24,14,6,0.16)';
 /**
  * `?devbandstats=1`：把**本帧边带的落笔量**写进 `window.__bandStats`（`tools/bandflip.mjs` 用）。
  *
@@ -606,7 +631,10 @@ export class MapRenderer {
 
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = '#0b0d10';
+    // 地图边界外的"桌面"：2026-10-21 由近黑蓝 #0b0d10 改成暖褐 ——
+    // 初始缩放降到 1.2 后，小地图左右会露出边界外的空区，冷黑在暖色地图旁边像**一个洞**；
+    // 暖褐读起来像"地图铺在石桌上"，与边框同族。（只改底色，不动任何地形/单位绘制。）
+    ctx.fillStyle = '#150f08';
     ctx.fillRect(0, 0, cam.viewW, cam.viewH);
 
     ctx.save();
@@ -622,6 +650,21 @@ export class MapRenderer {
     /* --- 地形层：陆地/岸线/装饰整图烘焙，一帧一次 drawImage --- */
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.terrain.ensure(map), 0, 0);
+
+    /* --- 地图外缘投影（2026-10-21） ---
+     * 初始缩放降到 1.2 后，比视口窄的小地图两侧会露出**边界外**的桌面底色；
+     * 只填一个深色时读起来像"地图上破了个洞"。加一圈由外向内变淡的暗边 +
+     * 一条极淡的亮边，边界就有了"地图铺在石桌上"的实体感（纯绘制，不动地形/单位）。 */
+    {
+      const mw = map.width * TILE;
+      const mh = map.height * TILE;
+      ctx.lineWidth = 12 / cam.zoom;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.34)';
+      ctx.strokeRect(-6 / cam.zoom, -6 / cam.zoom, mw + 12 / cam.zoom, mh + 12 / cam.zoom);
+      ctx.lineWidth = 1.5 / cam.zoom;
+      ctx.strokeStyle = 'rgba(255, 232, 170, 0.10)';
+      ctx.strokeRect(0, 0, mw, mh);
+    }
 
     /* --- §6.1 喜剧布景层 · A 组地面涂鸦：紧接地形之后、水面之前（§6.1.3）。
        地面涂鸦永不遮挡单位 ⇒ 被后面所有图层（水 / 迷雾 / 路径 / 物件 / 英雄）自然盖住。 --- */
@@ -720,6 +763,8 @@ export class MapRenderer {
     let statRects = 0;
     let statPx = 0;
     let statArtSkip = 0;
+    /** `shade`：压暗了多少格（只计数，不参与绘制）。 */
+    let statShade = 0;
     const band = (c: string, bx: number, by: number, bw: number, bh: number): void => {
       statRects++;
       statPx += bw * bh;
@@ -767,6 +812,18 @@ export class MapRenderer {
             continue;
           }
           if (rev && isFinite(c)) continue; // 英雄自身格（c===0）：在可达区内部，不填不描
+          // ---- `shade`（默认）：**一条线都不画**，超出移动力但地形能走的格子压暗 ----
+          // 判据链：已揭开 + 本回合不可达 + 不限移动力时可达（`walkable`）⇒ 压暗。
+          // 树/水/山/城/物件 在 `walkable` 里也是 Infinity ⇒ 天然被排除（美术自己会说话）；
+          // 未探索格不压（雾本来就暗，压了读不出差）。
+          if (BAND_SHADE) {
+            if (rev && vm.walkable && isFinite(vm.walkable[i])) {
+              ctx.fillStyle = SHADE_OUT;
+              ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+              statShade++;
+            }
+            continue;
+          }
           // ↓ 未探索格（**默认开**时）也会落到这里：`inRegion()` 要求相邻格**已揭开且可达**
           //   ⇒ 只有"贴可达区的那一侧"为真 ⇒ 恰好补上贴雾的缺口，且不在雾内部乱描。
           if (BAND_MODE === 'off') continue;
@@ -801,6 +858,8 @@ export class MapRenderer {
           rects: statRects, // 画了多少条矩形
           px: statPx, // 这些矩形的总面积（世界 px²）—— 「边带有多响」的干净读数
           artSkip: statArtSkip, // 因「自带形体」而整格跳过的数量
+          shade: statShade, // `shade` 模式压暗的格数（世界 px² 口径见 `shadePx`）
+          shadePx: statShade * TILE * TILE,
         };
       }
     }

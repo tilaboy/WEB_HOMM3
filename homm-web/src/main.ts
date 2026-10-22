@@ -1917,6 +1917,8 @@ function buildViewModel(): ViewModel {
     player: 'p1',
     sight: HERO_SIGHT,
     reachable: fieldTurn ? fieldTurn.cost : null,
+    // 不限移动力的代价场：`shade` 默认靠它区分"走不到"与"压根不能走"（见 MapRenderer 注释）
+    walkable: fieldFull ? fieldFull.cost : null,
     path: previewPath,
     hover,
     dest: pendingDest && state.heroes[pendingDest.heroId] ? pendingDest.dest : null,

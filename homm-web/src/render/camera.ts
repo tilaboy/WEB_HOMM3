@@ -27,9 +27,19 @@ const EDGE_SPEED = 460;
 export class Camera {
   x = 0;
   y = 0;
-  zoom = 2;
+  /**
+   * 初始缩放 **1.2**（2026-10-21 主理人拍板；旧值 2，中间试过 1.5）。
+   *
+   * 真机实测（OPPO PMA110 · 792×360 CSS）：城堡宽 ~90、高 96 世界 px，按比例外推
+   *   zoom 2.0 ⇒ 占屏宽 22.9% / 占屏高 53%（地图只剩一条，城堡像贴脸）；
+   *   zoom 1.4 ⇒ 16.0% / 37%；
+   *   **zoom 1.2 ⇒ 约 13.7% / 32%**，一格 38.4px，横向能看到 ~20 格 —— 一眼看清半张图。
+   * 代价（已知并接受）：1.2 不是整数倍，最近邻放大后像素宽窄不均（1.25/1.5 才整齐）；
+   * 若观感上"格子发虚"，最省事的收敛点是 1.25。`?devzoom=` 仍可逐档覆盖。
+   */
+  zoom = 1.2;
   /** 缩放动画的目标值；无动画时与 zoom 相等。 */
-  targetZoom = 2;
+  targetZoom = 1.2;
   minZoom = 0.75;
   maxZoom = 3;
 
@@ -170,7 +180,10 @@ export class Camera {
     const z = this.zoom;
     const w = this.mapW * TILE * z;
     const h = this.mapH * TILE * z;
-    const pad = Math.min(this.viewW, this.viewH) * 0.35;
+    // 越界余量：旧值 0.35×min(vw,vh)（真机 792×360 上 = **126px**）本意是"贴边别太硬"，
+    // 但初始缩放降到 1.2 后，这 126px 就是一条完整露出来的**地图外空桌面** —— 读起来像画面缺一块。
+    // 2026-10-21 收到 0.08（≈29px）：贴边仍有余量，但不会露出成片的空白。
+    const pad = Math.min(this.viewW, this.viewH) * 0.08;
     const xLow = this.viewW - pad - w;
     const xHigh = pad;
     this.x = xLow > xHigh ? (xLow + xHigh) / 2 : Math.min(xHigh, Math.max(xLow, this.x));

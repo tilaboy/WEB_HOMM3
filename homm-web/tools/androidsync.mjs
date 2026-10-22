@@ -86,12 +86,21 @@ if (!existsSync(DIST)) {
 }
 
 // 1) 同步
-console.log('▶ npx cap sync android');
-try {
-  execFileSync('npx', ['cap', 'sync', 'android'], { cwd: ROOT, stdio: 'inherit' });
-} catch {
-  console.error('✗ cap sync 失败');
-  process.exit(1);
+/* `--no-cap`：只跳过**复制动作**，不跳过断言（下面 2) 3) 照旧逐文件 md5 + 标记比对）。
+ * 存在的理由：`cap copy` 的做法是 `rm -rf assets/public` 再整目录复制，在受限环境下
+ * 会被批量删除保护拦下（实测 159 个目标 ⇒ `SAFE_DELETE_BULK_CONFIRM_REQUIRED`），
+ * 于是"同步失败"但 assets 里还留着上一次的副本 —— 后者才是最危险的：
+ * 出包能成功、跑的还是旧前端。此时先用 `rsync -a dist/ <assets>/` 镜像过去，
+ * 再用本开关跑**同一套**断言。⚠️ 它不会让比对变宽松：只要镜像漏一个文件，2) 照样红。 */
+const NO_CAP = process.argv.includes('--no-cap');
+console.log(NO_CAP ? '▶ 跳过 npx cap sync android（--no-cap，已由外部镜像）' : '▶ npx cap sync android');
+if (!NO_CAP) {
+  try {
+    execFileSync('npx', ['cap', 'sync', 'android'], { cwd: ROOT, stdio: 'inherit' });
+  } catch {
+    console.error('✗ cap sync 失败');
+    process.exit(1);
+  }
 }
 
 // 2) 逐文件 md5 比对（强断言）

@@ -135,21 +135,48 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   const root = document.createElement('div');
   root.className = 'battle';
 
+  /**
+   * 战斗顶栏 → **浮动 HUD**（2026-10-21 主理人：「上栏…所有的字都是竖着的，太难看了」）。
+   *
+   * 旧顶栏是**一条 44px 的 flex 横条**，把标题/回合/英雄/法力/器械/事故六段文字塞进 752px，
+   * 每段都被 `flex-shrink` 压到只剩一个汉字宽 ⇒ CJK 逐字换行 = 竖排。这不是字号问题，
+   * 是"一条通栏 + 可收缩文字"的结构问题。
+   *
+   * 新结构：左上**一枚胶囊**只留「回合 · 法力」（点它展开战况卡：标题 + 英雄攻防），
+   * 事故/器械各一枚独立小胶囊（规则变了必须整场可见，不能藏），右上三个动作按钮浮着。
+   * **所有文字块 `flex: 0 0 auto` + `white-space: nowrap`** ⇒ 竖排从结构上不可能再出现。
+   * 类名仍叫 `.bt-head`：`probes/touchtap.mjs` 与 `phone-ui-probe.mjs` 靠 `.bt-head .btn` 找速度键。
+   */
   const head = document.createElement('div');
   head.className = 'bt-head';
+  const chips = document.createElement('div');
+  chips.className = 'bt-chips';
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'bt-chip';
+  chip.setAttribute('aria-label', '战况：点开看战斗标题与英雄属性');
+  chip.setAttribute('aria-expanded', 'false');
+  const roundEl = document.createElement('div');
+  roundEl.className = 'bt-round';
+  const manaEl = document.createElement('div');
+  manaEl.className = 'bt-mana';
+  chip.append(roundEl, manaEl);
   const title = document.createElement('div');
   title.className = 'bt-title';
   title.textContent = opts.title;
-  const roundEl = document.createElement('div');
-  roundEl.className = 'bt-round';
   const statsEl = document.createElement('div');
   statsEl.className = 'bt-stats';
   if (hero) {
     const p = effectivePrimary(hero);
     statsEl.textContent = `${hero.name} · 攻 ${p.attack} 防 ${p.defense}`;
   }
-  const manaEl = document.createElement('div');
-  manaEl.className = 'bt-mana';
+  const info = document.createElement('div');
+  info.className = 'bt-info';
+  info.append(title, statsEl);
+  chip.addEventListener('click', () => {
+    const open = head.classList.toggle('info-open');
+    chip.setAttribute('aria-expanded', String(open));
+  });
   // 攻城器械：攻方带了才显示，提醒玩家"这几样东西每回合都会自动开火"
   const machineEl = document.createElement('div');
   machineEl.className = 'bt-machines';
@@ -161,13 +188,14 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   }
   const headActions = document.createElement('div');
   headActions.className = 'bt-head-actions';
-  // 紫晶「实验事故」：规则变了一整场都得看得见，所以做成头部标签（和攻城器械同一行）。
+  // 紫晶「实验事故」：规则变了一整场都得看得见，所以做成独立胶囊（不随战况卡收起）。
   // 文案由 core 的 `accidentLabel` 生成 —— 战报、标签、探针读的是同一句。
   const accidentEl = document.createElement('div');
   accidentEl.className = 'bt-accident';
   if (battle.accident) accidentEl.textContent = accidentLabel(battle.accident);
   else accidentEl.style.display = 'none';
-  head.append(title, roundEl, statsEl, manaEl, machineEl, accidentEl, headActions);
+  chips.append(chip, accidentEl, machineEl);
+  head.append(chips, info, headActions);
   root.appendChild(head);
 
   const body = document.createElement('div');
@@ -182,11 +210,38 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   spellPanel.className = 'bt-spells';
   spellPanel.style.display = 'none';
   fieldWrap.appendChild(spellPanel);
-  // 两侧不再摆"我方 / 敌方"列表：场上每支部队都自带数量牌，当前行动的那支脚下有金色光圈，
-  // 想看属性就把鼠标停在它身上（1 秒）或右键点一下。列表纯占地方还挡视野。
-  body.append(fieldWrap);
+  /**
+   * 两侧**紧凑名单**（2026-10-21 主理人裁定「C+A」）。
+   *
+   * 早先这里故意留空（旧注释：「列表纯占地方还挡视野」）—— 那是桌面思路：战场按高度撑满，
+   * 两侧本来就没地方。手机横屏不一样：可用区 752×304 而战场是 15×11（1.55:1），
+   * 等比缩放后左右各空 ~195px（**48% 宽度**）⇒ 空白是白送的，不放信息才浪费。
+   * 桌面（body 窄）由 `fit()` 摘掉 `has-sides` 类，两块名单自动消失 ⇒ 不影响旧观感。
+   */
+  const mkSide = (label: string): { col: HTMLDivElement; list: HTMLDivElement } => {
+    const col = document.createElement('div');
+    col.className = 'bt-side';
+    const h = document.createElement('div');
+    h.className = 'bt-side-h';
+    h.textContent = label;
+    const list = document.createElement('div');
+    list.className = 'bt-side-list';
+    col.append(h, list);
+    return { col, list };
+  };
+  const foeSide = mkSide('敌方');
+  const ourSide = mkSide('我方');
+  body.append(foeSide.col, fieldWrap, ourSide.col);
   root.appendChild(body);
 
+  /**
+   * 底栏 → **浮动操作簇**（2026-10-21 主理人：「下来…就那些防御的什么等待施法，
+   * 或者用一个 floating window…没有必要全部留」）。
+   *
+   * 旧底栏是一条 62px 通栏，左边一条提示 + 右边三个按钮，占掉战场 1/5 的高度。
+   * 现在三者各自浮在战场边缘：按钮簇贴右下（拇指带）、提示贴左下（会自动淡出）、
+   * 战报贴左上下方（桌面才有）。战场因此拿回整块 752×304。
+   */
   const foot = document.createElement('div');
   foot.className = 'bt-foot';
   const hintEl = document.createElement('div');
@@ -195,8 +250,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   actionBar.className = 'bt-actions';
   const logEl = document.createElement('div');
   logEl.className = 'bt-log';
-  foot.append(hintEl, actionBar, logEl);
-  root.appendChild(foot);
+  foot.append(actionBar);
+  root.append(body, foot, hintEl, logEl);
 
   parent.appendChild(root);
   // 战斗期间隐藏主界面顶栏（资源 / 结束一天 / 存档 / 新游戏）：它们跟战斗无关，
@@ -238,9 +293,51 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   let bolt: { x: number; y: number; p: number } | null = null;
 
   function fit(): void {
+    // 宽到放得下"两侧名单 + 战场"才显示名单（桌面窄窗/竖屏时自动隐藏，观感与旧版一致）
+    root.classList.toggle('has-sides', body.clientWidth >= 620);
     const w = fieldWrap.clientWidth;
     const h = fieldWrap.clientHeight;
     renderer.fit(w || BASE_W, h || BASE_H);
+  }
+
+  /* ---------------- 两侧名单（C+A） ---------------- */
+
+  /**
+   * 只在 `has-sides`（宽到放得下）时可见；按签名去重 —— 每帧重建 DOM 会把主线程拖死，
+   * 而战斗里真正会变的只有"数量 / 总血 / 谁在行动"这三样。
+   */
+  let sideSig = '';
+  function renderSides(): void {
+    const act = currentUnit(battle);
+    const sig =
+      `${act ? act.id : '-'}|` +
+      battle.units.map((u) => `${u.id}:${u.count}:${Math.round(poolOf(u))}`).join(',');
+    if (sig === sideSig) return;
+    sideSig = sig;
+    const cols: Array<[typeof foeSide, 0 | 1]> = [[foeSide, 1], [ourSide, 0]];
+    for (const [col, side] of cols) {
+      col.list.textContent = '';
+      for (const u of battle.units) {
+        if (u.side !== side) continue;
+        const def = getUnit(u.unitTypeId);
+        const row = document.createElement('div');
+        row.className = `bt-side-row${u.count <= 0 ? ' dead' : ''}${act && act.id === u.id ? ' act' : ''}`;
+        const n = document.createElement('span');
+        n.className = 'n';
+        n.textContent = def.name;
+        const q = document.createElement('span');
+        q.className = 'q';
+        q.textContent = `×${u.count}`;
+        const bar = document.createElement('span');
+        bar.className = 'bt-side-bar';
+        const fill = document.createElement('b');
+        const max = def.hp * Math.max(1, u.count);
+        fill.style.width = `${Math.max(0, Math.min(100, Math.round((poolOf(u) / max) * 100)))}%`;
+        bar.appendChild(fill);
+        row.append(n, q, bar);
+        col.list.appendChild(row);
+      }
+    }
   }
 
   /* ---------------- 部队信息浮框（场上悬停 1 秒 / 右键立即） ---------------- */
@@ -336,8 +433,17 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     }
   }
 
+  /**
+   * 提示条 4 秒后自动淡出（2026-10-21）：它以前是通栏里的一格，淡不淡都占着 62px；
+   * 现在浮在战场左下角，不淡就会一直盖住一小块格子。文字**不移除**（只加 `.fade`），
+   * `probes/touchtap.mjs` 与 `phone-ui-probe.mjs` 仍按 `textContent` 读，不受影响。
+   */
+  let hintTimer = 0;
   function hint(text: string): void {
     hintEl.textContent = text;
+    hintEl.classList.remove('fade');
+    clearTimeout(hintTimer);
+    hintTimer = window.setTimeout(() => hintEl.classList.add('fade'), 4000);
   }
 
   function addFloat(text: string, h: Hex, color: string): void {
@@ -1259,6 +1365,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
 
     roundEl.textContent = `第 ${battle.round} 回合`;
     manaEl.textContent = manaText();
+    renderSides();
     btnAuto.disabled = auto || battle.over;
     btnFlee.disabled = battle.over;
     btnDefend.disabled = busy() || !u || u.side !== 0;

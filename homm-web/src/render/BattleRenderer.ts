@@ -114,7 +114,14 @@ export class BattleRenderer {
   fit(availW: number, availH: number): void {    // §5.3：套上画质 DPR 上限；本渲染器已支持小数倍缩放，只需钳制即可
     const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), quality.dprCap);
     const raw = Math.min(availW / BASE_W, availH / BASE_H);
-    let s = Math.min(4, Math.max(0.6, raw));
+    /**
+     * 下限从 **0.6 → 0.35**（2026-10-21 真机走查修的 bug）。
+     *
+     * 旧下限在 792×360 的手机上会算出 `min(0.505, …)` 后**硬抬到 0.6** ⇒ 画布 362×233，
+     * 比 body（196）高 37px ⇒ 溢出容器、还压住顶栏 18px（实测 `canvas.y=68 < body.y=86`）。
+     * 下限的本意只是"别缩到看不见"，0.35 足够；真正的保底交给上面的 `availH`。
+     */
+    let s = Math.min(4, Math.max(0.35, raw));
     const fl = Math.floor(s);
     if (fl >= 1 && s / fl <= 1.12) s = fl;
     this.scale = s;

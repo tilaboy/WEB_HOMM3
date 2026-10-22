@@ -92,22 +92,36 @@ body {
 
 /* ---------- top bar (只读状态条) ---------- */
 #topbar {
-  /* IA §4.2 决议 R7：顶栏 = **只读状态条**，高 ≤32px、`pointer-events:none`、零可点目标。
-     可点目标全部下移到 #thumb（≥44px）—— 这才是解掉"顶栏矮 vs 按钮大"矛盾的做法。
-     安全区 inset 由 #app 统一承担，这里不再叠加 env()，避免双重留白。 */
-  height: 32px;
-  flex: 0 0 32px;
+  /**
+   * 2026-10-21 探索态改**浮动胶囊**（主理人：「Explore 模式下面可不可以不用那些上下的 status bar」）。
+   *
+   * 旧写法是 32px 通栏 + `flex: 0 0 32px`，把地图整条压下去；现在 `position:absolute`
+   * 脱离文档流 ⇒ `#stage` 拿回整屏（手机横屏 +32px），资源/日期仍在，只是浮在左上角。
+   * 仍是**只读**（`pointer-events:none`、零可点目标），不违反 R7。
+   *
+   * ⚠️ 安全区**不能靠 #app 的 padding**：`position:absolute` 的包含块是视口（#app 没有
+   * position），padding 管不到绝对定位子元素。首版就写错了 ⇒ 真机（OPPO PMA110，横屏
+   * `env(safe-area-inset-top)=40px / bottom=16px`）上胶囊压在系统状态栏下面、圆盘压进
+   * 手势条。实测值直接进 calc（不是 `constant()` 兜底：viewport-fit=cover 下 env 已可用）。
+   */
+  position: absolute;
+  left: calc(env(safe-area-inset-left, 0px) + 8px);
+  top: calc(env(safe-area-inset-top, 0px) + 6px);
+  z-index: 30;
+  height: 30px;
+  max-width: calc(100% - 16px);
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 10px;
-  background: linear-gradient(180deg, #5a4326, #3a2a14);
-  border-bottom: 2px solid var(--frame);
-  box-shadow: inset 0 1px 0 rgba(255, 232, 170, 0.18);
-  z-index: 20;
-  /* 只读：整条不接收指针事件。顶上已无任何按钮，故 32px 不受 §5.2 的 ≥44px 约束。 */
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(24, 16, 7, 0.55);
+  border: 1px solid rgba(255, 232, 170, 0.18);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(3px);
+  /* 只读：整条不接收指针事件。顶上已无任何按钮，故 30px 不受 §5.2 的 ≥44px 约束。 */
   pointer-events: none;
-  /* C3：顶栏不得横向滚动 / 溢出（原 @media(max-width:860px) 的 overflow-x:auto 已删除）。 */
+  /* C3：顶栏不得横向滚动 / 溢出。 */
   overflow: hidden;
 }
 
@@ -169,6 +183,16 @@ body {
  * 自由对局 / tutorial / duel **不加这个类** ⇒ 顶栏仍是既有形态（既有路径零改动）。
  * 资源不是"丢了"：城镇面板的建造行与市场页「我的资源」逐项可见（按需，非常驻）。
  */
+#topbar.showcase {
+  /* 目标清单比资源条长得多：让它在展示图里重新拉满宽度，但仍是浮层、不再压地图。
+     右侧让出 56px = 收起态 `#side`（48px 竖条 + 8px 间隙）—— 否则胶囊会钻到
+     `#panel-toggle`（那枚「英雄」标签）底下，两个浮层叠在一起（真机 792×360 实测）。 */
+  left: calc(env(safe-area-inset-left, 0px) + 8px);
+  right: calc(env(safe-area-inset-right, 0px) + 56px);
+  max-width: none;
+  border-radius: 10px;
+}
+
 #topbar.showcase .res,
 #topbar.showcase .date,
 #topbar.showcase .who-dot,
@@ -253,42 +277,84 @@ body {
 
 /* ---------- bottom thumb band（IA §4.2 / R5） ---------- */
 #thumb {
-  /* 全部高频交互集中在下缘一条 48px 带内，位置固定（肌肉记忆）。
-     F-3.6 后为 **4 个文字按钮**（菜单 / 英雄 / 城 / 结束一天）：移动力细条与日志入口已撤
-     —— 前者改为地图染色（MapRenderer 可达范围），后者移入菜单一级项「事件日志」。 */
-  flex: 0 0 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  /* F-3.6 撤掉移动力细条（原 `flex: 1 1 auto`，它把后面的按钮顶到右边）后，4 个按钮会
-     **左贴、右侧留空** —— 那是本次改动顺带引入的**布局回归**。`flex-end` 把它恢复
-     （右侧 0 安全区，右拇指更顺；此前一直被那条移动力条顶着）。 */
-  justify-content: flex-end;
-  gap: 6px;
-  padding: 0 8px;
-  background: linear-gradient(0deg, #5a4326, #3a2a14);
-  /* 用 inset box-shadow 画分隔线而不是 border-top：border 会吃掉 2px 内容高，
-     而主操作「结束一天」需要真实 48px 命中高（§5.2 主操作 ≥48）。 */
-  box-shadow: inset 0 2px 0 var(--frame), inset 0 3px 0 rgba(255, 232, 170, 0.12);
-  z-index: 20;
-  /* C3：拇指带同样不得横向溢出 */
-  overflow: hidden;
+  /**
+   * 2026-10-21：从「下缘 48px 通栏」改成**半透明半圆盘**（主理人：「可以用一个 half transparent
+   * 的 float window，好比一个圆形的或者半圆弧的，上面半可以摁的」）。
+   *
+   * 结构没变：仍是 4 个纯文字按钮（菜单 / 英雄 / 城 / 结束一天）、仍是 44/48px 命中高、
+   * 仍贴右下拇指带 —— 变的只是**承载它的形状**：一个 flat 边贴屏底、上半可点的半圆，
+   * 按弧线摆 4 个按钮。`position:absolute` 脱离文档流 ⇒ 地图多出 48px 高度。
+   *
+   * ⚠️ 圆盘本身的背景层 `pointer-events:none`，只有按钮可点 —— 否则半圆会拦住
+   * 右下角的地图拖拽（那里正好是"往右走"最顺的手指落点）。
+   *
+   * ⚠️ `bottom` 必须走 `env(safe-area-inset-bottom)`（真机 = 16px）：半圆的下缘压在
+   * 手势条上时，「结束一天」会被系统手势抢走（上滑即回桌面）。同 #topbar：绝对定位
+   * 不吃 #app 的 padding。
+   */
+  position: absolute;
+  right: calc(env(safe-area-inset-right, 0px) + 4px);
+  bottom: env(safe-area-inset-bottom, 0px);
+  z-index: 30;
+  width: 240px;
+  height: 124px;
+  border-radius: 240px 240px 0 0;
+  background: radial-gradient(circle at 50% 118%, rgba(58, 41, 21, 0.62), rgba(24, 16, 7, 0.34) 72%);
+  border: 1px solid rgba(255, 232, 170, 0.16);
+  border-bottom: none;
+  box-shadow: 0 -4px 22px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
 }
 
-.tb-btn {
+/* 只有按钮接指针；位置按弧线摆（圆心 = 半圆底边中点，半径 ~80） */
+#thumb .tb-btn {
+  position: absolute;
+  pointer-events: auto;
   min-height: 44px;
   min-width: 44px;
   height: 44px;
   padding: 0 12px;
   font-size: 13px;
   flex: 0 0 auto;
+  /* 浮在半透明底上：实心渐变会显得像贴上去的膏药，改成半透明 + 描边 */
+  background: rgba(64, 46, 24, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+/* 菜单 / 英雄 / 城 / 结束一天 —— 两排贴着半圆内缘摆。
+ *
+ * ⚠️ 不能"沿弧线一字排开"：240×124 的半圆里 4 个 44px 按钮的**矩形**会互相咬住
+ * （首版 菜单∩英雄 = 20×6px、城∩结束一天 = 24×8px），重叠区点下去落到谁身上由 DOM 顺序决定
+ * ⇒ 想点「菜单」却打开了英雄栏。现在上排 y=28..72、下排 y=74..122（48px 的主操作也在内），
+ * **两排零重叠**；横向同样留 ≥12px。四处都落在弧内（椭圆 rx≈120 / ry≈124：
+ * y=28 处半宽 ≈76 ⇒ x 44..196；y=74 处 ≈115 ⇒ x 5..235）。
+ * 几何由 `npm run probe:dockoverlap` 盯（两两重叠面积=0 + 不出盘），别再手调完不跑。 */
+#thumb .tb-btn:nth-child(1) {
+  left: 12px;
+  top: 74px;
+}
+
+#thumb .tb-btn:nth-child(2) {
+  left: 48px;
+  top: 28px;
+}
+
+#thumb .tb-btn:nth-child(3) {
+  left: 112px;
+  top: 28px;
+}
+
+#thumb .tb-btn:nth-child(4) {
+  left: 144px;
+  top: 74px;
 }
 
 /* 主操作「结束一天」= 48px（§5.2 主操作档），其余 44px（常规档） */
-.tb-btn.primary {
+#thumb .tb-btn.primary {
   min-height: 48px;
   height: 48px;
-  min-width: 92px;
+  min-width: 84px;
 }
 
 /* 未读角标。宿主是「菜单」按钮（F-3.6 后日志入口移入菜单，角标随迁）。 */
@@ -1304,20 +1370,78 @@ table.est td:last-child {
   color: var(--text);
 }
 
+/* 浮动 HUD 层（2026-10-21）。不再是一条通栏：`inset:0` 铺满、子块各自定位，
+   层本身 `pointer-events:none`（只有按钮/胶囊自己开启），底下战场照常可点。 */
 .bt-head {
-  flex: 0 0 44px;
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: block;
+  pointer-events: none;
+}
+
+/* 左上：回合 · 法力 胶囊 + 事故/器械小胶囊，竖着排（每枚都 nowrap，永不参与 flex 收缩） */
+.bt-chips {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 360px;
+}
+
+.bt-chip {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 14px;
-  background: linear-gradient(180deg, #5a4326, #3a2a14);
-  border-bottom: 2px solid var(--frame);
-  box-shadow: inset 0 1px 0 rgba(255, 232, 170, 0.18);
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 12px;
+  pointer-events: auto;
+  color: var(--parchment);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  background: rgba(24, 16, 7, 0.62);
+  border: 1px solid rgba(255, 232, 170, 0.24);
+  border-radius: 999px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(3px);
+}
+
+.bt-chip:active {
+  background: rgba(48, 34, 16, 0.78);
+}
+
+/* 战况卡：标题 + 英雄攻防。默认收起 —— 这两条对"这回合怎么打"几乎无用，
+   但也不能丢（点一下就能看），所以做成按需展开而不是塞进常驻条。 */
+.bt-info {
+  position: absolute;
+  left: 8px;
+  top: 54px;
+  display: none;
+  max-width: 360px;
+  padding: 6px 12px;
+  background: rgba(18, 12, 5, 0.9);
+  border: 1px solid var(--frame);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+
+.bt-head.info-open .bt-info {
+  display: block;
+}
+
+.bt-info > * {
+  white-space: nowrap;
 }
 
 .bt-title {
   color: var(--gold);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
   letter-spacing: 0.5px;
 }
@@ -1340,6 +1464,9 @@ table.est td:last-child {
   border-radius: 10px;
   background: rgba(232, 195, 90, 0.1);
   white-space: nowrap;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 紫晶「实验事故」：只有 p4 参战时才出现，一整场都得挂着（规则变了不能只闪一下） */
@@ -1351,12 +1478,30 @@ table.est td:last-child {
   border-radius: 10px;
   background: rgba(201, 182, 255, 0.1);
   white-space: nowrap;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* 右上：演出速度 / 自动战斗 / 撤退 —— 三个 44px 触屏目标浮在战场角上 */
 .bt-head-actions {
-  margin-left: auto;
+  position: absolute;
+  right: 8px;
+  top: 8px;
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  padding: 3px;
+  pointer-events: auto;
+  background: rgba(24, 16, 7, 0.55);
+  border: 1px solid rgba(255, 232, 170, 0.18);
+  border-radius: 12px;
+  backdrop-filter: blur(3px);
+}
+
+.bt-head-actions .btn {
+  min-height: 44px;
+  height: 44px;
+  white-space: nowrap;
 }
 
 .bt-body {
@@ -1364,8 +1509,8 @@ table.est td:last-child {
   min-height: 0;
   display: flex;
   align-items: stretch;
-  gap: 10px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px;
 }
 
 /* 战斗中隐藏主界面顶栏与拇指带（资源 / 菜单 / 英雄 / 城 / 日志 / 结束一天） */
@@ -1410,23 +1555,132 @@ body.in-battle #thumb {
   cursor: pointer;
 }
 
+/* 右下：防御 / 等待 / 施法 浮动簇（2026-10-21 起不再占通栏） */
 .bt-foot {
-  flex: 0 0 auto;
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 6;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 14px;
-  border-top: 2px solid var(--frame);
-  background: linear-gradient(180deg, #3a2a14, #2a1d0d);
+  gap: 8px;
+  padding: 4px;
+  background: rgba(24, 16, 7, 0.58);
+  border: 1px solid rgba(255, 232, 170, 0.18);
+  border-radius: 12px;
+  backdrop-filter: blur(3px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
 }
 
-.bt-hint {
-  flex: 1;
-  min-width: 0;
+/* 两侧名单（C+A）：只在 body 宽到 620px 以上时由 `.has-sides` 打开。
+   桌面窄窗/竖屏自动隐藏 ⇒ 与旧观感一致；手机横屏正好填掉战场左右各 ~195px 的死空间。 */
+.bt-side {
+  flex: 0 0 112px;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  /* 顶部让开左上那枚「回合 · 法力」胶囊：名单自己不需要那么高，
+     但被悬浮 HUD 压住两行就等于白做（真机 792×360 上量出来的遮挡高度 ≈ 46px）。
+     只有**左侧**那列需要 —— 胶囊在左上，右列照常从顶部开始。 */
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--frame);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.battle.has-sides .bt-side {
+  display: flex;
+}
+
+.battle.has-sides .bt-side:first-child {
+  padding-top: 46px;
+}
+
+/* 右列同样让开右上那组动作按钮（速度/自动/撤退 52px 高） */
+.battle.has-sides .bt-side:last-child {
+  padding-top: 52px;
+}
+
+.bt-side-h {
+  font-size: 11px;
+  letter-spacing: 0.5px;
   color: var(--gold);
+  opacity: 0.85;
+}
+
+.bt-side-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.bt-side-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 2px 6px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.bt-side-row .n {
+  color: var(--parchment);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bt-side-row .q {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.bt-side-bar {
+  grid-column: 1 / -1;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.bt-side-bar b {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+}
+
+.bt-side-row.act .n {
+  color: var(--gold);
+}
+
+.bt-side-row.dead {
+  opacity: 0.35;
+}
+
+/* 左下：提示条浮着，4 秒后自动淡出（不再永久占 1/5 屏高）。
+   `pointer-events:none` —— 它只是话，不是按钮。 */
+.bt-hint {
+  position: absolute;
+  left: 8px;
+  bottom: 10px;
+  z-index: 6;
+  max-width: 46%;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(24, 16, 7, 0.55);
+  border: 1px solid rgba(255, 232, 170, 0.14);
+  color: var(--gold);
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.bt-hint.fade {
+  opacity: 0;
 }
 
 .bt-actions {
@@ -1434,14 +1688,20 @@ body.in-battle #thumb {
   gap: 8px;
 }
 
+/* 战报（桌面才有）：浮在左下提示条上方 */
 .bt-log {
-  flex: 0 0 300px;
+  position: absolute;
+  left: 8px;
+  bottom: 46px;
+  z-index: 6;
+  width: 300px;
   max-height: 62px;
   overflow: hidden;
   color: var(--text-dim);
   font-size: 11px;
   line-height: 1.5;
-  text-align: right;
+  pointer-events: none;
+  text-shadow: 0 1px 2px #000;
 }
 
 .bt-result {
