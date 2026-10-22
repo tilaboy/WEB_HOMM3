@@ -83,6 +83,11 @@ export function openTownDialog(parent: HTMLElement, opts: TownDialogOptions): vo
   tabs.className = 'town-tabs';
   const pane = document.createElement('div');
   pane.className = 'town-pane';
+  // 底部库存条：顶栏被面板盖住（面板 352 高、顶栏在 y≈8..40），
+  // 于是建筑页上"我买得起吗"本来要靠切到市场页才知道 —— 决策输入不在决策处。
+  // 常驻一条 7 项库存，花完立刻变，不用离开当前页。
+  const budget = document.createElement('div');
+  budget.className = 'town-budget';
 
   const renderAll = (): void => {
     const { state, townId } = opts;
@@ -131,13 +136,25 @@ export function openTownDialog(parent: HTMLElement, opts: TownDialogOptions): vo
       opts.onChange();
     };
     paintPane(pane, opts, tab, res, say);
+
+    budget.innerHTML = '';
+    const bk = document.createElement('span');
+    bk.className = 'town-budget-k';
+    bk.textContent = '库存';
+    budget.appendChild(bk);
+    budget.appendChild(chip(`金 ${res.gold ?? 0}`));
+    budget.appendChild(chip(`木 ${res.wood ?? 0}`));
+    budget.appendChild(chip(`矿 ${res.ore ?? 0}`));
+    for (const k of ['gem', 'crystal', 'sulfur', 'mercury'] as const) {
+      budget.appendChild(chip(`${RESOURCE_LABEL[k]} ${res[k] ?? 0}`));
+    }
   };
 
   renderAll();
 
   const wrap = document.createElement('div');
   wrap.className = 'town';
-  wrap.append(meta, noteEl, tabs, pane);
+  wrap.append(meta, noteEl, tabs, pane, budget);
 
   showModal(parent, {
     title: opts.state.towns[opts.townId]?.name ?? '城镇',

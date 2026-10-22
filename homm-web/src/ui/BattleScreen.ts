@@ -327,7 +327,11 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         if (u.side !== side) continue;
         const def = getUnit(u.unitTypeId);
         const row = document.createElement('div');
-        row.className = `bt-side-row${u.count <= 0 ? ' dead' : ''}${act && act.id === u.id ? ' act' : ''}`;
+        // `ours` / `theirs` 只驱动左侧那道 3px 色条（金 / 赤）：战斗里最常问的是
+        // "这队是谁的"，位置（左/右）不够快 —— 血条颜色又已经占了"生死"这一层语义。
+        row.className =
+          `bt-side-row ${side === 0 ? 'ours' : 'theirs'}` +
+          `${u.count <= 0 ? ' dead' : ''}${act && act.id === u.id ? ' act' : ''}`;
         const n = document.createElement('span');
         n.className = 'n';
         n.textContent = def.name;

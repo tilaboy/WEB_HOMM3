@@ -2988,3 +2988,182 @@ body.in-battle #thumb {
   min-width: 44px;
   justify-content: center;
 }
+
+/* ==========================================================================
+ * P1 · 城镇面板（2026-10-22）
+ *
+ * 改前实测（844×390）：modal 560×300 · `.town-pane` clientHeight 161 / scrollHeight 283
+ * ⇒ **溢出 122px**，「石墙」「堡垒」两张卡长到框外，且没有任何滚动提示
+ * （`.modal.wide` 是 overflow:hidden ⇒ 溢出被吃掉，看是看不见的）。
+ *
+ * 诊断不是"卡片太高"，是**两处同时浪费**：
+ *   · 面板只用了屏幕的 66% 宽、77% 高（560×300 / 844×390），四周全是地图；
+ *   · 内容区只有 161px，却用 2 列摊 7 张卡 ⇒ 4 行 × 69px = 282px。
+ * 只改列数不够（3 列 = 3 行 223px > 213px 可用），所以两处一起改。
+ *
+ * 4 列 × 2 行：7 张 = 4+3、8 张 = 4+4，纵向 2 行 ≤ R4 的"每页可点行 ≤5"，
+ * 且卡片宽度 179px 仍放得下「建造」按钮与最长状态行（实测最长 ≈150px）。
+ * ⚠️ 原评审文档写的是"三列"，实测 3 列在 390 高下仍差 10px —— 以实量为准。
+ * ========================================================================== */
+
+.modal.wide {
+  /* 宽度：760 / 844 = 90%，右侧仍留出地图做背景，不至于变成"全屏表单"。 */
+  width: min(760px, 94vw);
+  /* 高度：352 / 390 = 90%。上限仍是 94%（矮机 792×320 时自动收到 ~286）。 */
+  height: min(352px, 94%);
+  max-height: min(352px, 94%);
+}
+
+.bgrid {
+  /* 4 列：8 张卡正好两行。比 3 列少一行（223→146），是消掉溢出的那一刀。 */
+  grid-template-columns: repeat(4, 1fr);
+}
+
+/* 4 列下卡片内边距收紧 1px：179 宽里挤出 2px 给状态行，避免"还差"提前省略。 */
+.bcard {
+  padding: 4px 6px;
+}
+
+/* grid 默认 stretch ⇒ 同一行的卡等高（好事：行对齐），但内容会全挤在上半部、
+   下半部空一块。把状态行沉到卡底当**页脚**：名字/按钮在上、结论在下，
+   而且「✓ 已建成」与「还差：…」都落在同一条基线上，横扫一眼就能比。 */
+.bcard .bs {
+  margin-top: auto;
+}
+
+/* 底部库存条：常驻 7 项。放在 .town-pane 之后、flex:0 0 auto ⇒ pane 让出它的高度，
+   内容区自己仍是唯一可滚的一段（R3 出口不滚动保持不变）。 */
+.town-budget {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px 7px;
+  border-top: 1px solid var(--line);
+  /* 比 meta 那排读数再暗一档：它是"环境信息"，不该跟标签页抢注意力。 */
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.town-budget-k {
+  color: var(--text-dim);
+  font-size: var(--t-cap);
+  letter-spacing: 1px;
+  margin-right: 2px;
+}
+
+.town-budget .chip-info {
+  font-size: var(--t-cap);
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* ==========================================================================
+ * P1 · 战斗「部队带」（2026-10-22）
+ *
+ * 改前：左右各一块 112×374 的实心面板（bg .22 + 1px 边 + 圆角 10），
+ * 里面只有 3 行「名字 ×数量 / 血条」⇒ 两栏合计 **25.4% 屏面积**，看着就是
+ * 用户说的"空盒子"。
+ *
+ * 注意：这两栏其实坐在棋盘的比例留白里（棋盘 15×11 等比缩放后两侧本就空着），
+ * **不遮挡战场、也不影响单位大小** —— 所以这次不是"省出战场"，而是
+ * 把"两个大空盒"改成"贴在屏幕边上的部队卡"：去掉底板，让每张卡自带形。
+ * 量出来的变化：涂色面积 25.4% → 3 队时 7.0% / 满编 7 队时 15.5%（卡片数决定）。
+ * ========================================================================== */
+
+.bt-side {
+  /* 112 → 92：卡片仍放得下「食人魔 ×11」这种最长名。 */
+  flex: 0 0 92px;
+  gap: 3px;
+  padding-right: 0;
+  padding-left: 0;
+  /* 底板整块撤掉：容器不再是"盒子"，只有卡是。 */
+  background: none;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.bt-side-h {
+  font-size: var(--t-cap);
+  letter-spacing: 2px;
+  color: var(--gold);
+  opacity: 0.55;
+  padding-left: 8px;
+}
+
+.bt-side-list {
+  gap: 4px;
+}
+
+.bt-side-row {
+  position: relative;
+  padding: 5px 7px 7px 11px;
+  border-radius: 5px;
+  background: rgba(12, 8, 3, 0.62);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 170, 0.1),
+    0 3px 8px -3px rgba(0, 0, 0, 0.7);
+  /* 12px 是"密集读数"档：战斗里数量是扫一眼就够的信息，不需要 15px。 */
+  font-size: var(--t-cap);
+  line-height: 1.2;
+}
+
+/* 侧色条：我方金 / 敌方赤。位置的左/右已经表达了阵营，但打到中盘两边都死人时
+   "这队到底是谁的"要靠一眼颜色，不靠回忆。 */
+.bt-side-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 5px 0 0 5px;
+  background: var(--gold);
+}
+
+.bt-side-row.theirs::before {
+  background: #c4573f;
+}
+
+.bt-side-row .n {
+  color: var(--parchment);
+}
+
+/* 数量是这张卡的第二重要信息（仅次于"是谁"），不该比名字暗一档。 */
+.bt-side-row .q {
+  color: var(--parchment);
+  opacity: 0.9;
+}
+
+/* 血条 3 → 4px 并下压 2px：3px 在真机上容易被看成一枚分隔线。 */
+.bt-side-bar {
+  height: 4px;
+  margin-top: 2px;
+}
+
+.bt-side-row.act {
+  background: rgba(48, 32, 10, 0.75);
+  box-shadow:
+    inset 0 0 0 1px rgba(240, 212, 136, 0.45),
+    0 3px 8px -3px rgba(0, 0, 0, 0.7);
+}
+
+.bt-side-row.dead .q {
+  text-decoration: line-through;
+}
+
+/* 矮机（≤340 高，典型 792×320）：库存条让位。
+ * 它占 30px，会把 .town-pane 从 140 挤到 110 —— 正好踩到 audit:touch 的
+ * 「内容窗 ≥120px」底线。矮机上卡片优先：看不到库存还能切市场页，看不到卡就没法建。
+ * （这不是偏好，是硬冲突：286 − head/meta/tabs 135 − 库存 30 = 110 < 120。） */
+@media (max-height: 340px) {
+  .town-budget {
+    display: none;
+  }
+}
+
+/* 矮机（≤340 高，典型 792×320）的硬限制 —— 记录在此，不再尝试提示：
+ * 该尺寸下 modal 吃满 94% 也只有 286px，head+meta+tabs 已占 135；
+ * 一张卡下限 67px（40px 建造按钮 + 12px 状态行 + 内边），2 行=146px > 剩余 122px。
+ * 结论：**这个高度放不下 7 张卡**，只能滚。 */

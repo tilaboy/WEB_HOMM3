@@ -170,6 +170,55 @@ const CONTRAST = `(() => {
   return { n: out.length, min: Math.min(...out.map((x) => x.r)), worst: out.slice().sort((a, b) => a.r - b.r).slice(0, 2) };
 })()`;
 
+/**
+ * 城镇内容窗：**pane 自己不溢出**才算数。
+ * 只看 `.modal` 的 scrollHeight 会被 `overflow:hidden` 吃掉 —— 改前 pane 溢出 122px，
+ * 而 modal 的 scrollHeight 恰好等于 clientHeight，于是老闸全绿（铁律 §16 的同款陷阱）。
+ */
+const TOWNPANE = `(() => {
+  const p = document.querySelector('.modal.wide .town-pane');
+  if (!p) return null;
+  const cards = [...document.querySelectorAll('.bcard')];
+  return {
+    sh: p.scrollHeight, ch: p.clientHeight,
+    cards: cards.length,
+    rows: new Set(cards.map((c) => c.offsetTop)).size,
+    full: cards.filter((c) => {
+      const r = c.getBoundingClientRect(), pr = p.getBoundingClientRect();
+      return r.top >= pr.top - 0.5 && r.bottom <= pr.bottom + 0.5;
+    }).length,
+  };
+})()`;
+
+/**
+ * 战斗部队带：撤掉整块底板之后，"两栏"应该只剩**随内容长的卡**。
+ *   · 底板不许回来：background alpha ≤ 0.05 且无边框（改前是 .22 + 1px）；
+ *   · 每张卡 28~44px（改前是 30px 的纯文字行，撑不开也压不小）；
+ *   · 涂色高度 ≤ 行数×44+26 ⇒ 卡是"内容驱动"的，不是把 374px 撑满。
+ */
+const SIDES = `(() => {
+  const cols = [...document.querySelectorAll('.bt-side')].map((c) => {
+    const cs = getComputedStyle(c);
+    const m = cs.backgroundColor.match(/rgba?\\(([^)]+)\\)/);
+    const parts = m ? m[1].split(',').map(Number) : [0, 0, 0, 1];
+    const rows = [...c.querySelectorAll('.bt-side-row')];
+    const hd = c.querySelector('.bt-side-h');
+    const painted =
+      (hd ? hd.getBoundingClientRect().height + 3 : 0) +
+      rows.reduce((a, r) => a + r.getBoundingClientRect().height, 0) +
+      Math.max(0, rows.length - 1) * 4;
+    return {
+      w: Math.round(c.getBoundingClientRect().width),
+      alpha: parts.length > 3 ? parts[3] : 1,
+      border: parseFloat(cs.borderTopWidth) || 0,
+      rows: rows.length,
+      rowH: rows.map((r) => Math.round(r.getBoundingClientRect().height)),
+      painted: Math.round(painted),
+    };
+  });
+  return cols.length ? cols : null;
+})()`;
+
 /* ------------------------------------------------------------------ 注入（负向对照 / 压测） */
 
 const INJECT_CSS = {
@@ -179,6 +228,12 @@ const INJECT_CSS = {
   touch: `.ss-seg-item, .ss-diff .ss-seg-item { min-height: 20px !important; min-width: 20px !important; }`,
   // 把弹窗里的一行说明字调回浅棕（改前 #7d5416 = 4.28:1）⇒ 对比度判据必须变红
   contrast: `.modal:not(.wide) .ai-head, .modal:not(.wide) p, .modal:not(.wide) .ai-line { color: #8f7440 !important; }`,
+  // 回退到改前的宽面板 + 2 列 ⇒ pane 溢出必须复现
+  townfit: `.modal.wide { width: 560px !important; height: 300px !important; max-height: 300px !important; }
+            .bgrid { grid-template-columns: repeat(2, 1fr) !important; }`,
+  // 回退到改前的整块底板 ⇒ 部队带判据必须变红
+  sides: `.bt-side { background: rgba(0, 0, 0, 0.22) !important; border: 1px solid #8a6a34 !important;
+           border-radius: 10px !important; }`,
   // 回退**整组**（不是只关 overflow）：修法是"标签一行、数值一行"（flex-direction:column），
   // 所以必须把方向也退回 row + space-between，否则两行永远不溢出 ⇒ 负向对照假绿。
   hpbar: `.hp-bar-top { flex-direction: row !important; justify-content: space-between !important;
@@ -255,6 +310,8 @@ async function measure(send, evaluate, url, { needStart = false, needHero = fals
   // 不该拿来判 44）⇒ 只在 needStart 屏上量。
   const touch = needStart ? await evaluate(TOUCH) : null;
   const contrast = needModal ? await evaluate(CONTRAST) : null;
+  const townpane = url.includes('devtown') ? await evaluate(TOWNPANE) : null;
+  const sides = url.includes('devbattle') ? await evaluate(SIDES) : null;
 
   // 按压：打标 → 逐个 force :active → 读 transform
   await send('DOM.enable');
@@ -273,7 +330,7 @@ async function measure(send, evaluate, url, { needStart = false, needHero = fals
     if (!t || t === 'none' || t === 'MISSING') stuck.push({ i, transform: t });
   }
 
-  return { url, sizes, material, hp, touch, contrast, pressed, stuck };
+  return { url, sizes, material, hp, touch, contrast, townpane, sides, pressed, stuck };
 }
 
 /* ------------------------------------------------------------------ 判据 */
@@ -360,6 +417,34 @@ function judge(all) {
     check('contrast', '羊皮纸弹窗文字 ≥ 4.5:1（WCAG AA）', false, '没取到普通弹窗（点「结束一天」没弹出？）');
   }
 
+  // ⑦ 城镇内容窗不溢出（改前 161/283 = 溢出 122px）
+  const tp = all.map((s) => s.townpane).find(Boolean);
+  check(
+    'townfit',
+    '城镇 .town-pane 不溢出（含末两张卡完整可见）',
+    !!tp && tp.ch > 0 && tp.sh <= tp.ch + 1 && tp.full === tp.cards,
+    tp
+      ? `pane ${tp.ch}/${tp.ch}（scroll ${tp.sh}）· ${tp.rows} 行 ${tp.full}/${tp.cards} 张完整可见`
+      : '没打开城镇面板（?devtown=1 没进对局？）',
+  );
+
+  // ⑧ 战斗部队带：没有整块底板 + 卡片随内容长
+  const sd = all.map((s) => s.sides).find(Boolean);
+  const slab = sd ? sd.filter((c) => c.alpha > 0.05 || c.border > 0) : [];
+  const badH = sd ? sd.flatMap((c) => c.rowH.filter((h) => h < 28 || h > 44)) : [];
+  const tooTall = sd ? sd.filter((c) => c.painted > c.rows * 44 + 26) : [];
+  check(
+    'sides',
+    '部队带：无整块底板 · 每卡 28~44px · 涂色不撑满整列',
+    !!sd && slab.length === 0 && badH.length === 0 && tooTall.length === 0,
+    sd
+      ? `${sd.length} 列 · 宽 ${sd.map((c) => c.w).join('/')}px · 卡高 ${sd[0].rowH.join(',') || '—'} · 涂色 ${sd.map((c) => c.painted).join('/')}px` +
+        (slab.length ? ` · ❌ 仍有底板（alpha ${slab.map((c) => c.alpha).join(',')}）` : '') +
+        (badH.length ? ` · ❌ 卡高越界 ${badH.join(',')}` : '') +
+        (tooTall.length ? ' · ❌ 撑满整列' : '')
+      : '没进战斗（?devbattle=1 没起？）',
+  );
+
   return rows.every((r) => r.ok);
 }
 
@@ -404,7 +489,7 @@ async function run() {
 
       const green = judge(all);
       if (AS_JSON) {
-        console.log(JSON.stringify({ green, rows, screens: all.map(({ tag, sizes, material, touch, hp, contrast, pressed }) => ({ tag, sizes, material, touch, hp, contrast, pressed })) }, null, 2));
+        console.log(JSON.stringify({ green, rows, screens: all.map(({ tag, sizes, material, touch, hp, contrast, townpane, sides, pressed }) => ({ tag, sizes, material, touch, hp, contrast, pressed })) }, null, 2));
       } else {
         for (const r of rows) {
           console.log(`${r.ok ? '✅' : '❌'} [${r.id}] ${r.label} — ${r.detail}`);
@@ -423,7 +508,7 @@ async function run() {
   if (SELFCHECK) {
     // 负向对照：每次注入一条，闸必须变红
     let bad = 0;
-    for (const which of ['press', 'type', 'material', 'touch', 'hpbar', 'contrast']) {
+    for (const which of ['press', 'type', 'material', 'touch', 'hpbar', 'contrast', 'townfit', 'sides']) {
       INJECT = which;
       const green = await run();
       const ok = green === false;
