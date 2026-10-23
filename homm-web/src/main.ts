@@ -2171,7 +2171,7 @@ if (bootParams.has('devclear')) {
 }
 // 调试：?devprobe=1 暴露行程状态（tools/destaudit.mjs 端到端审计用）
 if (bootParams.has('devprobe')) {
-  const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void; __mapTint: (on: boolean) => void };
+  const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void; __mapTint: (on: boolean) => void; __mapShadow: (on: boolean) => void; __mapShadowProbe: () => unknown; __mapShadowOffset: (dy: number) => void };
   w.__journey = () => ({
     pendingDest,
     walking: !!anim,
@@ -2189,6 +2189,12 @@ if (bootParams.has('devprobe')) {
   // MapRenderer 注释设计的「同构建 / 同会话 / 同帧」因果 A/B 就靠它（探针 tp6-encounter D 段：
   // 同会话连读两帧像素，只差这一个布尔量；`?devtint=0` 只能在导航前定，跨会话比会掺入动画相位）。
   w.__mapTint = (on: boolean) => { renderer.tintEnabled = on; };
+  // 接地影开关：同一套「同构建 / 同会话 / 同帧」因果 A/B（见 MapRenderer.shadowOn 注释）。
+  w.__mapShadow = (on: boolean) => { renderer.shadowOn = on; };
+  // 接地影的**同帧**取色（见 MapRenderer.probeShadow 注释）：只读当前缓冲，不改绘制。
+  w.__mapShadowProbe = () => renderer.probeShadow();
+  // 负向对照专用：把影推离脚下，验证判据量的是"脚边的影"而不是"任意变暗的像素"。
+  w.__mapShadowOffset = (dy: number) => { renderer.shadowOffsetY = dy; };
 }
 
 // 调试：?devdays=20 直接空过 N 天，用来观察电脑对手的推进与终局判定

@@ -303,6 +303,49 @@ const BAND_STATS = ((): boolean => {
   }
 })();
 
+/**
+ * 接地影总开关（2026-10-23，默认开）。
+ *
+ * 主理人对画面的原话是「图像基本上都是非常粗糙的」。粗糙感有一半不在色/形，而在
+ * **物件像贴纸**：树、矿、城、野怪都是把精灵直接 `drawImage` 到格子上，脚下一片干净的草地，
+ * 于是每个精灵都"浮"在地表 1~2px 的位置。补一层压在脚下的软影，是零新资产、
+ * 只加一次 `drawImage` 的一笔。
+ *
+ * `?devshadow=0` 关掉 —— 与 `devband`、`devbadge` 同一套 A/B 规矩：能在**同一次会话、同一帧**
+ * 里开关，才能证明"看到的变化"确实是这一层带来的（换 seed 对比会混进地图差异）。
+ */
+const SHADOW_ON = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devshadow') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
+/** `?devshadowstats=1`：把本帧接地影的落笔量写进 `window.__shadowStats`（探针用）。 */
+const SHADOW_STATS = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).has('devshadowstats');
+  } catch {
+    return false;
+  }
+})();
+
+/**
+ * `?devshadowprobe=1`：登记本帧每层影的落点，供 `__mapShadowProbe()` 做**脚边/影外**取色。
+ *
+ * 为什么需要它：跨帧整屏比对**证明不了**接地影 —— 昼夜光照每秒都在变，
+ * 两帧之间全屏都有 ±1 的亮度漂移（实测 16.9% 的像素变了，全屏散布）。
+ * 同一帧内「影里」与「影外同一排」两点相减，光照、地形光照因子、迷雾都一样 ⇒ 只剩影本身。
+ */
+const SHADOW_PROBE = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).has('devshadowprobe');
+  } catch {
+    return false;
+  }
+})();
+
 /** 单条（或四边）边带的绘制参数：世界坐标下的一个矩形 + 填充色。 */
 interface BandRect {
   x: number;
@@ -356,6 +399,35 @@ export class MapRenderer {
    * 会判出不同的落点 ⇒ 探针绿 ≠ 接线对。透明留白不算遮挡，剪影才算。
    */
   private silCache = new Map<string, { w: number; h: number; ax: number; ay: number; sil: BBox } | null>();
+
+  /**
+   * 接地影的**软椭圆贴图**（懒建，只建一次）。
+   *
+   * 为什么预渲染而不是每次 `createRadialGradient`：一屏能同时看到 100+ 个物件，
+   * 逐帧逐物建渐变会把 GC 压到掉帧（`applyLighting` 那段注释里已经踩过同一个坑）。
+   * 96×32 的白底黑影，用 `drawImage` 拉伸到目标尺寸——拉伸后的模糊正好是"软"的来源，
+   * 而且能开 `imageSmoothingEnabled` 而不影响其它图（其它图必须保持像素硬边）。
+   */
+  private shadowCv: HTMLCanvasElement | null = null;
+  /**
+   * 接地影开关（会话内可切）。
+   *
+   * 初值来自 `?devshadow=0`；但**真正的 A/B 靠这个字段**，由 `?devprobe=1` 暴露的
+   * `window.__mapShadow(on)` 在**同一次导航、同一帧**里翻 —— 跨导航比会混进镜头位置、
+   * 水面相位、AI 已走的步数，看到的差异未必来自影。同一套规矩见 `tintEnabled`。
+   */
+  shadowOn = SHADOW_ON;
+  /**
+   * 影的纵向偏移（世界 px）。**生产恒为 0**，只由 `?devprobe=1` 暴露的
+   * `window.__mapShadowOffset(dy)` 改动 —— 用途只有一个：把影推到半空，
+   * 验证 `probe:mapshadow` 量到的确实是"脚下的影"，而不是"屏幕上任何变暗的像素"。
+   */
+  shadowOffsetY = 0;
+  /** 本帧接地影落笔量（`?devshadowstats=1` 时写进 `window.__shadowStats`）。 */
+  private shadowCount = 0;
+  private shadowPx = 0;
+  /** 本帧落点（仅 `?devshadowprobe=1` 时登记），供 `probeShadow()` 取色。 */
+  private shadowSpots: Array<{ cx: number; yb: number; w: number }> = [];
 
   /**
    * 队伍徽标可见性。**默认 `false`** —— 用户试玩裁决：英雄后面跟队伍「点起来更麻烦、
@@ -481,6 +553,117 @@ export class MapRenderer {
     ctx.strokeStyle = 'rgba(20,16,10,0.55)';
     ctx.lineWidth = 0.6;
     ctx.stroke();
+  }
+
+  /** 懒建软椭圆影贴图（见字段注释）。 */
+  private shadowSprite(): HTMLCanvasElement {
+    if (this.shadowCv) return this.shadowCv;
+    const w = 96;
+    const h = 32;
+    const cv = document.createElement('canvas');
+    cv.width = w;
+    cv.height = h;
+    const c = cv.getContext('2d');
+    if (c) {
+      c.translate(w / 2, h / 2);
+      c.scale(1, h / w); // 圆 ⇒ 椭圆（避免半透明的椭圆渐变要手算像素）
+      const g = c.createRadialGradient(0, 0, 0, 0, 0, w / 2);
+      // 三段停靠：芯部够深才看得出"接触"，外沿必须归零否则会出现一圈硬边。
+      g.addColorStop(0, 'rgba(12,7,2,0.62)');
+      g.addColorStop(0.5, 'rgba(12,7,2,0.34)');
+      g.addColorStop(0.82, 'rgba(12,7,2,0.10)');
+      g.addColorStop(1, 'rgba(12,7,2,0)');
+      c.fillStyle = g;
+      c.fillRect(-w / 2, -w / 2, w, w);
+    }
+    this.shadowCv = cv;
+    return cv;
+  }
+
+  /**
+   * 在剪影底部压一层接地影。
+   *
+   * 几何口径与 `silBBoxAt` **同源**（含 1px 描边的 alpha>8 剪影），不是画布框：
+   * 帧画布带透明留白（树冠比树干宽、城堡比地基宽），用画布框会在半空画出一道影。
+   *
+   * 影子中心压在剪影底边上、只往下露出约 1/3：
+   * 上 2/3 被精灵自己盖住，露出来的那圈读作"地面被压暗"，而不是"脚下有个黑饼"。
+   */
+  private drawContactShadow(bb: BBox): void {
+    const inkW = bb.x1 - bb.x0;
+    if (inkW < 6) return; // 太窄的东西（1px 物件）加上影只会糊成一团
+    // 1.06×剪影宽：**比剪影略宽**是"接地边"的关键 —— 只等于剪影宽时，影的左右翼
+    // 正好被精灵自己盖住（实测暗化只有 ~6 个亮度单位，肉眼读作"没加"）；
+    // 探出 6% 之后，脚下才会出现一圈 2~3px 的暗边，读作"这个物件压在地上"。
+    const w = Math.min(190, Math.max(12, inkW * 1.06));
+    const h = Math.max(5, Math.min(13, w * 0.28));
+    const cx = (bb.x0 + bb.x1) / 2;
+    // ⚠️ 落点登记必须在 `shadowOn` 之前：关影时也要登记，否则"关掉后差值为 0"
+    // 只是因为**没取到点**（假绿）。开关两种情况都取同样 42 个位置，差值才有可比性。
+    if (SHADOW_PROBE && this.shadowSpots.length < 80) {
+      this.shadowSpots.push({ cx, yb: bb.y1, w });
+    }
+    if (!this.shadowOn) return;
+    const ctx = this.ctx;
+    ctx.save();
+    // 只在这一笔上开平滑：软影靠插值，其它精灵必须保持像素硬边。
+    ctx.imageSmoothingEnabled = true;
+    // 中心压在底边之上 0.5h ⇒ 下沿只露 ~3px；上沿全被精灵盖住，不会出现"黑饼"。
+    ctx.drawImage(this.shadowSprite(), cx - w / 2, bb.y1 - h * 0.5 + this.shadowOffsetY, w, h);
+    ctx.restore();
+    this.shadowCount++;
+    this.shadowPx += w * h;
+  }
+
+  /**
+   * 接地影的**同帧**取色（`?devshadowprobe=1` + `window.__mapShadowProbe()`）。
+   *
+   * 为什么不能用"整屏帧间差分"：昼夜光照每帧都在变，两帧之间全屏都有 ±1 的漂移
+   * （实测 16.9% 的像素变了，且散布全屏）—— 差值里分不出哪一点是影。
+   *
+   * 取两点、同一排：`foot` = 剪影底边往下 2px 的正中（在影里），
+   * `ref` = 同一 y、向左 0.78w（在影外）。返回**原始亮度**，差值交给探针算 ——
+   * 判据是「开影的 (foot−ref)」减「关影的 (foot−ref)」：同一坐标两次相减，
+   * 精灵自身的墨色、地形印花、光照漂移全部抵销，剩下的才是这条影。
+   */
+  probeShadow(): { on: boolean; n: number; foot: number[]; ref: number[] } {
+    const ctx = this.ctx;
+    const { viewW, viewH } = this.camera;
+    const dpr = this.dpr;
+    const img = ctx.getImageData(0, 0, Math.round(viewW * dpr), Math.round(viewH * dpr));
+    const data = img.data;
+    const W = img.width;
+    const H = img.height;
+    const lumAt = (wx: number, wy: number): number | null => {
+      const px = Math.round((wx * this.camera.zoom + this.camera.x) * dpr);
+      const py = Math.round((wy * this.camera.zoom + this.camera.y) * dpr);
+      if (px < 1 || py < 1 || px >= W - 1 || py >= H - 1) return null;
+      let sum = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const o = ((py + dy) * W + (px + dx)) * 4;
+          sum += 0.2126 * data[o] + 0.7152 * data[o + 1] + 0.0722 * data[o + 2];
+        }
+      }
+      return sum / 9;
+    };
+    /**
+     * 取两点：脚边（影内，贴着底边往下 2px）与影外同排参照。
+     * 返回**原始亮度**，差值留给探针算 —— 因为真正的判据是
+     * 「开影时的 (foot−ref)」减「关影时的 (foot−ref)」：同一坐标两次相减，
+     * 精灵自身的墨色、地形印花、光照漂移全部抵销，剩下的才是这条影。
+     */
+    const foot: number[] = [];
+    const ref: number[] = [];
+    for (const s of this.shadowSpots) {
+      const y = s.yb + 2;
+      const f = lumAt(s.cx, y);
+      const r = lumAt(s.cx - s.w * 0.78, y);
+      if (f === null || r === null) continue;
+      foot.push(Number(f.toFixed(1)));
+      ref.push(Number(r.toFixed(1)));
+    }
+    return { on: this.shadowOn, n: foot.length, foot, ref };
   }
 
   /** 帧的可见剪影几何（懒算 + 缓存）。无此帧或无实心像素 ⇒ null。 */
@@ -898,6 +1081,9 @@ export class MapRenderer {
     }
 
     /* --- 第二遍：物件与英雄，按 y 排序保证遮挡正确 --- */
+    this.shadowCount = 0;
+    this.shadowPx = 0;
+    if (SHADOW_PROBE) this.shadowSpots = [];
     const draws: DrawKind[] = [];
     // 2×2 城堡的四格挂的是同一个物件 id，这里按 id 去重、只在锚点画一次
     const seenObj = new Set<string>();
@@ -945,7 +1131,12 @@ export class MapRenderer {
           ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
         }
         const sprite = objSprite(state, d.obj, hash2(d.x, d.y, 91));
-        if (sprite) this.blit(sprite, d.x, d.y);
+        if (sprite) {
+          // 接地影先落笔、精灵后盖 ⇒ 只留脚下那一圈，不在半空留黑饼（见 drawContactShadow）。
+          const bb = this.silBBoxAt(sprite, d.x, d.y);
+          if (bb) this.drawContactShadow(bb);
+          this.blit(sprite, d.x, d.y);
+        }
         const mk = guardMarker(d.obj);
         if (mk) this.blitAt(mk, d.x * TILE + 17, d.y * TILE + 17);
         // 矿场归属旗：没旗子 = 还没人占，插上谁的旗就归谁产
@@ -959,6 +1150,10 @@ export class MapRenderer {
         }
       } else {
         const sel = d.id === vm.selectedHeroId;
+        // 英雄也垫一层接地影（先于选中脉冲/阵营底盘落笔）：棋子是全地图最"该站在地上"的东西。
+        const heroFrame = `hero_${d.owner === 'neutral' ? 'neutral' : d.owner}`;
+        const hb = this.silBBoxAt(heroFrame, Math.round(d.fx), Math.round(d.fy));
+        if (hb) this.drawContactShadow(hb);
         if (sel) {
           // 低端把选中脉冲降到慢呼吸（selectionPulseHz=2），中/高端维持原手感
           const pulseDiv = quality.selectionPulseHz >= 4 ? 260 : 500;
@@ -977,10 +1172,18 @@ export class MapRenderer {
           ctx.fill();
           ctx.globalAlpha = 1;
         }
-        this.blit(`hero_${d.owner === 'neutral' ? 'neutral' : d.owner}`, Math.round(d.fx), Math.round(d.fy));
+        this.blit(heroFrame, Math.round(d.fx), Math.round(d.fy));
         // §13.4 队伍徽标：紧跟在英雄之后、同一趟 y 排序里画（硬条件 ①「并入 y 排序」）。
         this.drawTeamBadge(vm, d.id, d.owner, d.fx, d.fy);
       }
+    }
+
+    if (SHADOW_STATS) {
+      (window as unknown as { __shadowStats?: unknown }).__shadowStats = {
+        on: this.shadowOn,
+        n: this.shadowCount, // 本帧压了几层影
+        px: Math.round(this.shadowPx), // 落笔面积（世界 px²）
+      };
     }
 
     ctx.restore();
