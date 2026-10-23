@@ -2171,7 +2171,7 @@ if (bootParams.has('devclear')) {
 }
 // 调试：?devprobe=1 暴露行程状态（tools/destaudit.mjs 端到端审计用）
 if (bootParams.has('devprobe')) {
-  const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void; __mapTint: (on: boolean) => void; __mapShadow: (on: boolean) => void; __mapShadowProbe: () => unknown; __mapShadowOffset: (dy: number) => void; __mapFringe: (tone: string) => void };
+  const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void; __mapTint: (on: boolean) => void; __mapShadow: (on: boolean) => void; __mapShadowProbe: () => unknown; __mapShadowOffset: (dy: number) => void; __mapFringe: (tone: string) => void; __mapReachProbe: () => unknown };
   w.__journey = () => ({
     pendingDest,
     walking: !!anim,
@@ -2197,6 +2197,8 @@ if (bootParams.has('devprobe')) {
   w.__mapShadowOffset = (dy: number) => { renderer.shadowOffsetY = dy; };
   // 过渡带取色口径（同会话切换）：切成 'top' 就是改前行为，改完调 invalidate() 重烘。
   w.__mapFringe = (tone: string) => { renderer.setFringeTone(tone === 'top' ? 'top' : 'blend'); };
+  // 可达格心点的同帧取色（见 MapRenderer.probeReach 注释）：只读缓冲，不改绘制。
+  w.__mapReachProbe = () => renderer.probeReach();
 }
 
 // 调试：?devdays=20 直接空过 N 天，用来观察电脑对手的推进与终局判定

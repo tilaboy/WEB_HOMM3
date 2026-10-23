@@ -13,19 +13,27 @@
  * > **凡"把某开关翻成默认"，必须同时留一条可复现的旧路径。**
  * 否则新对照臂退化成 `on vs on` ⇒ A/B 成恒等式。本门把"旧路径还在且不等价"钉在像素上：
  *
- *   ① **`default` ≡ `?devband=shade`**（逐块同）—— 证"默认 == shade"；
+ * ## 2026-10-23 第三次翻默认（`shade` → `dots`）
+ * 主理人看完实物：「图像基本上都是非常粗糙的」「一块一块的色斑」。
+ * 逐臂 A/B 定位到 `shade` 的两层：① 可达区整格铺 16% 蓝 = 压在美术上的**水洗膜**；
+ * ② 外圈 16% 压暗在可达区外缘留下一道**按格切齐的明度台阶**。
+ * 新默认 `dots`：可达区只落**格心双色点**（外缘一圈，内部不铺），既不铺色也不压暗。
+ * `?devband=shade` 完整保留旧路径 ⇒ 本门改判如下（`?devdots=all` 亦可复现"每格都点"）。
+ *
+ *   ① **`default` ≠ `?devband=shade`**（差够一个量级）—— 旧默认仍可复现**且**不等价；
  *   ② **`default` ≠ `?devband=full`**（逐块差够一个数量级）—— 证"旧路径可达**且**不等价"；
- *   ③ **`default` ≠ `?devband=off`** —— 证"压暗那一层真的在画"（off = 只铺蓝洗、不压暗）；
+ *   ③ **`default` ≠ `?devband=off`** —— 证"点阵那一层真的在画"；
  *   ④ **`?devband=soft` 仍在且与默认不同** —— 上一版形态可复现（翻默认必须留旧路径）；
  *   ⑤ **语义**（`?devbandstats=1` 的 `window.__bandStats`）：
- *      · `mode === 'shade'` —— 默认真的走在 shade 分支（不是"两臂恰好同色"）；
+ *      · `mode === 'dots'` —— 默认真的走在 dots 分支（不是"两臂恰好同色"）；
  *      · `rects === 0` —— **一条线都不画**（这正是主理人要去掉的"白框"）；
- *      · `shade > 0` —— 外圈压暗真的落笔（`walkable` 忘了传就是 0）；
+ *      · `dots > 0` —— 格心点真的落笔（`walkable` 忘了传、或 edge 判定写反就是 0）；
+ *      · `shade` 臂 `mode==='shade' && shade>0 && dots===0` —— 旧路径没被掏空；
  *      · `full` 的 `rects/px > 0` —— 旧路径没被掏空。
- *     · 有人把默认改回 `soft/full` ⇒ ① 红；
+ *     · 有人把默认改回 `soft/full/shade` ⇒ ① 红；
  *     · 有人删掉 `full` 分支 ⇒ ② 红；
  *     · 有人把线条加回默认 ⇒ ⑤ `rects===0` 红；
- *     · 有人漏传 `walkable` ⇒ ⑤ `shade>0` 红。
+ *     · 有人把点阵删成空操作 ⇒ ⑤ `dots>0` 红。
  *
  * ## 口径（与 `haloflip` 对齐，不自创）
  *   · 视口 = 真机 **792×320 @DPR3**（OPPO PMA110 实测）；
@@ -174,9 +182,13 @@ try {
     const S = await capture(send, evaluate, '&devband=soft', '?devband=soft');
     const F = await capture(send, evaluate, '&devband=full', '?devband=full');
     const O = await capture(send, evaluate, '&devband=off', '?devband=off');
+    /* `?devtint=0` = 整层空操作（连点阵一起关）。
+     * ⚠️ 不能用 `?devband=off` 当"点阵真的在画"的对照臂：它的语义是**只关边带、保留蓝洗**，
+     *    与默认的差主要来自蓝洗（实测量到 1391 块）⇒ 既证明不了点存在，也掩盖了"是否又铺回整格色"。 */
+    const T = await capture(send, evaluate, '&devtint=0', '?devtint=0（整层关）');
 
-    if (!A || !A2 || !SH || !S || !F || !O) {
-      PASS(false, '六条臂中有量不到的 ⇒ 无法判（见上）');
+    if (!A || !A2 || !SH || !S || !F || !O || !T) {
+      PASS(false, '七条臂中有量不到的 ⇒ 无法判（见上）');
       return;
     }
     const floor = diffBlocks(A.blocks, A2.blocks);
@@ -184,9 +196,10 @@ try {
     const as = diffBlocks(A.blocks, S.blocks);
     const af = diffBlocks(A.blocks, F.blocks);
     const ao = diffBlocks(A.blocks, O.blocks);
+    const at = diffBlocks(A.blocks, T.blocks);
     console.log(
       `--- 逐块差（单位=块，分母=${A.blocks.bw * A.blocks.bh}）： 本底(default vs default#2) → ${floor}；` +
-        ` default vs shade → ${ash}； vs soft → ${as}； vs full → ${af}； vs off → ${ao}`,
+        ` default vs shade → ${ash}； vs soft → ${as}； vs full → ${af}； vs off(蓝洗) → ${ao}； vs tint=0(整层关) → ${at}`,
     );
 
     if (MEASURE) {
@@ -194,46 +207,72 @@ try {
       return;
     }
 
-    const NOISE_MARGIN = 40; // 块 · 分母 6705 ⇒ 0.60% · 每跑
-    const SIGNAL_MIN = 200; // 块 · 分母 6705 ⇒ 2.98% · 每跑·每模式对（`haloflip` 同值）
+    const NOISE_MARGIN = 40; // 块 · 分辨率随视口变 ⇒ 只用于"本底"的量级参考
+    const SIGNAL_MIN = 200; // 块 · 每跑·每模式对（`haloflip` 同值）
     const K = 10; // 信号 / 本底 的倍数下限
     const sound = Math.max(K * Math.abs(floor), SIGNAL_MIN);
-    /* `off` 这一臂**只关边带、保留蓝洗** ⇒ 与默认的差就是"压暗那一层"本身，
-     * 面积比 full 小得多；门槛沿用"显著高于本底"而不是 SIGNAL_MIN。 */
-    const OFF_MIN = Math.max(3 * Math.abs(floor), 24); // 块 · 分母 6705 ⇒ 0.36%
-    console.log(`    判据： ① 须 ≤ ${floor} + ${NOISE_MARGIN} = ${floor + NOISE_MARGIN}； ② 须 ≥ ${sound}； ③ 须 ≥ ${OFF_MIN}`);
+    /* `off` 这一臂**只把整层关掉**（既不铺色也不压暗、也不落点）⇒ 与默认的差就是
+     * "点阵那一层"本身，面积比 full 小得多；门槛沿用"显著高于本底"而不是 SIGNAL_MIN。 */
+    const OFF_MIN = Math.max(3 * Math.abs(floor), 24); // 块
+    console.log(
+      `    判据（2026-10-23 翻默认后）： ① 须 ≥ ${sound}（旧默认仍可复现且不等价）；` +
+        ` ② 须 ≥ ${sound}； ③ 须 ≥ ${OFF_MIN}； ④ 须 ≥ ${OFF_MIN}；本底 ${floor}（参考，不计入判据）`,
+    );
 
     /* ⚠️ 每条都并验**那一臂自己解析成了什么 mode**（`__bandStats.mode`）：
      *   NEG 实测踩到的坑：改默认时若解析器把某个词一起漏掉，对照臂会**回落成默认**
      *   ⇒ 两臂同色 ⇒ 差=0 ⇒ 判据假绿（"对照臂被吞"）。 */
     PASS(
-      ash <= Math.max(floor, 0) + NOISE_MARGIN && !!SH.st && SH.st.mode === 'shade',
-      `① default ≡ ?devband=shade（${ash} ≤ ${Math.max(floor, 0) + NOISE_MARGIN}，且 shade 臂 mode=${SH.st ? SH.st.mode : '(无)'}）—— 证"默认 == shade"`,
+      ash >= sound && !!SH.st && SH.st.mode === 'shade',
+      `① default ≠ ?devband=shade（${ash} ≥ ${sound}，且 shade 臂 mode=${SH.st ? SH.st.mode : '(无)'}）—— 旧默认仍可复现且不等价`,
     );
     PASS(
       af >= sound && !!F.st && F.st.mode === 'full',
       `② default ≠ ?devband=full（${af} ≥ ${sound}，且 full 臂 mode=${F.st ? F.st.mode : '(无)'}）—— 证"旧路径可达且不等价"`,
     );
     PASS(
+      at >= OFF_MIN && !T.st,
+      `③ default ≠ ?devtint=0（${at} ≥ ${OFF_MIN}，且整层关臂没有 __bandStats）—— 证"点阵那一层真的在画"`,
+    );
+    PASS(
       ao >= OFF_MIN && !!O.st && O.st.mode === 'off',
-      `③ default ≠ ?devband=off（${ao} ≥ ${OFF_MIN}，且 off 臂 mode=${O.st ? O.st.mode : '(无)'}）—— 证"压暗那一层真的在画"`,
+      `③b default ≠ ?devband=off（${ao} ≥ ${OFF_MIN}，且 off 臂 mode=${O.st ? O.st.mode : '(无)'}）—— \`off\` 仍保留蓝洗，语义未被改坏`,
     );
     PASS(
       !!S.st && S.st.mode === 'soft' && as >= OFF_MIN,
       `④ ?devband=soft 仍在且与默认不同（mode=${S.st ? S.st.mode : '(无)'}，${as} ≥ ${OFF_MIN} 块）—— 上一版形态可复现`,
     );
 
-    /* ⑤ 语义判据：默认必须**一条线都不画**，但压暗格数必须 > 0。
-     *   · 只删 `shade` 分支 ⇒ `shade === 0` ⇒ 红（"默认退化成只铺蓝洗"）；
-     *   · 有人把线条加回默认 ⇒ `rects > 0` ⇒ 红（这正是主理人要去掉的东西）；
-     *   · 有人把 `walkable` 忘了传 ⇒ `shade === 0` 或远小于全图 ⇒ 红。 */
-    PASS(!!A.st && A.st.mode === 'shade', `⑤a 默认走 shade 分支（mode=${A.st ? A.st.mode : '(无)'}）`);
+    /* ⑥ **没有整格铺色**（这一批的核心主张）。
+     *   每枚点在世界坐标只有 4×4 px，落到 16×16 的块网格上最多占 **2×2 块**（含小数边界）。
+     *   ⇒ `default vs tint=0` 的差异块数**必须 ≤ dots × 4**。
+     *   谁把整格蓝洗（或外圈压暗）加回来，差异会立刻回到数千块 ⇒ 红。
+     *   这条与 ③ 是一对：③ 证"点真的在画"，⑥ 证"只画了点、没铺别的"。 */
+    const dotsN = A.st ? A.st.dots : 0;
+    const WASH_MAX = Math.max(8, dotsN * 4);
+    PASS(
+      at > 0 && at <= WASH_MAX,
+      `⑥ 只落点、没有整格铺色（default vs tint=0 差异 ${at} 块 ≤ ${WASH_MAX} = dots ${dotsN} × 4）`,
+    );
+
+    /* ⑤ 语义判据（2026-10-23 翻默认后重钉）：
+     *   · 默认必须**一条线都不画**（`rects === 0`），但**点必须真的落**（`dots > 0`）；
+     *       - 把线加回默认 ⇒ rects>0 ⇒ 红（主理人要去掉的"白框"）；
+     *       - 点阵删成空操作 / `edge` 判定写反 ⇒ dots===0 ⇒ 红；
+     *       - 分支回落（解析器把 `dots` 漏掉）⇒ mode≠'dots' ⇒ 红。
+     *   · 旧路径 `shade` 必须仍**压暗且不落点**（`shade>0 && dots===0`）——
+     *       证"翻默认之后旧路径没被顺手改坏"。 */
+    PASS(!!A.st && A.st.mode === 'dots', `⑤a 默认走 dots 分支（mode=${A.st ? A.st.mode : '(无)'}）`);
     PASS(!!A.st && A.st.rects === 0, `⑤b 默认一条边带都不画（rects=${A.st ? A.st.rects : '(无)'} === 0）`);
     PASS(
-      !!A.st && A.st.shade > 0,
-      `⑤c 外圈压暗真的落笔（shade=${A.st ? A.st.shade : '(无)'} 格 · ${A.st ? A.st.shadePx : '?'} 世界 px²）`,
+      !!A.st && A.st.dots > 0,
+      `⑤c 格心点真的落笔（dots=${A.st ? A.st.dots : '(无)'} 枚）`,
     );
-    PASS(!!F.st && F.st.rects > 0 && F.st.px > 0, `⑤d full 旧路径仍画边带（rects=${F.st ? F.st.rects : '(无)'} · px=${F.st ? F.st.px : '(无)'}）`);
+    PASS(
+      !!SH.st && SH.st.mode === 'shade' && SH.st.shade > 0 && SH.st.dots === 0,
+      `⑤d 旧路径 shade 仍压暗且不落点（shade=${SH.st ? SH.st.shade : '(无)'} 格 · dots=${SH.st ? SH.st.dots : '(无)'}）`,
+    );
+    PASS(!!F.st && F.st.rects > 0 && F.st.px > 0, `⑤e full 旧路径仍画边带（rects=${F.st ? F.st.rects : '(无)'} · px=${F.st ? F.st.px : '(无)'}）`);
   });
 } catch (e) {
   console.error(`✗ 运行失败：${e && e.message ? e.message : e}`);

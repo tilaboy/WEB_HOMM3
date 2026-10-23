@@ -128,6 +128,38 @@ const NOGO_EDGE_INK = '#2a1a12';
 const EDGE_W = 2;
 
 /**
+ * 可达范围的**格心双色点**（`dots` 模式的全部落笔）。
+ *
+ * 为什么要两色：与边带同一套道理 —— 单色在任何一档地形上都会沉掉。
+ * 暖芯 `#fff3c8`（= `hi1`）在暗草/夜相下亮；墨环 `#2a1a12`（= `ink0`）
+ * 在沙地这类亮底上给它一个轮廓。两者叠在一个 4×4 的墨底 + 2×2 的芯上。
+ *
+ * 尺寸口径：世界 px。TILE=32，真机 zoom 1.2 ⇒ 4 世界 px ≈ **4.8 画面 px**，
+ * 是"数得清的星星"而不是"贴了一张网点纸"。放大到 2× 时也不会变成色块。
+ */
+const REACH_DOT_INK = '#2a1a12';
+const REACH_DOT_CORE = '#fff3c8';
+/** 点心的半宽（世界 px）：墨底 2 ⇒ 4×4；暖芯 1 ⇒ 2×2。 */
+const REACH_DOT_R = 2;
+const REACH_DOT_CORE_R = 1;
+
+/**
+ * 点阵铺在**哪些格**上：`edge`（默认，只描可达区外缘）或 `all`（每格一枚）。
+ *
+ * 实测对比：`all` 是"每格一个点"，在 844×390 上形成一张**规则格子阵** ——
+ * 它把 32px 网格又强调了一遍，反而更像工程网格而不是"能走到这儿"。
+ * `edge` 只在外缘落点 ⇒ 得到的是一条**点状轮廓**，内部干净，且外缘正是玩家要判断的那条线。
+ * `?devdots=all` 可切回全铺（A/B 与负向对照用）。
+ */
+const REACH_DOT_MODE = ((): 'edge' | 'all' => {
+  try {
+    return new URLSearchParams(location.search).get('devdots') === 'all' ? 'all' : 'edge';
+  } catch {
+    return 'edge';
+  }
+})();
+
+/**
  * 调试旗标：`?devtint=0` ⇒ **不画** ④ 可达染色层（蓝填充 + 不可走边界三带）。
  *
  * 用途 = **单变量**因果 A/B：「染色开 vs 关」在同一构建 / 同一次会话 / 同一帧下取对照
@@ -266,15 +298,29 @@ const DEV_FOG_CLOSE = ((): boolean => {
  * ⚠️ **翻默认必须留旧路径**（`haloflip` 那条规矩）：两向由 `tools/bandflip.mjs`
  *   （`npm run audit:bandflip`）机检 —— 默认≡shade、默认≠full、默认≠soft。
  */
-const BAND_MODE = ((): 'shade' | 'full' | 'thin' | 'art' | 'soft' | 'off' => {
+const BAND_MODE = ((): 'dots' | 'shade' | 'full' | 'thin' | 'art' | 'soft' | 'off' => {
   try {
     const v = new URLSearchParams(location.search).get('devband');
-    return v === 'full' || v === 'thin' || v === 'art' || v === 'soft' || v === 'off' ? v : 'shade';
+    return v === 'shade' || v === 'full' || v === 'thin' || v === 'art' || v === 'soft' || v === 'off'
+      ? v
+      : 'dots';
   } catch {
-    return 'shade';
+    return 'dots';
   }
 })();
-/** 新默认：不画线，靠"外圈压暗"读边界。 */
+/**
+ * 新默认（2026-10-23 主理人「一块一块的色斑」之后）：
+ * 可达范围 = **格心双色点阵**，不再整格铺蓝、也不再给外圈压暗。
+ *
+ * 为什么换掉 `shade`：铺 16% 蓝的观感是「一层 UI 水洗压在美术上」，
+ * 且可达区/不可达区之间是一道**按格切齐的明度台阶**（32px 方角）——
+ * 主理人看的正是这道台阶。点阵不加色块、不切台阶，只在格心给一个可数的记号。
+ *
+ * 为什么**不**顺手把边带加回来：`soft/full` 的边带会给 1×1 的树套一只闭合方框
+ * （`bandflip.mjs` 头部记的就是这条投诉）。点阵模式下仍沿用 `shade` 的「不画线」。
+ */
+const BAND_DOTS = BAND_MODE === 'dots';
+/** 旧默认：不画线，靠"外圈压暗"读边界（`?devband=shade` 仍可逐像素复现）。 */
 const BAND_SHADE = BAND_MODE === 'shade';
 /** 色栈换薄（`thin` / `soft`）：去掉红色色相锚，两条亮度锚各压到 1px。 */
 const BAND_THIN = BAND_MODE === 'thin' || BAND_MODE === 'soft';
@@ -341,6 +387,21 @@ const SHADOW_STATS = ((): boolean => {
 const SHADOW_PROBE = ((): boolean => {
   try {
     return new URLSearchParams(location.search).has('devshadowprobe');
+  } catch {
+    return false;
+  }
+})();
+
+/**
+ * `?devreachprobe=1`：登记本帧每枚格心点的**世界坐标**，供 `__mapReachProbe()` 取色。
+ *
+ * 为什么不在探针脚本里按颜色做模板匹配：点是画在**光照之前**的，`applyLighting`
+ * 会整屏 multiply ⇒ 屏上颜色不是 `#fff3c8` / `#2a1a12`（实测按固定色值一枚都匹配不到）。
+ * 由渲染器登记坐标、再在同一帧缓冲里取样，才是"玩家看到的那枚点"。
+ */
+const REACH_PROBE = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).has('devreachprobe');
   } catch {
     return false;
   }
@@ -428,6 +489,8 @@ export class MapRenderer {
   private shadowPx = 0;
   /** 本帧落点（仅 `?devshadowprobe=1` 时登记），供 `probeShadow()` 取色。 */
   private shadowSpots: Array<{ cx: number; yb: number; w: number }> = [];
+  /** 本帧格心点（仅 `?devreachprobe=1` 时登记），供 `probeReach()` 取色。 */
+  private reachSpots: Array<{ x: number; y: number }> = [];
 
   /**
    * 队伍徽标可见性。**默认 `false`** —— 用户试玩裁决：英雄后面跟队伍「点起来更麻烦、
@@ -675,6 +738,142 @@ export class MapRenderer {
     return { on: this.shadowOn, n: foot.length, foot, ref };
   }
 
+  /**
+   * 格心点的**可读性**取色（`?devreachprobe=1` + `window.__mapReachProbe()`）。
+   *
+   * 每枚点在自己的 4×4 世界里：外圈墨、内 2×2 暖芯。取三样东西：
+   *   · `core` / `ink` —— 该块内**最亮**与**最暗**的像素（不按固定色值认：光照会整屏乘暗）；
+   *   · `bg` —— 距中心 ±12 device px 四个方向的中位色（避开邻格的美术）。
+   * 判据 = `max(对比(core,bg), 对比(ink,bg))` —— 双色锚，亮底吃墨边、暗底吃暖芯。
+   *
+   * `spread = L(core) − L(ink)` 同时检查"这块里真的有一枚点"：被实体盖住或根本没画时，
+   * 块内明度差会塌到个位数 ⇒ 探针能分辨"没画"和"画了但看不清"，而不是一律报低对比。
+   */
+  probeReach(): {
+    n: number;
+    min: number;
+    median: number;
+    covered: number;
+    /** 中心落在画布外、取不到像素的点（视口边缘格）。 */
+    offScreen: number;
+    per: Array<{
+      /** 该点中心的 device px（画布左上为原点）—— 截图工具据此取特写，不另猜镜头。 */
+      px: number;
+      py: number;
+      core: number;
+      ink: number;
+      bg: number;
+      spread: number;
+      best: number;
+      bRGB: string;
+      dRGB: string;
+      bgRGB: string;
+      bL: number;
+    }>;
+  } {
+    const ctx = this.ctx;
+    const { viewW, viewH } = this.camera;
+    const dpr = this.dpr;
+    const img = ctx.getImageData(0, 0, Math.round(viewW * dpr), Math.round(viewH * dpr));
+    const data = img.data;
+    const W = img.width;
+    const H = img.height;
+    const rgbAt = (px: number, py: number): [number, number, number] | null => {
+      if (px < 0 || py < 0 || px >= W || py >= H) return null;
+      const o = (py * W + px) * 4;
+      return [data[o], data[o + 1], data[o + 2]];
+    };
+    const lum = (c: [number, number, number]): number => {
+      const f = (v: number): number => {
+        const u = v / 255;
+        return u <= 0.03928 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
+      };
+      return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+    };
+    const ratio = (a: [number, number, number], b: [number, number, number]): number => {
+      const l1 = lum(a);
+      const l2 = lum(b);
+      return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    };
+    const per: Array<{
+      px: number;
+      py: number;
+      core: number;
+      ink: number;
+      bg: number;
+      spread: number;
+      best: number;
+      bRGB: string;
+      dRGB: string;
+      bgRGB: string;
+      bL: number;
+    }> = [];
+    let covered = 0;
+    let offScreen = 0;
+    const half = Math.max(2, Math.round(2 * this.camera.zoom * dpr));
+    for (const s of this.reachSpots) {
+      const px = Math.round((s.x * this.camera.zoom + this.camera.x) * dpr);
+      const py = Math.round((s.y * this.camera.zoom + this.camera.y) * dpr);
+      /* 视口边缘的格：点确实画了，但中心落在画布外 ⇒ 取不到像素。
+         单独计数（而不是当成"没画"），判据用「量到 + 出界 === 自报」。 */
+      const pad = Math.round(6 * this.camera.zoom * dpr);
+      if (px < pad || py < pad || px >= W - pad || py >= H - pad) {
+        offScreen++;
+        continue;
+      }
+      let bright: [number, number, number] | null = null;
+      let dark: [number, number, number] | null = null;
+      let lb = -1;
+      let ld = 999;
+      for (let dy = -half; dy <= half; dy++) {
+        for (let dx = -half; dx <= half; dx++) {
+          const c = rgbAt(px + dx, py + dy);
+          if (!c) continue;
+          const l = lum(c);
+          if (l > lb) {
+            lb = l;
+            bright = c;
+          }
+          if (l < ld) {
+            ld = l;
+            dark = c;
+          }
+        }
+      }
+      if (!bright || !dark) continue;
+      const spread = (lb - ld) * 255;
+      // 四个方向取中位色。**必须贴近点**（≈2.5 世界 px）：树/岩石精灵会溢出本格，
+      // 采到 12 device px 外时，四面里可能三面是邻格的树冠 ⇒ 底色被算成深绿，
+      // 于是"点在深色树影上对比不足"——那是探针的错觉，不是玩家的观感。
+      const around: Array<[number, number, number]> = [];
+      const off = Math.max(4, Math.round(2.5 * this.camera.zoom * dpr));
+      for (const [ox, oy] of [
+        [off, 0],
+        [-off, 0],
+        [0, off],
+        [0, -off],
+      ]) {
+        const c = rgbAt(px + ox, py + oy);
+        if (c) around.push(c);
+      }
+      if (!around.length) continue;
+      around.sort((a, b) => lum(a) - lum(b));
+      const bg = around[Math.floor(around.length / 2)];
+      if (spread < 40) covered++;
+      const best = Math.max(ratio(bright, bg), ratio(dark, bg));
+      per.push({ px, py, core: +ratio(bright, bg).toFixed(2), ink: +ratio(dark, bg).toFixed(2), bg: +lum(bg).toFixed(3), spread: +spread.toFixed(0), best: +best.toFixed(2), bRGB: bright.join(','), dRGB: dark.join(','), bL: +lum(bright).toFixed(3), bgRGB: bg.join(',') });
+    }
+    const sorted = per.map((p) => p.best).sort((a, b) => a - b);
+    return {
+      n: per.length,
+      min: sorted.length ? sorted[0] : 0,
+      median: sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0,
+      covered,
+      offScreen,
+      per: per.slice(0, 40),
+    };
+  }
+
   /** 帧的可见剪影几何（懒算 + 缓存）。无此帧或无实心像素 ⇒ null。 */
   private silOf(name: string): { w: number; h: number; ax: number; ay: number; sil: BBox } | null {
     if (this.silCache.has(name)) return this.silCache.get(name)!;
@@ -807,6 +1006,9 @@ export class MapRenderer {
   draw(vm: ViewModel): void {
     const ctx = this.ctx;
     const cam = this.camera;
+    // 格心点登记必须**在本帧开画前**清空：它填在可达染色那一趟（早于实体、早于光照），
+    // 而 `shadowSpots` 的清空点在实体循环前 —— 若照抄那一行，会在登记完之后立刻清掉。
+    if (REACH_PROBE) this.reachSpots = [];
     const { state, player } = vm;
     const map = state.map;
     // 画质基线（G-15 画质腿）：展示图 `grims-showcase` 强制开氛围层。
@@ -950,6 +1152,8 @@ export class MapRenderer {
     const edgeInk = compOn ? lightCompColor(NOGO_EDGE_INK, compLight) : NOGO_EDGE_INK;
     // 修法 (1)（默认开；`?devhaloafter=0` 回退）：边带**推迟到光照之后**画 ⇒ 先登记、不立即填充。
     const afterBands: BandRect[] | null = this.haloAfter ? [] : null;
+    /** `dots` 的落笔也推迟到光照之后（与边带同一条理由，见落笔处注释）。 */
+    const afterDots: Array<[number, number]> = [];
     // 边带落笔：默认（`afterBands===null`）立即填充，与原实现逐像素一致；开启 (1) 时只登记。
     // `statRects/statPx` 只累加、不参与绘制（见 `BAND_STATS`）。
     let statRects = 0;
@@ -957,6 +1161,8 @@ export class MapRenderer {
     let statArtSkip = 0;
     /** `shade`：压暗了多少格（只计数，不参与绘制）。 */
     let statShade = 0;
+    /** `dots`：落了多少枚格心点（只计数，不参与绘制）。 */
+    let statDots = 0;
     const band = (c: string, bx: number, by: number, bw: number, bh: number): void => {
       statRects++;
       statPx += bw * bh;
@@ -999,17 +1205,48 @@ export class MapRenderer {
           // `rev &&` 两道守卫：未探索格**永不填蓝、永不当英雄自身格** —— 即便默认开
           // 且它在迷雾里其实可走（`computePaths` 不看 `isRevealed`，故 fog 格可能有有限 cost）。
           if (rev && isFinite(c) && c > 0) {
-            ctx.fillStyle = REACH_TINT; // 可走：蓝填充
-            ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+            if (BAND_DOTS) {
+              // 只在外缘落点（`edge`，默认）或每格都落（`all`）—— 见 `REACH_DOT_MODE`。
+              // 边缘判定用同一个 `inRegion`（= 已揭开 + 有限 cost），与边带同一口径，
+              // 不另造一套"可达"定义。
+              const onEdge =
+                REACH_DOT_MODE === 'all' ||
+                !inRegion(x, y - 1) ||
+                !inRegion(x, y + 1) ||
+                !inRegion(x - 1, y) ||
+                !inRegion(x + 1, y);
+              if (onEdge) {
+                /* 「自带形体」豁免：有物件的格（城门口、资源堆、矿）不落点。
+                   点现在画在光照之后 ⇒ 也就在实体之后 ⇒ 会直接印在城门/宝箱的像素上
+                   （实测城堡门洞里出现一枚白点）。这类格本来就由美术自己回答"能点"，
+                   与边带 `BAND_ART_ONLY` 同一口径。 */
+                if (hasOwnArt(i)) continue;
+                // 只**登记**世界坐标，落笔推迟到 `applyLighting` 之后（见文件末尾重放段）。
+                // 理由与边带同款、而且这里更硬：点的两色是**明度锚**，一旦被整屏 multiply 乘暗，
+                // 暖芯（#fff3c8）会掉到灰度 123 上下、墨边又贴着暗底 ⇒ 实测最差对比 **2.33**。
+                // 放在光照后画 ⇒ 亮底靠墨边、暗底靠暖芯，两锚都保持标称亮度。
+                const cx = x * TILE + TILE / 2;
+                const cy = y * TILE + TILE / 2;
+                afterDots.push([cx, cy]);
+                statDots++;
+                if (REACH_PROBE && this.reachSpots.length < 400) this.reachSpots.push({ x: cx, y: cy });
+              }
+            } else {
+              ctx.fillStyle = REACH_TINT; // `shade`（旧默认）：可走 = 整格蓝填充
+              ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+            }
             continue;
           }
           if (rev && isFinite(c)) continue; // 英雄自身格（c===0）：在可达区内部，不填不描
-          // ---- `shade`（默认）：**一条线都不画**，超出移动力但地形能走的格子压暗 ----
-          // 判据链：已揭开 + 本回合不可达 + 不限移动力时可达（`walkable`）⇒ 压暗。
+          // ---- `shade`（旧默认）/ `dots`（新默认）：**一条线都不画** ----
+          // `shade`：超出移动力但地形能走的格子压暗 16%，靠两侧明度差读边界。
+          // `dots` ：**不压暗** —— 可达区已经由格心点阵表达，再压一圈会在可达区外缘
+          //          留下一道按格切齐的明度台阶（正是这一批要去掉的"色斑"）。
+          // 判据链（仅 shade）：已揭开 + 本回合不可达 + 不限移动力时可达（`walkable`）⇒ 压暗。
           // 树/水/山/城/物件 在 `walkable` 里也是 Infinity ⇒ 天然被排除（美术自己会说话）；
           // 未探索格不压（雾本来就暗，压了读不出差）。
-          if (BAND_SHADE) {
-            if (rev && vm.walkable && isFinite(vm.walkable[i])) {
+          if (BAND_SHADE || BAND_DOTS) {
+            if (BAND_SHADE && rev && vm.walkable && isFinite(vm.walkable[i])) {
               ctx.fillStyle = SHADE_OUT;
               ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
               statShade++;
@@ -1052,6 +1289,7 @@ export class MapRenderer {
           artSkip: statArtSkip, // 因「自带形体」而整格跳过的数量
           shade: statShade, // `shade` 模式压暗的格数（世界 px² 口径见 `shadePx`）
           shadePx: statShade * TILE * TILE,
+          dots: statDots, // `dots` 模式落的格心点数（`audit:bandflip` ⑤ 用它证"点真的在画"）
         };
       }
     }
@@ -1199,6 +1437,28 @@ export class MapRenderer {
 
     /* --- 光照层（屏幕空间）：昼夜 multiply 叠色 + 暖光 + 暗角 --- */
     if (lightingOn()) this.applyLighting(now);
+
+    /* --- 格心点：同样画在光照**之后**（`dots` 模式；其它模式本数组为空） ---
+       走世界坐标 + 相机变换，与边带同一套；落笔顺序放在边带**之前**，让边界那圈线压住点。
+       已知取舍（与边带相同、已接受）：这两个元素不再被 y 排序的实体遮挡。
+       实测影响很小 —— 点只落在可走且本回合可达的格上，树/怪/城所在格本就不是可走格。 --- */
+    if (afterDots.length > 0) {
+      ctx.save();
+      ctx.translate(cam.x, cam.y);
+      ctx.scale(cam.zoom, cam.zoom);
+      for (const [cx, cy] of afterDots) {
+        ctx.fillStyle = REACH_DOT_INK;
+        ctx.fillRect(cx - REACH_DOT_R, cy - REACH_DOT_R, REACH_DOT_R * 2, REACH_DOT_R * 2);
+        ctx.fillStyle = REACH_DOT_CORE;
+        ctx.fillRect(
+          cx - REACH_DOT_CORE_R,
+          cy - REACH_DOT_CORE_R,
+          REACH_DOT_CORE_R * 2,
+          REACH_DOT_CORE_R * 2,
+        );
+      }
+      ctx.restore();
+    }
 
     /* --- 修法 (1)：三条边带改画在光照**之后**（默认开；`?devhaloafter=0` 回退旧路径） ---
        仍走世界坐标 + 相机变换（`ctx.restore()` 后变换已回到 dpr 基准，`applyLighting`

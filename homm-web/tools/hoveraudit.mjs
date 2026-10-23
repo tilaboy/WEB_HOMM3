@@ -167,6 +167,38 @@ async function evaluate(expression) {
   return r.result?.value;
 }
 
+/**
+ * `findTarget()` 只保证「target 存在」，**不保证它已经加载完**。
+ * 页面从 `about:blank` 走到探针页的这一刻，旧执行上下文会被销毁 ⇒
+ * 紧接着的 `Runtime.evaluate` 抛 `Execution context was destroyed`
+ * （2026-10-23 实测：连跑两次都停在第一句，看起来像"产品挂了"，其实是测试台的竞态）。
+ * 所以先轮询 `readyState`（被销毁就当没就绪、重试），再跑测试序列。
+ */
+async function waitForLoad(ms = 10000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    try {
+      if ((await evaluate('document.readyState')) === 'complete') return true;
+    } catch (e) {
+      if (!/context was destroyed|Cannot find context/i.test(e.message)) throw e;
+    }
+    await sleep(120);
+  }
+  return false;
+}
+
+/** 测试序列整段重放的兜底：只在「上下文被销毁」时重试，别把真断言吞掉。 */
+async function evaluateStable(expression, tries = 2) {
+  for (let i = 1; ; i++) {
+    try {
+      return await evaluate(expression);
+    } catch (e) {
+      if (i >= tries || !/context was destroyed|Cannot find context/i.test(e.message)) throw e;
+      await waitForLoad();
+    }
+  }
+}
+
 /** 注入到页面里跑的测试序列（真实时间，rAF 会正常触发） */
 const TEST = `(async () => {
   const out = {};
@@ -260,7 +292,8 @@ try {
     }
   });
   await send('Runtime.enable');
-  results = await evaluate(TEST);
+  if (!(await waitForLoad())) throw new Error('探针页 10s 内没 load 完（readyState 一直不是 complete）');
+  results = await evaluateStable(TEST);
 } catch (e) {
   console.error(`跑探针失败：${e.message}`);
   await cleanup();
