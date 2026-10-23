@@ -498,6 +498,15 @@ export class MapRenderer {
     this.resize();
   }
 
+  /**
+   * 过渡带取色口径（同会话可切）。切成 `'top'` = 2026-10-23 之前的旧行为，
+   * 改完重烘一次 —— 给"同一机位、同一张图、只差这一笔"的 A/B 用。
+   */
+  setFringeTone(tone: 'blend' | 'top'): void {
+    this.terrain.fringeTone = tone;
+    this.terrain.invalidate();
+  }
+
   resize(): void {
     const raw = window.devicePixelRatio || 1;
     // §5.3：只做上限钳制，**保留小数**——1.5 是合法档位，旧的 Math.round 会把它吞成 2。

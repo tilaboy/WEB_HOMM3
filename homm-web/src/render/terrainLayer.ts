@@ -3,7 +3,7 @@ import { TERRAIN } from '../core/data/terrains.js';
 import { idx } from '../core/map/grid.js';
 import { TILE } from './ortho.js';
 import { getAtlas } from './atlas.js';
-import { hash2 } from './pixel.js';
+import { hash2, mix } from './pixel.js';
 import { quality } from './quality.js';
 import { shadeOf, wetEdgeAlpha, regionShade, regionOf } from './terrainShade.js';
 
@@ -51,6 +51,19 @@ let warnedOversize = false;
  * node 垫片（`artshot.mjs`）里 `location` 不存在 ⇒ 视为开，由脚本显式置 `terrain.regionShade`。
  * 与 `quality.ts` 自读 `?devdpr` 同一种做法：**无人传即不影响生产路径**。
  */
+/**
+ * `?devfringe=top` ⇒ 过渡带退回 2026-10-23 之前的`top`取色口径。
+ * 与 `?devregion=0` 同一种做法：无人传即不影响生产路径；给 A/B 与探针负向对照用。
+ */
+function devFringeTop(): boolean {
+  if (typeof location === 'undefined') return false;
+  try {
+    return new URLSearchParams(location.search).get('devfringe') === 'top';
+  } catch {
+    return false;
+  }
+}
+
 function devRegionOff(): boolean {
   if (typeof location === 'undefined') return false;
   try {
@@ -101,6 +114,85 @@ export class TerrainLayer {
   /** 强制下一帧重烘（预留：未来有改变地形的机制时调用）。 */
   invalidate(): void {
     this.bakedFor = null;
+  }
+
+  /**
+   * 过渡带取色口径（2026-10-23）。默认 `'blend'`；`'top'` = 2026-10-23 之前的旧行为。
+   *
+   * **为什么要这个开关**：这是本仓唯一能对"过渡带亮度口径"做因果 A/B 的手段 ——
+   * `tools/terrainedgeprobe.mjs` 拿它当负向对照（切成 `'top'` 必须让判据变红）。
+   * 生产路径永远是 `'blend'`，没有任何调用方改它。
+   */
+  fringeTone: 'blend' | 'top' = devFringeTop() ? 'top' : 'blend';
+
+  /**
+   * 过渡带深度（像素）。生产恒为 {@link FRINGE_DEPTH}；只有探针的负向对照会设成 0
+   * （`--inject=none` ⇒ 断言"过渡带确实存在"的那条必须变红）。
+   */
+  fringeDepth = FRINGE_DEPTH;
+
+  /**
+   * 过渡带该用哪个颜色 —— 这是"地形边界像不像贴纸"的关键一笔。
+   *
+   * **旧口径（`top`）的实测缺陷**：`TERRAIN[n].top` 是色板**最亮**的一档
+   * （沙地 `#e8d6a3`，L=214），而旁边的沙地砖经纹理 + 光照后只有 L≈175、草地 L≈120。
+   * 于是每条地形边界上都出现一圈 **比两侧都亮 39~94** 的实色边 ——
+   * 72 行平均剖面：草地 120 → **214（连续 3px）** → 沙地 175。
+   * 眼睛把它读成"发光描边 / 剪纸贴片"，正是主理人说的"粗糙"。
+   *
+   * **现在的口径**：直接取**那块地形砖的真实平均色**（`g_<kind>_0` 的像素均值），
+   * 再叠加**本格的光照**（宏观明暗 + 地貌区色偏，与 `bakeShade` 同一组参数）
+   * ⇒ 过渡带就是"邻居地形在本处光照下的颜色"。
+   *
+   * 为什么不是手调一个 `mix(top,left,k)`：k 对不同地形并不一致（实测草地→土路仍凸起 14，
+   * 沙地→雪原 8）。均值是"这块砖看起来什么颜色"的直接答案，换色板也不用重调。
+   */
+  private fringeColor(
+    neighbor: TerrainKind,
+    shade1: { color: string; alpha: number },
+    shade2: { color: string; alpha: number },
+  ): string {
+    // `'top'` = **2026-10-23 之前的完整旧口径**：既用最亮色、且**不叠任何光照**
+    // （旧代码就是 `ctx.fillStyle = TERRAIN[n].top`）。负向对照要能一次红两条判据，
+    // 所以这里不能只回退颜色、却留着新加的光照。
+    if (this.fringeTone === 'top') return TERRAIN[neighbor].top;
+    let base = this.terrainAvg(neighbor);
+    // 与 `bakeShade` 完全同一组覆盖（宏观明暗 → 地貌区色偏），顺序也一致。
+    if (shade1.alpha > 0.006) base = mix(base, shade1.color, shade1.alpha);
+    if (shade2.alpha > 0.006) base = mix(base, shade2.color, shade2.alpha);
+    return base;
+  }
+
+  /** 地形砖的真实平均色（读图集 `g_<kind>_0` 的像素均值），按地形缓存一次。 */
+  private avgCache = new Map<TerrainKind, string>();
+
+  private terrainAvg(kind: TerrainKind): string {
+    const hit = this.avgCache.get(kind);
+    if (hit) return hit;
+    let out = TERRAIN[kind].left;
+    const atlas = getAtlas();
+    const f = atlas.get(`g_${kind}_0`);
+    const actx = atlas.canvas.getContext('2d');
+    if (f && actx) {
+      const d = actx.getImageData(f.x, f.y, f.w, f.h).data;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] <= 8) continue;
+        r += d[i];
+        g += d[i + 1];
+        b += d[i + 2];
+        n++;
+      }
+      if (n > 0) {
+        const hex = (v: number): string => Math.round(v / n).toString(16).padStart(2, '0');
+        out = `#${hex(r)}${hex(g)}${hex(b)}`;
+      }
+    }
+    this.avgCache.set(kind, out);
+    return out;
   }
 
   /** 拿到这张地图的烘焙画布；地图换了就重烘。 */
@@ -274,21 +366,27 @@ export class TerrainLayer {
         const self = map.tiles[idx(map, x, y)].terrain;
         if (self === 'water') continue;
         const selfPrio = TERRAIN_SPREAD[self];
+        // 本格的两层覆盖（与 `bakeShade` 同一组参数）：过渡带要跟着**本处**的光走，
+        // 否则夜里的地图上会浮着一圈恒亮的边（旧口径 `top` 就是这个毛病）。
+        const sh = this.macroShade
+          ? shadeOf(x, y, map.height)
+          : { color: '#000000', alpha: 0 };
+        const rs = this.regionShade ? regionShade(x, y) : { color: '#000000', alpha: 0 };
         for (const { dx, dy, edge } of DIRS) {
           const n = terrainAt(x + dx, y + dy);
           if (!n || n === 'water' || n === self) continue;
           if (TERRAIN_SPREAD[n] <= selfPrio) continue;
 
-          ctx.fillStyle = TERRAIN[n].top;
+          ctx.fillStyle = this.fringeColor(n, sh, rs);
           // 一条边的过渡像素攒进当前路径、每 FRINGE_CHUNK 个矩形提交一次：
           // 逐像素 fillRect 会让开局烘焙多花几百 ms；而把整条边（乃至整张图）
           // 攒成一个大路径，又会让瞬时路径内存随地图尺寸膨胀。折中是
           // **按边、分块**提交，峰值矩形数恒定，与地图大小无关。
           let pending = 0;
           ctx.beginPath();
-          for (let d = 0; d < FRINGE_DEPTH; d++) {
+          for (let d = 0; d < this.fringeDepth; d++) {
             // 越深越稀：阈值从 0 升到 1，Bayer 值小于阈值的像素不画
-            const threshold = d / FRINGE_DEPTH;
+            const threshold = d / this.fringeDepth;
             for (let p = 0; p < TILE; p++) {
               let px: number;
               let py: number;

@@ -2171,7 +2171,7 @@ if (bootParams.has('devclear')) {
 }
 // 调试：?devprobe=1 暴露行程状态（tools/destaudit.mjs 端到端审计用）
 if (bootParams.has('devprobe')) {
-  const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void; __mapTint: (on: boolean) => void; __mapShadow: (on: boolean) => void; __mapShadowProbe: () => unknown; __mapShadowOffset: (dy: number) => void };
+  const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void; __mapTint: (on: boolean) => void; __mapShadow: (on: boolean) => void; __mapShadowProbe: () => unknown; __mapShadowOffset: (dy: number) => void; __mapFringe: (tone: string) => void };
   w.__journey = () => ({
     pendingDest,
     walking: !!anim,
@@ -2195,6 +2195,8 @@ if (bootParams.has('devprobe')) {
   w.__mapShadowProbe = () => renderer.probeShadow();
   // 负向对照专用：把影推离脚下，验证判据量的是"脚边的影"而不是"任意变暗的像素"。
   w.__mapShadowOffset = (dy: number) => { renderer.shadowOffsetY = dy; };
+  // 过渡带取色口径（同会话切换）：切成 'top' 就是改前行为，改完调 invalidate() 重烘。
+  w.__mapFringe = (tone: string) => { renderer.setFringeTone(tone === 'top' ? 'top' : 'blend'); };
 }
 
 // 调试：?devdays=20 直接空过 N 天，用来观察电脑对手的推进与终局判定

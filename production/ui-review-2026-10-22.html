@@ -272,14 +272,14 @@ td .p{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;bor
 
   <div style="margin:22px 0 4px;padding:14px 18px;border:1px solid rgba(232,196,106,.45);border-radius:10px;
        background:linear-gradient(180deg,rgba(232,196,106,.12),rgba(232,196,106,.04));">
-    <div style="font-size:12px;letter-spacing:.14em;color:#e8c46a;font-weight:600">P0 + P1 已落地 · 2026-10-22/23 · f80e771（P0）· cb47c16（城镇/部队带）· 图标与预估 · HUD 四角与过天字幕 · P2 行动队列 · 渲染：接地影</div>
+    <div style="font-size:12px;letter-spacing:.14em;color:#e8c46a;font-weight:600">P0 + P1 已落地 · 2026-10-22/23 · f80e771（P0）· cb47c16（城镇/部队带）· 图标与预估 · HUD 四角与过天字幕 · P2 行动队列 · 渲染：接地影 · 邻色过渡带</div>
     <div style="margin-top:6px;font-size:15px;line-height:1.6;color:#efe4cd">
       P0 五条 + P1 六条（城镇四列 / 战斗部队带 / 10 个动作图标 / 触屏可见的预估伤害 /
-      <b>战斗 HUD 四角重排</b> / <b>过天字幕不再报坐标</b> / <b>P2 行动队列</b> / <b>渲染：接地影</b>）全部实施。本页下方的「改后」是<b>设计意图</b>；
+      <b>战斗 HUD 四角重排</b> / <b>过天字幕不再报坐标</b> / <b>P2 行动队列</b> / <b>渲染：接地影</b> / <b>邻色过渡带</b>）全部实施。本页下方的「改后」是<b>设计意图</b>；
       <b>真实成品</b>见 <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">production/ui-p0-after/</span>（七张）
-      、<span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">ui-p1-after/</span>（十张）与 <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">render-shadow/</span>（两张），
-      量化读数见同目录 <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">ui-review-2026-10-22.md §8…§13</span>。
-      新门 <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">npm run probe:uip0</span> 十二条判据全绿（12/12 负向对照能变红）；<span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">probe:mapshadow</span> 四条判据全绿（2/2 负向对照能变红）；
+      、<span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">ui-p1-after/</span>（十张）、<span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">render-shadow/</span>（两张）与 <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">render-terrainedge/</span>（三张），
+      量化读数见同目录 <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">ui-review-2026-10-22.md §8…§14</span>。
+      新门 <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">npm run probe:uip0</span> 十二条判据全绿（12/12 负向对照能变红）；<span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">probe:mapshadow</span> 四条判据全绿（2/2 负向对照能变红）；<span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">probe:terrainedge</span> 三条判据全绿（3/3 负向对照能变红）；
       <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px">npm run probe:aiday</span> 验过天文案（无坐标 · 每条「进入视野」都属实 · 检查器自带两条负向对照）。
     </div>
   </div>

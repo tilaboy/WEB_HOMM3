@@ -44,7 +44,8 @@
     "probe:dockoverlap": "node tools/probes/dockoverlap.mjs",
     "probe:uip0": "node tools/uip0probe.mjs",
     "probe:aiday": "node tools/aidayprobe.mjs",
-    "probe:mapshadow": "node tools/mapshadowprobe.mjs"
+    "probe:mapshadow": "node tools/mapshadowprobe.mjs",
+    "probe:terrainedge": "node tools/terrainedgeprobe.mjs"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
