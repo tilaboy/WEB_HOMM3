@@ -42,7 +42,8 @@
     "audit:panelgate": "node tools/panelgate.mjs",
     "audit:androidsync": "node tools/androidsync.mjs",
     "probe:dockoverlap": "node tools/probes/dockoverlap.mjs",
-    "probe:uip0": "node tools/uip0probe.mjs"
+    "probe:uip0": "node tools/uip0probe.mjs",
+    "probe:aiday": "node tools/aidayprobe.mjs"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",

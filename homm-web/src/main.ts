@@ -1467,8 +1467,16 @@ function showAiDayReport(): void {
       hint('按 M 继续昨日的行程（小旗处）');
       return;
     }
-    const last = state.log[state.log.length - 1];
-    hint(last ? `D${last.day} · ${last.text}` : '新的一天');
+    /**
+     * 不再回放"最后一条日志"（2026-10-23 主理人）。
+     *
+     * AI 永远在玩家之后行动 ⇒ 那条几乎总是电脑的家务事
+     * （「焚风堡 驻军增加了 投斧蛮子 ×2」「紫晶秘法师 从 (19,27) 移动到 (17,23)」），
+     * 玩家既定位不了、也用不上，还会被当成"这回合发生了什么"的字幕。
+     * 真正与玩家有关的（交战 / 失守 / 英雄阵亡）已经在上面的「对手动向」里了，
+     * 所以这里只报一句"现在是第几天"。
+     */
+    hint(`第 ${state.day} 天`);
   };
 
   const evs = aiEvents();
@@ -1496,15 +1504,31 @@ function showAiDayReport(): void {
     head.className = 'ai-head';
     head.textContent = `${factionName(player as Parameters<typeof factionName>[0])}${state.players[player]?.isHuman ? '（你）' : ''}`;
     body.push(head);
+    /**
+     * 同一天里同一句话**只写一次**，重复次数用 `（×n）` 收在行尾。
+     *
+     * 原因很具体：AI 英雄一天会连着清掉好几队野怪，事件流就变成
+     * 「赤焰领主 清掉了挡路的野怪」×3 —— 三行完全一样的字，玩家读不出
+     * "到底是打了三场还是一件事报了三遍"（2026-10-23 主理人：字幕里没用的信息）。
+     * 合并键带上色彩：好消息（绿）和坏消息（红）永远不合并。
+     */
+    const merged = new Map<string, { line: string; cls: string; n: number }>();
     for (const e of sortGroup(list)) {
-      const line = document.createElement('p');
       // 着色只回答一个问题："这条对玩家是好消息还是坏消息"。
       // vsPlayer 的交战且 AI 失手 = 好消息（绿）；其余打到玩家头上的（你的英雄阵亡 /
       // 你的资产易主 / 你的英雄被击败）都是坏消息（红）。
-      const tone = !e.vsPlayer ? '' : e.kind === 'battle' && e.win === false ? ' win' : ' loss';
-      line.className = 'ai-line' + tone;
-      line.textContent = aiEventLine(e);
-      body.push(line);
+      const cls = 'ai-line' + (!e.vsPlayer ? '' : e.kind === 'battle' && e.win === false ? ' win' : ' loss');
+      const text = aiEventLine(e);
+      const key = `${cls}|${text}`;
+      const hit = merged.get(key);
+      if (hit) hit.n++;
+      else merged.set(key, { line: text, cls, n: 1 });
+    }
+    for (const { line, cls, n } of merged.values()) {
+      const p = document.createElement('p');
+      p.className = cls;
+      p.textContent = n > 1 ? `${line}（×${n}）` : line;
+      body.push(p);
     }
   }
 

@@ -226,6 +226,32 @@ const SIDES = `(() => {
  * 屏幕上什么都不画，但 DOM 看起来完全正常。所以每个 `<use>` 的 href 都要能在
  * sprite 里找到对应 symbol，否则记一条 badRef。
  */
+
+/**
+ * 战斗 HUD 四角：两组动作簇必须**贴屏幕下角**，且不压棋盘、不压部队卡。
+ *
+ * 改前右上「速度/自动战斗/撤退」517×52，横跨 517..836 —— 棋盘右边界 ≈682，
+ * 也就是这组按钮把自己盖在棋盘右上角上（主理人："这些可能会遮挡"）。
+ * 这条判据盯的就是那件事：簇与 canvas 相交 = 遮挡。
+ */
+const HUD = `(() => {
+  const box = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, r: r.right, b: r.bottom }; };
+  const hit = (a, b) => !!a && !!b && a.x < b.r && a.r > b.x && a.y < b.b && a.b > b.y;
+  const canvas = box(document.querySelector('.bt-canvas'));
+  const stacks = [box(document.querySelector('.bt-head-actions')), box(document.querySelector('.bt-foot'))].filter(Boolean);
+  const rows = [...document.querySelectorAll('.bt-side-row')].map(box);
+  const btns = [...document.querySelectorAll('.bt-head-actions .btn, .bt-foot .btn')];
+  return {
+    n: stacks.length,
+    vsCanvas: stacks.filter((s) => hit(s, canvas)).length,
+    vsRows: stacks.map((s) => rows.filter((r) => hit(s, r)).length),
+    inView: stacks.every((s) => s.x >= -0.5 && s.r <= innerWidth + 1 && s.b <= innerHeight + 1),
+    bottom: stacks.map((s) => Math.round(innerHeight - s.b)),
+    minH: btns.length ? Math.min(...btns.map((b) => b.getBoundingClientRect().height)) : 0,
+    count: btns.length,
+  };
+})()`;
+
 const ICONS = `(() => {
   // 只数**看得见的**动作按钮：战斗里 #thumb 是 display:none，城镇/开局页 #thumb 可能被面板盖住，
   // 把这些算进来会让"10 个主动作"变成一笔糊涂账（隐藏的图标宽度恒为 0，还会假报不可见）。
@@ -292,6 +318,9 @@ const INJECT_CSS = {
            border-radius: 10px !important; }`,
   // 图标"在 DOM 里但画不出来"—— 正是 `<use>` 断引用的症状
   icons: `.ti { display: none !important; }`,
+  // 回退到改前的**右上横排** ⇒ 这簇必然与棋盘相交，正是主理人说的"遮挡"
+  hud: `.bt-head-actions { left: auto !important; right: 8px !important; top: 8px !important; bottom: auto !important;
+         flex-direction: row !important; width: auto !important; }`,
   // 预估被藏掉（等于回到 hover-only 的可见性）
   forecast: `.fc { display: none !important; }`,
   // 回退**整组**（不是只关 overflow）：修法是"标签一行、数值一行"（flex-direction:column），
@@ -372,6 +401,7 @@ async function measure(send, evaluate, url, { needStart = false, needHero = fals
   const contrast = needModal ? await evaluate(CONTRAST) : null;
   const townpane = url.includes('devtown') ? await evaluate(TOWNPANE) : null;
   const sides = url.includes('devbattle') ? await evaluate(SIDES) : null;
+  const hud = url.includes('devbattle') ? await evaluate(HUD) : null;
   const icons = await evaluate(ICONS);
 
   // 按压：打标 → 逐个 force :active → 读 transform
@@ -402,7 +432,7 @@ async function measure(send, evaluate, url, { needStart = false, needHero = fals
     }
   }
 
-  return { url, sizes, material, hp, touch, contrast, townpane, sides, icons, forecast, pressed, stuck };
+  return { url, sizes, material, hp, touch, contrast, townpane, sides, hud, icons, forecast, pressed, stuck };
 }
 
 /* ------------------------------------------------------------------ 判据 */
@@ -542,6 +572,28 @@ function judge(all) {
         .join(''),
   );
 
+  // ⑩ 四角动作簇：贴下角、不压棋盘、不压部队卡（改前右上那组 517×52 正压在棋盘上）
+  const hd = all.map((s) => s.hud).find(Boolean);
+  check(
+    'hudcorners',
+    '两组动作簇贴屏幕下角 · 不压棋盘 · 不压部队卡 · 每个仍是 44px 靶',
+    !!hd &&
+      hd.n === 2 &&
+      hd.vsCanvas === 0 &&
+      hd.vsRows.every((n) => n === 0) &&
+      hd.inView &&
+      hd.bottom.every((b) => b >= 0 && b <= 12) &&
+      hd.minH >= 44,
+    hd
+      ? `两簇 底距 ${hd.bottom.join('/')}px · ${hd.count} 个按钮最矮 ${Math.round(hd.minH)}px` +
+        (hd.vsCanvas ? ` · ❌ ${hd.vsCanvas} 簇压在棋盘上` : '') +
+        (hd.vsRows.some((n) => n > 0) ? ` · ❌ 压住部队卡（${hd.vsRows.join('/')}）` : '') +
+        (!hd.inView ? ' · ❌ 出界' : '') +
+        (hd.bottom.some((b) => b > 12) ? ' · ❌ 没贴下角' : '') +
+        (hd.minH < 44 ? ' · ❌ 有按钮矮于 44px' : '')
+      : '没进战斗（?devbattle=1 没起？）',
+  );
+
   // ⑨ 预估伤害：手机上要能看到（hover-only 等于没有）
   const f = all.map((s) => s.forecast).find(Boolean);
   if (!f) {
@@ -604,7 +656,7 @@ async function run() {
 
       const green = judge(all);
       if (AS_JSON) {
-        console.log(JSON.stringify({ green, rows, screens: all.map(({ tag, sizes, material, touch, hp, contrast, townpane, sides, icons, forecast, pressed }) => ({ tag, sizes, material, touch, hp, contrast, pressed })) }, null, 2));
+        console.log(JSON.stringify({ green, rows, screens: all.map(({ tag, sizes, material, touch, hp, contrast, townpane, sides, hud, icons, forecast, pressed }) => ({ tag, sizes, material, touch, hp, contrast, townpane, sides, hud, pressed })) }, null, 2));
       } else {
         for (const r of rows) {
           console.log(`${r.ok ? '✅' : '❌'} [${r.id}] ${r.label} — ${r.detail}`);
@@ -623,7 +675,7 @@ async function run() {
   if (SELFCHECK) {
     // 负向对照：每次注入一条，闸必须变红
     let bad = 0;
-    for (const which of ['press', 'type', 'material', 'touch', 'hpbar', 'contrast', 'townfit', 'sides', 'icons', 'forecast']) {
+    for (const which of ['press', 'type', 'material', 'touch', 'hpbar', 'contrast', 'townfit', 'sides', 'icons', 'forecast', 'hud']) {
       INJECT = which;
       const green = await run();
       const ok = green === false;

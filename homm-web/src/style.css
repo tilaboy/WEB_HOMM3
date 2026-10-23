@@ -3262,3 +3262,181 @@ body.in-battle #thumb {
 .bt-side-list:has(.bt-side-row:nth-child(6)) .fc {
   display: none;
 }
+
+/* ==========================================================================
+ * P1 · 战斗 HUD 四角重排（2026-10-23 主理人）
+ *
+ * 改前实测（844×390）：
+ *   · 左上「第 1 回合 · 法力 30」145×38；
+ *   · 右上「速度 / 自动战斗 / 撤退」**517×52**，横跨 517..836 —— 棋盘右边界 ≈682，
+ *     也就是说这组按钮**把自己盖在棋盘右上角**、还压住敌方部队带的列顶；
+ *   · 右下「防御 / 等待 / 施法」压住棋盘右下角。
+ * 主理人的话：「这些可能会遮挡」。所以三个挪到**左下竖排**、三个挪到**右下竖排**，
+ * 「法力」字号收一档（它是读数，不是标题）。
+ *
+ * 为什么贴在左右下角、而不是塞进两侧部队带里：
+ *   那两列高 374，一张卡 34~51px；满编 7 队时列表要 310px，再塞 140px 的竖排簇
+ *   必然把最后两张卡盖掉。所以簇仍然贴屏幕边缘（正是部队带下方那片常年空着的 148px），
+ *   部队带给 `padding-bottom` 让位、列表超过余高就自己滚 ⇒
+ *   **按钮永远不盖卡，卡也永远不盖按钮**，两者都不用抢棋盘的地。
+ *
+ * 尺寸一个没动：每个按钮仍是 44px 命中高（`probe:uip0` / `audit:touch` 都还在看）。
+ * ========================================================================== */
+
+/* 「法力」是读数，比「第 N 回合」低一档；蓝调保留（它是全界面唯一的蓝，认位靠它） */
+.bt-mana {
+  font-size: var(--t-cap);
+  letter-spacing: 0.3px;
+  opacity: 0.92;
+}
+
+/* 右上 → 左下：竖排。宽度对齐部队带（92px），落在列的 x 范围内，不上棋盘。 */
+.bt-head-actions {
+  left: 8px;
+  right: auto;
+  top: auto;
+  bottom: 8px;
+  width: 92px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px;
+}
+
+.bt-head-actions .btn {
+  width: 100%;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 4px;
+  font-size: var(--t-cap);
+  gap: 4px;
+}
+
+/* 右下操作簇：同一套竖排规格 —— 左右两侧在视觉上必须是一对，否则像两套 UI */
+.bt-foot {
+  right: 8px;
+  left: auto;
+  bottom: 8px;
+  width: 92px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px;
+}
+
+.bt-actions {
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+.bt-foot .btn {
+  width: 100%;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 4px;
+  font-size: var(--t-cap);
+  gap: 4px;
+}
+
+/* 部队带给右下/左下两个簇让出 148px（3×44 + 2×2 + 边框 4 + 留白 8）。
+ * ⚠️ 左右内边距必须是 0：卡是**贴列边**的（P1 起 `.bt-side` 就把左右 padding 清零了）。
+ *    这里写 `padding: 6px 8px 148px` 会把 92px 的列压到 76px，`食人魔` 立刻被截成
+ *    `食…` —— 一个 shorthand 就把 P1 的"卡不贴边、名字放得下"全推翻了。 */
+.battle.has-sides .bt-side {
+  padding: 6px 0 148px;
+}
+
+/* 左列仍要让开左上那枚胶囊（145 宽，压住列顶 38px）。 */
+.battle.has-sides .bt-side:first-child {
+  padding-top: 46px;
+}
+
+/* 右列不再需要让开右上按钮组（它已经挪到下面了）⇒ 归还 46px 给敌方名单。 */
+.battle.has-sides .bt-side:last-child {
+  padding-top: 6px;
+}
+
+/* 名单超出余高时自己滚，而不是被 `overflow:hidden` 静默裁掉。
+   只在 6~7 队这种满编局面才会触发（见下方预估行的那条护栏）。 */
+.bt-side-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+/* 预估行护栏：从 ≥6 队提前到 ≥4 队。
+ * 4 张带预估的卡 = 4×51 + 3×5 = 219px，而让位后只剩 ~200px；
+ * 与其让第 4 张卡被切掉一截（切的正好是预估行），不如整组关掉、四张卡都完整。 */
+.bt-side-list:has(.bt-side-row:nth-child(4)) .fc {
+  display: none;
+}
+
+/* 底部提示条：两个竖排簇之间只剩中间 628px，提示居中当"字幕"。
+ * 它有 4 秒自动淡出，且 `pointer-events:none`，不会挡住点击。 */
+.bt-hint {
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 8px;
+  max-width: calc(100% - 232px);
+}
+
+/* ---------- 长名单：可滚，但必须"看得出来还能拨" ----------
+ * 动作簇占掉 148px 后，390 高的列只剩 160px 给卡（≈4.7 张）。
+ * 满编 7 队时列表必须滚 —— 而触屏没有滚动条，静默裁掉正是 P1 修过的那个坑
+ * （城镇面板溢出 122px 却毫无提示）。所以：底部渐隐 + 标题后缀，两处都在说"下面还有"。
+ * `.more` 由 `renderSides()` 按 scrollHeight/clientHeight 实时打上，不会误报。 */
+.bt-side {
+  position: relative;
+}
+
+.bt-side.more .bt-side-list {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+}
+
+.bt-side.more .bt-side-h::after {
+  content: ' · 可滚动';
+  letter-spacing: 0;
+  opacity: 0.6;
+}
+
+/* 5 队起把卡压到 28px（名字 + 血条不变，只收上下内边）：
+ * 390 高下 5 张 = 156px，正好落在 160px 的余高里，不必滚。 */
+.bt-side-list:has(.bt-side-row:nth-child(5)) .bt-side-row {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+/* ---------- 矮机（≤340 高，典型 792×320）----------
+ * 304px 高的列里，148px 给动作簇、46px 让胶囊 ⇒ 只剩 110px。
+ * 3 张 34px 的卡 = 110px，一张都不多 —— 所以这个高度上不再设"宽松档"：
+ * 卡一律 28px、标题让位（阵营已由左侧 3px 色条 + 左右位置表达）。
+ * 这不是偏好，是 304 = 46 + 148 + 20(标题) + 90 的算术结果。 */
+@media (max-height: 340px) {
+  .battle.has-sides .bt-side {
+    padding-top: 6px;
+  }
+
+  .battle.has-sides .bt-side:first-child {
+    padding-top: 46px;
+  }
+
+  .bt-side-h {
+    display: none;
+  }
+
+  .bt-side-list .bt-side-row {
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
+}
+
+/* 竖排后每枚按钮只有 86px 宽：桌面文案带快捷键（「等待 (空格)」）会折成两行，
+ * 把 44px 的格子撑破。宁可截断也不换行 —— 触屏文案本来就没有括号里的那截。 */
+.bt-head-actions .btn,
+.bt-foot .btn {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  justify-content: center;
+}

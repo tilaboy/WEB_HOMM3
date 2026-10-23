@@ -1,4 +1,4 @@
-import type { Army, FactionId, GameState, GridPos, GuardReward, Hero, MapObject, Town } from '../types.js';
+import type { Army, FactionId, GameState, GridPos, GuardReward, Hero, MapObject, PlayerId, Town } from '../types.js';
 import { DIFFICULTIES, factionName, viewerOf } from '../data/factions.js';
 import { BUILDINGS } from '../data/buildings.js';
 import { WAR_MACHINES, WAR_MACHINE_IDS } from '../data/warmachines.js';
@@ -748,8 +748,19 @@ function arrivalEvent(
       win: true,
     };
   }
-  // 野怪 / 宝库：走到这里必然是战斗胜利（战死分支已提前返回）
-  return { kind: 'battle', player, what: foeNameOf(obj), detail: '清掉了挡路的敌人', win: true };
+  // 野怪 / 宝库：走到这里必然是战斗胜利（战死分支已提前返回）。
+  // `what` 必须是**动手的人**。改前这里是 `foeNameOf(obj)`（= "野怪"），渲染出来是
+  // 「野怪 清掉了挡路的敌人」—— 读起来像野怪把别人清了，主理人每天在字幕里看到的就是这句。
+  // 事件模型里 `what` 是主体、`detail` 是"发生了什么"（见 main.ts 的 `aiEventLine`）。
+  const foe = foeNameOf(obj);
+  return {
+    kind: 'battle',
+    player,
+    hero: heroName,
+    what: heroName,
+    detail: obj.kind === 'vault' ? `攻破了${foe}` : `清掉了挡路的${foe}`,
+    win: true,
+  };
 }
 
 /** 野怪/宝库物件的中文主体名（宝库带档位）。 */
@@ -830,6 +841,38 @@ function maybeHireHero(state: GameState, player: FactionId): void {
 
 /* ---------------- 每日入口 ---------------- */
 
+/** `who` 阵营的任一英雄，能不能看到 `pos`。半径用 `HERO_SIGHT` —— 与迷雾渲染同一常数。 */
+function seenBy(state: GameState, who: PlayerId, pos: GridPos): boolean {
+  for (const id of state.heroOrder) {
+    const h = state.heroes[id];
+    if (!h || h.owner !== who) continue;
+    const dx = h.pos.x - pos.x;
+    const dy = h.pos.y - pos.y;
+    if (dx * dx + dy * dy <= HERO_SIGHT * HERO_SIGHT) return true;
+  }
+  return false;
+}
+
+/**
+ * 敌方行军：**只报"从雾里走进你视野"的那一次**（2026-10-23 主理人）。
+ *
+ * 改前 AI 每走一步都往战报写「紫晶 · 城主 从 (19,27) 移动到 (17,23)，部队 弓手 ×20」——
+ * 而 `doEndDay` 收尾会把最后一条日志当**字幕**弹在屏幕上。问题不在文案长短：
+ * 玩家地图上没有坐标可对照，这行字既定位不了那支部队、也推不出该怎么应对。
+ *
+ * 现在只剩一种情况值得说：它刚从雾里走进来（你此前看不见、现在看得见）。
+ *   · 全程都在视野里 ⇒ 你亲眼看着它走，再念一遍是噪音；
+ *   · 始终在雾里 / 进来又出去 ⇒ 你根本看不见，"看不见的东西不报"是 HoMM3 的同一套规矩。
+ * 进出都不报"离开视野"：看不见之后说什么都无法核对，只会让人以为地图上还有影子。
+ */
+function reportMoveIfSeen(state: GameState, player: FactionId, hero: Hero, before: GridPos): void {
+  const viewer = viewerOf(state);
+  if (seenBy(state, viewer, before)) return;
+  if (!seenBy(state, viewer, hero.pos)) return;
+  pushLog(state, `${factionName(player)} · ${hero.name} 出现在你的视野内`);
+  noteAiEvent({ kind: 'move', player, what: hero.name, detail: '进入你的视野' });
+}
+
 export function runAiTurn(state: GameState, player: FactionId): void {
   if (state.status !== 'playing') return;
   if (state.players[player]?.isHuman !== false) return;
@@ -866,16 +909,7 @@ export function runAiTurn(state: GameState, player: FactionId): void {
     }
 
     if (before.x !== hero.pos.x || before.y !== hero.pos.y) {
-      pushLog(
-        state,
-        `${factionName(player)} · ${hero.name} 从 (${before.x},${before.y}) 移动到 (${hero.pos.x},${hero.pos.y})，部队 ${armyTop(hero.army)}`,
-      );
-      noteAiEvent({
-        kind: 'move',
-        player,
-        what: hero.name,
-        detail: `(${before.x},${before.y}) → (${hero.pos.x},${hero.pos.y})`,
-      });
+      reportMoveIfSeen(state, player, hero, before);
     }
   }
 

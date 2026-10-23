@@ -307,6 +307,21 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     const w = fieldWrap.clientWidth;
     const h = fieldWrap.clientHeight;
     renderer.fit(w || BASE_W, h || BASE_H);
+    // 列高变了（窗口缩放 / 横竖屏切换）⇒ "能不能滚"要重判，否则渐隐会留在不需要的位置。
+    syncSideOverflow();
+  }
+
+  /**
+   * 名单是否超出余高（决定底部渐隐 + 标题上的「可滚动」）。
+   *
+   * 动作簇占掉列底 148px 后，390 高的列只剩 ~160px（≈4.7 张卡）——
+   * 满编 7 队必然要滚。触屏没有滚动条，**静默裁掉**正是 P1 花了 122px 才修好的那个坑
+   * （城镇面板：overflow:hidden 把两张卡吃到框外，谁也看不见）。所以宁可多一个虚类。
+   */
+  function syncSideOverflow(): void {
+    for (const s of [ourSide, foeSide]) {
+      s.col.classList.toggle('more', s.list.scrollHeight > s.list.clientHeight + 1);
+    }
   }
 
   /* ---------------- 两侧名单（C+A） ---------------- */
@@ -376,6 +391,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         col.list.appendChild(row);
       }
     }
+    syncSideOverflow();
   }
 
   /* ---------------- 部队信息浮框（场上悬停 1 秒 / 右键立即） ---------------- */
