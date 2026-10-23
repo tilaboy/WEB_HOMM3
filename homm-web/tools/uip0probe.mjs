@@ -301,6 +301,28 @@ const CLICK_WAIT = `(() => {
   return true;
 })()`;
 
+/**
+ * 行动队列（回合胶囊第二行）。
+ *
+ * 三件事一起看：**可见**（display:none 会宽度 0）、**没被截断**（名字被切一半等于没报）、
+ * **没压到棋盘**（胶囊右边界要停在 canvas 左边界之前 —— 这就是这两轮一直在修的那类遮挡）。
+ * "是不是活的"由调用方比对两次读数（点「等待」前后）来判，静态字符串过不了。
+ */
+const QUEUE = `(() => {
+  const el = document.querySelector('.bt-next');
+  const chip = document.querySelector('.bt-chip');
+  const canvas = document.querySelector('.bt-canvas');
+  if (!el || !chip || !canvas) return null;
+  const r = el.getBoundingClientRect();
+  return {
+    text: (el.textContent || '').trim(),
+    visible: r.width > 6 && r.height > 0,
+    clipped: el.scrollWidth > el.clientWidth + 1,
+    chipRight: Math.round(chip.getBoundingClientRect().right),
+    canvasLeft: Math.round(canvas.getBoundingClientRect().left),
+  };
+})()`;
+
 /* ------------------------------------------------------------------ 注入（负向对照 / 压测） */
 
 const INJECT_CSS = {
@@ -321,6 +343,8 @@ const INJECT_CSS = {
   // 回退到改前的**右上横排** ⇒ 这簇必然与棋盘相交，正是主理人说的"遮挡"
   hud: `.bt-head-actions { left: auto !important; right: 8px !important; top: 8px !important; bottom: auto !important;
          flex-direction: row !important; width: auto !important; }`,
+  // 队列被藏掉（等于退回"只有一行回合"的老胶囊）
+  queue: `.bt-next { display: none !important; }`,
   // 预估被藏掉（等于回到 hover-only 的可见性）
   forecast: `.fc { display: none !important; }`,
   // 回退**整组**（不是只关 overflow）：修法是"标签一行、数值一行"（flex-direction:column），
@@ -423,16 +447,26 @@ async function measure(send, evaluate, url, { needStart = false, needHero = fals
 
   // 预估伤害：只可能在战斗屏上。按玩家方式点「等待」把回合让出去，直到出现目标。
   let forecast = null;
+  let queue0 = null;
+  let queue1 = null;
+  let waits = 0;
   if (sides) {
+    queue0 = await evaluate(QUEUE);
     for (let i = 0; i < 4; i++) {
       forecast = await evaluate(FORECAST);
       if (forecast.fcs > 0) break;
       if (!(await evaluate(CLICK_WAIT))) break;
+      waits++;
       await sleep(1800);
     }
+    queue1 = await evaluate(QUEUE);
   }
 
-  return { url, sizes, material, hp, touch, contrast, townpane, sides, hud, icons, forecast, pressed, stuck };
+  return {
+    url, sizes, material, hp, touch, contrast, townpane, sides, hud, icons, forecast,
+    queue: { before: queue0, after: queue1, waits },
+    pressed, stuck,
+  };
 }
 
 /* ------------------------------------------------------------------ 判据 */
@@ -612,6 +646,32 @@ function judge(all) {
     );
   }
 
+  // ⑫ 行动队列：胶囊第二行必须**看得见、不被截断、不上棋盘**，且**随出手变化**
+  const q = all.map((s) => s.queue).find((x) => x && x.before);
+  const qb = q?.before;
+  const qa = q?.after;
+  const live = q && q.waits > 0 ? !!qa && qa.text !== qb.text : true;
+  check(
+    'queue',
+    '行动队列：看得见 · 名字没被截断 · 不压棋盘 · 随出手变化',
+    !!qb &&
+      qb.visible &&
+      !!qa &&
+      qa.visible &&
+      !qb.clipped &&
+      !qa.clipped &&
+      qb.chipRight <= qb.canvasLeft + 24 &&
+      qa.chipRight <= qa.canvasLeft + 24 &&
+      live,
+    qb
+      ? `「${qb.text}」→（让 ${q?.waits ?? 0} 次）「${qa?.text ?? '—'}」 · 胶囊右 ${qb.chipRight}/${qb.canvasLeft}(canvas)` +
+        (!qb.visible || !qa?.visible ? ' · ❌ 不可见' : '') +
+        (qb.clipped || qa?.clipped ? ' · ❌ 名字被截断' : '') +
+        (qb.chipRight > qb.canvasLeft + 24 ? ' · ❌ 压到棋盘' : '') +
+        (!live ? ' · ❌ 点「等待」后没变化（静态文案）' : '')
+      : '没进战斗（?devbattle=1 没起？）',
+  );
+
   return rows.every((r) => r.ok);
 }
 
@@ -675,7 +735,7 @@ async function run() {
   if (SELFCHECK) {
     // 负向对照：每次注入一条，闸必须变红
     let bad = 0;
-    for (const which of ['press', 'type', 'material', 'touch', 'hpbar', 'contrast', 'townfit', 'sides', 'icons', 'forecast', 'hud']) {
+    for (const which of ['press', 'type', 'material', 'touch', 'hpbar', 'contrast', 'townfit', 'sides', 'icons', 'forecast', 'hud', 'queue']) {
       INJECT = which;
       const green = await run();
       const ok = green === false;

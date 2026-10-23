@@ -3440,3 +3440,62 @@ body.in-battle #thumb {
   text-overflow: ellipsis;
   justify-content: center;
 }
+
+/* ==========================================================================
+ * P2 · 行动队列（2026-10-23）
+ *
+ * HoMM3 里"下一支是谁"是战术的一半：决定要不要等待、要不要先把这支按下。
+ * 数据 core 早就算好了（`battle.order` = 速度降序 + 同速攻方先 + 等待会改写），
+ * 只是界面上一直没露过脸 —— 和"预估伤害只写在 hover 里"是同一类漏。
+ *
+ * 放在**回合胶囊的第二行**，因为它是唯一一块"不加新控件、不上棋盘"的空地：
+ *   · 胶囊原本 137×38，只装了 15px 的一行字，宽度是现成的；
+ *   · 棋盘左边界 ≈148，所以第二行必须 ≤ 148 宽 —— 这也是只放**两支**的原因：
+ *     「▸ 树人大叔 › 投斧蛮子」= 142px 刚好，"下一个"三个字反而会顶到棋盘上。
+ * ========================================================================== */
+
+.bt-chip {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 12px;
+  /* 压行高：两行要塞进 41px（左列 padding-top 只有 46，撑破就压到第一张卡） */
+  line-height: 1.15;
+}
+
+.bt-chip-top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.bt-next {
+  display: flex;
+  align-items: baseline;
+  max-width: 148px;
+  font-size: var(--t-cap);
+  letter-spacing: 0.2px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* 我方金 / 敌方赤 —— 与部队带左侧那道 3px 色条同一套语义 */
+.bt-next .u {
+  color: var(--parchment);
+}
+
+.bt-next .u.foe {
+  color: #e0897a;
+}
+
+.bt-next .k {
+  color: var(--text-dim);
+  margin-right: 4px;
+}
+
+.bt-next .sep {
+  margin: 0 4px;
+  opacity: 0.5;
+}

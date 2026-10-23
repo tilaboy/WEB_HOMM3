@@ -46,6 +46,7 @@ import {
   unitAt,
   unitById,
   unitSpeed,
+  upcomingUnits,
   type BattleEvent,
   type BattleOutcome,
   type BattleSide,
@@ -159,11 +160,25 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   chip.className = 'bt-chip';
   chip.setAttribute('aria-label', '战况：点开看战斗标题与英雄属性');
   chip.setAttribute('aria-expanded', 'false');
+  const chipTop = document.createElement('div');
+  chipTop.className = 'bt-chip-top';
   const roundEl = document.createElement('div');
   roundEl.className = 'bt-round';
   const manaEl = document.createElement('div');
   manaEl.className = 'bt-mana';
-  chip.append(roundEl, manaEl);
+  /**
+   * 行动队列（2026-10-23）：只报"接下来两支"。
+   *
+   * 数据来自 core 的 `upcomingUnits()`（= `battle.order` 的下一段，权威顺序，含"等待"改写）。
+   * 为什么不另排一遍：`waitUnit` 会把部队挪到队尾，前端自己排必然和真正出手顺序对不上 ——
+   * 显示一个错的队列比不显示更糟。
+   * 为什么只放两格：胶囊宽 137、棋盘左边界 ≈148 —— 三格「食人魔 › 食人魔 › 食人魔」
+   * 要 176px，就会压到棋盘上（正是这两轮一直在拆的那种遮挡）。
+   */
+  const nextEl = document.createElement('div');
+  nextEl.className = 'bt-next';
+  chipTop.append(roundEl, manaEl);
+  chip.append(chipTop, nextEl);
   const title = document.createElement('div');
   title.className = 'bt-title';
   title.textContent = opts.title;
@@ -322,6 +337,58 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     for (const s of [ourSide, foeSide]) {
       s.col.classList.toggle('more', s.list.scrollHeight > s.list.clientHeight + 1);
     }
+  }
+
+  /** 行动队列的两格（见 `nextEl` 上的注释）。签名去重：`idx` 不变就不重建 DOM。 */
+  let nextSig = '';
+  function renderNext(): void {
+    const nx = upcomingUnits(battle, 2);
+    nextEl.textContent = '';
+    if (!nx.length) {
+      // 本回合最后一支：这句比"空白"有用 —— 玩家据此决定要不要把移动力榨干
+      const end = document.createElement('span');
+      end.className = 'k';
+      end.textContent = '回合结束';
+      nextEl.appendChild(end);
+      chip.setAttribute('aria-label', '本回合最后一支部队；点开看战况');
+      return;
+    }
+    const names = nx.map((u) => getUnit(u.unitTypeId).name);
+    /**
+     * 两格名字合计超过 6 字就只放第一格，尾巴用「› …」示意"后面还有人"。
+     *
+     * 胶囊右边界必须停在棋盘左边界（≈148）之前：12px 一个汉字，
+     * 「下一 树人大叔 › 投斧蛮子」= 160px 会直接压到棋盘上；
+     * 「下一 树人大叔 › …」= 102px 则稳稳落在左边那条空带上。
+     */
+    const two = names.length > 1 && names[0].length + names[1].length <= 6;
+    const label = document.createElement('span');
+    label.className = 'k';
+    label.textContent = '下一';
+    nextEl.appendChild(label);
+    nx.slice(0, two ? 2 : 1).forEach((u, i) => {
+      if (i) {
+        const sep = document.createElement('span');
+        sep.className = 'sep';
+        sep.textContent = '›';
+        nextEl.appendChild(sep);
+      }
+      const n = document.createElement('span');
+      n.className = `u${u.side === 0 ? '' : ' foe'}`;
+      n.textContent = getUnit(u.unitTypeId).name;
+      nextEl.appendChild(n);
+    });
+    if (!two && names.length > 1) {
+      const sep = document.createElement('span');
+      sep.className = 'sep';
+      sep.textContent = '›';
+      nextEl.appendChild(sep);
+      const more = document.createElement('span');
+      more.className = 'k';
+      more.textContent = '…';
+      nextEl.appendChild(more);
+    }
+    chip.setAttribute('aria-label', `接下来 ${names.join('、')}；点开看战况`);
   }
 
   /* ---------------- 两侧名单（C+A） ---------------- */
@@ -1421,6 +1488,11 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
 
     roundEl.textContent = `第 ${battle.round} 回合`;
     manaEl.textContent = manaText();
+    const nxSig = `${battle.round}|${battle.idx}|` + battle.order.slice(battle.idx + 1, battle.idx + 3).join(',');
+    if (nxSig !== nextSig) {
+      nextSig = nxSig;
+      renderNext();
+    }
     renderSides();
     btnAuto.disabled = auto || battle.over;
     btnFlee.disabled = battle.over;

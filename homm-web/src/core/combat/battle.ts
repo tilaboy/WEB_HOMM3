@@ -454,6 +454,24 @@ export function currentUnit(s: BattleState): BattleUnit | null {
   return null;
 }
 
+/**
+ * 本回合**接下来**要行动的部队（跳过本轮已阵亡的），最多 `n` 支。
+ *
+ * 为什么从这里取而不是自己排一遍：`s.order` 是 `startRound` 按「速度降序、同速攻方先、
+ * 再按 seq」算好的**唯一权威**，还在 `waitUnit`（等待 = 挪到队尾）里被改写过。
+ * 前端另写一份排序必然会和它对不上 —— 界面上就会显示一个和实际出手顺序不一样的队列，
+ * 那是比不显示更糟的错。
+ */
+export function upcomingUnits(s: BattleState, n = 2): BattleUnit[] {
+  const out: BattleUnit[] = [];
+  if (s.over) return out;
+  for (let i = s.idx + 1; i < s.order.length && out.length < n; i++) {
+    const u = unitById(s, s.order[i]);
+    if (u && u.count > 0) out.push(u);
+  }
+  return out;
+}
+
 /** 护城河惩罚：只有攻城战里、只有攻方（side 0）踩在护城河上才吃亏。 */
 function moatPenalty(s: BattleState, u: BattleUnit): number {
   if (!s.siege) return 0;
