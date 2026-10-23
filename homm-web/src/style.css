@@ -3167,3 +3167,98 @@ body.in-battle #thumb {
  * 该尺寸下 modal 吃满 94% 也只有 286px，head+meta+tabs 已占 135；
  * 一张卡下限 67px（40px 建造按钮 + 12px 状态行 + 内边），2 行=146px > 剩余 122px。
  * 结论：**这个高度放不下 7 张卡**，只能滚。 */
+
+/* ==========================================================================
+ * P1 · 动作图标 + 预估伤害（2026-10-23）
+ *
+ * 图标走**内联 SVG symbol**，不进图集：`audit:atlas` 的红线是加帧前后重测，
+ * 而战斗 cu_* 1020/1024 只剩 4px —— 加一帧就过线。内联图标 0 图集预算，
+ * 且 `currentColor` 自动跟主题（emoji 做不到，且各平台字形不同）。
+ *
+ * ⚠️ 文字一律留在 DOM（`.tl`），不是纯图标 + aria-label：
+ *    `audit:touch` / `probe:dockoverlap` / `audit:panelgate` 是按 textContent 找按钮的。
+ * ========================================================================== */
+
+.ti {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* 图标是装饰：指针事件必须穿过去，否则按钮右半边点不到。 */
+  pointer-events: none;
+}
+
+/* 拇指盘：4 个按钮改「图标在上、12px 文字在下」。
+ * 44px 高里：16 图标 + 1 gap + 14 文字 = 31，居中留 6px 上下 —— 尺寸一个都没动，
+ * 所以 `probe:dockoverlap` 的四个矩形与命中高全部不变。 */
+#thumb .tb-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 2px 8px;
+  font-size: var(--t-cap);
+  line-height: 1.1;
+  letter-spacing: 0.5px;
+}
+
+#thumb .tb-btn .ti {
+  width: 17px;
+  height: 17px;
+  opacity: 0.92;
+}
+
+#thumb .tb-btn.primary .ti {
+  opacity: 1;
+}
+
+/* 未读角标从"跟在文字后面"改成贴右上角：列布局里 inline 元素会掉到第三行。 */
+#thumb .tb-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  margin-left: 0;
+}
+
+/* 战斗按钮：图标与文字并排。按钮宽度自适应，命中高不变（`.btn` 的 min-height 44）。 */
+.bt-ic {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bt-ic .ti {
+  width: 17px;
+  height: 17px;
+  opacity: 0.9;
+}
+
+/* 预估伤害：只出现在"这一回合真打得到"的敌人卡上（见 BattleScreen.renderSides）。
+ * 92px 宽里只放得下两个事实：`伤12 · 反5`（要挨反击）/ `伤12 · 杀3`（不挨）。 */
+.bt-side-row .fc {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  font-size: var(--t-cap);
+  line-height: 1.05;
+  letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--parchment);
+  opacity: 0.92;
+}
+
+/* 要挨反击 ⇒ 数字转红：这是"这一刀划不划算"的方向盘。 */
+.bt-side-row .fc.hurt {
+  color: #f0a08c;
+  opacity: 1;
+}
+
+/* 6 队以上：每张卡都多一行会把整列顶出屏幕。此时宁可关掉预估，
+ * 也不能让最后两支敌军的卡跑到战场外面去（`probe:uip0` 的 ⑦ 会红）。 */
+.bt-side-list:has(.bt-side-row:nth-child(6)) .fc {
+  display: none;
+}

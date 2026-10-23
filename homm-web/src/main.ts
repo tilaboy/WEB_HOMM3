@@ -60,8 +60,14 @@ import { play as playMusic } from './audio/music.js';
 import { isMusicOn, setMusicOn } from './audio/bus.js';
 import { clearSave, hasSave, hydratePersistence, loadConfig, loadGame, saveConfig, saveGame } from './save/persistence.js';
 import { installLifecycle } from './app/lifecycle.js';
+import { installIcons, labelIcon, setLabel } from './ui/icons.js';
+import type { IconId } from './ui/icons.js';
 
 /* ---------------- shell ---------------- */
+
+// 图标 sprite 必须先挂：下面拇指带 4 个按钮建的时候就要 `<use href>`。
+// 它不占图集（战斗 cu_* 只剩 4px），所以这里不受 `audit:atlas` 约束。
+installIcons();
 
 const app = document.getElementById('app') as HTMLElement;
 const bootParams = new URLSearchParams(location.search);
@@ -265,10 +271,11 @@ function updateObjectives(): void {
   }
 }
 
-function tbButton(label: string, cls: string, onClick: () => void): HTMLButtonElement {
+function tbButton(ic: IconId, label: string, cls: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement('button');
   b.className = `btn tb-btn ${cls}`.trim();
-  b.textContent = label;
+  // 图标 + 文字**并排留在 DOM**（不是纯图标 + aria-label）：多道门按 textContent 找按钮。
+  labelIcon(b, ic, label);
   b.addEventListener('click', onClick);
   thumb.appendChild(b);
   return b;
@@ -276,16 +283,16 @@ function tbButton(label: string, cls: string, onClick: () => void): HTMLButtonEl
 
 // 「菜单」= 全部低频项的唯一入口（§7 R6）。日志入口移入菜单后，未读指示**随迁到此按钮**：
 // 角标复用 `.tb-badge`，且 `aria-label` 也带「N 条事件未读」——数字不得是唯一语义载体（a11y 基线 §4.3）。
-const menuBtn = tbButton('菜单', '', () => openMenu());
+const menuBtn = tbButton('menu', '菜单', '', () => openMenu());
 const menuBadge = document.createElement('span');
 menuBadge.className = 'tb-badge';
 menuBadge.hidden = true;
 menuBtn.appendChild(menuBadge);
 
-tbButton('英雄', '', () => toggleHeroPanel());
-tbButton('城', '', () => openHomeTown());
+tbButton('hero', '英雄', '', () => toggleHeroPanel());
+tbButton('castle', '城', '', () => openHomeTown());
 
-const endDayBtn = tbButton('结束一天', 'primary tb-end', () => doEndDay());
+const endDayBtn = tbButton('endday', '结束一天', 'primary tb-end', () => doEndDay());
 
 /** 日志未读游标：打开日志面板即清零（IA §3.2 #23：未读指示常驻，明细按需）。 */
 let seenLog = 0;
@@ -298,7 +305,8 @@ function updateThumb(): void {
   // 此时玩家并未出局，却既不能行动（没英雄）也不能结束一天 ⇒ 死锁。
   // 禁用只看 `over`；`doEndDay` 本身已全程无英雄安全（recomputeField/refresh 都空守卫）。
   endDayBtn.disabled = over;
-  endDayBtn.textContent = over ? '对局结束' : '结束一天';
+  // 只换文字、不碰图标：直接写 textContent 会把 `<svg>` 一起抹掉。
+  setLabel(endDayBtn, over ? '对局结束' : '结束一天');
 
   // F-3.6：移动力不再常驻拇指带（数值改由地图染色 + 英雄面板按需呈现），此处只维护菜单未读角标。
   const unread = Math.max(0, state.log.length - seenLog);

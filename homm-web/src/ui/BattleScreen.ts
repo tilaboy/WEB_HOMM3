@@ -8,6 +8,7 @@
 import type { GameState } from '../core/types.js';
 import { getUnit, meleeStyleOf } from '../core/data/units.js';
 import { sfx } from './sfx.js';
+import { installIcons, labelIcon, setLabel } from './icons.js';
 import { WAR_MACHINES } from '../core/data/warmachines.js';
 import { effectivePrimary } from '../core/game/hero.js';
 import {
@@ -127,6 +128,8 @@ export function closeBattleScreen(): void {
 }
 
 export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void {
+  // sprite 可能已由 main.ts 挂过（幂等）；战斗若被单独拉起也不会缺图标。
+  installIcons();
   const battle = createBattle(opts.attacker, opts.defender, opts.seed, opts.siegeLevel ?? 0);
   const hero = opts.state.heroes[opts.heroId];
 
@@ -315,8 +318,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   let sideSig = '';
   function renderSides(): void {
     const act = currentUnit(battle);
+    // `round` 必须进指纹：同一支部队下一回合再行动时，够得着的目标可能变了。
     const sig =
-      `${act ? act.id : '-'}|` +
+      `${battle.round}|${act ? `${act.id}:${act.moved ? 1 : 0}` : '-'}|` +
       battle.units.map((u) => `${u.id}:${u.count}:${Math.round(poolOf(u))}`).join(',');
     if (sig === sideSig) return;
     sideSig = sig;
@@ -345,6 +349,30 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         fill.style.width = `${Math.max(0, Math.min(100, Math.round((poolOf(u) / max) * 100)))}%`;
         bar.appendChild(fill);
         row.append(n, q, bar);
+
+        /**
+         * 预估伤害（2026-10-23）。
+         *
+         * 这段数字本来就有 —— 但只写在 `canvas.pointermove` 的 `hint()` 里，
+         * **触屏没有 hover**，手机上等于不存在（D-70 的同款教训）。
+         * 现在直接挂到"这一回合真打得到"的敌人卡上：`attackableSet` 已经算好了
+         * 近战移动后可达 + 远程射程 + 攻城目标，复用它，不另造一套判定。
+         *
+         * 只报两个事实（卡宽 92，再多就变成一串看不懂的数）：
+         *   会被反击 → `伤12 · 反5`；不会挨反击 → `伤12 · 杀3`。两者都不成立时只报伤害。
+         */
+        if (side === 1 && act && act.side === 0 && u.count > 0 && attackableSet?.has(hexKey(u.hex))) {
+          const ranged = canShoot(battle, act) && !isAdjacent(act.hex, u.hex);
+          const dmg = estimateDamage(battle, act, u, ranged);
+          const kills = Math.min(u.count, Math.floor((poolOf(u) - 0.0001) / Math.max(1, dmg)));
+          const back = estimateRetaliation(battle, act, u, ranged, dmg);
+          const fc = document.createElement('span');
+          fc.className = 'fc' + (back > 0 ? ' hurt' : '');
+          fc.textContent = `伤${dmg}` + (back > 0 ? ` · 反${back}` : kills > 0 ? ` · 杀${kills}` : '');
+          row.appendChild(fc);
+          row.classList.add('has-fc');
+        }
+
         col.list.appendChild(row);
       }
     }
@@ -1255,22 +1283,24 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   /* ---------------- buttons ---------------- */
 
   const btnAuto = document.createElement('button');
-  btnAuto.className = 'btn';
-  btnAuto.textContent = '自动战斗';
+  btnAuto.className = 'btn bt-ic';
+  labelIcon(btnAuto, 'auto', '自动战斗');
   btnAuto.addEventListener('click', doAuto);
 
   const btnFlee = document.createElement('button');
-  btnFlee.className = 'btn danger';
-  btnFlee.textContent = '撤退';
+  btnFlee.className = 'btn danger bt-ic';
+  labelIcon(btnFlee, 'flee', '撤退');
   btnFlee.addEventListener('click', doFlee);
 
   // 速度档位：1×→2×→3× 循环，键盘 1/2/3 直选
   const btnSpeed = document.createElement('button');
-  btnSpeed.className = 'btn';
+  btnSpeed.className = 'btn bt-ic';
   const syncSpeed = (): void => {
-    btnSpeed.textContent = `速度 ${speed}×`;
+    // 文案是变的（速度 1×/2×/3×），但图标不能跟着没 —— 走 setLabel 只换字。
+    setLabel(btnSpeed, `速度 ${speed}×`);
     btnSpeed.title = HOVERLESS ? '演出速度' : '演出速度（键盘 1/2/3 直选）';
   };
+  labelIcon(btnSpeed, 'speed', `速度 ${speed}×`);
   const setSpeed = (v: number): void => {
     speed = v === 1 || v === 2 || v === 3 ? v : 1;
     localStorage.setItem('homm.battleSpeed', String(speed));
@@ -1281,19 +1311,19 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   headActions.append(btnSpeed, btnAuto, btnFlee);
 
   const btnDefend = document.createElement('button');
-  btnDefend.className = 'btn';
+  btnDefend.className = 'btn bt-ic';
   // 触屏不印快捷键：手机上 `(D)` 是死键，印出来只会让人以为按不到是自己不会用。
-  btnDefend.textContent = HOVERLESS ? '防御' : '防御 (D)';
+  labelIcon(btnDefend, 'shield', HOVERLESS ? '防御' : '防御 (D)');
   btnDefend.addEventListener('click', doDefend);
 
   const btnWait = document.createElement('button');
-  btnWait.className = 'btn';
-  btnWait.textContent = HOVERLESS ? '等待' : '等待 (空格)';
+  btnWait.className = 'btn bt-ic';
+  labelIcon(btnWait, 'hourglass', HOVERLESS ? '等待' : '等待 (空格)');
   btnWait.addEventListener('click', doWait);
 
   const btnCast = document.createElement('button');
-  btnCast.className = 'btn';
-  btnCast.textContent = HOVERLESS ? '施法' : '施法 (C)';
+  btnCast.className = 'btn bt-ic';
+  labelIcon(btnCast, 'spark', HOVERLESS ? '施法' : '施法 (C)');
   btnCast.addEventListener('click', () => {
     if (!combatSpells().length) {
       hint('这位英雄还没学会战斗魔法（去城建魔法行会）');

@@ -219,6 +219,62 @@ const SIDES = `(() => {
   return cols.length ? cols : null;
 })()`;
 
+/**
+ * 动作图标覆盖：10 个主动作（拇指盘 4 + 战斗动作 3 + 战斗顶栏 3）是否都**真的**有图标。
+ *
+ * 只数"有 `<svg>`"不够 —— `<use href="#i-x">` 指向一个不存在的 symbol 时，
+ * 屏幕上什么都不画，但 DOM 看起来完全正常。所以每个 `<use>` 的 href 都要能在
+ * sprite 里找到对应 symbol，否则记一条 badRef。
+ */
+const ICONS = `(() => {
+  // 只数**看得见的**动作按钮：战斗里 #thumb 是 display:none，城镇/开局页 #thumb 可能被面板盖住，
+  // 把这些算进来会让"10 个主动作"变成一笔糊涂账（隐藏的图标宽度恒为 0，还会假报不可见）。
+  const btns = [...document.querySelectorAll('#thumb .tb-btn, .bt-actions .btn, .bt-head-actions .btn')]
+    .filter((b) => b.getBoundingClientRect().width >= 6);
+  const ids = new Set([...document.querySelectorAll('#svg-sprite symbol')].map((s) => s.id));
+  const missing = [];
+  const badRef = [];
+  const invisible = [];
+  let withIcon = 0;
+  for (const b of btns) {
+    const svg = b.querySelector('svg.ti');
+    if (!svg) {
+      missing.push((b.textContent || '').trim() || '(无字)');
+      continue;
+    }
+    // 尺寸为 0 的图标 = 被 CSS 藏了：DOM 还在，屏幕上没有（负向对照就靠这条抓）
+    if (svg.getBoundingClientRect().width < 6) invisible.push((b.textContent || '').trim() || '(无字)');
+    withIcon++;
+    const use = svg.querySelector('use');
+    const href = use ? (use.getAttribute('href') || use.getAttribute('xlink:href') || '') : '';
+    const id = href.replace(/^#/, '');
+    if (!id || !ids.has(id)) badRef.push(id || '(空 href)');
+  }
+  return { total: btns.length, withIcon, missing, badRef, invisible, symbols: ids.size };
+})()`;
+
+/**
+ * 预估伤害：**手机上没有 hover**，所以这条必须在"没有鼠标"的前提下验证。
+ * 做法是像玩家那样点「等待」把回合让给下一支部队，直到出现可攻击目标（≤4 次），
+ * 然后校验：只在敌方卡上、文案格式对、**真的可见**（display:none 的 `.fc` 高度为 0）。
+ */
+const FORECAST = `(() => {
+  const rows = [...document.querySelectorAll('.bt-side-row.has-fc')];
+  const fcs = [...document.querySelectorAll('.fc')];
+  const onOurs = [...document.querySelectorAll('.bt-side-row.ours .fc')].length;
+  const badText = fcs.filter((e) => !/^伤\\d+( · (反|杀)\\d+)?$/.test((e.textContent || '').trim())).map((e) => e.textContent);
+  const invisible = fcs.filter((e) => e.getBoundingClientRect().height < 6).length;
+  return { rows: rows.length, fcs: fcs.length, onOurs, badText, invisible };
+})()`;
+
+/** 让下一支部队行动：点一次「等待」（没有这个按钮就返回 false）。 */
+const CLICK_WAIT = `(() => {
+  const b = [...document.querySelectorAll('.bt-actions .btn')].find((x) => /等待/.test(x.textContent || ''));
+  if (!b || b.disabled) return false;
+  b.click();
+  return true;
+})()`;
+
 /* ------------------------------------------------------------------ 注入（负向对照 / 压测） */
 
 const INJECT_CSS = {
@@ -234,6 +290,10 @@ const INJECT_CSS = {
   // 回退到改前的整块底板 ⇒ 部队带判据必须变红
   sides: `.bt-side { background: rgba(0, 0, 0, 0.22) !important; border: 1px solid #8a6a34 !important;
            border-radius: 10px !important; }`,
+  // 图标"在 DOM 里但画不出来"—— 正是 `<use>` 断引用的症状
+  icons: `.ti { display: none !important; }`,
+  // 预估被藏掉（等于回到 hover-only 的可见性）
+  forecast: `.fc { display: none !important; }`,
   // 回退**整组**（不是只关 overflow）：修法是"标签一行、数值一行"（flex-direction:column），
   // 所以必须把方向也退回 row + space-between，否则两行永远不溢出 ⇒ 负向对照假绿。
   hpbar: `.hp-bar-top { flex-direction: row !important; justify-content: space-between !important;
@@ -312,6 +372,7 @@ async function measure(send, evaluate, url, { needStart = false, needHero = fals
   const contrast = needModal ? await evaluate(CONTRAST) : null;
   const townpane = url.includes('devtown') ? await evaluate(TOWNPANE) : null;
   const sides = url.includes('devbattle') ? await evaluate(SIDES) : null;
+  const icons = await evaluate(ICONS);
 
   // 按压：打标 → 逐个 force :active → 读 transform
   await send('DOM.enable');
@@ -330,7 +391,18 @@ async function measure(send, evaluate, url, { needStart = false, needHero = fals
     if (!t || t === 'none' || t === 'MISSING') stuck.push({ i, transform: t });
   }
 
-  return { url, sizes, material, hp, touch, contrast, townpane, sides, pressed, stuck };
+  // 预估伤害：只可能在战斗屏上。按玩家方式点「等待」把回合让出去，直到出现目标。
+  let forecast = null;
+  if (sides) {
+    for (let i = 0; i < 4; i++) {
+      forecast = await evaluate(FORECAST);
+      if (forecast.fcs > 0) break;
+      if (!(await evaluate(CLICK_WAIT))) break;
+      await sleep(1800);
+    }
+  }
+
+  return { url, sizes, material, hp, touch, contrast, townpane, sides, icons, forecast, pressed, stuck };
 }
 
 /* ------------------------------------------------------------------ 判据 */
@@ -431,11 +503,11 @@ function judge(all) {
   // ⑧ 战斗部队带：没有整块底板 + 卡片随内容长
   const sd = all.map((s) => s.sides).find(Boolean);
   const slab = sd ? sd.filter((c) => c.alpha > 0.05 || c.border > 0) : [];
-  const badH = sd ? sd.flatMap((c) => c.rowH.filter((h) => h < 28 || h > 44)) : [];
-  const tooTall = sd ? sd.filter((c) => c.painted > c.rows * 44 + 26) : [];
+  const badH = sd ? sd.flatMap((c) => c.rowH.filter((h) => h < 28 || h > 56)) : [];
+  const tooTall = sd ? sd.filter((c) => c.painted > c.rows * 56 + 26) : [];
   check(
     'sides',
-    '部队带：无整块底板 · 每卡 28~44px · 涂色不撑满整列',
+    '部队带：无整块底板 · 每卡 28~56px · 涂色不撑满整列',
     !!sd && slab.length === 0 && badH.length === 0 && tooTall.length === 0,
     sd
       ? `${sd.length} 列 · 宽 ${sd.map((c) => c.w).join('/')}px · 卡高 ${sd[0].rowH.join(',') || '—'} · 涂色 ${sd.map((c) => c.painted).join('/')}px` +
@@ -444,6 +516,49 @@ function judge(all) {
         (tooTall.length ? ' · ❌ 撑满整列' : '')
       : '没进战斗（?devbattle=1 没起？）',
   );
+
+  // ⑧ 动作图标：10 个主动作全都得有图标，且 `<use>` 指向真实存在的 symbol
+  //    ⚠️ 必须**按屏幕分别判**：如果把各屏加总，"拇指盘有 4 个"会把"战斗 6 个全缺"
+  //    掩盖过去（16 ≥ 10 直接绿）。地图屏 ≥4、战斗屏 ≥6，两边分别成立才算。
+  const ico = (tag) => all.find((s) => s.tag === tag)?.icons ?? null;
+  const im = ico('map');
+  const ib = ico('battle');
+  const iok = (x, n) =>
+    !!x && x.total >= n && x.withIcon >= n && x.missing.length === 0 && x.badRef.length === 0 && x.invisible.length === 0;
+  const isym = im?.symbols ?? ib?.symbols ?? 0;
+  check(
+    'icons',
+    '10 个主动作都有可用图标（地图 4 + 战斗 6，无缺/断引用/隐藏）',
+    iok(im, 4) && iok(ib, 6) && isym >= 10,
+    `地图 ${im ? `${im.withIcon}/${im.total}` : '—'} · 战斗 ${ib ? `${ib.withIcon}/${ib.total}` : '—'} · ${isym} 个 symbol` +
+      [im, ib]
+        .filter(Boolean)
+        .flatMap((x) => [
+          ...(x.missing.length ? [`缺：${x.missing.join('、')}`] : []),
+          ...(x.badRef.length ? [`断引用：${x.badRef.join('、')}`] : []),
+          ...(x.invisible.length ? [`不可见：${x.invisible.slice(0, 3).join('、')}`] : []),
+        ])
+        .map((t) => ` · ❌ ${t}`)
+        .join(''),
+  );
+
+  // ⑨ 预估伤害：手机上要能看到（hover-only 等于没有）
+  const f = all.map((s) => s.forecast).find(Boolean);
+  if (!f) {
+    check('forecast', '预估伤害在触屏可见且格式正确', false, '没进战斗（?devbattle=1 没起？）');
+  } else if (f.fcs === 0) {
+    check('forecast', '预估伤害在触屏可见且格式正确', false, '戳了 4 次「等待」仍无可攻击目标 —— 取不到数据');
+  } else {
+    check(
+      'forecast',
+      '预估伤害在触屏可见且格式正确',
+      f.onOurs === 0 && f.badText.length === 0 && f.invisible === 0,
+      `${f.fcs} 张敌军卡有预估（如「伤55 · 杀3」）` +
+        (f.onOurs ? ` · ❌ ${f.onOurs} 条挂在我方卡上` : '') +
+        (f.badText.length ? ` · ❌ 格式错：${f.badText.slice(0, 2).join('、')}` : '') +
+        (f.invisible ? ` · ❌ ${f.invisible} 条不可见（被 display:none 掉了）` : ''),
+    );
+  }
 
   return rows.every((r) => r.ok);
 }
@@ -489,7 +604,7 @@ async function run() {
 
       const green = judge(all);
       if (AS_JSON) {
-        console.log(JSON.stringify({ green, rows, screens: all.map(({ tag, sizes, material, touch, hp, contrast, townpane, sides, pressed }) => ({ tag, sizes, material, touch, hp, contrast, pressed })) }, null, 2));
+        console.log(JSON.stringify({ green, rows, screens: all.map(({ tag, sizes, material, touch, hp, contrast, townpane, sides, icons, forecast, pressed }) => ({ tag, sizes, material, touch, hp, contrast, pressed })) }, null, 2));
       } else {
         for (const r of rows) {
           console.log(`${r.ok ? '✅' : '❌'} [${r.id}] ${r.label} — ${r.detail}`);
@@ -508,7 +623,7 @@ async function run() {
   if (SELFCHECK) {
     // 负向对照：每次注入一条，闸必须变红
     let bad = 0;
-    for (const which of ['press', 'type', 'material', 'touch', 'hpbar', 'contrast', 'townfit', 'sides']) {
+    for (const which of ['press', 'type', 'material', 'touch', 'hpbar', 'contrast', 'townfit', 'sides', 'icons', 'forecast']) {
       INJECT = which;
       const green = await run();
       const ok = green === false;
