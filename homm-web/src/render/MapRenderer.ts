@@ -144,16 +144,93 @@ const REACH_DOT_R = 2;
 const REACH_DOT_CORE_R = 1;
 
 /**
- * 预览路径的地标（`vm.path`，按住/悬停时那条路线）。
+ * 预览路径的地标（`vm.path`，按住/悬停时那条路线）——**带方向的箭头**，不是圆点。
  *
- * 为什么它比可达点**大一号、且是金色**：两者位置同为格心，若同尺寸同色，玩家分不清
- * "这格能到"和"我要走这格"。层级是「路线 > 边界」—— 6×6 墨底 + 4×4 金芯 vs 4×4/2×2。
- * 金色 `#ffe6a0` 与跨天小旗 `rgba(240,205,110)` 同族，保证"同一条路线"的两种标记仍是一家人。
+ * ## 为什么从"方点"改成"箭头"（2026-10-24 第二轮）
+ * 方点只回答"这格在路线里"，回答不了"**往哪走**"。玩家要读一条 10 步的路线，
+ * 只能自己把点按顺序连成线 —— 而这条线是要用手指去点的，读错一步就多点一次。
+ * HoMM3 的做法是连续箭头，这里用**每步一枚折角箭头（chevron）**近似：
+ * 尖头朝下一格，末步换成实心三角（终点读起来更硬）。
+ *
+ * ## 为什么不是"一串连着的线"
+ * 32px 格、真机 zoom 1.2 ⇒ 一格只有 38 画面 px；连续线会把地形压住，
+ * 也不好在拐角处表达"这里要转"。折角箭头留在格心，拐角自然读得出来。
+ *
+ * ## 颜色与层级
+ * 墨底 `#2a1a12` + 金 `#ffe6a0`（与跨天小旗 `rgba(240,205,110)` 同族）。
+ * 层级「路线 > 边界」：可达点是 4×4 墨底 + 2×2 暖白芯；箭头跨 7×6 世界 px 且带方向。
  */
 const PATH_DOT_INK = '#2a1a12';
 const PATH_DOT_CORE = '#ffe6a0';
-const PATH_DOT_R = 3;
-const PATH_DOT_CORE_R = 2;
+/** 折角的半长/半高（世界 px）：尖头到 +2.2、两翼到 −2.4 ± 2.9。 */
+const PATH_ARROW_TIP = 2.2;
+const PATH_ARROW_BACK = 2.4;
+const PATH_ARROW_WING = 2.9;
+/** 末步实心三角：尖 3.6、底 ±2.2。 */
+const PATH_HEAD_TIP = 3.6;
+const PATH_HEAD_BASE = 2.2;
+/**
+ * `probeReach`/`probeDots` 的取色半径（世界 px）。
+ * 箭头不吃满一个 6×6 的方块，但它的两翼伸到 ±2.9、尖到 +3.6 ⇒ 取色窗必须够到那儿，
+ * 否则"最亮点"会落到底色上、把箭头本身漏掉（那会把 4.09 读成 1.x）。
+ */
+const PATH_DOT_R = 4;
+
+/**
+ * 画一枚方向地标（世界坐标，调用方已套好相机变换）。
+ *
+ * 画法刻意"像素友好"：不用圆头/阴影，全用 miter 折角与实心三角 ——
+ * 32px 格上任何抗锯齿的柔边都会让它糊成一团（与 §15 的点同理）。
+ * 折角箭头（chevron）负责"有方向"，末步实心三角负责"到这儿"。
+ */
+function drawPathArrow(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  dx: number,
+  dy: number,
+  head: boolean,
+): void {
+  if (dx === 0 && dy === 0) return;
+  ctx.save();
+  ctx.translate(cx, cy);
+  // 8 邻域 ⇒ 45° 的整数倍；`atan2` 用格坐标（y 向下），与屏幕一致。
+  ctx.rotate(Math.atan2(dy, dx));
+  ctx.lineCap = 'butt';
+  ctx.lineJoin = 'miter';
+  if (head) {
+    ctx.beginPath();
+    ctx.moveTo(PATH_HEAD_TIP, 0);
+    ctx.lineTo(-PATH_HEAD_BASE, -PATH_HEAD_BASE);
+    ctx.lineTo(-PATH_HEAD_BASE, PATH_HEAD_BASE);
+    ctx.closePath();
+    ctx.fillStyle = PATH_DOT_INK;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(PATH_HEAD_TIP - 1.5, 0);
+    ctx.lineTo(-PATH_HEAD_BASE + 1.0, -PATH_HEAD_BASE + 1.2);
+    ctx.lineTo(-PATH_HEAD_BASE + 1.0, PATH_HEAD_BASE - 1.2);
+    ctx.closePath();
+    ctx.fillStyle = PATH_DOT_CORE;
+    ctx.fill();
+  } else {
+    const chevron = (): void => {
+      ctx.beginPath();
+      ctx.moveTo(-PATH_ARROW_BACK, -PATH_ARROW_WING);
+      ctx.lineTo(PATH_ARROW_TIP, 0);
+      ctx.lineTo(-PATH_ARROW_BACK, PATH_ARROW_WING);
+    };
+    chevron();
+    ctx.strokeStyle = PATH_DOT_INK;
+    ctx.lineWidth = 3.0;
+    ctx.stroke();
+    chevron();
+    ctx.strokeStyle = PATH_DOT_CORE;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 
 /**
  * 路径地标也**画在光照之后**（默认开；`?devpathafter=0` 回退旧路径）。
@@ -532,8 +609,9 @@ export class MapRenderer {
   private shadowSpots: Array<{ cx: number; yb: number; w: number }> = [];
   /** 本帧格心点（仅 `?devreachprobe=1` 时登记），供 `probeReach()` 取色。 */
   private reachSpots: Array<{ x: number; y: number; terrain: string }> = [];
-  /** 本帧路径地标（仅 `?devreachprobe=1` 时登记），供 `probePath()` 取色。 */
-  private pathSpots: Array<{ x: number; y: number; terrain: string }> = [];
+  /** 本帧路径地标（仅 `?devreachprobe=1` 时登记），供 `probePath()` 取色。
+   *  `dx/dy` = 该步的单位方向（格坐标，末步沿用前一步）—— 探针要拿它跟路径本身对账。 */
+  private pathSpots: Array<{ x: number; y: number; terrain: string; dx: number; dy: number }> = [];
   /** 本帧落在「预览路径」上的可达点数量（默认应为 0 —— 路径已经表达了这条路）。 */
   private dotsOnPath = 0;
   /** 路径地标是否画在光照之后（`?devpathafter=0` 回退）。 */
@@ -800,10 +878,23 @@ export class MapRenderer {
     return this.probeDots(this.reachSpots, REACH_DOT_R);
   }
 
-  /** 预览路径的地标（`probeReach` 的同款量法，点更大 ⇒ 半径按 `PATH_DOT_R`）。 */
+  /**
+   * 预览路径的地标（`probeReach` 的同款量法，半径按 `PATH_DOT_R`）+ **每步的方向**。
+   *
+   * 方向单独回传的理由：它是这一层新加的信息，而"箭头朝哪儿"不能靠截图看（截图上
+   * 看得见"像不像箭头"，看不出"是不是该朝那一边"）。探针拿它跟 `vm.path` 的步子对账。
+   */
   probePath() {
     const r = this.probeDots(this.pathSpots, PATH_DOT_R);
-    return { ...r, dotsOnPath: this.dotsOnPath, drawnAfter: this.pathAfter };
+    const dir = new Map<string, [number, number]>();
+    for (const s of this.pathSpots) {
+      dir.set(`${Math.floor(s.x / TILE)},${Math.floor(s.y / TILE)}`, [s.dx, s.dy]);
+    }
+    const per = r.per.map((p) => {
+      const d = dir.get(`${p.tx},${p.ty}`) ?? [0, 0];
+      return { ...p, dx: d[0], dy: d[1] };
+    });
+    return { ...r, per, dotsOnPath: this.dotsOnPath, drawnAfter: this.pathAfter };
   }
 
   /**
@@ -1233,7 +1324,7 @@ export class MapRenderer {
      *  ★ 首版写成 `this.pathAfter ? [] : []`（两支都是空数组 ⇒ 永远 truthy）⇒
      *    `?devpathafter=0` 的旧路径分支成了**死代码**，两臂读数逐位相同，
      *    看上去"这条判据通过了"，其实是两臂都没走另一条路。 */
-    const afterPath: Array<[number, number]> | null = this.pathAfter ? [] : null;
+    const afterPath: Array<[number, number, number, number, number]> | null = this.pathAfter ? [] : null;
     let statPathDots = 0;
     // 边带落笔：默认（`afterBands===null`）立即填充，与原实现逐像素一致；开启 (1) 时只登记。
     // `statRects/statPx` 只累加、不参与绘制（见 `BAND_STATS`）。
@@ -1398,19 +1489,31 @@ export class MapRenderer {
         const p = vm.path[k];
         const cx = p.x * TILE + TILE / 2;
         const cy = p.y * TILE + TILE / 2;
+        /* 方向：指向下一格；末步没有"下一格"⇒ 沿用上一步的方向（否则终点会画成一个无向的团）。
+           ★ 别照抄"四邻接"这个想当然：`pathfinding.ts` 的 `DIRS` 是 **8 邻域**（含对角），
+           实测一条 10 步路线里就出现过 `1,-1` ⇒ `dx/dy` 可能同时非 0（45° 箭头），
+           `drawPathArrow` 用 `atan2` 旋转，四个正方向与四个斜方向都能画。 */
+        const next = k + 1 < vm.path.length ? vm.path[k + 1] : null;
+        const prev = vm.path[k - 1];
+        const dx = next ? Math.sign(next.x - p.x) : Math.sign(p.x - prev.x);
+        const dy = next ? Math.sign(next.y - p.y) : Math.sign(p.y - prev.y);
+        const isLast = !next;
         statPathDots++;
         if (REACH_PROBE && this.pathSpots.length < 400) {
-          this.pathSpots.push({ x: cx, y: cy, terrain: map.tiles[idx(map, p.x, p.y)].terrain });
+          this.pathSpots.push({
+            x: cx,
+            y: cy,
+            terrain: map.tiles[idx(map, p.x, p.y)].terrain,
+            dx,
+            dy,
+          });
         }
         if (afterPath) {
           // 默认：只登记，落笔在光照之后（见文件末尾重放段）
-          afterPath.push([cx, cy]);
+          afterPath.push([cx, cy, dx, dy, isLast ? 1 : 0]);
         } else {
           // `?devpathafter=0`：旧路径 —— 立刻画、且被整屏 multiply 乘暗（负向对照用）
-          ctx.fillStyle = PATH_DOT_INK;
-          ctx.fillRect(cx - PATH_DOT_R, cy - PATH_DOT_R, PATH_DOT_R * 2, PATH_DOT_R * 2);
-          ctx.fillStyle = PATH_DOT_CORE;
-          ctx.fillRect(cx - PATH_DOT_CORE_R, cy - PATH_DOT_CORE_R, PATH_DOT_CORE_R * 2, PATH_DOT_CORE_R * 2);
+          drawPathArrow(ctx, cx, cy, dx, dy, isLast);
         }
       }
     }
@@ -1585,16 +1688,8 @@ export class MapRenderer {
       ctx.save();
       ctx.translate(cam.x, cam.y);
       ctx.scale(cam.zoom, cam.zoom);
-      for (const [cx, cy] of afterPath) {
-        ctx.fillStyle = PATH_DOT_INK;
-        ctx.fillRect(cx - PATH_DOT_R, cy - PATH_DOT_R, PATH_DOT_R * 2, PATH_DOT_R * 2);
-        ctx.fillStyle = PATH_DOT_CORE;
-        ctx.fillRect(
-          cx - PATH_DOT_CORE_R,
-          cy - PATH_DOT_CORE_R,
-          PATH_DOT_CORE_R * 2,
-          PATH_DOT_CORE_R * 2,
-        );
+      for (const [cx, cy, dx, dy, last] of afterPath) {
+        drawPathArrow(ctx, cx, cy, dx, dy, last === 1);
       }
       ctx.restore();
     }

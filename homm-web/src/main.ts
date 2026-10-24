@@ -2212,7 +2212,12 @@ if (bootParams.has('devprobe')) {
     hover = g;
     const path = buildPath(state, fieldFull, hero.pos, g);
     previewPath = path.length ? path : null;
-    return { ok: !!previewPath, n: previewPath ? previewPath.length : 0 };
+    /* 把**路径本身**也回传：探针要拿它跟渲染器自报的"每步方向"对账（两处独立算，才有意义）。 */
+    return {
+      ok: !!previewPath,
+      n: previewPath ? previewPath.length : 0,
+      path: previewPath ? previewPath.map((q) => ({ x: q.x, y: q.y })) : [],
+    };
   };
 }
 

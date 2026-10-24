@@ -83,7 +83,7 @@ async function arm(send, evaluate, query, label) {
       `window.__mapPreviewTo ? window.__mapPreviewTo(${c.tx}, ${c.ty}) : { ok: false }`,
     );
     if (ok && ok.ok && ok.n >= 4) {
-      picked = { tx: c.tx, ty: c.ty, n: ok.n };
+      picked = { tx: c.tx, ty: c.ty, n: ok.n, path: ok.path || [] };
       break;
     }
   }
@@ -152,6 +152,36 @@ try {
         !!A.picked && st.dotsOnPath >= 1 && !afterEndDot(A.after, A.picked),
         `让位 ${st.dotsOnPath} 枚 · 终点(${A.picked ? `${A.picked.tx},${A.picked.ty}` : '?'})仍有登记点=${afterEndDot(A.after, A.picked)}`,
       );
+      /* 方向对账：渲染器自报的 `dx/dy` 必须等于**路径自己**的步子方向
+         （两处独立算：`main.ts` 的 `buildPath` vs `MapRenderer` 的 `Math.sign(next-cur)`）。
+         末步没有"下一格"⇒ 两边都该沿用上一步的方向。 */
+      const pv = A.picked;
+      const badDir = [];
+      const seenDir = new Set();
+      let checked = 0;
+      if (pv && pv.path && pv.path.length > 2) {
+        for (let k = 1; k < pv.path.length; k++) {
+          const cur = pv.path[k];
+          const nxt = k + 1 < pv.path.length ? pv.path[k + 1] : null;
+          const prv = pv.path[k - 1];
+          const ex = nxt ? Math.sign(nxt.x - cur.x) : Math.sign(cur.x - prv.x);
+          const ey = nxt ? Math.sign(nxt.y - cur.y) : Math.sign(cur.y - prv.y);
+          const got = ((A.pp && A.pp.per) || []).find((q) => q.tx === cur.x && q.ty === cur.y);
+          if (!got) continue; // 出界/未量到：交给 found 那条管
+          checked++;
+          seenDir.add(`${got.dx},${got.dy}`);
+          if (got.dx !== ex || got.dy !== ey) badDir.push(`(${cur.x},${cur.y}) ${got.dx},${got.dy}≠${ex},${ey}`);
+        }
+      }
+      check(
+        'pathdir',
+        '每步箭头都指向下一格（渲染器与 buildPath 各自算，必须一致）',
+        checked >= 3 && badDir.length === 0,
+        badDir.length
+          ? `不一致 ${badDir.length} 处：${badDir.slice(0, 3).join(' · ')}`
+          : `${checked} 步全部对上 · 方向种类 ${seenDir.size} 种（${[...seenDir].join(' / ')}）`,
+      );
+
       check(
         'pathcontrast',
         '路径地标在自己的底色上读得出（最差 ≥ 3.0，且没被实体盖住）',
