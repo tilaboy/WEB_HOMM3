@@ -233,6 +233,42 @@ function drawPathArrow(
 }
 
 /**
+ * 连续折线形态（`?devpathline=1`）：一条从英雄脚下出发、沿格心连到终点的带描边折线，
+ * 拐点补小折角、末端加实心三角。
+ *
+ * 为什么两臂都留着：折角箭头"不压地形、拐角清楚"但有约 30px 空隙；连续线"一眼读完"、
+ * 但会从地砖中间穿过去。哪一臂更好看是审美判断，可量的部分是"压了多少地形"
+ * （`probe:pathdots` 的 covered 与整屏差异）—— 所以先把两臂都做成可切换的。
+ */
+function drawPathLine(
+  ctx: CanvasRenderingContext2D,
+  pts: Array<[number, number]>,
+  corners: Array<[number, number, number, number]>,
+  end: [number, number],
+): void {
+  if (pts.length < 2) return;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  const trace = (): void => {
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  };
+  // 先墨后金：一层外壳保证在亮底（沙/雪）上也读得出，与点、边带同一套双色锚。
+  trace();
+  ctx.strokeStyle = PATH_DOT_INK;
+  ctx.lineWidth = 4.2;
+  ctx.stroke();
+  trace();
+  ctx.strokeStyle = PATH_DOT_CORE;
+  ctx.lineWidth = 1.9;
+  ctx.stroke();
+  for (const [cx, cy, dx, dy] of corners) drawPathArrow(ctx, cx, cy, dx, dy, false);
+  const last = pts[pts.length - 1];
+  drawPathArrow(ctx, last[0], last[1], end[0], end[1], true);
+}
+
+/**
  * 路径地标也**画在光照之后**（默认开；`?devpathafter=0` 回退旧路径）。
  *
  * 旧代码里它是世界坐标里一枚 `rgba(255,246,214,0.85)` 的 4×4 —— 被整屏 multiply 一起乘暗，
@@ -256,6 +292,24 @@ const PATH_AFTER = ((): boolean => {
 const PATH_MASK = ((): boolean => {
   try {
     return new URLSearchParams(location.search).get('devpathmask') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
+/**
+ * 路径地标的**形态**：`line`（默认：连续折线 + 箭头头部）或 `chevron`（每格一枚折角箭头）。
+ *
+ * 为什么把默认从 chevron 翻成 line（2026-10-24 当晚，同机位两臂比过）：
+ *   · `chevron` 步间有约 30px 空隙，10 步路线要靠眼睛把点连起来 —— 而这条线是要用手指点的；
+ *   · `line` 一条线读完（1× 整屏截图里也是一条连贯的金线），代价是它**从地砖中间穿过去**，
+ *     峰值对比从 4.21 降到 4.16、中位略降 —— 仍在 3.0 以上。
+ * 两臂都保留：`?devpathline=0` 切回 chevron。这不是"留个开关好看"，是让
+ * "连续线真的更连续"这件事可量（`probe:pathdots` 的 `pathcont`：相邻格**中点**上是否也有线）。
+ */
+const PATH_LINE = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devpathline') !== '0';
   } catch {
     return true;
   }
@@ -614,6 +668,8 @@ export class MapRenderer {
   private pathSpots: Array<{ x: number; y: number; terrain: string; dx: number; dy: number }> = [];
   /** 本帧落在「预览路径」上的可达点数量（默认应为 0 —— 路径已经表达了这条路）。 */
   private dotsOnPath = 0;
+  /** 相邻两格之间的**中点**（仅 `?devreachprobe=1` 时登记）：判"折线是否连续"用。 */
+  private pathMidSpots: Array<{ x: number; y: number; terrain: string }> = [];
   /** 路径地标是否画在光照之后（`?devpathafter=0` 回退）。 */
   pathAfter = PATH_AFTER;
 
@@ -894,7 +950,16 @@ export class MapRenderer {
       const d = dir.get(`${p.tx},${p.ty}`) ?? [0, 0];
       return { ...p, dx: d[0], dy: d[1] };
     });
-    return { ...r, per, dotsOnPath: this.dotsOnPath, drawnAfter: this.pathAfter };
+    /* 中点只量"有没有笔触"，不看方向 ⇒ 复用同一套取色，半径按线宽定（4 世界 px 够覆盖线 + 墨边）。 */
+    const mid = this.probeDots(this.pathMidSpots, 4);
+    return {
+      ...r,
+      per,
+      mid: { n: mid.n, min: mid.min, median: mid.median, offScreen: mid.offScreen },
+      dotsOnPath: this.dotsOnPath,
+      drawnAfter: this.pathAfter,
+      lineMode: PATH_LINE,
+    };
   }
 
   /**
@@ -1172,6 +1237,7 @@ export class MapRenderer {
     if (REACH_PROBE) {
       this.reachSpots = [];
       this.pathSpots = [];
+      this.pathMidSpots = [];
       this.dotsOnPath = 0;
     }
     const { state, player } = vm;
@@ -1325,6 +1391,9 @@ export class MapRenderer {
      *    `?devpathafter=0` 的旧路径分支成了**死代码**，两臂读数逐位相同，
      *    看上去"这条判据通过了"，其实是两臂都没走另一条路。 */
     const afterPath: Array<[number, number, number, number, number]> | null = this.pathAfter ? [] : null;
+    /** `line` 形态的折线（同样推迟到光照之后；`null` = 不画）。 */
+    let afterLine: { pts: Array<[number, number]>; corners: Array<[number, number, number, number]>; end: [number, number] } | null =
+      null;
     let statPathDots = 0;
     // 边带落笔：默认（`afterBands===null`）立即填充，与原实现逐像素一致；开启 (1) 时只登记。
     // `statRects/statPx` 只累加、不参与绘制（见 `BAND_STATS`）。
@@ -1485,6 +1554,12 @@ export class MapRenderer {
     }
 
     if (vm.path && vm.path.length > 1) {
+      /* `line` 形态的折线点：从**英雄脚下**开始（HoMM3 同款），一格一个格心。 */
+      const linePts: Array<[number, number]> = [];
+      const corners: Array<[number, number, number, number]> = [];
+      let prevDx = 0;
+      let prevDy = 0;
+      let endDir: [number, number] = [0, 0];
       for (let k = 1; k < vm.path.length; k++) {
         const p = vm.path[k];
         const cx = p.x * TILE + TILE / 2;
@@ -1508,12 +1583,42 @@ export class MapRenderer {
             dy,
           });
         }
-        if (afterPath) {
+        if (REACH_PROBE && this.pathMidSpots.length < 400) {
+          /* 相邻格中点（英雄格 → 第 1 步也算一段）：连续线在这里应该有笔触，
+             折角箭头在这里必然是空的 —— 这一对数就是"两种形态"的硬区别。 */
+          const q = vm.path[k - 1];
+          this.pathMidSpots.push({
+            x: ((q.x + p.x) / 2) * TILE + TILE / 2,
+            y: ((q.y + p.y) / 2) * TILE + TILE / 2,
+            terrain: map.tiles[idx(map, p.x, p.y)].terrain,
+          });
+        }
+        if (PATH_LINE) {
+          if (k === 1) {
+            const h = vm.path[0];
+            linePts.push([h.x * TILE + TILE / 2, h.y * TILE + TILE / 2]);
+          }
+          linePts.push([cx, cy]);
+          /* 只在**拐点**补一枚小折角：折线本身已经把方向说清楚了，
+             连续在每格都补就等于又退回"折角箭头"那一版。 */
+          if (k > 1 && (dx !== prevDx || dy !== prevDy)) corners.push([cx, cy, dx, dy]);
+          if (isLast) endDir = [dx, dy];
+        } else if (afterPath) {
           // 默认：只登记，落笔在光照之后（见文件末尾重放段）
           afterPath.push([cx, cy, dx, dy, isLast ? 1 : 0]);
         } else {
           // `?devpathafter=0`：旧路径 —— 立刻画、且被整屏 multiply 乘暗（负向对照用）
           drawPathArrow(ctx, cx, cy, dx, dy, isLast);
+        }
+        prevDx = dx;
+        prevDy = dy;
+      }
+      if (PATH_LINE && linePts.length > 1) {
+        if (this.pathAfter) {
+          afterLine = { pts: linePts, corners, end: endDir };
+        } else {
+          // 负向对照：同样画在光照之前
+          drawPathLine(ctx, linePts, corners, endDir);
         }
       }
     }
@@ -1691,6 +1796,13 @@ export class MapRenderer {
       for (const [cx, cy, dx, dy, last] of afterPath) {
         drawPathArrow(ctx, cx, cy, dx, dy, last === 1);
       }
+      ctx.restore();
+    }
+    if (afterLine) {
+      ctx.save();
+      ctx.translate(cam.x, cam.y);
+      ctx.scale(cam.zoom, cam.zoom);
+      drawPathLine(ctx, afterLine.pts, afterLine.corners, afterLine.end);
       ctx.restore();
     }
 

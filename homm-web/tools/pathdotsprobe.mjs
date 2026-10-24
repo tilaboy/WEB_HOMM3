@@ -43,11 +43,13 @@ const SEED = opt('seed', '20260917');
  *   ② 再用 0.05/0.5/0.95 ⇒ 三档**都落在亮相位**（关键帧最暗在 0.68）⇒ 同样测不出来。
  * 换到 0.68 之后，旧路径的对比度掉到 **2.79**（不及格），新路径 4.09 —— 这才是这条判据的意义。 */
 const LIGHT = opt('light', '0.68');
+/** `--extra=` 追加查询串（切形态/开负向对照用；shell 里要加引号）。 */
+const EXTRA = opt('extra', '');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE =
   `http://127.0.0.1:${PORT}/index.html?devquick=1&devreveal=1&devprobe=1&devbandstats=1` +
-  `&devreachprobe=1&devseed=${SEED}&devlight=${LIGHT}`;
+  `&devreachprobe=1&devseed=${SEED}&devlight=${LIGHT}${EXTRA}`;
 
 const rows = [];
 const check = (id, label, ok, detail) => {
@@ -182,6 +184,16 @@ try {
           : `${checked} 步全部对上 · 方向种类 ${seenDir.size} 种（${[...seenDir].join(' / ')}）`,
       );
 
+      /* 连续性的判据落在**相邻格中点**上：线在这里有笔触，折角箭头在这里一定是空的
+         （实测：线 6.86 / 13.61，折角 1.44 / 1.83 —— 分离度足够大，阈值取 3.0）。 */
+      const midOk = pp.mid && pp.mid.n >= Math.max(3, (pv ? pv.path.length : 0) - 2) && pp.mid.min >= 3;
+      check(
+        'pathcont',
+        '折线是连续的（相邻格中点上也读得出笔触）',
+        pp.lineMode === true && midOk,
+        `lineMode=${pp.lineMode} · 中点 ${pp.mid ? pp.mid.n : '?'} 枚 · 最差 ${pp.mid ? pp.mid.min : '?'} · 中位 ${pp.mid ? pp.mid.median : '?'}`,
+      );
+
       check(
         'pathcontrast',
         '路径地标在自己的底色上读得出（最差 ≥ 3.0，且没被实体盖住）',
@@ -195,8 +207,19 @@ try {
         `drawnAfter=${pp.drawnAfter}`,
       );
 
+      /* 形态对照组：同一条路径、同一机位，只差 `?devpathline=0`。
+         有它才能证明"中点有笔触"是**线**带来的，不是"路径格上本来就有东西"。 */
+      const CHEV = await arm(send, evaluate, '&devpathline=0', 'chevron（形态对照）');
+      const cPp = CHEV.pp || {};
+      check(
+        'pathcont-ctl',
+        '折角形态下中点确实是空的（证 pathcont 量的是"连续性"而不是路径格本身）',
+        cPp.lineMode === false && cPp.mid && cPp.mid.median < 3,
+        `lineMode=${cPp.lineMode} · 中点中位 ${cPp.mid ? cPp.mid.median : '?'}（线的中位 ${pp.mid ? pp.mid.median : '?'}）`,
+      );
+
       /* 常驻 A/B：同一张图、同一个终点、只差 `?devpathafter`。
-       * 对比度对"整屏等比乘暗"不敏感（点和它的底色一起被乘 ⇒ 比值近似不变，实测两臂都是 3.83），
+       * 对比度对"整屏等比乘暗"不敏感（点和它的底色一起被乘 ⇒ 比值近似不变），
        * 所以这条判据看的是**平均绝对亮度**：旧路径必须更暗，否则"画在光照之后"这件事没有效果。 */
       const OLD = await arm(send, evaluate, '&devpathafter=0', 'pathafter=0（旧路径）');
       const oPp = OLD.pp || {};
@@ -216,11 +239,15 @@ try {
           afterEndDot(M.after, M.picked) || mSt.dotsOnPath === 0,
           `让位 ${mSt.dotsOnPath} · 终点仍有登记点=${afterEndDot(M.after, M.picked)}`,
         );
+        /* ★ 这条判据在"折角"形态下成立（旧臂 2.71 < 3），换成"折线"后不成立了（旧臂 3.59）——
+           因为连续线在格心也有笔触，格心的对比不靠"亮不亮"而靠"线在不在"。
+           所以判据改成**中点**：旧的折线被整屏乘暗后，中点那一段的对比会明显低于新线。
+           教训：判据跟着形态走，换形之后必须重钉，不能沿用上一版的阈值。 */
         check(
-          'ctl-oldfails',
-          '夜相位下旧路径确实不及格（证这次修的是真缺陷，不是风格偏好）',
-          oPp.min < 3,
-          `旧路径最差对比 ${oPp.min}（< 3.0）· 新路径 ${pp.min}`,
+          'ctl-oldmid',
+          '夜相位下旧折线在中点上明显更弱（证"画在光照之后"是真差别）',
+          oPp.mid && pp.mid && oPp.mid.median < pp.mid.median * 0.75,
+          `旧中点中位 ${oPp.mid ? oPp.mid.median : '?'} vs 新 ${pp.mid ? pp.mid.median : '?'}（判据 <75%）`,
         );
         check(
           'ctl-after',
