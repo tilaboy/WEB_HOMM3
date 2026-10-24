@@ -2278,16 +2278,23 @@ if (bootParams.has('devprobe')) {
    * 选点规则：在代价场里取"至少 1.6 倍今日移动力、且不超过 2.6 倍"的格子里最远的一枚，
    * 保证跨天一次（而不是跨三天 —— 那会让"今天/明天"两段各自都可能看不到）。
    *
+   * `dir`：偏好方向。`horiz`（默认）让路径主要横着走，好让整条路落在 844 宽的屏幕里；
+   * `vert` 反过来 —— 用来测**边缘指示符**：屏幕只有 390 高（半高 195px ≈ 5 格），
+   * 竖直走十几步必然出画。真实对局里"交界在屏外"是常态，可测的那一档要能稳定复现它。
+   *
    * `mpOverride`：临时把移动力设小（探针传 300 ⇒ 3 格出界）——
    * 满移动力 1800 对应的跨天目标在十几格之外，**整段明天都在屏幕外**，探针取不到像素。
    * 只在 `setPreview` 那一下生效，算完立刻还原（不动存档、不动别的状态）。
    */
-  w.__mapPreviewDay = (mpOverride?: number) => {
+  w.__mapPreviewDay = (mpOverride?: number, dir?: 'any' | 'vert' | 'horiz') => {
     const hero = selected ? state.heroes[selected] : null;
     if (!hero || !fieldFull) return { ok: false, reason: '没有选中英雄或代价场未算' };
     const useOverride = typeof mpOverride === 'number' && mpOverride > 0;
     const mp = useOverride ? (mpOverride as number) : hero.movePoints;
-    const lo = mp * 1.6;
+    /* 下界 1.15 而不是 1.6：满移动力（1800）时 1.6 倍 ≈ 29 格，
+       整张 48×48 图上未必存在那么远的可走格 ⇒ 钩子直接返回 ok:false，
+       "测边缘指示"的那一臂就永远没有数据。1.15 只要求"确实跨天"，剩下的交给下面的兜底。 */
+    const lo = mp * 1.15;
     const hi = Math.min(mp * 2.6, maxMovePoints(hero, state) * 3);
     let best: GridPos | null = null;
     let bestScore = -1;
@@ -2301,10 +2308,29 @@ if (bootParams.has('devprobe')) {
            5 步竖直路径就会把"明天"整段顶出画布，探针取不到像素（实测出界 3/4）。
            所以先按"|dx| ≥ |dy|"筛，再在同类里取最远。 */
         const horiz = Math.abs(x - hero.pos.x) >= Math.abs(y - hero.pos.y);
-        const score = c + (horiz ? 10000 : 0);
+        const prefer = dir === 'vert' ? !horiz : dir === 'horiz' ? horiz : true;
+        const score = c + (prefer ? 10000 : 0);
         if (score > bestScore) {
           bestScore = score;
           best = { x, y };
+        }
+      }
+    }
+    if (!best) {
+      /* 兜底：窗口内没有（远图边缘 / 小地图），就取"走得动、但今天走不完"的最远一格。
+         宁可跨界少一点，也不要返回空 —— 空的钩子只会让判据变成"没有数据"，看起来像通过。 */
+      for (let y = 0; y < m.height; y++) {
+        for (let x = 0; x < m.width; x++) {
+          const c = fieldFull.cost[idx(m, x, y)];
+          if (!Number.isFinite(c) || c <= mp) continue;
+          if (!isRevealed(state, viewerOf(state), x, y)) continue;
+          const horiz = Math.abs(x - hero.pos.x) >= Math.abs(y - hero.pos.y);
+          const prefer = dir === 'vert' ? !horiz : dir === 'horiz' ? horiz : true;
+          const score = c + (prefer ? 10000 : 0);
+          if (score > bestScore) {
+            bestScore = score;
+            best = { x, y };
+          }
         }
       }
     }

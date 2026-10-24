@@ -404,6 +404,22 @@ const PATH_DAY = ((): boolean => {
 })();
 
 /**
+ * 交界在**屏幕外**时，在屏幕边缘补一枚指示（默认开；`?devpathedge=0` 关掉，作负向对照）。
+ *
+ * 为什么需要它：满移动力（1800）时"今天"约 18 格，而视口纵向只有 11 格 ——
+ * 交界通常落在**屏幕之外**。"今天走到哪"这条信息因此看不见，而这个功能存在的全部理由就是它。
+ * 指示符沿用交界刻痕的同一套语言（一道横切短杠 + 朝外的一小段金线），
+ * 读法是"路往那边去，今天在那儿为止"。
+ */
+const PATH_EDGE = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devpathedge') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
+/**
  * 路径地标的**形态**：`line`（默认：连续折线 + 箭头头部）或 `chevron`（每格一枚折角箭头）。
  *
  * 为什么把默认从 chevron 翻成 line（2026-10-24 当晚，同机位两臂比过）：
@@ -801,6 +817,18 @@ export class MapRenderer {
   private pathHeadSeen: Array<{ x: number; y: number }> = [];
   /** 交界格中心像素的相对亮度（仅跨天且开分段时量；`null` = 没有交界）。 */
   private pathCutLum: number | null = null;
+  /** 边缘指示符（屏幕 CSS 坐标）；`null` = 没画（交界在屏内，或开关关掉）。 */
+  private pathEdgeSeen: { x: number; y: number } | null = null;
+  /** 交界格的屏幕坐标与视口（不管画没画都记，诊断用）。 */
+  private pathEdgeCalc: {
+    ex: number;
+    ey: number;
+    vw: number;
+    vh: number;
+    inside: boolean;
+    cutWorld: [number, number];
+    cam: [number, number, number];
+  } | null = null;
   /** 路径地标是否画在光照之后（`?devpathafter=0` 回退）。 */
   pathAfter = PATH_AFTER;
 
@@ -1148,6 +1176,19 @@ export class MapRenderer {
       from: this.pathFromSeen,
       head: this.pathHeadSeen,
       startPair: this.pathStartSeen,
+      /**
+       * 边缘指示符：`drawn` 是结构事实（真的画了），`lum` 是**那一格中心像素**的亮度
+       * （指示符的横杠是墨色 ⇒ 应当很暗）。两个都报，才能分开"画了但看不见"与"根本没画"。
+       */
+      edge: this.pathEdgeSeen
+        ? {
+            drawn: true,
+            x: +this.pathEdgeSeen.x.toFixed(1),
+            y: +this.pathEdgeSeen.y.toFixed(1),
+            lum: this.lumAtCss(this.pathEdgeSeen.x, this.pathEdgeSeen.y),
+          }
+        : { drawn: false, x: null, y: null, lum: null },
+      edgeCalc: this.pathEdgeCalc,
       /* 原始登记（不走 `probeDots`）：中点坐标若与路径对不上，先看这一行，
          不要从 `per` 里的统计量反推（那是二次加工过的）。 */
       midsRaw: this.pathMidSpots.map((q) => ({
@@ -1176,6 +1217,22 @@ export class MapRenderer {
    * 它的证据是"这一格的正中心被压黑了" —— 而 `probeDots` 统计的是整块窗口的最亮/最暗，
    * 会被旁边的金色线头拉回原样。取单点才能把"刻痕在不在"与"线在不在"分开。
    */
+  /** 取屏幕（CSS px）某一点像素的相对亮度；越界返回 null。 */
+  private lumAtCss(cx: number, cy: number): number | null {
+    const ctx = this.ctx;
+    const { viewW, viewH } = this.camera;
+    const dpr = this.dpr;
+    const px = Math.round(cx * dpr);
+    const py = Math.round(cy * dpr);
+    if (px < 0 || py < 0 || px >= Math.round(viewW * dpr) || py >= Math.round(viewH * dpr)) return null;
+    const d = ctx.getImageData(px, py, 1, 1).data;
+    const f = (v: number): number => {
+      const u = v / 255;
+      return u <= 0.03928 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
+    };
+    return +(0.2126 * f(d[0]) + 0.7152 * f(d[1]) + 0.0722 * f(d[2])).toFixed(4);
+  }
+
   private cutCenterLum(): number | null {
     if (this.pathCut <= 0 || this.pathCut >= this.pathLen) return null;
     const spot = this.pathSpots.find((q) => q.day === 0);
@@ -2110,6 +2167,72 @@ export class MapRenderer {
       ctx.scale(cam.zoom, cam.zoom);
       drawPathLine(ctx, afterLine);
       ctx.restore();
+    }
+    /* --- 交界在屏幕外 ⇒ 屏幕边缘补一枚指示 ---
+       这一段是**屏幕空间**（`restore()` 之后变换回到 dpr 基准，坐标单位 = CSS px），
+       理由：它要贴着视口边缘，跟着世界走会跟着滚出画面。颜色不受光照 multiply 影响。 --- */
+    this.pathEdgeSeen = null;
+    if (afterLine && afterLine.cut && PATH_EDGE) {
+      const [wx, wy] = afterLine.cut;
+      const { viewW: vw, viewH: vh } = cam;
+      const m = 14; // 离边缘留出的余量（CSS px）：够画一道短杠，又不至于被裁
+      const ex = wx * cam.zoom + cam.x;
+      const ey = wy * cam.zoom + cam.y;
+      const inside = ex >= m && ex <= vw - m && ey >= m && ey <= vh - m;
+      /* 把"交界落在屏幕哪儿"也记下来（不管画没画）：判据红的时候，
+         第一个要排除的就是"它其实在屏内"或"相机没跟在英雄身上"。 */
+      this.pathEdgeCalc = {
+        ex: +ex.toFixed(1),
+        ey: +ey.toFixed(1),
+        vw,
+        vh,
+        inside,
+        cutWorld: [wx, wy],
+        cam: [+cam.x.toFixed(1), +cam.y.toFixed(1), cam.zoom],
+      };
+      if (!inside) {
+        /* 从**英雄**脚下朝交界打一条射线，夹到内缩矩形上 ——
+           用英雄当原点而不是视口中心：镜头没跟随时两者不同，而"我还能走多远"
+           这个问题的原点永远是英雄。 */
+        const from = vm.pathFrom ?? { x: 0, y: 0 };
+        const hx = from.x * cam.zoom + cam.x + TILE * cam.zoom * 0.5;
+        const hy = from.y * cam.zoom + cam.y + TILE * cam.zoom * 0.5;
+        const dx = ex - hx;
+        const dy = ey - hy;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len;
+        const uy = dy / len;
+        const tx = ux > 0 ? (vw - m - hx) / ux : ux < 0 ? (m - hx) / ux : Infinity;
+        const ty = uy > 0 ? (vh - m - hy) / uy : uy < 0 ? (m - hy) / uy : Infinity;
+        const t = Math.min(tx, ty);
+        if (Number.isFinite(t) && t > 0) {
+          const px = hx + ux * t;
+          const py = hy + uy * t;
+          ctx.save();
+          ctx.translate(px, py);
+          ctx.rotate(Math.atan2(uy, ux));
+          // 朝外的一小段金线（与"明天"同一套虚线语言：路还在继续）
+          ctx.lineCap = 'butt';
+          ctx.setLineDash([]);
+          ctx.strokeStyle = PATH_DOT_INK;
+          ctx.lineWidth = 3.6;
+          ctx.beginPath();
+          ctx.moveTo(1.5, 0);
+          ctx.lineTo(9, 0);
+          ctx.stroke();
+          ctx.strokeStyle = PATH_DOT_CORE;
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.moveTo(1.5, 0);
+          ctx.lineTo(9, 0);
+          ctx.stroke();
+          // 横切短杠 = 交界刻痕的同款语言（比格内那道略大：它要压过 4.2 宽的线 + 墨边）
+          ctx.fillStyle = PATH_DOT_INK;
+          ctx.fillRect(-1.5, -6.5, 3.0, 13);
+          ctx.restore();
+          this.pathEdgeSeen = { x: px, y: py };
+        }
+      }
     }
 
     /* --- 修法 (1)：三条边带改画在光照**之后**（默认开；`?devhaloafter=0` 回退旧路径） ---

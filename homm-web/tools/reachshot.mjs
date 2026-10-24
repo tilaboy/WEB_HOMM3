@@ -93,13 +93,18 @@ const PREVIEW_REACH = `(() => {
 
 /** `--preview=day`：摆一条**今天走不完**的路径（临时移动力 200 ⇒ 今天 2 格、明天 2 格），
  *  用来拍跨天分段（实线金 / 虚线冷 / 交界刻痕）。 */
+/* `--mp=full` ⇒ 用满移动力摆路径（交界远到出画，配合 `--extra='&devzoom=2.4'` 拍边缘指示符）；
+   默认 200 ⇒ 今天 2 格、明天 2 格，整条路都在画面里。 */
+const DAY_MP_ARG = argOf('mp', '') === 'full' ? '' : '200';
 const PREVIEW_DAY = `(() => {
-  const r = window.__mapPreviewDay ? window.__mapPreviewDay(200) : null;
+  const r = window.__mapPreviewDay ? window.__mapPreviewDay(${DAY_MP_ARG}) : null;
   if (!r || !r.ok) return null;
   return { tx: r.target.x, ty: r.target.y, n: r.n, day: r.day };
 })()`;
 
 const PREVIEW = argOf('preview', 'reach') === 'day' ? PREVIEW_DAY : PREVIEW_REACH;
+
+
 
 let bad = 0;
 const PASS = (c, m) => {

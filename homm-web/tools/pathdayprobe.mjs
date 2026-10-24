@@ -56,8 +56,11 @@ const check = (id, label, ok, detail) => {
   if (!AS_JSON) console.log(`${ok ? '✅' : '❌'} [${id}] ${label} — ${detail}`);
 };
 
-/** 摆好一臂：导航 → 等主循环 → 让主程序摆一条"今天走不完"的路径 → 读探针。 */
-async function arm(send, evaluate, query, label) {
+/**
+ * 摆好一臂：导航 → 等主循环 → 让主程序摆一条"今天走不完"的路径 → 读探针。
+ * `mpArg = null` ⇒ **不动移动力**（满 1800，交界必然在屏幕外，用来测边缘指示符）。
+ */
+async function arm(send, evaluate, query, label, callArgs = `${MP}`) {
   await send('Page.navigate', { url: BASE + query });
   for (let i = 0; i < 160; i++) {
     try {
@@ -74,16 +77,19 @@ async function arm(send, evaluate, query, label) {
   }
   await sleep(300);
   const hook = await evaluate(
-    `window.__mapPreviewDay ? window.__mapPreviewDay(${MP}) : { ok: false, reason: '没有钩子' }`,
+    `window.__mapPreviewDay ? window.__mapPreviewDay(${callArgs}) : { ok: false, reason: '没有钩子' }`,
   );
   await sleep(420); // 让渲染循环按新状态画过一帧
   const pp = await evaluate('window.__mapPathProbe ? window.__mapPathProbe() : null');
   if (!AS_JSON) {
     const d = (pp && pp.day) || {};
     console.log(
-      `[${label}] 目标 ${hook && hook.target ? `(${hook.target.x},${hook.target.y})` : '无'}` +
+      `[${label}] 英雄 ${hook && hook.from ? `(${hook.from.x},${hook.from.y})` : '?'}` +
+        ` → 目标 ${hook && hook.target ? `(${hook.target.x},${hook.target.y})` : '无'}` +
         ` · 路径 ${hook && hook.n ? hook.n : '?'} 步 · 今日 ${d.cut} 步（mp=${hook ? hook.mp : '?'}）` +
-        ` · split=${d.split} · 今天 ${d.now ? d.now.n : '?'} 枚 / 明天 ${d.next ? d.next.n : '?'} 枚`,
+        ` · split=${d.split} · 今天 ${d.now ? d.now.n : '?'} 枚 / 明天 ${d.next ? d.next.n : '?'} 枚` +
+        ` · 边缘指示 ${pp && pp.edge && pp.edge.drawn ? `画了(${pp.edge.x},${pp.edge.y})` : '无'}` +
+        (pp && pp.edgeCalc ? ` · 交界屏位 (${pp.edgeCalc.ex},${pp.edgeCalc.ey})/${pp.edgeCalc.vw}×${pp.edgeCalc.vh} inside=${pp.edgeCalc.inside}` : ''),
     );
   }
   return { hook, pp };
@@ -173,6 +179,23 @@ try {
         `交界格中心相对亮度 ${d.cutLum}（< 0.15）`,
       );
 
+      /* --- 边缘指示：满移动力时交界在屏幕外，这条信息必须有出口 ---
+         这一臂**不改移动力**（1800 ⇒ 今天约 18 格，视口纵向只有 11 格）⇒ 交界必然在屏外。 */
+      /* 用**放大**（`?devzoom=2.4`，真机捏合也到得了）把交界挤出画面：
+         这张图的 16 步只走了 9 格横 / 3 格竖（路线绕着地形走），1.2 倍时交界仍在屏内
+         （实测 (511,310)）。2.4 倍下偏移翻倍 ⇒ 纵向 230 > 半高 195 ⇒ 出画。
+         这比"推镜头 700px"诚实：不用把镜头推到地图外去看一片空。 */
+      const E = await arm(send, evaluate, '&devzoom=2.4', '满移动力 · 放大（交界出画）', 'undefined');
+      const ePp = E.pp || {};
+      const eEdge = ePp.edge || {};
+      const eDay = ePp.day || {};
+      check(
+        'edge-mark',
+        '交界在屏幕外时，屏幕边缘有一枚指示（画了 且 中心是墨色）',
+        eEdge.drawn === true && typeof eEdge.lum === 'number' && eEdge.lum < 0.15 && eDay.split === true,
+        `drawn=${eEdge.drawn} · 位置 (${eEdge.x},${eEdge.y}) · 中心亮度 ${eEdge.lum} · 交界 ${eDay.cut}/${eDay.len}`,
+      );
+
       /* 对照臂：关掉分段 = 旧表现（整条实线、无刻痕）。它必须**真的一分为二**，
          否则上面四条等于在测"有个钩子在跑"。 */
       const C = await arm(send, evaluate, '&devpathday=0', 'pathday=0（旧表现）');
@@ -186,20 +209,33 @@ try {
         `split=${cd.split} · cut=${cd.cut}/${cd.len} · cutLum=${cd.cutLum} · 明天 ${cd.next ? cd.next.n : 0} 枚`,
       );
 
+      /* 同一满移动力场景，只关掉边缘指示（`?devpathedge=0`）⇒ 指示必须消失。
+         这条的分辨力在于：它证明边缘那枚东西**是这一层画的**，不是地形或别的标记。 */
+      const EC = await arm(send, evaluate, '&devpathedge=0&devzoom=2.4', 'pathedge=0（无边缘指示）', 'undefined');
+      const ecEdge = ((EC.pp || {}).edge || {});
+      check(
+        'edge-ctl',
+        '关掉边缘指示后，同一场景里那枚指示消失（证它由本层绘制）',
+        ecEdge.drawn === false,
+        `drawn=${ecEdge.drawn}（满移动力时交界仍在屏外：cut=${(EC.pp || {}).day ? (EC.pp || {}).day.cut : '?'}）`,
+      );
+
       if (SELFCHECK) {
         /* 负向对照的本质：把**同一组判据**套到对照臂上，每一条都必须变红。
            只检"对照臂的 split=false"是不够的 —— 那只能证明钩子关了，
            证明不了 dash / cut-mark 这两条判据真的在测"今天/明天"而不是在测任何一条线。 */
-        const flipped = ['pathday', 'pathday-dash', 'cut-mark'].filter((k) => {
+        const ecEdge2 = (C.pp || {}).edge || {};
+        const flipped = ['pathday', 'pathday-dash', 'cut-mark', 'edge-mark'].filter((k) => {
           if (k === 'pathday') return cc.day;
           if (k === 'pathday-dash') return cc.dash;
-          return cc.mark;
+          if (k === 'cut-mark') return cc.mark;
+          return ecEdge2.drawn === true; // 关掉分段后不该有边缘指示
         });
         check(
           'ctl-flip',
-          '把同一组判据套到对照臂上，三条全变红（证每条都有分辨力）',
+          '把同一组判据套到对照臂上，四条全变红（证每条都有分辨力）',
           flipped.length === 0,
-          flipped.length ? `仍是绿的：${flipped.join('、')}` : 'pathday / pathday-dash / cut-mark 三条全红',
+          flipped.length ? `仍是绿的：${flipped.join('、')}` : 'pathday / pathday-dash / cut-mark / edge-mark 四条全红',
         );
       }
 
