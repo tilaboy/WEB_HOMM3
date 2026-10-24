@@ -34,6 +34,21 @@ export interface ViewModel {
    */
   walkable?: Float64Array | null;
   path: GridPos[] | null;
+  /**
+   * 预览路径的**起点**（英雄所在格）。
+   *
+   * `buildPath()` 只返回**步子**、不含起点（`pathfinding.ts:138` 的 `while (cur !== start)`），
+   * 所以只拿 `path` 画折线会整整少一段"英雄→第一格"。§18 的提交信息写着"从英雄脚下出发"，
+   * 当时并不成立 —— 2026-10-24 补上这个字段才算数。
+   */
+  pathFrom?: GridPos | null;
+  /**
+   * 沿 `path` 走**今天**能走完的步数（`path.length` 或省略 = 全程都是今天；`0` = 今天一步都走不了）。
+   *
+   * 由主程序沿路径累加 `stepCost` 算出，**不是**用"剩余移动力 ÷ 平均代价"估的 ——
+   * 地形代价差 1~3 倍，估出来的分界会落在**走不到**的格子上（那正是这条信息要防的错）。
+   */
+  pathDay?: number;
   hover: GridPos | null;
   /** 跨天行程的目的地：画一面小旗，提醒玩家"昨天没走完"。 */
   dest: GridPos | null;
@@ -177,11 +192,26 @@ const PATH_HEAD_BASE = 2.2;
 const PATH_DOT_R = 4;
 
 /**
+ * "明天"那一段怎么画：**同一套金色、更细的笔画、虚线**。
+ *
+ * 首版用冷蓝（`#8fb6d6`）表达"明天"，实测**在城堡蓝屋顶上整段消失**
+ * （截图 `production/render-pathday/01` 之前那一版：蓝线压蓝顶，对比≈0）。
+ * 蓝色在这款游戏里是水位与屋顶的颜色，不能拿来当语义色 —— 它会被场景本身吃掉。
+ * 所以差的不是"颜色"而是"线型"：今天粗实线、明天细虚线，交界一道刻痕。
+ * 这样它在任何底色上都还靠那圈墨边站得住（与点、边带同一套双色锚）。
+ */
+const PATH_NEXT_INK = PATH_DOT_INK;
+const PATH_NEXT_CORE = PATH_DOT_CORE;
+
+/**
  * 画一枚方向地标（世界坐标，调用方已套好相机变换）。
  *
  * 画法刻意"像素友好"：不用圆头/阴影，全用 miter 折角与实心三角 ——
  * 32px 格上任何抗锯齿的柔边都会让它糊成一团（与 §15 的点同理）。
  * 折角箭头（chevron）负责"有方向"，末步实心三角负责"到这儿"。
+ *
+ * `next` = 走在"今天"之后的那一段（跨天行程）：**只换颜色、不换大小**。
+ * 大小是层级（箭头 > 边界点），颜色才是"今天 / 明天"；混用两者会让两件事互相污染。
  */
 function drawPathArrow(
   ctx: CanvasRenderingContext2D,
@@ -190,7 +220,10 @@ function drawPathArrow(
   dx: number,
   dy: number,
   head: boolean,
+  next = false,
 ): void {
+  const ink = next ? PATH_NEXT_INK : PATH_DOT_INK;
+  const core = next ? PATH_NEXT_CORE : PATH_DOT_CORE;
   if (dx === 0 && dy === 0) return;
   ctx.save();
   ctx.translate(cx, cy);
@@ -204,14 +237,14 @@ function drawPathArrow(
     ctx.lineTo(-PATH_HEAD_BASE, -PATH_HEAD_BASE);
     ctx.lineTo(-PATH_HEAD_BASE, PATH_HEAD_BASE);
     ctx.closePath();
-    ctx.fillStyle = PATH_DOT_INK;
+    ctx.fillStyle = ink;
     ctx.fill();
     ctx.beginPath();
     ctx.moveTo(PATH_HEAD_TIP - 1.5, 0);
     ctx.lineTo(-PATH_HEAD_BASE + 1.0, -PATH_HEAD_BASE + 1.2);
     ctx.lineTo(-PATH_HEAD_BASE + 1.0, PATH_HEAD_BASE - 1.2);
     ctx.closePath();
-    ctx.fillStyle = PATH_DOT_CORE;
+    ctx.fillStyle = core;
     ctx.fill();
   } else {
     const chevron = (): void => {
@@ -221,11 +254,11 @@ function drawPathArrow(
       ctx.lineTo(-PATH_ARROW_BACK, PATH_ARROW_WING);
     };
     chevron();
-    ctx.strokeStyle = PATH_DOT_INK;
+    ctx.strokeStyle = ink;
     ctx.lineWidth = 3.0;
     ctx.stroke();
     chevron();
-    ctx.strokeStyle = PATH_DOT_CORE;
+    ctx.strokeStyle = core;
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }
@@ -233,39 +266,98 @@ function drawPathArrow(
 }
 
 /**
- * 连续折线形态（`?devpathline=1`）：一条从英雄脚下出发、沿格心连到终点的带描边折线，
- * 拐点补小折角、末端加实心三角。
+ * 一条预览路径的完整描述：**今天**段（实线、金）+ **明天**段（虚线、冷）+ 交界刻痕。
  *
- * 为什么两臂都留着：折角箭头"不压地形、拐角清楚"但有约 30px 空隙；连续线"一眼读完"、
- * 但会从地砖中间穿过去。哪一臂更好看是审美判断，可量的部分是"压了多少地形"
- * （`probe:pathdots` 的 covered 与整屏差异）—— 所以先把两臂都做成可切换的。
+ * 为什么要有第二段（2026-10-24 三版）：旧实现把整条路线画成同一条实线，
+ * 玩家看不出"今天只能走到哪" —— 而跨天行程是**一回合一次决策**的游戏里最贵的一条信息
+ * （点下去、英雄走一半停了、提示"明天按 M 继续"，然后玩家才发现自己点远了）。
+ *
+ * 三种表达叠在一起，是为了**不靠单一通道**也能读出来：
+ *   ① 颜色：金（今天）/ 冷蓝（明天）—— 一眼分开两段；
+ *   ② 线型：实线 / 虚线 —— 色觉障碍或极端底色下也分得开（也是可机检的那条，见 `probe:pathday`）；
+ *   ③ 刻痕：交界格上一道垂直于前进方向的短杠 —— "今天到此收工"。
  */
-function drawPathLine(
+type PathLine = {
+  now: Array<[number, number]>;
+  next: Array<[number, number]>;
+  cornersNow: Array<[number, number, number, number]>;
+  cornersNext: Array<[number, number, number, number]>;
+  end: [number, number];
+  /** 交界格：`[cx, cy, dx, dy]`，`dy` 为**明天第一步**的方向（刻痕垂直于它）。无跨天时为 null。 */
+  cut: [number, number, number, number] | null;
+};
+
+/** 一条折线（先墨后亮：外层保证在沙/雪这类亮底上也读得出，与点、边带同一套双色锚）。 */
+function strokePath(
   ctx: CanvasRenderingContext2D,
   pts: Array<[number, number]>,
-  corners: Array<[number, number, number, number]>,
-  end: [number, number],
+  ink: string,
+  core: string,
+  dash: number[] | null,
+  inkW: number,
+  coreW: number,
 ): void {
   if (pts.length < 2) return;
   ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
+  /* ★ 虚线必须用**平头**。圆头会把每段两端各延长 `lineWidth/2`
+     （3.0 宽 ⇒ 两端共 3.0），3.4 的缺口只剩 0.4 ⇒ 看上去是实线，
+     探针也永远量不到空档（实测：明天段 6 个采样点 0 个空）。
+     这是"虚线画成实线"最常见的一种死法，且肉眼在长线上几乎看不出来。 */
+  ctx.lineCap = dash ? 'butt' : 'round';
+  ctx.setLineDash(dash ?? []);
   const trace = (): void => {
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
   };
-  // 先墨后金：一层外壳保证在亮底（沙/雪）上也读得出，与点、边带同一套双色锚。
   trace();
-  ctx.strokeStyle = PATH_DOT_INK;
-  ctx.lineWidth = 4.2;
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = inkW;
   ctx.stroke();
   trace();
-  ctx.strokeStyle = PATH_DOT_CORE;
-  ctx.lineWidth = 1.9;
+  ctx.strokeStyle = core;
+  ctx.lineWidth = coreW;
   ctx.stroke();
-  for (const [cx, cy, dx, dy] of corners) drawPathArrow(ctx, cx, cy, dx, dy, false);
+  ctx.setLineDash([]);
+}
+
+/**
+ * 连续折线形态（默认）：一条从**英雄脚下**出发、沿格心连到终点的带描边折线，
+ * 拐点补小折角、末端加实心三角；跨天行程在交界处断开成两段（见 `PathLine`）。
+ *
+ * 为什么两臂都留着：折角箭头"不压地形、拐角清楚"但有约 30px 空隙；连续线"一眼读完"、
+ * 但会从地砖中间穿过去。哪一臂更好看是审美判断，可量的部分是"压了多少地形"
+ * （`probe:pathdots` 的 covered 与整屏差异）—— 所以先把两臂都做成可切换的。
+ */
+function drawPathLine(ctx: CanvasRenderingContext2D, L: PathLine): void {
+  if (L.now.length < 2 && L.next.length < 2) return;
+  // 今天：实线金。明天：虚线冷色 —— 虚线段长/间隔按世界 px（调用方已 scale）。
+  strokePath(ctx, L.now, PATH_DOT_INK, PATH_DOT_CORE, null, 4.2, 1.9);
+  /* 明天：同色、更细（3.0 / 1.3）、虚线。
+     缺口 3.4 世界 px 必须**比探针的细窗宽**（2.5 世界 px，见 `probePath`），
+     否则"虚线留空"这件事永远量不出来 —— 两侧的墨会被窗一起收进去。 */
+  strokePath(ctx, L.next, PATH_NEXT_INK, PATH_NEXT_CORE, [3.0, 4.2], 3.0, 1.3);
+  for (const [cx, cy, dx, dy] of L.cornersNow) drawPathArrow(ctx, cx, cy, dx, dy, false, false);
+  for (const [cx, cy, dx, dy] of L.cornersNext) drawPathArrow(ctx, cx, cy, dx, dy, false, true);
+  /* 交界刻痕：垂直于**明天第一步**的方向。它同时盖住今天线的末端与明天线的起点 ⇒
+     玩家读到的是"这条线在这里被切了一刀"，而不是"两段颜色碰巧接上了"。 */
+  if (L.cut) {
+    const [cx, cy, dx, dy] = L.cut;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(Math.atan2(dy, dx));
+    /* 整条压黑、**不留亮芯**。首版给了它一根金色内芯，结果刻痕中心是亮的（实测 0.8039）——
+       "切一刀"读不出来，倒像线上多了个亮点；探针那条"中心被压黑"也就永远红。
+       刻痕的语义是**否定**（今天到此为止），所以它必须比线更暗，不能比线更亮。 */
+    /* 细长横杠（9 × 2.2 世界 px）：短边顺着路、长边横切过去。
+       32px 格上 9px 约 1/4 格宽 —— 够看见，又不至于盖住地形。 */
+    ctx.fillStyle = PATH_DOT_INK;
+    ctx.fillRect(-4.5, -1.1, 9, 2.2);
+    ctx.restore();
+  }
+  const pts = L.next.length >= 2 ? L.next : L.now;
   const last = pts[pts.length - 1];
-  drawPathArrow(ctx, last[0], last[1], end[0], end[1], true);
+  drawPathArrow(ctx, last[0], last[1], L.end[0], L.end[1], true, L.next.length >= 2);
 }
 
 /**
@@ -292,6 +384,20 @@ const PATH_AFTER = ((): boolean => {
 const PATH_MASK = ((): boolean => {
   try {
     return new URLSearchParams(location.search).get('devpathmask') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
+/**
+ * 跨天分段（默认开；`?devpathday=0` 关掉，作负向对照与"退回整条实线"用）。
+ *
+ * 关掉时渲染器把整条路径都当"今天"画（一条实线金），**不画交界刻痕** ——
+ * 这正是本批要改掉的旧表现，留着它才能让 `probe:pathday` 有一条会变红的对照臂。
+ */
+const PATH_DAY = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devpathday') !== '0';
   } catch {
     return true;
   }
@@ -665,11 +771,36 @@ export class MapRenderer {
   private reachSpots: Array<{ x: number; y: number; terrain: string }> = [];
   /** 本帧路径地标（仅 `?devreachprobe=1` 时登记），供 `probePath()` 取色。
    *  `dx/dy` = 该步的单位方向（格坐标，末步沿用前一步）—— 探针要拿它跟路径本身对账。 */
-  private pathSpots: Array<{ x: number; y: number; terrain: string; dx: number; dy: number }> = [];
+  private pathSpots: Array<{ x: number; y: number; terrain: string; dx: number; dy: number; day: 0 | 1 }> = [];
   /** 本帧落在「预览路径」上的可达点数量（默认应为 0 —— 路径已经表达了这条路）。 */
   private dotsOnPath = 0;
-  /** 相邻两格之间的**中点**（仅 `?devreachprobe=1` 时登记）：判"折线是否连续"用。 */
-  private pathMidSpots: Array<{ x: number; y: number; terrain: string }> = [];
+  /**
+   * 相邻两格之间的**中点**（仅 `?devreachprobe=1` 时登记）：判"折线是否连续"用。
+   *
+   * `day` 决定它归哪一段 —— 这也让"明天是虚线"可以机检：虚线在**中点**处会留空，
+   * 实线不会（见 `probe:pathday` 的 `pathday-dash`）。
+   */
+  private pathMidSpots: Array<{
+    x: number;
+    y: number;
+    terrain: string;
+    day: 0 | 1;
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+  }> = [];
+  /** 本帧路径的步数、以及"今天走完几步"的交界（`0` 或 `===len` 表示没有跨天）。 */
+  private pathLen = 0;
+  private pathCut = 0;
+  /** 本帧实际用的起点与头两步（`probePath` 回传，供对账）。 */
+  private pathFromSeen: { x: number; y: number } | null = null;
+  /** 起点对：英雄格 + 第一步（`probePath` 回传）。 */
+  private pathStartSeen: { from: { x: number; y: number }; first: { x: number; y: number } | null } | null =
+    null;
+  private pathHeadSeen: Array<{ x: number; y: number }> = [];
+  /** 交界格中心像素的相对亮度（仅跨天且开分段时量；`null` = 没有交界）。 */
+  private pathCutLum: number | null = null;
   /** 路径地标是否画在光照之后（`?devpathafter=0` 回退）。 */
   pathAfter = PATH_AFTER;
 
@@ -952,6 +1083,58 @@ export class MapRenderer {
     });
     /* 中点只量"有没有笔触"，不看方向 ⇒ 复用同一套取色，半径按线宽定（4 世界 px 够覆盖线 + 墨边）。 */
     const mid = this.probeDots(this.pathMidSpots, 4);
+    /**
+     * 分段：把**同一套**取色分别跑在"今天"与"明天"的样本上。
+     *
+     * 为什么要分开跑：`min` 是个会被最差那一段绑架的统计量。两段混在一起时，
+     * "今天实线 4.2、明天虚线 2.4" 会报成"最差 2.4"，玩家看到的却是"今天的线很清楚" ——
+     * 数字没错，但它回答的不是这个问题。
+     */
+    const seg = (d: 0 | 1) => {
+      const dots = this.probeDots(
+        this.pathSpots.filter((q) => q.day === d),
+        PATH_DOT_R,
+      );
+      const mids = this.probeDots(
+        this.pathMidSpots.filter((q) => q.day === d),
+        4,
+      );
+      /* 细窗（半径 1 世界 px ≈ 2.5px 窗）：判"虚线有没有留空"。
+         宽窗（半径 4）会把缺口两侧的墨一起收进来 ⇒ 虚线也永远"有笔触"，
+         那就等于拿一把量不出差别的尺去证差别（§18.4 的同类错）。 */
+      const fine = this.probeDots(
+        this.pathMidSpots.filter((q) => q.day === d),
+        1,
+      );
+      return {
+        n: dots.n,
+        min: dots.min,
+        median: dots.median,
+        covered: dots.covered,
+        offScreen: dots.offScreen,
+        midN: mids.n,
+        midCovered: mids.covered,
+        midMedian: mids.median,
+        midMin: mids.min,
+        fineN: fine.n,
+        fineCovered: fine.covered,
+        /* 细窗逐枚明细：判据红的时候要能一眼看出"是哪一枚空了"，否则只能猜。 */
+        finePer: fine.per.map((q) => ({
+          wx: q.wx,
+          wy: q.wy,
+          tx: q.tx,
+          ty: q.ty,
+          px: q.px,
+          py: q.py,
+          spread: q.spread,
+          bgL: q.bg,
+          best: q.best,
+          bRGB: q.bRGB,
+          bgRGB: q.bgRGB,
+        })),
+      };
+    };
+    this.pathCutLum = this.cutCenterLum();
     return {
       ...r,
       per,
@@ -959,7 +1142,59 @@ export class MapRenderer {
       dotsOnPath: this.dotsOnPath,
       drawnAfter: this.pathAfter,
       lineMode: PATH_LINE,
+      daySplit: PATH_DAY,
+      /* 渲染器**自己**看到的起点与前两步：判据红的时候先对这三个数，
+         不要拿"钩子说的路径"去推（两边看到的若是两条不同的路径，越推越远）。 */
+      from: this.pathFromSeen,
+      head: this.pathHeadSeen,
+      startPair: this.pathStartSeen,
+      /* 原始登记（不走 `probeDots`）：中点坐标若与路径对不上，先看这一行，
+         不要从 `per` 里的统计量反推（那是二次加工过的）。 */
+      midsRaw: this.pathMidSpots.map((q) => ({
+        x: q.x,
+        y: q.y,
+        day: q.day,
+        from: [q.fromX, q.fromY],
+        to: [q.toX, q.toY],
+      })),
+      day: {
+        len: this.pathLen,
+        cut: this.pathCut,
+        /** 只有"今天走不完"且开关打开时才真的有交界。 */
+        split: PATH_DAY && this.pathCut > 0 && this.pathCut < this.pathLen,
+        cutLum: this.pathCutLum,
+        now: seg(0),
+        next: seg(1),
+      },
     };
+  }
+
+  /**
+   * 交界格**中心像素**的相对亮度。
+   *
+   * 为什么不复用 `probeDots` 的 `min/bg`：刻痕是画在**线上面**的一小段深色短杠，
+   * 它的证据是"这一格的正中心被压黑了" —— 而 `probeDots` 统计的是整块窗口的最亮/最暗，
+   * 会被旁边的金色线头拉回原样。取单点才能把"刻痕在不在"与"线在不在"分开。
+   */
+  private cutCenterLum(): number | null {
+    if (this.pathCut <= 0 || this.pathCut >= this.pathLen) return null;
+    const spot = this.pathSpots.find((q) => q.day === 0);
+    if (!spot) return null;
+    /* 交界格的坐标 = 今天的最后一步。`pathSpots` 里 day===0 的最后一枚就是它。 */
+    const todays = this.pathSpots.filter((q) => q.day === 0);
+    const last = todays[todays.length - 1] ?? spot;
+    const ctx = this.ctx;
+    const { viewW, viewH } = this.camera;
+    const dpr = this.dpr;
+    const px = Math.round((last.x * this.camera.zoom + this.camera.x) * dpr);
+    const py = Math.round((last.y * this.camera.zoom + this.camera.y) * dpr);
+    if (px < 0 || py < 0 || px >= Math.round(viewW * dpr) || py >= Math.round(viewH * dpr)) return null;
+    const d = ctx.getImageData(px, py, 1, 1).data;
+    const f = (v: number): number => {
+      const u = v / 255;
+      return u <= 0.03928 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
+    };
+    return +(0.2126 * f(d[0]) + 0.7152 * f(d[1]) + 0.0722 * f(d[2])).toFixed(4);
   }
 
   /**
@@ -999,6 +1234,8 @@ export class MapRenderer {
     const per: Array<{
       px: number;
       py: number;
+      wx: number;
+      wy: number;
       /** 所属格（世界格坐标）—— 探针用它把"路径格"与"落点格"对上同一套 id。 */
       tx: number;
       ty: number;
@@ -1074,7 +1311,7 @@ export class MapRenderer {
       const bg = around[Math.floor(around.length / 2)];
       if (spread < 40) covered++;
       const best = Math.max(ratio(bright, bg), ratio(dark, bg));
-      per.push({ px, py, tx: Math.floor(s.x / TILE), ty: Math.floor(s.y / TILE), terrain: s.terrain, core: +ratio(bright, bg).toFixed(2), ink: +ratio(dark, bg).toFixed(2), bg: +lum(bg).toFixed(3), spread: +spread.toFixed(0), best: +best.toFixed(2), bRGB: bright.join(','), dRGB: dark.join(','), bL: +lum(bright).toFixed(3), bgRGB: bg.join(',') });
+      per.push({ px, py, wx: +s.x.toFixed(1), wy: +s.y.toFixed(1), tx: Math.floor(s.x / TILE), ty: Math.floor(s.y / TILE), terrain: s.terrain, core: +ratio(bright, bg).toFixed(2), ink: +ratio(dark, bg).toFixed(2), bg: +lum(bg).toFixed(3), spread: +spread.toFixed(0), best: +best.toFixed(2), bRGB: bright.join(','), dRGB: dark.join(','), bL: +lum(bright).toFixed(3), bgRGB: bg.join(',') });
       bucket.n++;
       if (best < bucket.min) bucket.min = +best.toFixed(2);
     }
@@ -1238,6 +1475,9 @@ export class MapRenderer {
       this.reachSpots = [];
       this.pathSpots = [];
       this.pathMidSpots = [];
+      this.pathLen = 0;
+      this.pathCut = 0;
+      this.pathCutLum = null;
       this.dotsOnPath = 0;
     }
     const { state, player } = vm;
@@ -1390,10 +1630,9 @@ export class MapRenderer {
      *  ★ 首版写成 `this.pathAfter ? [] : []`（两支都是空数组 ⇒ 永远 truthy）⇒
      *    `?devpathafter=0` 的旧路径分支成了**死代码**，两臂读数逐位相同，
      *    看上去"这条判据通过了"，其实是两臂都没走另一条路。 */
-    const afterPath: Array<[number, number, number, number, number]> | null = this.pathAfter ? [] : null;
+    const afterPath: Array<[number, number, number, number, number, number]> | null = this.pathAfter ? [] : null;
     /** `line` 形态的折线（同样推迟到光照之后；`null` = 不画）。 */
-    let afterLine: { pts: Array<[number, number]>; corners: Array<[number, number, number, number]>; end: [number, number] } | null =
-      null;
+    let afterLine: PathLine | null = null;
     let statPathDots = 0;
     // 边带落笔：默认（`afterBands===null`）立即填充，与原实现逐像素一致；开启 (1) 时只登记。
     // `statRects/statPx` 只累加、不参与绘制（见 `BAND_STATS`）。
@@ -1554,25 +1793,59 @@ export class MapRenderer {
     }
 
     if (vm.path && vm.path.length > 1) {
-      /* `line` 形态的折线点：从**英雄脚下**开始（HoMM3 同款），一格一个格心。 */
-      const linePts: Array<[number, number]> = [];
-      const corners: Array<[number, number, number, number]> = [];
+      const steps = vm.path;
+      /* 起点 = **英雄脚下**。`buildPath()` 只返回步子、**不含起点**（`pathfinding.ts:138`），
+         所以不能拿 `steps[0]` 当起点 —— 那会把"英雄→第一格"整段丢掉。
+         §18 的提交信息写着"从英雄脚下出发"，当时其实短了一格，这里补上。 */
+      const fromP: GridPos = vm.pathFrom ?? steps[0];
+      /* 今天走完几步：`PATH_DAY=false`（负向对照）⇒ 整条都算今天，等同旧表现。 */
+      const cut = PATH_DAY
+        ? Math.max(0, Math.min(vm.pathDay ?? steps.length, steps.length))
+        : steps.length;
+      this.pathLen = steps.length;
+      this.pathCut = cut;
+      this.pathFromSeen = { x: fromP.x, y: fromP.y };
+      this.pathHeadSeen = steps.slice(0, 3).map((q) => ({ x: q.x, y: q.y }));
+      /* 起点对（英雄格 → 第一步）：这是"折线真的从脚下出发"的硬证据。 */
+      this.pathStartSeen = {
+        from: { x: fromP.x, y: fromP.y },
+        first: steps[0] ? { x: steps[0].x, y: steps[0].y } : null,
+      };
+      const hasSplit = cut > 0 && cut < steps.length;
+      /* 折线上的点（含英雄脚下那一枚）：`pts[i]`（i≥1）= 第 i 步的格心 ⇒ 分段只需比 `i <= cut`。 */
+      const pts: Array<{ x: number; y: number }> = [
+        { x: fromP.x * TILE + TILE / 2, y: fromP.y * TILE + TILE / 2 },
+      ];
+      const cornersNow: Array<[number, number, number, number]> = [];
+      const cornersNext: Array<[number, number, number, number]> = [];
       let prevDx = 0;
       let prevDy = 0;
       let endDir: [number, number] = [0, 0];
-      for (let k = 1; k < vm.path.length; k++) {
-        const p = vm.path[k];
+      let cutDir: [number, number] = [0, 0];
+      /* ★ 从 k = 0 起：`buildPath()` 返回的是**纯步子**，`steps[0]` 就是第一格。
+         首版（§18）写的是 `for (k = 1; ...)` 并把 `steps[0]` 当起点 —— 那是把
+         "步子数组"当成了"含起点数组"。后果不是"少一条线段"，而是
+         **英雄→第 0 步→第 1 步被画成一条直线**（在拐角处抄近路），
+         探针量到的中点因此落在没有线的格子上（实测 112,400 那枚空窗）。 */
+      for (let k = 0; k < steps.length; k++) {
+        const p = steps[k];
         const cx = p.x * TILE + TILE / 2;
         const cy = p.y * TILE + TILE / 2;
         /* 方向：指向下一格；末步没有"下一格"⇒ 沿用上一步的方向（否则终点会画成一个无向的团）。
            ★ 别照抄"四邻接"这个想当然：`pathfinding.ts` 的 `DIRS` 是 **8 邻域**（含对角），
-           实测一条 10 步路线里就出现过 `1,-1` ⇒ `dx/dy` 可能同时非 0（45° 箭头），
-           `drawPathArrow` 用 `atan2` 旋转，四个正方向与四个斜方向都能画。 */
-        const next = k + 1 < vm.path.length ? vm.path[k + 1] : null;
-        const prev = vm.path[k - 1];
+           实测一条 10 步路线里就出现过 `1,-1` ⇒ `dx/dy` 可能同时非 0（45° 箭头）。 */
+        const next = k + 1 < steps.length ? steps[k + 1] : null;
+        const prev = k === 0 ? fromP : steps[k - 1];
         const dx = next ? Math.sign(next.x - p.x) : Math.sign(p.x - prev.x);
         const dy = next ? Math.sign(next.y - p.y) : Math.sign(p.y - prev.y);
         const isLast = !next;
+        /* 第 k 步（0-based）是"第 k+1 步"⇒ 属于今天当且仅当 `k < cut`。 */
+        const day: 0 | 1 = k < cut ? 0 : 1;
+        pts.push({ x: cx, y: cy });
+        /* 刻痕要**横切"今天"这条路**，所以取的是"到达方向"（今天最后一步），
+           不是"明天第一步"的方向 —— 首版取后者，遇到"今天竖直、明天水平"就会得到
+           一根与今天线**平行**的黑条，看起来只是线上一段脏，不是"到此为止"。 */
+        if (hasSplit && k === cut - 1) cutDir = [dx, dy];
         statPathDots++;
         if (REACH_PROBE && this.pathSpots.length < 400) {
           this.pathSpots.push({
@@ -1581,44 +1854,77 @@ export class MapRenderer {
             terrain: map.tiles[idx(map, p.x, p.y)].terrain,
             dx,
             dy,
+            day,
           });
         }
         if (REACH_PROBE && this.pathMidSpots.length < 400) {
-          /* 相邻格中点（英雄格 → 第 1 步也算一段）：连续线在这里应该有笔触，
-             折角箭头在这里必然是空的 —— 这一对数就是"两种形态"的硬区别。 */
-          const q = vm.path[k - 1];
-          this.pathMidSpots.push({
-            x: ((q.x + p.x) / 2) * TILE + TILE / 2,
-            y: ((q.y + p.y) / 2) * TILE + TILE / 2,
-            terrain: map.tiles[idx(map, p.x, p.y)].terrain,
-          });
+          /* 第 k 步那一段的**中点**。`prev` 在 k===1 时是英雄脚下 ——
+             旧代码写的是 `steps[k-1]`，k=1 时算出来是"第一步→第一步"的中点，
+             也就是把"英雄→第一格"漏掉、还多量了一枚落在格心上的假样本。 */
+          /* 每步取 **3 个**采样点（25% / 50% / 75%），不是只要中点。
+             理由是为了量"虚线"：虚线的实段与空档按 3.2/3.4 交替，而采样点相隔一整格（32px），
+             每个采样点落在实段还是空档基本是随机的 —— 只取 1 个点，遇到"恰好落在实段"的概率
+             ~48%，两段合计就足以让一条真虚线被读成实线（实测：明天 2 枚采样 0 空）。
+             3 个点 × 多步之后，空档比例会收敛到占空比（~51%），判据才有分辨力。 */
+          const px0 = prev.x * TILE + TILE / 2;
+          const py0 = prev.y * TILE + TILE / 2;
+          const px1 = p.x * TILE + TILE / 2;
+          const py1 = p.y * TILE + TILE / 2;
+          for (const f of [0.25, 0.5, 0.75]) {
+            this.pathMidSpots.push({
+              x: px0 + (px1 - px0) * f,
+              y: py0 + (py1 - py0) * f,
+              terrain: map.tiles[idx(map, p.x, p.y)].terrain,
+              day,
+              fromX: prev.x,
+              fromY: prev.y,
+              toX: p.x,
+              toY: p.y,
+            });
+          }
         }
         if (PATH_LINE) {
-          if (k === 1) {
-            const h = vm.path[0];
-            linePts.push([h.x * TILE + TILE / 2, h.y * TILE + TILE / 2]);
-          }
-          linePts.push([cx, cy]);
           /* 只在**拐点**补一枚小折角：折线本身已经把方向说清楚了，
              连续在每格都补就等于又退回"折角箭头"那一版。 */
-          if (k > 1 && (dx !== prevDx || dy !== prevDy)) corners.push([cx, cy, dx, dy]);
+          /* 交界格不补折角：那里已经有一道刻痕，两个标记摞在同一格会互相啃
+             （实测 3× 特写里那一格是"黑条 + 金箭头 + 虚线起点"糊成一团）。 */
+          /* 交界格**两侧**都不补折角：`k === cut - 1` 是交界格本身（今天最后一步），
+             `k === cut` 是明天的第一步 —— 这两个格子上已经有刻痕/虚线起点，
+             再叠一枚金色折角就变成"楔子 + 黑条"糊在一起（3× 特写里看得很清楚）。 */
+          if (
+            k > 0 &&
+            (dx !== prevDx || dy !== prevDy) &&
+            !(hasSplit && (k === cut || k === cut - 1))
+          ) {
+            (day === 0 ? cornersNow : cornersNext).push([cx, cy, dx, dy]);
+          }
           if (isLast) endDir = [dx, dy];
         } else if (afterPath) {
           // 默认：只登记，落笔在光照之后（见文件末尾重放段）
-          afterPath.push([cx, cy, dx, dy, isLast ? 1 : 0]);
+          afterPath.push([cx, cy, dx, dy, isLast ? 1 : 0, day === 0 ? 0 : 1]);
         } else {
           // `?devpathafter=0`：旧路径 —— 立刻画、且被整屏 multiply 乘暗（负向对照用）
-          drawPathArrow(ctx, cx, cy, dx, dy, isLast);
+          drawPathArrow(ctx, cx, cy, dx, dy, isLast, day === 1);
         }
         prevDx = dx;
         prevDy = dy;
       }
-      if (PATH_LINE && linePts.length > 1) {
+      if (PATH_LINE) {
+        /* 分段：今天 = pts[0..cut]，明天 = pts[cut..]（**共享交界点**，线才不断开）。
+           `cut===0` ⇒ 今天一段（只剩英雄脚下那一枚点，画不出来）⇒ 全是明天；
+           `cut===len` ⇒ 没有明天。 */
+        const now = pts.slice(0, cut + 1).map((q): [number, number] => [q.x, q.y]);
+        const nextPts =
+          cut < pts.length - 1 ? pts.slice(cut).map((q): [number, number] => [q.x, q.y]) : [];
+        const cutPt: [number, number, number, number] | null = hasSplit
+          ? [pts[cut].x, pts[cut].y, cutDir[0], cutDir[1]]
+          : null;
+        const L: PathLine = { now, next: nextPts, cornersNow, cornersNext, end: endDir, cut: cutPt };
         if (this.pathAfter) {
-          afterLine = { pts: linePts, corners, end: endDir };
+          afterLine = L;
         } else {
           // 负向对照：同样画在光照之前
-          drawPathLine(ctx, linePts, corners, endDir);
+          drawPathLine(ctx, L);
         }
       }
     }
@@ -1793,8 +2099,8 @@ export class MapRenderer {
       ctx.save();
       ctx.translate(cam.x, cam.y);
       ctx.scale(cam.zoom, cam.zoom);
-      for (const [cx, cy, dx, dy, last] of afterPath) {
-        drawPathArrow(ctx, cx, cy, dx, dy, last === 1);
+      for (const [cx, cy, dx, dy, last, nxt] of afterPath) {
+        drawPathArrow(ctx, cx, cy, dx, dy, last === 1, nxt === 1);
       }
       ctx.restore();
     }
@@ -1802,7 +2108,7 @@ export class MapRenderer {
       ctx.save();
       ctx.translate(cam.x, cam.y);
       ctx.scale(cam.zoom, cam.zoom);
-      drawPathLine(ctx, afterLine.pts, afterLine.corners, afterLine.end);
+      drawPathLine(ctx, afterLine);
       ctx.restore();
     }
 

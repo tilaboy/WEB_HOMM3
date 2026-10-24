@@ -1,4 +1,4 @@
-import type { Army, GameConfig, GameState, GridPos, GuardReward, MapObject, MapSize, MinePayload } from './core/types.js';
+import type { Army, GameConfig, GameState, GridPos, GuardReward, Hero, MapObject, MapSize, MinePayload } from './core/types.js';
 import { MAP_SIZES } from './core/types.js';
 import { HERO_SIGHT, createGame } from './core/map/generator.js';
 import { buildPath, computePaths, stepCost } from './core/map/pathfinding.js';
@@ -652,6 +652,14 @@ let selected: string | null = state.heroOrder[0] ?? null;
 let fieldFull: PathField | null = null;
 let fieldTurn: PathField | null = null;
 let previewPath: GridPos[] | null = null;
+/**
+ * 预览路径的两个补充量（与 `previewPath` 同生同灭）：
+ *   · `previewFrom` = 英雄所在格。`buildPath()` 只返回步子、不含起点，渲染器拿它当折线起点；
+ *   · `previewDay`  = 沿这条路径**今天**能走完的步数（``previewPath.length`` 或更大 ⇒ 全程今天）。
+ * 没有它们，跨天行程在图上就是"一条实线"，玩家看不出今天到底能走到哪。
+ */
+let previewFrom: GridPos | null = null;
+let previewDay = 0;
 let hover: GridPos | null = null;
 let anim: { heroId: string; path: GridPos[]; i: number; t: number } | null = null;
 /** 英雄踏入当前格之前所在的格子，野怪战撤退时要退回这里 */
@@ -777,6 +785,40 @@ function renderLog(): void {
 }
 
 /* ---------------- movement ---------------- */
+
+/**
+ * 沿 `path` 从英雄脚下累加 `stepCost`，返回**今天能走完的步数**。
+ *
+ * 为什么不用"剩余移动力 ÷ 平均代价"估：地形代价差 1~3 倍（道路 0.75 / 草地 1 / 沼泽 1.75），
+ * 估出来的分界会落在**今天其实走不到**的格子上 —— 而那正是这条信息要防的错。
+ * 这里逐格累加，与 `tickAnim` 里"走一步扣一次"用的是**同一个** `stepCost`；
+ * 两者若不一致，玩家看到的线与英雄实际停下的位置就会错开一格。
+ */
+function dayReachSteps(hero: Hero, path: GridPos[]): number {
+  let spent = 0;
+  for (let i = 0; i < path.length; i++) {
+    const from = i === 0 ? hero.pos : path[i - 1];
+    const c = stepCost(state, from, path[i]);
+    if (!Number.isFinite(c) || spent + c > hero.movePoints) return i;
+    spent += c;
+  }
+  return path.length;
+}
+
+/** 设预览路径的唯一入口 —— 三个量必须同时写，漏一个就会出现"线从别处开始"或"分界错位"。 */
+function setPreview(hero: Hero | null, g: GridPos | null): void {
+  if (!hero || !g || !fieldFull) {
+    previewPath = null;
+    previewFrom = null;
+    previewDay = 0;
+    return;
+  }
+  const path = buildPath(state, fieldFull, hero.pos, g);
+  previewPath = path.length ? path : null;
+  previewFrom = previewPath ? { x: hero.pos.x, y: hero.pos.y } : null;
+  previewDay = previewPath ? dayReachSteps(hero, previewPath) : 0;
+}
+
 
 function tryMove(target: GridPos): void {
   const hero = selected ? state.heroes[selected] : null;
@@ -1798,15 +1840,14 @@ function updateHover(e: PointerEvent): void {
   if (isFinite(cost) && cost > 0) text += ` · 抵达需 ${Math.round(cost)} 移动力`;
   const hero = selected ? state.heroes[selected] : null;
   if (hero && fieldFull && isFinite(cost) && cost > 0) {
-    const path = buildPath(state, fieldFull, hero.pos, g);
-    previewPath = path.length ? path : null;
+    setPreview(hero, g);
     if (cost > hero.movePoints) {
       // 今天走不完：按每日上限折算还要几天
       const days = 1 + Math.ceil((cost - hero.movePoints) / maxMovePoints(hero, state));
       text += `（今日不够，约需 ${days} 天）`;
     }
   } else {
-    previewPath = null;
+    setPreview(null, null);
   }
   if (t.objectId) {
     const obj = state.map.objects[t.objectId];
@@ -1940,6 +1981,8 @@ function buildViewModel(): ViewModel {
     // 不限移动力的代价场：`shade` 默认靠它区分"走不到"与"压根不能走"（见 MapRenderer 注释）
     walkable: fieldFull ? fieldFull.cost : null,
     path: previewPath,
+    pathFrom: previewFrom,
+    pathDay: previewDay,
     hover,
     dest: pendingDest && state.heroes[pendingDest.heroId] ? pendingDest.dest : null,
     selectedHeroId: selected,
@@ -2171,7 +2214,7 @@ if (bootParams.has('devclear')) {
 }
 // 调试：?devprobe=1 暴露行程状态（tools/destaudit.mjs 端到端审计用）
 if (bootParams.has('devprobe')) {
-  const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void; __mapTint: (on: boolean) => void; __mapShadow: (on: boolean) => void; __mapShadowProbe: () => unknown; __mapShadowOffset: (dy: number) => void; __mapFringe: (tone: string) => void; __mapReachProbe: () => unknown; __mapPathProbe: () => unknown; __mapPreviewTo: (tx: number, ty: number) => unknown };
+  const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void; __mapTint: (on: boolean) => void; __mapShadow: (on: boolean) => void; __mapShadowProbe: () => unknown; __mapShadowOffset: (dy: number) => void; __mapFringe: (tone: string) => void; __mapReachProbe: () => unknown; __mapPathProbe: () => unknown; __mapPreviewTo: (tx: number, ty: number) => unknown; __mapPreviewDay: () => unknown };
   w.__journey = () => ({
     pendingDest,
     walking: !!anim,
@@ -2210,13 +2253,77 @@ if (bootParams.has('devprobe')) {
     const g = { x: tx, y: ty };
     if (!inBounds(state.map, tx, ty)) return { ok: false, reason: '越界' };
     hover = g;
-    const path = buildPath(state, fieldFull, hero.pos, g);
-    previewPath = path.length ? path : null;
-    /* 把**路径本身**也回传：探针要拿它跟渲染器自报的"每步方向"对账（两处独立算，才有意义）。 */
+    setPreview(hero, g);
+    /* 把**路径本身**也回传：探针要拿它跟渲染器自报的"每步方向"对账（两处独立算，才有意义）。
+       另附 `day` / `mp` / `costs`：那三条是 `probe:pathday` 用来验"分界确实落在
+       最后一格可负担的格子上"的**独立**数据（累加口径照抄 `dayReachSteps`，但用的是代价场）。 */
+    const costs = previewPath ? previewPath.map((q) => fieldFull!.cost[idx(state.map, q.x, q.y)]) : [];
     return {
       ok: !!previewPath,
       n: previewPath ? previewPath.length : 0,
       path: previewPath ? previewPath.map((q) => ({ x: q.x, y: q.y })) : [],
+      day: previewDay,
+      mp: hero.movePoints,
+      costs,
+      from: { x: hero.pos.x, y: hero.pos.y },
+    };
+  };
+  /**
+   * 摆一条**今天走不完**的预览路径（`probe:pathday` 用）。
+   *
+   * 为什么需要一个专门的钩子：跨天分段只在"目标超出今日移动力"时出现，
+   * 而 `__mapPreviewTo` 的常规用法（可达点边缘）恰好**永远**在今日范围内 ——
+   * 用它测分段，测出来的永远是"没有分段"，一条永远绿的判据。
+   *
+   * 选点规则：在代价场里取"至少 1.6 倍今日移动力、且不超过 2.6 倍"的格子里最远的一枚，
+   * 保证跨天一次（而不是跨三天 —— 那会让"今天/明天"两段各自都可能看不到）。
+   *
+   * `mpOverride`：临时把移动力设小（探针传 300 ⇒ 3 格出界）——
+   * 满移动力 1800 对应的跨天目标在十几格之外，**整段明天都在屏幕外**，探针取不到像素。
+   * 只在 `setPreview` 那一下生效，算完立刻还原（不动存档、不动别的状态）。
+   */
+  w.__mapPreviewDay = (mpOverride?: number) => {
+    const hero = selected ? state.heroes[selected] : null;
+    if (!hero || !fieldFull) return { ok: false, reason: '没有选中英雄或代价场未算' };
+    const useOverride = typeof mpOverride === 'number' && mpOverride > 0;
+    const mp = useOverride ? (mpOverride as number) : hero.movePoints;
+    const lo = mp * 1.6;
+    const hi = Math.min(mp * 2.6, maxMovePoints(hero, state) * 3);
+    let best: GridPos | null = null;
+    let bestScore = -1;
+    const m = state.map;
+    for (let y = 0; y < m.height; y++) {
+      for (let x = 0; x < m.width; x++) {
+        const c = fieldFull.cost[idx(m, x, y)];
+        if (!Number.isFinite(c) || c < lo || c > hi) continue;
+        if (!isRevealed(state, viewerOf(state), x, y)) continue;
+        /* 横向优先：屏幕是 844×390，**竖直方向只有 195px 半高** ——
+           5 步竖直路径就会把"明天"整段顶出画布，探针取不到像素（实测出界 3/4）。
+           所以先按"|dx| ≥ |dy|"筛，再在同类里取最远。 */
+        const horiz = Math.abs(x - hero.pos.x) >= Math.abs(y - hero.pos.y);
+        const score = c + (horiz ? 10000 : 0);
+        if (score > bestScore) {
+          bestScore = score;
+          best = { x, y };
+        }
+      }
+    }
+    if (!best) return { ok: false, reason: '这一回合没有落在窗口内的目标格' };
+    hover = best;
+    const savedMp = hero.movePoints;
+    if (useOverride) hero.movePoints = mp;
+    setPreview(hero, best);
+    hero.movePoints = savedMp;
+    const costs = previewPath ? previewPath.map((q) => fieldFull!.cost[idx(state.map, q.x, q.y)]) : [];
+    return {
+      ok: !!previewPath,
+      n: previewPath ? previewPath.length : 0,
+      path: previewPath ? previewPath.map((q) => ({ x: q.x, y: q.y })) : [],
+      day: previewDay,
+      mp,
+      costs,
+      target: best,
+      from: { x: hero.pos.x, y: hero.pos.y },
     };
   };
 }

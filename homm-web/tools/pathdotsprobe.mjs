@@ -140,11 +140,15 @@ try {
       const A = await arm(send, evaluate, '', 'default');
       const st = A.st || {};
       const pp = A.pp || {};
-      const expect = A.picked ? A.picked.n - 1 : -1;
+      /* ★ 期望值是 `picked.n`，**不是 n−1**。
+         2026-10-24 三版之前这里是 `n−1`，因为绘制循环从 `k=1` 起、**跳过了第一步**；
+         修好循环之后每步一枚，判据必须跟着改 —— 否则它会因为"多数了一枚"而永远红，
+         或者更糟：被调回去掩盖真 bug。 */
+      const expect = A.picked ? A.picked.n : -1;
 
       check(
         'pathmeta',
-        '渲染器自报的地标数 = 路径步数（每步一枚，不多不少）',
+        '渲染器自报的地标数 = 路径步数（每步一枚，含第一步，不多不少）',
         !!A.picked && st.pathDots === expect && expect >= 3,
         `地标 ${st.pathDots} vs 路径 ${A.picked ? A.picked.n : '?'} 步 ⇒ 期望 ${expect}`,
       );

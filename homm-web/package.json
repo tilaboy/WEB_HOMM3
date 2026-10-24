@@ -47,7 +47,8 @@
     "probe:mapshadow": "node tools/mapshadowprobe.mjs",
     "probe:terrainedge": "node tools/terrainedgeprobe.mjs",
     "probe:reachdots": "node tools/reachdotsprobe.mjs",
-    "probe:pathdots": "node tools/pathdotsprobe.mjs"
+    "probe:pathdots": "node tools/pathdotsprobe.mjs",
+    "probe:pathday": "node tools/pathdayprobe.mjs"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",

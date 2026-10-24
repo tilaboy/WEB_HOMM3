@@ -81,7 +81,7 @@ const ARMS = [
 
 /** 摆一条真实的预览路径（挑一枚可达点当终点，走 `main.ts` 的 `__mapPreviewTo`）。
  *  返回 {tx,ty,n} 或 null —— 截图标题里要写"到哪一格"，否则看图的人不知道该看哪条线。 */
-const PREVIEW = `(() => {
+const PREVIEW_REACH = `(() => {
   const m = window.__mapReachProbe ? window.__mapReachProbe() : null;
   const cands = (m && m.per ? m.per.slice().reverse() : []);
   for (const c of cands) {
@@ -90,6 +90,16 @@ const PREVIEW = `(() => {
   }
   return null;
 })()`;
+
+/** `--preview=day`：摆一条**今天走不完**的路径（临时移动力 200 ⇒ 今天 2 格、明天 2 格），
+ *  用来拍跨天分段（实线金 / 虚线冷 / 交界刻痕）。 */
+const PREVIEW_DAY = `(() => {
+  const r = window.__mapPreviewDay ? window.__mapPreviewDay(200) : null;
+  if (!r || !r.ok) return null;
+  return { tx: r.target.x, ty: r.target.y, n: r.n, day: r.day };
+})()`;
+
+const PREVIEW = argOf('preview', 'reach') === 'day' ? PREVIEW_DAY : PREVIEW_REACH;
 
 let bad = 0;
 const PASS = (c, m) => {
