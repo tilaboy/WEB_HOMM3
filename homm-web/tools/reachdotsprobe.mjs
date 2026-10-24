@@ -52,7 +52,15 @@ async function arm(send, evaluate, query, label) {
     }
     await sleep(100);
   }
-  await sleep(1800);
+  await sleep(1200);
+  /* 等**本帧真的画过染色层**再读数：`__bandStats` 由渲染循环每帧写一次，导航刚完成时它可能还不存在。
+   * 2026-10-24 实测：固定 `sleep(1800)` 时 seed 444 偶发读到 `(无)` ⇒ 三条判据连锁假红（像产品坏了）。 */
+  for (let i = 0; i < 40; i++) {
+    const has = await evaluate('!!window.__bandStats');
+    if (has) break;
+    await sleep(150);
+  }
+  await sleep(300); // 再给一帧，让登记与取色落在同一帧上
   const st = await evaluate('window.__bandStats || null');
   const m = await evaluate('window.__mapReachProbe ? window.__mapReachProbe() : null');
   if (!AS_JSON) {
@@ -113,6 +121,42 @@ try {
         `最差 ${m.min} · 中位 ${m.median}（暖芯/墨边各一，取较优）`,
       );
       check('clear', '没有一枚点被实体盖住', m.covered === 0, `covered ${m.covered} 枚（块内明度差 < 40）`);
+
+      /* 逐地形（2026-10-24 补）：全局最差只说明"有某一枚够亮"，说明不了"每一类地形都够亮"。
+         雪原 #eef3f7 与岩地 #a3a09a 差 100 多级明度，混在一起的 min 会被最暗那只绑架。 */
+      const bt = m.byTerrain || {};
+      const rowsT = Object.entries(bt).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+      if (!AS_JSON && rowsT.length) {
+        console.log('   地形      登记  量到   最差   中位');
+        for (const [t, v] of rowsT) {
+          console.log(
+            `   ${String(t).padEnd(8)}  ${String(v.reg).padStart(4)}  ${String(v.n).padStart(4)}   ` +
+              `${String(v.min).padStart(5)}  ${String(v.median).padStart(5)}`,
+          );
+        }
+      }
+      const weak = rowsT.filter(([, v]) => v.n > 0 && v.min < 3);
+      check(
+        'byterrain',
+        '每类地形上的点都读得出（该地形最差 ≥ 3.0）',
+        rowsT.length > 0 && weak.length === 0,
+        weak.length
+          ? weak.map(([t, v]) => `${t}=${v.min}`).join(' · ')
+          : rowsT.map(([t, v]) => `${t}=${v.min}`).join(' · '),
+      );
+      /* 覆盖判据只问责**屏内**的样本：`reg - off > 0`（屏内有落点）却 `n === 0`（量不到）才算假绿。
+         全在视口边缘的地形（`reg === off`）是"这一帧没有可判样本"，只作观察，不作断言。 */
+      const unmeasured = rowsT.filter(([, v]) => v.reg - v.off > 0 && v.n === 0);
+      const edgeOnly = rowsT.filter(([, v]) => v.reg > 0 && v.reg - v.off === 0);
+      check(
+        'terraincov',
+        '屏内有落点的地形都必须量得到（有对象无可判数据 = 假绿）',
+        unmeasured.length === 0,
+        unmeasured.length
+          ? `量不到：${unmeasured.map(([t]) => t).join('、')}`
+          : `${rowsT.length} 类地形全部量到` +
+            (edgeOnly.length ? `（${edgeOnly.map(([t]) => t).join('、')} 仅有视口边缘样本，未计入）` : ''),
+      );
 
       if (SELFCHECK) {
         const S = await arm(send, evaluate, '&devband=shade', 'shade(无点)');

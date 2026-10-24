@@ -384,14 +384,36 @@ async function measure(send, evaluate, url, { needStart = false, needHero = fals
   if (needModal) {
     // 羊皮纸层只在"非 wide 弹窗"上出现（事件 / 战报 / AI 动向 / 法术书）。
     // 点「结束一天」必定弹「对手动向」—— 这是最稳定的一扇普通弹窗。
-    await evaluate(`(() => {
-      const b = [...document.querySelectorAll('#thumb button, button')].find((x) => /结束一天/.test(x.textContent || ''));
-      if (b) b.click();
-      return 1;
-    })()`);
-    for (let i = 0; i < 40; i++) {
-      if (await evaluate(`!!document.querySelector('.modal:not(.wide)')`)) break;
-      await sleep(150);
+    //
+    // ★ 2026-10-24：这一次点击**曾经偶发落空**（全量回归里 `contrast` 变红，单独复跑又绿）。
+    //   落空有两种成因，都必须处理：① 按钮还没进 DOM/还是 disabled（上一段过天演出没结束）；
+    //   ② 点击发生但弹窗晚于一帧。所以改成「等到按钮可点 → 点 → 等弹窗」最多两轮，
+    //   而不是"点一次 + 死等 6s"。**偶发红的门比没有门更糟**：它会把真实失败淹掉。
+    const clickEndDay = async () => {
+      for (let i = 0; i < 60; i++) {
+        const st = await evaluate(`(() => {
+          const b = [...document.querySelectorAll('#thumb button, button')].find((x) => /结束一天/.test(x.textContent || ''));
+          if (!b) return 'missing';
+          if (b.disabled) return 'disabled';
+          b.click();
+          return 'clicked';
+        })()`);
+        if (st === 'clicked') return true;
+        await sleep(150);
+      }
+      return false;
+    };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await clickEndDay();
+      let up = false;
+      for (let i = 0; i < 30; i++) {
+        if (await evaluate(`!!document.querySelector('.modal:not(.wide)')`)) {
+          up = true;
+          break;
+        }
+        await sleep(150);
+      }
+      if (up) break;
     }
     await sleep(400);
   }

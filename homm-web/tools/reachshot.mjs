@@ -51,9 +51,14 @@ if (!(await serveInProcess(DIST, PORT))) {
   console.error(`✗ 前置不满足：自起 dev server 未就绪（port ${PORT}）。`);
   process.exit(2);
 }
+/* `--extra=` 追加查询串：专门用来拍"同机位的旧路径"（`--extra=&devpathafter=0`）等对照臂。
+ * 注意 shell 引用：`--extra='&devpathafter=0'`（不加引号会被 shell 截成后台任务）。
+ * 首版没有这个参数时，两臂拿到**同一个 URL** ⇒ `pathafter=0` 从未生效、两张特写逐位相同 ——
+ * 又一次"两臂读数一样"的假通过（与 §15.6 的补拍错事同型）。 */
+const EXTRA = argOf('extra', '');
 const BASE =
   `http://127.0.0.1:${PORT}/index.html?devquick=1&devreveal=1&devprobe=1&devbandstats=1&devreachprobe=1` +
-  `&devseed=${SEED}&devlight=${LIGHT}`;
+  `&devseed=${SEED}&devlight=${LIGHT}${EXTRA}`;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const FIXED_NOW = 1000;
@@ -73,6 +78,18 @@ const ARMS = [
   ['shade', '&devband=shade'],
   ['none', '&devtint=0'],
 ];
+
+/** 摆一条真实的预览路径（挑一枚可达点当终点，走 `main.ts` 的 `__mapPreviewTo`）。
+ *  返回 {tx,ty,n} 或 null —— 截图标题里要写"到哪一格"，否则看图的人不知道该看哪条线。 */
+const PREVIEW = `(() => {
+  const m = window.__mapReachProbe ? window.__mapReachProbe() : null;
+  const cands = (m && m.per ? m.per.slice().reverse() : []);
+  for (const c of cands) {
+    const r = window.__mapPreviewTo ? window.__mapPreviewTo(c.tx, c.ty) : null;
+    if (r && r.ok && r.n >= 4) return { tx: c.tx, ty: c.ty, n: r.n };
+  }
+  return null;
+})()`;
 
 let bad = 0;
 const PASS = (c, m) => {
@@ -99,8 +116,10 @@ try {
       });
 
       /** 一臂：导航 → 等 canvas → 冻帧 → 读数（+ 截图） */
-      async function capture(arm, clip) {
-        await send('Page.navigate', { url: BASE + (arm === 'warmup' ? '' : ARMS.find(([n]) => n === arm)[1]) });
+      async function capture(arm, clip, pre = null) {
+        /* 不在 `ARMS` 里的臂（如 `path`、`warmup`）沿用默认查询串 —— 它们靠 `pre` 改状态，不靠 URL。 */
+        const suffix = (ARMS.find(([n]) => n === arm) || [arm, ''])[1];
+        await send('Page.navigate', { url: BASE + suffix });
         let ready = false;
         for (let i = 0; i < 120; i++) {
           await sleep(120);
@@ -114,10 +133,16 @@ try {
           return null;
         }
         await sleep(1400);
+        if (pre) {
+          const r = await evaluate(pre);
+          if (r) console.log(`[${arm}] 预置：${JSON.stringify(r)}`);
+          await sleep(420); // 让主循环按新状态画过一帧
+        }
         await evaluate(FREEZE);
         await sleep(320);
         const st = await evaluate('window.__bandStats || null');
         const m = await evaluate('window.__mapReachProbe ? window.__mapReachProbe() : null');
+        const pm = await evaluate('window.__mapPathProbe ? window.__mapPathProbe() : null');
         if (arm !== 'warmup') {
           console.log(
             `[${arm}] stats.dots=${st ? st.dots : '(无)'} · 量到 ${m ? m.n : '(无)'} 枚 · ` +
@@ -136,7 +161,7 @@ try {
             writeFileSync(path.join(OUT, `reach-${arm}-zoom.png`), Buffer.from(z.data, 'base64'));
           }
         }
-        return { st, m };
+        return { st, m, pm };
       }
 
       const warm = await capture('warmup', null);
@@ -197,6 +222,26 @@ try {
       PASS(rest.shade && rest.shade.st && rest.shade.st.dots === 0, `shade 臂一枚点都不画（${rest.shade && rest.shade.st ? rest.shade.st.dots : '?'}）`);
       PASS(!!rest.none && (!rest.none.st || rest.none.st.dots === 0), `none 臂一枚点都不画（整层不画 ⇒ 连 __bandStats 都不写）`);
       PASS(!!(rest.shade && rest.shade.st && rest.shade.st.shade > 0), `shade 臂仍在压暗格（${rest.shade && rest.shade.st ? rest.shade.st.shade : '?'} 格）`);
+
+      /* 第五臂：**预览路径**（`__mapPreviewTo`）。窗口要跟着路径走 —— 路径通常横跨大半个屏，
+         用点的窗口会把它裁掉一半；所以先跑一趟读 `__mapPathProbe().per`，再按路径包围盒补拍。 */
+      const P0 = await capture('path', null, PREVIEW);
+      const ppts = ((P0 && P0.pm && P0.pm.per) || []).map((p) => ({ x: p.px / DPR, y: p.py / DPR }));
+      PASS(
+        !!P0 && P0.pm && P0.pm.n > 0,
+        `路径臂量到地标（${P0 && P0.pm ? P0.pm.n : 0} 枚 · 最差 ${P0 && P0.pm ? P0.pm.min : '?'} · ` +
+          `平均亮度 ${P0 && P0.pm ? P0.pm.meanBL : '?'} · drawnAfter=${P0 && P0.pm ? P0.pm.drawnAfter : '?'}）`,
+      );
+      if (ppts.length >= 3) {
+        const pad = 46;
+        const x0 = Math.max(0, Math.min(...ppts.map((p) => p.x)) - pad);
+        const y0 = Math.max(0, Math.min(...ppts.map((p) => p.y)) - pad);
+        const x1 = Math.min(VW, Math.max(...ppts.map((p) => p.x)) + pad);
+        const y1 = Math.min(VH, Math.max(...ppts.map((p) => p.y)) + pad);
+        const clipPath = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+        console.log(`[clip] 路径包围盒 ⇒ ${JSON.stringify(clipPath)}（只用于 path 臂）`);
+        await capture('path', clipPath, PREVIEW);
+      }
     },
   );
 } catch (e) {

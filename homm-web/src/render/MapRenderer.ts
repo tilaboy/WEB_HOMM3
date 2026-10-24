@@ -144,6 +144,47 @@ const REACH_DOT_R = 2;
 const REACH_DOT_CORE_R = 1;
 
 /**
+ * 预览路径的地标（`vm.path`，按住/悬停时那条路线）。
+ *
+ * 为什么它比可达点**大一号、且是金色**：两者位置同为格心，若同尺寸同色，玩家分不清
+ * "这格能到"和"我要走这格"。层级是「路线 > 边界」—— 6×6 墨底 + 4×4 金芯 vs 4×4/2×2。
+ * 金色 `#ffe6a0` 与跨天小旗 `rgba(240,205,110)` 同族，保证"同一条路线"的两种标记仍是一家人。
+ */
+const PATH_DOT_INK = '#2a1a12';
+const PATH_DOT_CORE = '#ffe6a0';
+const PATH_DOT_R = 3;
+const PATH_DOT_CORE_R = 2;
+
+/**
+ * 路径地标也**画在光照之后**（默认开；`?devpathafter=0` 回退旧路径）。
+ *
+ * 旧代码里它是世界坐标里一枚 `rgba(255,246,214,0.85)` 的 4×4 —— 被整屏 multiply 一起乘暗，
+ * 于是夜里**路线比边界点还暗**（路线是玩家下一步要点的东西，却是整屏最不清楚的一层）。
+ * 与 §15.3 的点、§14 的过渡带同一条纪律 ⇒ 一律画在光照之后。
+ */
+const PATH_AFTER = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devpathafter') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
+/**
+ * 路径格上**不落可达点**（默认开；`?devpathmask=0` 关掉，作负向对照用）。
+ *
+ * 理由：一枚路径地标 = "我要从这格过"，此时再叠一枚"这格能到"的点，同一位置两个标记
+ * 互相啃；而路径本身就是可达区内部的一条线，它的格子从来不需要"能到吗"的回答。
+ */
+const PATH_MASK = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devpathmask') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
+/**
  * 点阵铺在**哪些格**上：`edge`（默认，只描可达区外缘）或 `all`（每格一枚）。
  *
  * 实测对比：`all` 是"每格一个点"，在 844×390 上形成一张**规则格子阵** ——
@@ -490,7 +531,13 @@ export class MapRenderer {
   /** 本帧落点（仅 `?devshadowprobe=1` 时登记），供 `probeShadow()` 取色。 */
   private shadowSpots: Array<{ cx: number; yb: number; w: number }> = [];
   /** 本帧格心点（仅 `?devreachprobe=1` 时登记），供 `probeReach()` 取色。 */
-  private reachSpots: Array<{ x: number; y: number }> = [];
+  private reachSpots: Array<{ x: number; y: number; terrain: string }> = [];
+  /** 本帧路径地标（仅 `?devreachprobe=1` 时登记），供 `probePath()` 取色。 */
+  private pathSpots: Array<{ x: number; y: number; terrain: string }> = [];
+  /** 本帧落在「预览路径」上的可达点数量（默认应为 0 —— 路径已经表达了这条路）。 */
+  private dotsOnPath = 0;
+  /** 路径地标是否画在光照之后（`?devpathafter=0` 回退）。 */
+  pathAfter = PATH_AFTER;
 
   /**
    * 队伍徽标可见性。**默认 `false`** —— 用户试玩裁决：英雄后面跟队伍「点起来更麻烦、
@@ -749,28 +796,26 @@ export class MapRenderer {
    * `spread = L(core) − L(ink)` 同时检查"这块里真的有一枚点"：被实体盖住或根本没画时，
    * 块内明度差会塌到个位数 ⇒ 探针能分辨"没画"和"画了但看不清"，而不是一律报低对比。
    */
-  probeReach(): {
-    n: number;
-    min: number;
-    median: number;
-    covered: number;
-    /** 中心落在画布外、取不到像素的点（视口边缘格）。 */
-    offScreen: number;
-    per: Array<{
-      /** 该点中心的 device px（画布左上为原点）—— 截图工具据此取特写，不另猜镜头。 */
-      px: number;
-      py: number;
-      core: number;
-      ink: number;
-      bg: number;
-      spread: number;
-      best: number;
-      bRGB: string;
-      dRGB: string;
-      bgRGB: string;
-      bL: number;
-    }>;
-  } {
+  probeReach() {
+    return this.probeDots(this.reachSpots, REACH_DOT_R);
+  }
+
+  /** 预览路径的地标（`probeReach` 的同款量法，点更大 ⇒ 半径按 `PATH_DOT_R`）。 */
+  probePath() {
+    const r = this.probeDots(this.pathSpots, PATH_DOT_R);
+    return { ...r, dotsOnPath: this.dotsOnPath, drawnAfter: this.pathAfter };
+  }
+
+  /**
+   * 逐枚点量"它在自己的底色上读不读得出"，并按**地形**分组回传。
+   *
+   * 分组不是好看：§15 只给了全局最差（3.89），而全局最差只说明"有**某一枚**在某个底色上够亮"，
+   * 说明不了"每一类地形都够亮"。雪原 `#eef3f7` 与岩地 `#a3a09a` 差了 100 多级明度，
+   * 一个混在一起的 min 会被最暗那只地形绑架 ⇒ 亮底地形可能整体不及格却看不出来。
+   * 所以判据改成**逐地形**：只要该地形上落过点（`reg > 0`），它的最差就必须 ≥3.0；
+   * 并且每个"落过点"的地形都必须**量得到**（`n > 0`）—— 有对象无可判数据就是假绿（铁律 3）。
+   */
+  private probeDots(spots: Array<{ x: number; y: number; terrain: string }>, dotR: number) {
     const ctx = this.ctx;
     const { viewW, viewH } = this.camera;
     const dpr = this.dpr;
@@ -798,6 +843,10 @@ export class MapRenderer {
     const per: Array<{
       px: number;
       py: number;
+      /** 所属格（世界格坐标）—— 探针用它把"路径格"与"落点格"对上同一套 id。 */
+      tx: number;
+      ty: number;
+      terrain: string;
       core: number;
       ink: number;
       bg: number;
@@ -810,8 +859,15 @@ export class MapRenderer {
     }> = [];
     let covered = 0;
     let offScreen = 0;
-    const half = Math.max(2, Math.round(2 * this.camera.zoom * dpr));
-    for (const s of this.reachSpots) {
+    /** 逐地形：登记数 / 其中出界的 / 量到数 / 最差 / 中位。
+     *  `off` 单独记的理由：只有 1~4 枚点、且全在视口边缘的地形很常见（小片沼泽、一条土路）。
+     *  那不是"读不出"，是"这一帧没有可判样本" ⇒ 判据必须能区分这两件事，
+     *  否则随机图上一片贴边的沼泽就会把门染红（本探针 2026-10-24 实测：seed 222/333/555 全红）。 */
+    const byTerrain: Record<string, { reg: number; off: number; n: number; min: number; median: number }> = {};
+    const half = Math.max(2, Math.round(dotR * this.camera.zoom * dpr));
+    for (const s of spots) {
+      const bucket = (byTerrain[s.terrain] ??= { reg: 0, off: 0, n: 0, min: 99, median: 0 });
+      bucket.reg++;
       const px = Math.round((s.x * this.camera.zoom + this.camera.x) * dpr);
       const py = Math.round((s.y * this.camera.zoom + this.camera.y) * dpr);
       /* 视口边缘的格：点确实画了，但中心落在画布外 ⇒ 取不到像素。
@@ -819,6 +875,7 @@ export class MapRenderer {
       const pad = Math.round(6 * this.camera.zoom * dpr);
       if (px < pad || py < pad || px >= W - pad || py >= H - pad) {
         offScreen++;
+        bucket.off++;
         continue;
       }
       let bright: [number, number, number] | null = null;
@@ -846,7 +903,7 @@ export class MapRenderer {
       // 采到 12 device px 外时，四面里可能三面是邻格的树冠 ⇒ 底色被算成深绿，
       // 于是"点在深色树影上对比不足"——那是探针的错觉，不是玩家的观感。
       const around: Array<[number, number, number]> = [];
-      const off = Math.max(4, Math.round(2.5 * this.camera.zoom * dpr));
+      const off = Math.max(4, Math.round(Math.max(2.5, dotR + 0.5) * this.camera.zoom * dpr));
       for (const [ox, oy] of [
         [off, 0],
         [-off, 0],
@@ -861,15 +918,28 @@ export class MapRenderer {
       const bg = around[Math.floor(around.length / 2)];
       if (spread < 40) covered++;
       const best = Math.max(ratio(bright, bg), ratio(dark, bg));
-      per.push({ px, py, core: +ratio(bright, bg).toFixed(2), ink: +ratio(dark, bg).toFixed(2), bg: +lum(bg).toFixed(3), spread: +spread.toFixed(0), best: +best.toFixed(2), bRGB: bright.join(','), dRGB: dark.join(','), bL: +lum(bright).toFixed(3), bgRGB: bg.join(',') });
+      per.push({ px, py, tx: Math.floor(s.x / TILE), ty: Math.floor(s.y / TILE), terrain: s.terrain, core: +ratio(bright, bg).toFixed(2), ink: +ratio(dark, bg).toFixed(2), bg: +lum(bg).toFixed(3), spread: +spread.toFixed(0), best: +best.toFixed(2), bRGB: bright.join(','), dRGB: dark.join(','), bL: +lum(bright).toFixed(3), bgRGB: bg.join(',') });
+      bucket.n++;
+      if (best < bucket.min) bucket.min = +best.toFixed(2);
+    }
+    for (const [k, b] of Object.entries(byTerrain)) {
+      const vals = per.filter((p) => p.terrain === k).map((p) => p.best).sort((a, b2) => a - b2);
+      b.median = vals.length ? vals[Math.floor(vals.length / 2)] : 0;
+      if (b.n === 0) b.min = 0;
     }
     const sorted = per.map((p) => p.best).sort((a, b) => a - b);
+    /* 平均绝对亮度（`bL` = 该点最亮像素的相对亮度）。对比度对"整屏等比乘暗"**不敏感**
+     * （点与底色一起被乘 ⇒ 比值近似不变），所以想证"画在光照之后"必须看绝对值：
+     * 同一帧、同一格，画面乘暗后旧路径的绝对亮度一定更低。 */
+    const meanBL = per.length ? per.reduce((a, p) => a + p.bL, 0) / per.length : 0;
     return {
       n: per.length,
       min: sorted.length ? sorted[0] : 0,
       median: sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0,
+      meanBL: +meanBL.toFixed(4),
       covered,
       offScreen,
+      byTerrain,
       per: per.slice(0, 40),
     };
   }
@@ -1008,7 +1078,11 @@ export class MapRenderer {
     const cam = this.camera;
     // 格心点登记必须**在本帧开画前**清空：它填在可达染色那一趟（早于实体、早于光照），
     // 而 `shadowSpots` 的清空点在实体循环前 —— 若照抄那一行，会在登记完之后立刻清掉。
-    if (REACH_PROBE) this.reachSpots = [];
+    if (REACH_PROBE) {
+      this.reachSpots = [];
+      this.pathSpots = [];
+      this.dotsOnPath = 0;
+    }
     const { state, player } = vm;
     const map = state.map;
     // 画质基线（G-15 画质腿）：展示图 `grims-showcase` 强制开氛围层。
@@ -1154,6 +1228,13 @@ export class MapRenderer {
     const afterBands: BandRect[] | null = this.haloAfter ? [] : null;
     /** `dots` 的落笔也推迟到光照之后（与边带同一条理由，见落笔处注释）。 */
     const afterDots: Array<[number, number]> = [];
+    /** 预览路径的地标：同样推迟到光照之后。
+     *  `null` 才是"立即画"的哨兵 —— 与 `afterBands` 同一套约定。
+     *  ★ 首版写成 `this.pathAfter ? [] : []`（两支都是空数组 ⇒ 永远 truthy）⇒
+     *    `?devpathafter=0` 的旧路径分支成了**死代码**，两臂读数逐位相同，
+     *    看上去"这条判据通过了"，其实是两臂都没走另一条路。 */
+    const afterPath: Array<[number, number]> | null = this.pathAfter ? [] : null;
+    let statPathDots = 0;
     // 边带落笔：默认（`afterBands===null`）立即填充，与原实现逐像素一致；开启 (1) 时只登记。
     // `statRects/statPx` 只累加、不参与绘制（见 `BAND_STATS`）。
     let statRects = 0;
@@ -1193,6 +1274,13 @@ export class MapRenderer {
         const t = map.tiles[i];
         return !!t.objectId || t.terrain === 'water';
       };
+      /* 预览路径占用的格（`vm.path` 只在"选中英雄 + 悬停"时非空）。
+         用它做两件事：① 这些格不落可达点；② 路径地标自己单独画（见 `afterPath`）。
+         注意路径里**包含英雄自身格**（k=0），那一格本来就没有点，无需特殊处理。 */
+      const pathKeys = new Set<number>();
+      if (PATH_MASK && vm.path) {
+        for (const p of vm.path) pathKeys.add(p.y * map.width + p.x);
+      }
       for (let y = y0; y <= y1; y++) {
         for (let x = x0; x <= x1; x++) {
           const rev = isRevealed(state, player, x, y);
@@ -1221,6 +1309,13 @@ export class MapRenderer {
                    （实测城堡门洞里出现一枚白点）。这类格本来就由美术自己回答"能点"，
                    与边带 `BAND_ART_ONLY` 同一口径。 */
                 if (hasOwnArt(i)) continue;
+                /* 路径让位：这一格已经被"路线"占用了 ⇒ 不再叠一枚"能到"的点。
+                   `?devpathmask=0` 时不建 `pathKeys`（空集）⇒ 点照旧落下，
+                   这里也就能把"被抑制的数量"数出来（负向对照用，见 `dotsOnPath`）。 */
+                if (pathKeys.has(i)) {
+                  this.dotsOnPath++;
+                  continue;
+                }
                 // 只**登记**世界坐标，落笔推迟到 `applyLighting` 之后（见文件末尾重放段）。
                 // 理由与边带同款、而且这里更硬：点的两色是**明度锚**，一旦被整屏 multiply 乘暗，
                 // 暖芯（#fff3c8）会掉到灰度 123 上下、墨边又贴着暗底 ⇒ 实测最差对比 **2.33**。
@@ -1229,7 +1324,9 @@ export class MapRenderer {
                 const cy = y * TILE + TILE / 2;
                 afterDots.push([cx, cy]);
                 statDots++;
-                if (REACH_PROBE && this.reachSpots.length < 400) this.reachSpots.push({ x: cx, y: cy });
+                if (REACH_PROBE && this.reachSpots.length < 400) {
+                  this.reachSpots.push({ x: cx, y: cy, terrain: map.tiles[i].terrain });
+                }
               }
             } else {
               ctx.fillStyle = REACH_TINT; // `shade`（旧默认）：可走 = 整格蓝填充
@@ -1290,16 +1387,38 @@ export class MapRenderer {
           shade: statShade, // `shade` 模式压暗的格数（世界 px² 口径见 `shadePx`）
           shadePx: statShade * TILE * TILE,
           dots: statDots, // `dots` 模式落的格心点数（`audit:bandflip` ⑤ 用它证"点真的在画"）
+          /** 被预览路径"让位"掉的可达点数量（默认应 >0 且这些格上最终**没有**点）。 */
+          dotsOnPath: this.dotsOnPath,
         };
       }
     }
 
     if (vm.path && vm.path.length > 1) {
-      ctx.fillStyle = 'rgba(255,246,214,0.85)';
       for (let k = 1; k < vm.path.length; k++) {
         const p = vm.path[k];
-        ctx.fillRect(p.x * TILE + TILE / 2 - 2, p.y * TILE + TILE / 2 - 2, 4, 4);
+        const cx = p.x * TILE + TILE / 2;
+        const cy = p.y * TILE + TILE / 2;
+        statPathDots++;
+        if (REACH_PROBE && this.pathSpots.length < 400) {
+          this.pathSpots.push({ x: cx, y: cy, terrain: map.tiles[idx(map, p.x, p.y)].terrain });
+        }
+        if (afterPath) {
+          // 默认：只登记，落笔在光照之后（见文件末尾重放段）
+          afterPath.push([cx, cy]);
+        } else {
+          // `?devpathafter=0`：旧路径 —— 立刻画、且被整屏 multiply 乘暗（负向对照用）
+          ctx.fillStyle = PATH_DOT_INK;
+          ctx.fillRect(cx - PATH_DOT_R, cy - PATH_DOT_R, PATH_DOT_R * 2, PATH_DOT_R * 2);
+          ctx.fillStyle = PATH_DOT_CORE;
+          ctx.fillRect(cx - PATH_DOT_CORE_R, cy - PATH_DOT_CORE_R, PATH_DOT_CORE_R * 2, PATH_DOT_CORE_R * 2);
+        }
       }
+    }
+    /* `pathDots` 只能在这趟之后写（`statPathDots` 是上面这段数出来的）⇒ 合并进已写好的对象，
+       不重写整只 —— 否则会把 `dots`/`shade` 那几笔覆盖成 0。 */
+    if (BAND_STATS && statPathDots > 0) {
+      const w = window as unknown as { __bandStats?: Record<string, unknown> };
+      if (w.__bandStats) w.__bandStats.pathDots = statPathDots;
     }
 
     // 跨天行程的目的地小旗：杆 + 三角旗，金色与路径点呼应
@@ -1455,6 +1574,26 @@ export class MapRenderer {
           cy - REACH_DOT_CORE_R,
           REACH_DOT_CORE_R * 2,
           REACH_DOT_CORE_R * 2,
+        );
+      }
+      ctx.restore();
+    }
+
+    /* --- 预览路径的地标：与点同一趟、画在光照**之后**（`?devpathafter=0` 时本数组为空） ---
+       顺序在点之后 ⇒ 路线压在边界点之上（层级：路线 > 边界）。 --- */
+    if (afterPath && afterPath.length > 0) {
+      ctx.save();
+      ctx.translate(cam.x, cam.y);
+      ctx.scale(cam.zoom, cam.zoom);
+      for (const [cx, cy] of afterPath) {
+        ctx.fillStyle = PATH_DOT_INK;
+        ctx.fillRect(cx - PATH_DOT_R, cy - PATH_DOT_R, PATH_DOT_R * 2, PATH_DOT_R * 2);
+        ctx.fillStyle = PATH_DOT_CORE;
+        ctx.fillRect(
+          cx - PATH_DOT_CORE_R,
+          cy - PATH_DOT_CORE_R,
+          PATH_DOT_CORE_R * 2,
+          PATH_DOT_CORE_R * 2,
         );
       }
       ctx.restore();

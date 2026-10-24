@@ -2171,7 +2171,7 @@ if (bootParams.has('devclear')) {
 }
 // 调试：?devprobe=1 暴露行程状态（tools/destaudit.mjs 端到端审计用）
 if (bootParams.has('devprobe')) {
-  const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void; __mapTint: (on: boolean) => void; __mapShadow: (on: boolean) => void; __mapShadowProbe: () => unknown; __mapShadowOffset: (dy: number) => void; __mapFringe: (tone: string) => void; __mapReachProbe: () => unknown };
+  const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void; __mapTint: (on: boolean) => void; __mapShadow: (on: boolean) => void; __mapShadowProbe: () => unknown; __mapShadowOffset: (dy: number) => void; __mapFringe: (tone: string) => void; __mapReachProbe: () => unknown; __mapPathProbe: () => unknown; __mapPreviewTo: (tx: number, ty: number) => unknown };
   w.__journey = () => ({
     pendingDest,
     walking: !!anim,
@@ -2199,6 +2199,21 @@ if (bootParams.has('devprobe')) {
   w.__mapFringe = (tone: string) => { renderer.setFringeTone(tone === 'top' ? 'top' : 'blend'); };
   // 可达格心点的同帧取色（见 MapRenderer.probeReach 注释）：只读缓冲，不改绘制。
   w.__mapReachProbe = () => renderer.probeReach();
+  // 预览路径地标的同帧取色 + 「路径格上还剩几枚可达点」（`probe:pathdots` 用）。
+  w.__mapPathProbe = () => renderer.probePath();
+  /* 摆一条**真实**的预览路径（走 `updateHover` 同一条 `buildPath` + `fieldFull`）。
+   * 为什么不用合成 `pointermove`：探针要的是"这条路线"，而指针坐标要先过 `camera.pick`，
+   * 那是另一套口径（镜头/DPR/缩放都在中间）—— 用格子坐标直接喂，量的就是玩家真会看到的那条。 */
+  w.__mapPreviewTo = (tx: number, ty: number) => {
+    const hero = selected ? state.heroes[selected] : null;
+    if (!hero || !fieldFull) return { ok: false, reason: '没有选中英雄或代价场未算' };
+    const g = { x: tx, y: ty };
+    if (!inBounds(state.map, tx, ty)) return { ok: false, reason: '越界' };
+    hover = g;
+    const path = buildPath(state, fieldFull, hero.pos, g);
+    previewPath = path.length ? path : null;
+    return { ok: !!previewPath, n: previewPath ? previewPath.length : 0 };
+  };
 }
 
 // 调试：?devdays=20 直接空过 N 天，用来观察电脑对手的推进与终局判定
