@@ -49,6 +49,13 @@ export interface ViewModel {
    * 地形代价差 1~3 倍，估出来的分界会落在**走不到**的格子上（那正是这条信息要防的错）。
    */
   pathDay?: number;
+  /**
+   * 沿 `path` 每一天走完的步数（递增，末尾恒等于 `path.length`）。
+   *
+   * `pathDay` 只够画**一道**刻痕 —— 跨三天时第二道就没了，玩家会把三天读成两天。
+   * 由主程序用 `dayStops()` 一次算出整天表；渲染器只负责照表画刻痕。
+   */
+  pathDays?: number[];
   hover: GridPos | null;
   /** 跨天行程的目的地：画一面小旗，提醒玩家"昨天没走完"。 */
   dest: GridPos | null;
@@ -283,8 +290,13 @@ type PathLine = {
   cornersNow: Array<[number, number, number, number]>;
   cornersNext: Array<[number, number, number, number]>;
   end: [number, number];
-  /** 交界格：`[cx, cy, dx, dy]`，`dy` 为**明天第一步**的方向（刻痕垂直于它）。无跨天时为 null。 */
-  cut: [number, number, number, number] | null;
+  /**
+   * 每一天的交界格：`[cx, cy, dx, dy]`，`dy` 为**到达该格的方向**（刻痕横切它）。
+   *
+   * 是**数组**而不是单个：跨三天的行程有两天交界（§21）。只画一次的话，玩家看到
+   * "一道刻痕 + 一段虚线"会读成"两天到"，而实际要三天 —— 这条信息是错的，不是不全。
+   */
+  cuts: Array<[number, number, number, number]>;
 };
 
 /** 一条折线（先墨后亮：外层保证在沙/雪这类亮底上也读得出，与点、边带同一套双色锚）。 */
@@ -341,11 +353,16 @@ function drawPathLine(ctx: CanvasRenderingContext2D, L: PathLine): void {
   for (const [cx, cy, dx, dy] of L.cornersNext) drawPathArrow(ctx, cx, cy, dx, dy, false, true);
   /* 交界刻痕：垂直于**明天第一步**的方向。它同时盖住今天线的末端与明天线的起点 ⇒
      玩家读到的是"这条线在这里被切了一刀"，而不是"两段颜色碰巧接上了"。 */
-  if (L.cut) {
-    const [cx, cy, dx, dy] = L.cut;
+  for (const [cx, cy, dx, dy] of L.cuts) {
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(Math.atan2(dy, dx));
+    /* ★ `+ π/2` 不是可有可无的：`fillRect(-4.5, -1.1, 9, 2.2)` 的长轴在**局部 x** 上，
+       而 `rotate(atan2(dy,dx))` 把局部 x 转到**行进方向** —— 于是这根 9px 的长杠
+       顺着路走，看上去只是"线在那一格粗了一点"，根本没有"切一刀"的意思。
+       转 90° 之后长轴才横跨路径。2026-10-24 实测：改之前 3× 特写下完全看不出刻痕，
+       而 `cut-mark` 判据（只看中心像素是黑的）**照样是绿的** —— 因为顺着路的墨杠
+       也把中心压黑了。判据必须量**两侧**（见 `probePath().day.cutCross`）。 */
+    ctx.rotate(Math.atan2(dy, dx) + (CUT_CROSS ? Math.PI / 2 : 0));
     /* 整条压黑、**不留亮芯**。首版给了它一根金色内芯，结果刻痕中心是亮的（实测 0.8039）——
        "切一刀"读不出来，倒像线上多了个亮点；探针那条"中心被压黑"也就永远红。
        刻痕的语义是**否定**（今天到此为止），所以它必须比线更暗，不能比线更亮。 */
@@ -414,6 +431,22 @@ const PATH_DAY = ((): boolean => {
 const PATH_EDGE = ((): boolean => {
   try {
     return new URLSearchParams(location.search).get('devpathedge') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
+/**
+ * 刻痕是否**横切**路径（默认开；`?devcutcross=0` 画成顺着路的一根墨杠，当负向对照）。
+ *
+ * 为什么需要这个开关：`cut-mark` 原来只量"交界格中心是不是黑的"，而一根**顺着路**的
+ * 墨杠同样会把中心压黑 ⇒ 判据绿着、画面上什么也没有（2026-10-24 实测）。
+ * 现在判据改成量**两侧**（法线 ±3.2 世界 px），这个开关就是它的负向对照：
+ * 关掉之后两侧应该恢复成底色，判据必须变红。
+ */
+const CUT_CROSS = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devcutcross') !== '0';
   } catch {
     return true;
   }
@@ -809,6 +842,11 @@ export class MapRenderer {
   /** 本帧路径的步数、以及"今天走完几步"的交界（`0` 或 `===len` 表示没有跨天）。 */
   private pathLen = 0;
   private pathCut = 0;
+  /** 本帧**全部**交界步数（多天时多于一个）。 */
+  private pathCutsSeen: number[] = [];
+  /** 每道刻痕的屏幕坐标（诊断/取景用）。 */
+  private pathCutsScreen: Array<{ step: number; x: number; y: number; dx: number; dy: number }> =
+    [];
   /** 本帧实际用的起点与头两步（`probePath` 回传，供对账）。 */
   private pathFromSeen: { x: number; y: number } | null = null;
   /** 起点对：英雄格 + 第一步（`probePath` 回传）。 */
@@ -1201,6 +1239,28 @@ export class MapRenderer {
       day: {
         len: this.pathLen,
         cut: this.pathCut,
+        /** 全部交界步数（多天时 >1 个）；`cut` 是第一道的兼容别名。 */
+        cuts: this.pathCutsSeen,
+        cutScreen: this.pathCutsScreen,
+        /**
+         * 每道刻痕的**横向取样**：中心 + 路径两侧各一枚（沿法线 ±3.2 世界 px）。
+         *
+         * 为什么必须量两侧：`cut-mark` 原来只量"中心是不是黑的"，而一根**顺着路**的
+         * 墨杠也会把中心压黑 —— 判据绿着，画面上却什么都没有（2026-10-24 实测：
+         * 3× 特写里那道刻痕根本看不出来）。横向被压黑才证明"横着切过去了"。
+         */
+        cutCross: this.pathCutsScreen.map((g) => {
+          const len = Math.hypot(g.dx, g.dy) || 1;
+          const nx = -g.dy / len;
+          const ny = g.dx / len;
+          const off = 3.2 * this.camera.zoom;
+          return {
+            step: g.step,
+            center: this.lumAtCss(g.x, g.y),
+            a: this.lumAtCss(g.x + nx * off, g.y + ny * off),
+            b: this.lumAtCss(g.x - nx * off, g.y - ny * off),
+          };
+        }),
         /** 只有"今天走不完"且开关打开时才真的有交界。 */
         split: PATH_DAY && this.pathCut > 0 && this.pathCut < this.pathLen,
         cutLum: this.pathCutLum,
@@ -1855,12 +1915,21 @@ export class MapRenderer {
          所以不能拿 `steps[0]` 当起点 —— 那会把"英雄→第一格"整段丢掉。
          §18 的提交信息写着"从英雄脚下出发"，当时其实短了一格，这里补上。 */
       const fromP: GridPos = vm.pathFrom ?? steps[0];
-      /* 今天走完几步：`PATH_DAY=false`（负向对照）⇒ 整条都算今天，等同旧表现。 */
-      const cut = PATH_DAY
-        ? Math.max(0, Math.min(vm.pathDay ?? steps.length, steps.length))
-        : steps.length;
-      this.pathLen = steps.length;
-      this.pathCut = cut;
+      /* 每天走完的步数。`PATH_DAY=false`（负向对照）⇒ 整条都算今天，等同旧表现。 */
+      const len = steps.length;
+      const days = PATH_DAY ? (vm.pathDays ?? [vm.pathDay ?? len]) : [len];
+      /* 交界 = 每天结束的那一步（**不含最后一天**：那是终点，不是"今天到此为止"）。
+         只保留 0 < cut < len 的，其余（走不完/正好走完）都不该落刻痕。 */
+      const cuts = days.filter((d) => d > 0 && d < len);
+      this.pathLen = len;
+      this.pathCut = cuts[0] ?? 0;
+      this.pathCutsSeen = cuts.slice();
+      /** 第 k 步（0-based）属于第几天：越过了几道交界就是第几天。0 = 今天。 */
+      const segOf = (k: number): number => {
+        let n = 0;
+        for (const c of cuts) if (k >= c) n++;
+        return n;
+      };
       this.pathFromSeen = { x: fromP.x, y: fromP.y };
       this.pathHeadSeen = steps.slice(0, 3).map((q) => ({ x: q.x, y: q.y }));
       /* 起点对（英雄格 → 第一步）：这是"折线真的从脚下出发"的硬证据。 */
@@ -1868,7 +1937,7 @@ export class MapRenderer {
         from: { x: fromP.x, y: fromP.y },
         first: steps[0] ? { x: steps[0].x, y: steps[0].y } : null,
       };
-      const hasSplit = cut > 0 && cut < steps.length;
+      const hasSplit = cuts.length > 0;
       /* 折线上的点（含英雄脚下那一枚）：`pts[i]`（i≥1）= 第 i 步的格心 ⇒ 分段只需比 `i <= cut`。 */
       const pts: Array<{ x: number; y: number }> = [
         { x: fromP.x * TILE + TILE / 2, y: fromP.y * TILE + TILE / 2 },
@@ -1878,7 +1947,8 @@ export class MapRenderer {
       let prevDx = 0;
       let prevDy = 0;
       let endDir: [number, number] = [0, 0];
-      let cutDir: [number, number] = [0, 0];
+      /** 每道交界的**到达方向**（记在交界步 `c-1` 上）；按 cut 值索引。 */
+      const cutDirs = new Map<number, [number, number]>();
       /* ★ 从 k = 0 起：`buildPath()` 返回的是**纯步子**，`steps[0]` 就是第一格。
          首版（§18）写的是 `for (k = 1; ...)` 并把 `steps[0]` 当起点 —— 那是把
          "步子数组"当成了"含起点数组"。后果不是"少一条线段"，而是
@@ -1896,13 +1966,19 @@ export class MapRenderer {
         const dx = next ? Math.sign(next.x - p.x) : Math.sign(p.x - prev.x);
         const dy = next ? Math.sign(next.y - p.y) : Math.sign(p.y - prev.y);
         const isLast = !next;
-        /* 第 k 步（0-based）是"第 k+1 步"⇒ 属于今天当且仅当 `k < cut`。 */
-        const day: 0 | 1 = k < cut ? 0 : 1;
+        /* 第 k 步（0-based）属于第几天：越过几道交界就是第几天（0 = 今天）。 */
+        const day: 0 | 1 = segOf(k) === 0 ? 0 : 1;
         pts.push({ x: cx, y: cy });
-        /* 刻痕要**横切"今天"这条路**，所以取的是"到达方向"（今天最后一步），
-           不是"明天第一步"的方向 —— 首版取后者，遇到"今天竖直、明天水平"就会得到
-           一根与今天线**平行**的黑条，看起来只是线上一段脏，不是"到此为止"。 */
-        if (hasSplit && k === cut - 1) cutDir = [dx, dy];
+        /* 刻痕要**横切"今天"这条路** ⇒ 记的是**到达方向**（上一格 → 本格），
+           不是 `dx/dy`（本格 → 下一格）。
+           ★ 这两个在本格拐弯时**正好差 90°**，混用不会报错、只会看起来"有时候对"：
+           2026-10-24 首次实现取了 `dx/dy`，那条路恰好在交界处北→东拐弯，
+           于是"顺着离开方向的长杠"碰巧横切了竖线，看上去是对的；
+           等到换成一条**不拐弯**的直线路径，同一份代码就会画出与线平行的黑条 —— 完全看不见。
+           多天时每一天都要一道，所以按 cut 值分别记。 */
+        if (hasSplit && cuts.includes(k + 1)) {
+          cutDirs.set(k + 1, [Math.sign(p.x - prev.x), Math.sign(p.y - prev.y)]);
+        }
         statPathDots++;
         if (REACH_PROBE && this.pathSpots.length < 400) {
           this.pathSpots.push({
@@ -1945,14 +2021,12 @@ export class MapRenderer {
              连续在每格都补就等于又退回"折角箭头"那一版。 */
           /* 交界格不补折角：那里已经有一道刻痕，两个标记摞在同一格会互相啃
              （实测 3× 特写里那一格是"黑条 + 金箭头 + 虚线起点"糊成一团）。 */
-          /* 交界格**两侧**都不补折角：`k === cut - 1` 是交界格本身（今天最后一步），
-             `k === cut` 是明天的第一步 —— 这两个格子上已经有刻痕/虚线起点，
-             再叠一枚金色折角就变成"楔子 + 黑条"糊在一起（3× 特写里看得很清楚）。 */
-          if (
-            k > 0 &&
-            (dx !== prevDx || dy !== prevDy) &&
-            !(hasSplit && (k === cut || k === cut - 1))
-          ) {
+          /* 交界格**两侧**都不补折角：`k` 是交界格本身（当天最后一步），
+             `k+1` 是次日的起点 —— 这两个格子上已经有刻痕/虚线起点，
+             再叠一枚金色折角就变成"楔子 + 黑条"糊在一起（3× 特写里看得很清楚）。
+             多天时每一道交界都按这条来（`cuts.some`）。 */
+          const nearCut = hasSplit && cuts.some((c) => k === c || k === c - 1);
+          if (k > 0 && (dx !== prevDx || dy !== prevDy) && !nearCut) {
             (day === 0 ? cornersNow : cornersNext).push([cx, cy, dx, dy]);
           }
           if (isLast) endDir = [dx, dy];
@@ -1967,16 +2041,39 @@ export class MapRenderer {
         prevDy = dy;
       }
       if (PATH_LINE) {
-        /* 分段：今天 = pts[0..cut]，明天 = pts[cut..]（**共享交界点**，线才不断开）。
-           `cut===0` ⇒ 今天一段（只剩英雄脚下那一枚点，画不出来）⇒ 全是明天；
-           `cut===len` ⇒ 没有明天。 */
-        const now = pts.slice(0, cut + 1).map((q): [number, number] => [q.x, q.y]);
+        /* 分段：今天 = pts[0..cuts[0]]，其余（第 2 天起）全归"明天"那一段 ——
+           它们共享交界点，线才不断开。
+           为什么不按天拆成 N 条不同线型的线：**通道不够**。虚线已经占用"不是今天"，
+           再用线型分第 3 天就只能往"更细的虚线"上退，32px 格上分不出来。
+           所以第 3 天起**靠刻痕数量**表达（一道 = 明天，两道 = 后天），线型统一。 */
+        const first = cuts[0] ?? len;
+        const now = pts.slice(0, first + 1).map((q): [number, number] => [q.x, q.y]);
         const nextPts =
-          cut < pts.length - 1 ? pts.slice(cut).map((q): [number, number] => [q.x, q.y]) : [];
-        const cutPt: [number, number, number, number] | null = hasSplit
-          ? [pts[cut].x, pts[cut].y, cutDir[0], cutDir[1]]
-          : null;
-        const L: PathLine = { now, next: nextPts, cornersNow, cornersNext, end: endDir, cut: cutPt };
+          first < pts.length - 1 ? pts.slice(first).map((q): [number, number] => [q.x, q.y]) : [];
+        const tick = (c: number): [number, number, number, number] => {
+          const d = cutDirs.get(c) ?? [0, 0];
+          return [pts[c].x, pts[c].y, d[0], d[1]];
+        };
+        const L: PathLine = {
+          now,
+          next: nextPts,
+          cornersNow,
+          cornersNext,
+          end: endDir,
+          cuts: cuts.map(tick),
+        };
+        /* 每道刻痕的**屏幕坐标**（CSS px，诊断用）：写报告要裁特写时靠它定位，
+           比"在整屏截图里找一小段黑杠"快得多，也不会裁错格。 */
+        this.pathCutsScreen = cuts.map((c) => {
+          const d = cutDirs.get(c) ?? [0, 0];
+          return {
+            step: c,
+            x: +(pts[c].x * cam.zoom + cam.x).toFixed(1),
+            y: +(pts[c].y * cam.zoom + cam.y).toFixed(1),
+            dx: d[0],
+            dy: d[1],
+          };
+        });
         if (this.pathAfter) {
           afterLine = L;
         } else {
@@ -2172,8 +2269,10 @@ export class MapRenderer {
        这一段是**屏幕空间**（`restore()` 之后变换回到 dpr 基准，坐标单位 = CSS px），
        理由：它要贴着视口边缘，跟着世界走会跟着滚出画面。颜色不受光照 multiply 影响。 --- */
     this.pathEdgeSeen = null;
-    if (afterLine && afterLine.cut && PATH_EDGE) {
-      const [wx, wy] = afterLine.cut;
+    /* 只跟**第一道**交界（今天的收工点）：边缘指示回答的是"今天走到哪"，
+       第二道之后的信息本来就在屏幕外，一条射线也只能指一个方向。 */
+    if (afterLine && afterLine.cuts.length > 0 && PATH_EDGE) {
+      const [wx, wy] = afterLine.cuts[0];
       const { viewW: vw, viewH: vh } = cam;
       const m = 14; // 离边缘留出的余量（CSS px）：够画一道短杠，又不至于被裁
       const ex = wx * cam.zoom + cam.x;

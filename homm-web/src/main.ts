@@ -660,6 +660,8 @@ let previewPath: GridPos[] | null = null;
  */
 let previewFrom: GridPos | null = null;
 let previewDay = 0;
+/** 每天走完的步数表（`dayStops` 的输出）；末尾恒 = `previewPath.length`。 */
+let previewStops: number[] = [];
 let hover: GridPos | null = null;
 let anim: { heroId: string; path: GridPos[]; i: number; t: number } | null = null;
 /** 英雄踏入当前格之前所在的格子，野怪战撤退时要退回这里 */
@@ -787,22 +789,43 @@ function renderLog(): void {
 /* ---------------- movement ---------------- */
 
 /**
- * 沿 `path` 从英雄脚下累加 `stepCost`，返回**今天能走完的步数**。
+ * 沿 `path` 从英雄脚下累加 `stepCost`，返回**每一天走完的步数表**（递增，末尾 = `path.length`）。
  *
- * 为什么不用"剩余移动力 ÷ 平均代价"估：地形代价差 1~3 倍（道路 0.75 / 草地 1 / 沼泽 1.75），
- * 估出来的分界会落在**今天其实走不到**的格子上 —— 而那正是这条信息要防的错。
+ * `[len]` 表示今天走完；`[6, len]` 表示走两天；`[6, 24, len]` 表示走三天。
+ *
+ * 为什么不用"剩余移动力 ÷ 平均代价"估：地形代价差 1~3 倍（道路 100 / 草地 100 / 沼泽 175，
+ * 斜向 ×1.4），估出来的分界会落在**今天其实走不到**的格子上 —— 而那正是这条信息要防的错。
  * 这里逐格累加，与 `tickAnim` 里"走一步扣一次"用的是**同一个** `stepCost`；
  * 两者若不一致，玩家看到的线与英雄实际停下的位置就会错开一格。
+ *
+ * **次日预算 = 已花 + 一整天**（`maxMovePoints`）：`turn.ts` 换日时直接把
+ * `movePoints` 重置成上限、**不结转剩余**，所以"第一天剩下的 300"不会滚进第二天。
+ * 按结转算的话，第三天那道刻痕会画晚一格 —— 玩家以为第三天到得了，实际要第四天。
  */
-function dayReachSteps(hero: Hero, path: GridPos[]): number {
+function dayStops(hero: Hero, path: GridPos[]): number[] {
+  const per = maxMovePoints(hero, state);
+  const out: number[] = [];
+  let budget = hero.movePoints;
   let spent = 0;
   for (let i = 0; i < path.length; i++) {
     const from = i === 0 ? hero.pos : path[i - 1];
     const c = stepCost(state, from, path[i]);
-    if (!Number.isFinite(c) || spent + c > hero.movePoints) return i;
+    if (!Number.isFinite(c)) {
+      // `buildPath` 保证可达；真出现就走不了了，把已算出的天表封口。
+      out.push(path.length);
+      return out;
+    }
+    if (spent + c > budget) {
+      out.push(i); // 第 i 步走不完 ⇒ 当天止步于此
+      budget = spent + per; // 次日：从"当前已花"起算一整天（剩余不结转）
+      /* 极端兜底：单步代价超过一整天（现实地形上限 245 ≪ 1800，走不到这条分支，
+         但若改了地形表，这里不能让天表退化成"每天 0 步"的死循环）。 */
+      if (spent + c > budget) budget = spent + c + per;
+    }
     spent += c;
   }
-  return path.length;
+  out.push(path.length);
+  return out;
 }
 
 /** 设预览路径的唯一入口 —— 三个量必须同时写，漏一个就会出现"线从别处开始"或"分界错位"。 */
@@ -811,12 +834,16 @@ function setPreview(hero: Hero | null, g: GridPos | null): void {
     previewPath = null;
     previewFrom = null;
     previewDay = 0;
+    previewStops = [];
     return;
   }
   const path = buildPath(state, fieldFull, hero.pos, g);
   previewPath = path.length ? path : null;
   previewFrom = previewPath ? { x: hero.pos.x, y: hero.pos.y } : null;
-  previewDay = previewPath ? dayReachSteps(hero, previewPath) : 0;
+  /* `dayStops` 恒返回非空数组（末尾是 `path.length`）⇒ 单天行程 = `[len]`，
+     渲染器据此得 0 道刻痕；跨两天 = `[cut, len]` ⇒ 1 道。 */
+  previewStops = previewPath ? dayStops(hero, previewPath) : [];
+  previewDay = previewStops[0] ?? 0;
 }
 
 
@@ -1842,8 +1869,10 @@ function updateHover(e: PointerEvent): void {
   if (hero && fieldFull && isFinite(cost) && cost > 0) {
     setPreview(hero, g);
     if (cost > hero.movePoints) {
-      // 今天走不完：按每日上限折算还要几天
-      const days = 1 + Math.ceil((cost - hero.movePoints) / maxMovePoints(hero, state));
+      /* 天数**直接取天表长度**，不再用 `ceil(剩余 / 每日上限)` 另算一遍 ——
+         两处各算一次就会出现"文案说 3 天、图上却只有一道刻痕"（因为 ceil 把
+         当天剩余也算成了一整天）。图上画几道刻痕、文案说几天，必须是同一个数。 */
+      const days = Math.max(2, previewStops.length);
       text += `（今日不够，约需 ${days} 天）`;
     }
   } else {
@@ -1983,6 +2012,7 @@ function buildViewModel(): ViewModel {
     path: previewPath,
     pathFrom: previewFrom,
     pathDay: previewDay,
+    pathDays: previewStops,
     hover,
     dest: pendingDest && state.heroes[pendingDest.heroId] ? pendingDest.dest : null,
     selectedHeroId: selected,
@@ -2263,7 +2293,9 @@ if (bootParams.has('devprobe')) {
       n: previewPath ? previewPath.length : 0,
       path: previewPath ? previewPath.map((q) => ({ x: q.x, y: q.y })) : [],
       day: previewDay,
+      stops: previewStops,
       mp: hero.movePoints,
+      maxMp: maxMovePoints(hero, state),
       costs,
       from: { x: hero.pos.x, y: hero.pos.y },
     };
@@ -2286,7 +2318,11 @@ if (bootParams.has('devprobe')) {
    * 满移动力 1800 对应的跨天目标在十几格之外，**整段明天都在屏幕外**，探针取不到像素。
    * 只在 `setPreview` 那一下生效，算完立刻还原（不动存档、不动别的状态）。
    */
-  w.__mapPreviewDay = (mpOverride?: number, dir?: 'any' | 'vert' | 'horiz') => {
+  w.__mapPreviewDay = (
+    mpOverride?: number,
+    dir?: 'any' | 'vert' | 'horiz',
+    minCost?: number,
+  ) => {
     const hero = selected ? state.heroes[selected] : null;
     if (!hero || !fieldFull) return { ok: false, reason: '没有选中英雄或代价场未算' };
     const useOverride = typeof mpOverride === 'number' && mpOverride > 0;
@@ -2294,8 +2330,17 @@ if (bootParams.has('devprobe')) {
     /* 下界 1.15 而不是 1.6：满移动力（1800）时 1.6 倍 ≈ 29 格，
        整张 48×48 图上未必存在那么远的可走格 ⇒ 钩子直接返回 ok:false，
        "测边缘指示"的那一臂就永远没有数据。1.15 只要求"确实跨天"，剩下的交给下面的兜底。 */
-    const lo = mp * 1.15;
-    const hi = Math.min(mp * 2.6, maxMovePoints(hero, state) * 3);
+    /* `minCost`：指定"总代价至少这么大"，用来摆**跨三天**的路径（§21 的多刻痕判据）。
+       窗口取 [minCost, minCost×1.12] 这么窄，是为了让结果稳定落在"第 2 天走完、
+       第 3 天没走完"的区间里 —— 太宽会滑到四天，判据就变成数刻痕个数而不是验证顺序。 */
+    const pinned = typeof minCost === 'number' && minCost > 0;
+    const lo = pinned ? (minCost as number) : mp * 1.15;
+    /* 上界 1.4 倍：窗口太窄（1.12）时"代价刚过 2100"的格子里可能一个横向的都没有，
+       结果每次都挑到同一枚靠北的格子 ⇒ 第二道刻痕跑到屏幕上方之外，拍不到。
+       1.4 倍仍然远低于第三天的预算（2000 + 1800），所以天数还是 3。 */
+    const hi = pinned
+      ? (minCost as number) * 1.4
+      : Math.min(mp * 2.6, maxMovePoints(hero, state) * 3);
     let best: GridPos | null = null;
     let bestScore = -1;
     const m = state.map;
@@ -2346,7 +2391,9 @@ if (bootParams.has('devprobe')) {
       n: previewPath ? previewPath.length : 0,
       path: previewPath ? previewPath.map((q) => ({ x: q.x, y: q.y })) : [],
       day: previewDay,
+      stops: previewStops,
       mp,
+      maxMp: maxMovePoints(hero, state),
       costs,
       target: best,
       from: { x: hero.pos.x, y: hero.pos.y },

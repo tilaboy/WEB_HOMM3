@@ -96,10 +96,16 @@ const PREVIEW_REACH = `(() => {
 /* `--mp=full` ⇒ 用满移动力摆路径（交界远到出画，配合 `--extra='&devzoom=2.4'` 拍边缘指示符）；
    默认 200 ⇒ 今天 2 格、明天 2 格，整条路都在画面里。 */
 const DAY_MP_ARG = argOf('mp', '') === 'full' ? '' : '200';
+/* `--mincost=2100`：把目标钉进"第 3 天"区间（mp=200 ⇒ 第 2 天收工在累计 2000 附近），
+   用来拍**两道刻痕**。配合 `--extra='&devzoom=0.55'` 把 20 步路线缩进一屏。 */
+const DAY_MINCOST = argOf('mincost', '');
+const DAY_CALL = DAY_MINCOST
+  ? `${DAY_MP_ARG}, 'horiz', ${DAY_MINCOST}`
+  : DAY_MP_ARG;
 const PREVIEW_DAY = `(() => {
-  const r = window.__mapPreviewDay ? window.__mapPreviewDay(${DAY_MP_ARG}) : null;
+  const r = window.__mapPreviewDay ? window.__mapPreviewDay(${DAY_CALL}) : null;
   if (!r || !r.ok) return null;
-  return { tx: r.target.x, ty: r.target.y, n: r.n, day: r.day };
+  return { tx: r.target.x, ty: r.target.y, n: r.n, day: r.day, stops: r.stops };
 })()`;
 
 const PREVIEW = argOf('preview', 'reach') === 'day' ? PREVIEW_DAY : PREVIEW_REACH;

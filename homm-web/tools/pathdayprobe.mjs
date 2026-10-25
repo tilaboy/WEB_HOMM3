@@ -88,6 +88,7 @@ async function arm(send, evaluate, query, label, callArgs = `${MP}`) {
         ` → 目标 ${hook && hook.target ? `(${hook.target.x},${hook.target.y})` : '无'}` +
         ` · 路径 ${hook && hook.n ? hook.n : '?'} 步 · 今日 ${d.cut} 步（mp=${hook ? hook.mp : '?'}）` +
         ` · split=${d.split} · 今天 ${d.now ? d.now.n : '?'} 枚 / 明天 ${d.next ? d.next.n : '?'} 枚` +
+        ` · 刻痕 ${d.cutScreen && d.cutScreen.length ? d.cutScreen.map((q) => `第${q.step}步@(${q.x},${q.y})`).join(' ') : '无'}` +
         ` · 边缘指示 ${pp && pp.edge && pp.edge.drawn ? `画了(${pp.edge.x},${pp.edge.y})` : '无'}` +
         (pp && pp.edgeCalc ? ` · 交界屏位 (${pp.edgeCalc.ex},${pp.edgeCalc.ey})/${pp.edgeCalc.vw}×${pp.edgeCalc.vh} inside=${pp.edgeCalc.inside}` : ''),
     );
@@ -108,7 +109,14 @@ function crit(pp) {
       n.fineCovered === 0 &&
       x.fineN >= 1 &&
       x.fineCovered >= Math.max(1, Math.ceil(x.fineN * 0.2)),
-    mark: typeof d.cutLum === 'number' && d.cutLum < 0.15,
+    /* 刻痕：中心被压黑**且**路径两侧（法线 ±3.2 世界 px）也被压黑。
+       只量中心不够 —— 一根顺着路的墨杠同样把中心压黑（见 `cutCross` 注释）。 */
+    mark:
+      typeof d.cutLum === 'number' &&
+      d.cutLum < 0.15 &&
+      Array.isArray(d.cutCross) &&
+      d.cutCross.length > 0 &&
+      d.cutCross.every((q) => typeof q.a === 'number' && typeof q.b === 'number' && q.a < 0.08 && q.b < 0.08),
   };
 }
 
@@ -172,11 +180,12 @@ try {
           `明天中点 ${d.next ? d.next.fineN : '?'} 枚（细窗空 ${d.next ? d.next.fineCovered : '?'}）`,
       );
 
+      const cx = (d.cutCross && d.cutCross[0]) || {};
       check(
         'cut-mark',
-        '交界格中心被刻痕压黑（"今天到此收工"）',
+        '交界格中心与**路径两侧**都被压黑（证明刻痕是横切的，不是线上粗了一截）',
         c.mark,
-        `交界格中心相对亮度 ${d.cutLum}（< 0.15）`,
+        `中心 ${d.cutLum}（< 0.15）· 两侧 ${cx.a} / ${cx.b}（< 0.08）`,
       );
 
       /* --- 边缘指示：满移动力时交界在屏幕外，这条信息必须有出口 ---
@@ -194,6 +203,60 @@ try {
         '交界在屏幕外时，屏幕边缘有一枚指示（画了 且 中心是墨色）',
         eEdge.drawn === true && typeof eEdge.lum === 'number' && eEdge.lum < 0.15 && eDay.split === true,
         `drawn=${eEdge.drawn} · 位置 (${eEdge.x},${eEdge.y}) · 中心亮度 ${eEdge.lum} · 交界 ${eDay.cut}/${eDay.len}`,
+      );
+
+      /* --- 多天：跨三天必须有**两道**刻痕（§21）---
+         这一臂用 `minCost=2100` 把目标钉在"第 2 天走完、第 3 天没走完"的区间
+         （mp=200 ⇒ 第 1 天 200、第 2 天 1800 ⇒ 累计 2000）。窗口窄到 12%，
+         是为了让结果稳定落在三天，而不是四天。
+         路径 20+ 步、大半在屏幕外 ⇒ 这条判据只验**结构**（交界个数与每道交界对应的预算），
+         不验像素：像素那一半由上面 `cut-mark` 在一屏内的情况里负责。 */
+      const M = await arm(send, evaluate, '', '跨三天（应有两道交界）', "200, 'horiz', 2100");
+      const mHk = M.hook || {};
+      const mD = (M.pp || {}).day || {};
+      const stops = mHk.stops || [];
+      const cutList = mD.cuts || [];
+      const mCosts = mHk.costs || [];
+      let cutsOk = stops.length >= 3 && cutList.length === stops.length - 1;
+      const bad = [];
+      for (let k = 0; k < cutList.length; k++) {
+        const at = cutList[k];
+        /* 第 1 天的预算 = 今日剩余；之后每天 = 前一天收工时的累计已花 + 一整天
+           （换日不结转，见 `dayStops` 注释）。两处独立算：这里用钩子给的 `costs`，
+           渲染器/主程序用的是逐格 `stepCost`。 */
+        const budget =
+          k === 0 ? mHk.mp : (mCosts[cutList[k - 1] - 1] ?? 0) + (mHk.maxMp ?? 0);
+        const paid = mCosts[at - 1];
+        const next = mCosts[at];
+        if (!(paid <= budget && budget < next)) {
+          cutsOk = false;
+          bad.push(`第${k + 1}道@${at}: ${paid}≤${budget}<${next} 不成立`);
+        }
+        if (k > 0 && !(at > cutList[k - 1])) {
+          cutsOk = false;
+          bad.push(`第${k + 1}道未递增（${cutList[k - 1]} → ${at}）`);
+        }
+      }
+      check(
+        'pathday-cuts',
+        '跨三天时每道交界都落在当天预算的最后一步（天数 = 刻痕数 + 1）',
+        cutsOk,
+        `天表 [${stops.join(', ')}] · 交界 [${cutList.join(', ')}]` +
+          (bad.length ? ` · ${bad.join(' · ')}` : ` · 每天预算 ${mHk.mp} / +${mHk.maxMp}`),
+      );
+
+      /* --- 刻痕朝向的负向对照（常驻，不是只在 --selfcheck 里）---
+         同一个交界格、同一根墨杠，只把旋转少 90° ⇒ 长轴顺着路。
+         这时"中心"依然是黑的（墨盖住金芯），但**两侧**会恢复成底色 ——
+         判据必须变红，否则它量的只是"那里有墨"，而不是"刻痕横着切过去"。 */
+      const CR = await arm(send, evaluate, '&devcutcross=0', '刻痕顺着路（负向对照）');
+      const crD = (CR.pp || {}).day || {};
+      const crx = (crD.cutCross && crD.cutCross[0]) || {};
+      check(
+        'cut-cross-ctl',
+        '把刻痕画成顺着路之后，两侧恢复底色（证 cut-mark 量的是"横切"）',
+        typeof crx.a === 'number' && typeof crx.b === 'number' && (crx.a > 0.08 || crx.b > 0.08),
+        `中心 ${crx.center} · 两侧 ${crx.a} / ${crx.b}（横切时应 <0.08）`,
       );
 
       /* 对照臂：关掉分段 = 旧表现（整条实线、无刻痕）。它必须**真的一分为二**，
@@ -225,17 +288,26 @@ try {
            只检"对照臂的 split=false"是不够的 —— 那只能证明钩子关了，
            证明不了 dash / cut-mark 这两条判据真的在测"今天/明天"而不是在测任何一条线。 */
         const ecEdge2 = (C.pp || {}).edge || {};
-        const flipped = ['pathday', 'pathday-dash', 'cut-mark', 'edge-mark'].filter((k) => {
-          if (k === 'pathday') return cc.day;
-          if (k === 'pathday-dash') return cc.dash;
-          if (k === 'cut-mark') return cc.mark;
-          return ecEdge2.drawn === true; // 关掉分段后不该有边缘指示
-        });
+        /* 关掉分段之后，这两条也该翻红：没有刻痕（`pathday-cuts` 数出 0 道）
+           与边缘指示（不该画却画了）。 */
+        const cCuts = (C.pp || {}).day && (C.pp || {}).day.cuts ? (C.pp || {}).day.cuts.length : 0;
+        const cStops = (C.hook || {}).stops || [];
+        /* `cFlip[id] = true` 表示"这条判据在对照臂上**确实变红了**"
+           （= 该判据在对照臂上不成立）。★ 这里容易写反：`cc.day` 是"判据成立"，
+           要取反才是"变红" —— 首版把两者混用，结果 `ctl-flip` 把**四条全绿**报成通过。 */
+        const cFlip = {
+          'pathday': !cc.day,
+          'pathday-dash': !cc.dash,
+          'cut-mark': !cc.mark,
+          'edge-mark': ecEdge2.drawn !== true,
+          'pathday-cuts': !(cStops.length >= 3 && cCuts === cStops.length - 1),
+        };
+        const flipped = Object.keys(cFlip).filter((k) => !cFlip[k]);
         check(
           'ctl-flip',
-          '把同一组判据套到对照臂上，四条全变红（证每条都有分辨力）',
+          '把同一组判据套到对照臂上，五条全变红（证每条都有分辨力）',
           flipped.length === 0,
-          flipped.length ? `仍是绿的：${flipped.join('、')}` : 'pathday / pathday-dash / cut-mark / edge-mark 四条全红',
+          flipped.length ? `仍是绿的：${flipped.join('、')}` : 'pathday / pathday-dash / cut-mark / edge-mark / pathday-cuts 五条全红',
         );
       }
 
