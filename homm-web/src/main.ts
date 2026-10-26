@@ -2425,21 +2425,35 @@ if (bootParams.has('devbattle') && selected && state.heroes[selected]) {
   const startScreenEl = document.getElementById('start-screen');
   if (startScreenEl) startScreenEl.style.display = 'none';
   const t5 = bootParams.get('devbattle') === 't5';
+  /* `?devbattle=full`：满编 7 队（每侧 7 支）。
+     P1 遗留的"6~7 队侧列要滚"需要一个**可复现的**输入才能验证 —— 手动打十几回合
+     凑出满编不现实，而这条判据（轮到的卡自己滚进视野）只在溢出时才有意义。 */
+  const full = bootParams.get('devbattle') === 'full';
   openBattleScreen(stage, {
     state,
     heroId: selected,
-    title: t5 ? '调试战斗 · T5 顶点兵' : '调试战斗',
+    title: t5 ? '调试战斗 · T5 顶点兵' : full ? '调试战斗 · 满编 7 队' : '调试战斗',
     attacker: {
       army: t5
         ? [
             { unitTypeId: 'p1_overangel', count: 3 },
             { unitTypeId: 'p3_unicorn', count: 4 },
           ]
-        : [
-            { unitTypeId: 'archer', count: 20 },
-            { unitTypeId: 'pikeman', count: 12 },
-            { unitTypeId: 'knight', count: 6 },
-          ],
+        : full
+          ? [
+              { unitTypeId: 'p1_lampbearer', count: 40 },
+              { unitTypeId: 'p1_hornxbow', count: 28 },
+              { unitTypeId: 'p1_oathpike', count: 24 },
+              { unitTypeId: 'p1_templar', count: 12 },
+              { unitTypeId: 'p1_overangel', count: 3 },
+              { unitTypeId: 'p3_dwarf', count: 30 },
+              { unitTypeId: 'p3_unicorn', count: 6 },
+            ]
+          : [
+              { unitTypeId: 'archer', count: 20 },
+              { unitTypeId: 'pikeman', count: 12 },
+              { unitTypeId: 'knight', count: 6 },
+            ],
       attack: 3,
       defense: 4,
       // 调试用：给一套完整法术，方便截图验证施法界面
@@ -2455,11 +2469,21 @@ if (bootParams.has('devbattle') && selected && state.heroes[selected]) {
             { unitTypeId: 'p2_lavatroll', count: 2 },
             { unitTypeId: 'p4_colossus', count: 3 },
           ]
-        : [
-            { unitTypeId: 'wolf', count: 26 },
-            { unitTypeId: 'boar', count: 13 },
-            { unitTypeId: 'ogre', count: 11 },
-          ],
+        : full
+          ? [
+              { unitTypeId: 'p2_scavenger', count: 45 },
+              { unitTypeId: 'p2_axethrower', count: 26 },
+              { unitTypeId: 'p2_wolfrider', count: 18 },
+              { unitTypeId: 'p2_firebrand', count: 9 },
+              { unitTypeId: 'p2_lavatroll', count: 4 },
+              { unitTypeId: 'p4_stoneimp', count: 50 },
+              { unitTypeId: 'p4_colossus', count: 5 },
+            ]
+          : [
+              { unitTypeId: 'wolf', count: 26 },
+              { unitTypeId: 'boar', count: 13 },
+              { unitTypeId: 'ogre', count: 11 },
+            ],
       attack: 0,
       defense: 0,
     },

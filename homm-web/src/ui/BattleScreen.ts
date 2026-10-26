@@ -81,6 +81,20 @@ const HOVERLESS = ((): boolean => {
   }
 })();
 
+/**
+ * 名单滚动时是否把"轮到的那一支"自动带进视野（默认开；`?devautoscroll=0` 关掉）。
+ *
+ * 关掉只有一个用途：**负向对照**。判据说"轮到的卡在可视窗内"，必须能证明它测的是
+ * 这次滚动，而不是"名单本来就没溢出"。关掉之后同一时刻那张卡会落在窗外（`probe:longlist`）。
+ */
+const AUTO_SCROLL = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devautoscroll') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
 export interface BattleOptions {
   state: GameState;
   heroId: string;
@@ -336,7 +350,29 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   function syncSideOverflow(): void {
     for (const s of [ourSide, foeSide]) {
       s.col.classList.toggle('more', s.list.scrollHeight > s.list.clientHeight + 1);
+      revealActive(s.list);
     }
+  }
+
+  /**
+   * 把"轮到的那一支"滚进可视窗（`?devautoscroll=0` 关掉，作负向对照）。
+   *
+   * 为什么必须有：满编 6~7 队时列表要滚（390 高只放得下 ~4.7 张卡），而
+   * `renderSides()` 每次签名变化都会 `textContent = ''` 重建行 —— **scrollTop 随之归零**。
+   * 于是第 5~7 支行动时，它的卡在窗外：玩家看到的是"名单还在，但没人高亮"，
+   * 既不知道轮到谁，也不知道该点哪儿。这不是排版问题，是**回合信息丢失**。
+   *
+   * 只做最小位移（贴到最近的那条边），不做"居中"：居中会让静止的列表每回合都跳一下，
+   * 而多数时候（第 1~4 支）根本不该滚。
+   */
+  function revealActive(list: HTMLElement): void {
+    if (!AUTO_SCROLL) return;
+    const row = list.querySelector<HTMLElement>('.bt-side-row.act');
+    if (!row) return;
+    const lr = list.getBoundingClientRect();
+    const rr = row.getBoundingClientRect();
+    if (rr.top < lr.top) list.scrollTop -= lr.top - rr.top;
+    else if (rr.bottom > lr.bottom) list.scrollTop += rr.bottom - lr.bottom;
   }
 
   /** 行动队列的两格（见 `nextEl` 上的注释）。签名去重：`idx` 不变就不重建 DOM。 */
