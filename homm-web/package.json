@@ -49,7 +49,6 @@
     "probe:reachdots": "node tools/reachdotsprobe.mjs",
     "probe:pathdots": "node tools/pathdotsprobe.mjs",
     "probe:pathday": "node tools/pathdayprobe.mjs",
-    "probe:pathflow": "node tools/pathflowprobe.mjs",
     "probe:pathflow": "node tools/pathflowprobe.mjs"
   },
   "devDependencies": {

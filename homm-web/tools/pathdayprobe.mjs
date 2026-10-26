@@ -9,12 +9,18 @@
  *
  * 现在同一条路径分成两段：今天 = 实线金，明天 = 虚线冷蓝，交界格一道"收工"刻痕。
  *
- * ## 判据（4 条 + 1 条对照）
- *   `pathday`      —— 结构：`0 < cut < len`，`split === true`，两段都量到样本（今天 ≥2、明天 ≥1）；
- *   `pathday-cost` —— 算术：`costs[cut-1] <= mp < costs[cut]`（分界正好落在最后一格可负担的格子上）；
- *   `pathday-dash` —— 视觉：今天段中点**全部**有笔触，明天段中点**有缺口**（虚线的结构证据）；
- *   `cut-mark`     —— 刻痕：交界格**中心像素**被压黑（相对亮度 < 0.15）；
- *   `pathday-ctl`  —— 对照臂 `?devpathday=0`：`split === false`、无刻痕、明天段 0 样本（= 旧表现）。
+ * ## 判据（10 条 + `--selfcheck` 的翻转总账）
+ *   `pathday`        —— 结构：`0 < cut < len`，`split === true`，两段都量到样本（今天 ≥2、明天 ≥1）；
+ *   `pathday-cost`   —— 算术：`costs[cut-1] <= mp < costs[cut]`（分界正好落在最后一格可负担的格子上）；
+ *   `pathday-dash`   —— 视觉：今天段中点**全部**有笔触，明天段中点**有缺口**（虚线的结构证据）；
+ *   `cut-mark`       —— 刻痕：交界格中心 + **路径两侧**都被压黑（证它是横切的，不是线上粗了一截）；
+ *   `edge-mark`      —— 交界出画时，屏幕边缘有一枚指示（画了 且 中心是墨色）；
+ *   `edge-label`     —— 那枚指示旁边的「还有 N 天」：文字与天表独立对账、整块在视口内、对比 ≥4.5:1；
+ *   `pathday-cuts`   —— 跨三天：两道交界，每道都落在当天预算的最后一步（天数 = 刻痕数 + 1）；
+ *   `cut-cross-ctl`  —— 对照臂 `?devcutcross=0`：刻痕顺着路 ⇒ 两侧恢复底色（证 `cut-mark` 量的是朝向）；
+ *   `pathday-ctl`    —— 对照臂 `?devpathday=0`：`split === false`、无刻痕、明天段 0 样本（= 旧表现）；
+ *   `edge-ctl`       —— 对照臂 `?devpathedge=0`：指示与牌子都消失（证它由本层绘制）；
+ *   `edge-label-ctl` —— 对照臂 `?devpathedgelabel=0`：牌子消失、指示仍在（证两块是分开的两件事）。
  *
  * 为什么 `pathday-dash` 用"中点有没有笔触"而不是比颜色：颜色会被昼夜光照的 multiply 拉偏
  * （暖色 tint 能把冷蓝拉回中性），而**虚线在格与格之间留下空档**是几何事实，光照改不了它。
@@ -208,6 +214,50 @@ try {
         `drawn=${eEdge.drawn} · 位置 (${eEdge.x},${eEdge.y}) · 中心亮度 ${eEdge.lum} · 交界 ${eDay.cut}/${eDay.len}`,
       );
 
+      /* --- 牌子上的"还有 N 天"：出画时唯一能说出"这一下要花几天"的地方 ---
+         文字由渲染器写、天数由钩子的天表独立算 ⇒ 两边对账（不是"牌子非空就算过"）。
+         对比度用牌子矩形内的亮度统计：`max` 是字（金）、`p35` 是牌底 ⇒ WCAG 口径 ≥4.5。
+         位置必须**整个矩形**在视口内 —— 被边缘裁掉半句的牌子等于没写。 */
+      const eLabel = ePp.edgeLabel || null;
+      const eStops = (E.hook && E.hook.stops) || [];
+      const wantText = eStops.length > 1 ? `还有 ${eStops.length - 1} 天` : null;
+      const eInside =
+        eLabel && ePp.edgeCalc
+          ? eLabel.x >= 0 &&
+            eLabel.y >= 0 &&
+            eLabel.x + eLabel.w <= ePp.edgeCalc.vw &&
+            eLabel.y + eLabel.h <= ePp.edgeCalc.vh
+          : false;
+      check(
+        'edge-label',
+        '交界出画时牌子写出「还有 N 天」，整块在视口内，金字压深底对比 ≥4.5:1',
+        !!eLabel &&
+          wantText !== null &&
+          eLabel.text === wantText &&
+          typeof eLabel.contrast === 'number' &&
+          eLabel.contrast >= 4.5 &&
+          eInside,
+        `文字「${eLabel ? eLabel.text : '无'}」（应「${wantText}」）· 牌 (${eLabel ? eLabel.x : '-'},${eLabel ? eLabel.y : '-'}) ` +
+          `${eLabel ? `${eLabel.w}×${eLabel.h}` : '-'}${eInside ? ' 在视口内' : ' 出界'} · 对比 ${eLabel ? eLabel.contrast : '-'}` +
+          `（字 ${eLabel ? eLabel.max : '-'} / 底 ${eLabel ? eLabel.p35 : '-'}）· 天表 [${eStops.join(',')}]`,
+      );
+
+      /* 对照臂：只关牌子、不关指示符 ⇒ 牌子没了、指示符还在（证明两块是分开的两件事）。 */
+      const EL = await arm(
+        send,
+        evaluate,
+        '&devpathedgelabel=0&devzoom=2.4',
+        'pathedgelabel=0（无牌子）',
+        'undefined',
+      );
+      const elPp = EL.pp || {};
+      check(
+        'edge-label-ctl',
+        '关掉牌子后同一场景牌子消失、指示符仍在（证牌子不是指示符的别名）',
+        (elPp.edgeLabel ?? null) === null && ((elPp.edge || {}).drawn === true),
+        `label=${elPp.edgeLabel ? '仍在' : 'null'} · drawn=${(elPp.edge || {}).drawn}`,
+      );
+
       /* --- 多天：跨三天必须有**两道**刻痕（§21）---
          这一臂用 `minCost=2100` 把目标钉在"第 2 天走完、第 3 天没走完"的区间
          （mp=200 ⇒ 第 1 天 200、第 2 天 1800 ⇒ 累计 2000）。窗口窄到 12%，
@@ -281,9 +331,10 @@ try {
       const ecEdge = ((EC.pp || {}).edge || {});
       check(
         'edge-ctl',
-        '关掉边缘指示后，同一场景里那枚指示消失（证它由本层绘制）',
-        ecEdge.drawn === false,
-        `drawn=${ecEdge.drawn}（满移动力时交界仍在屏外：cut=${(EC.pp || {}).day ? (EC.pp || {}).day.cut : '?'}）`,
+        '关掉边缘指示后，同一场景里那枚指示（连同牌子）消失（证它由本层绘制）',
+        ecEdge.drawn === false && ((EC.pp || {}).edgeLabel ?? null) === null,
+        `drawn=${ecEdge.drawn} · label=${(EC.pp || {}).edgeLabel ? '仍在' : 'null'}` +
+          `（满移动力时交界仍在屏外：cut=${(EC.pp || {}).day ? (EC.pp || {}).day.cut : '?'}）`,
       );
 
       if (SELFCHECK) {
@@ -295,6 +346,9 @@ try {
            与边缘指示（不该画却画了）。 */
         const cCuts = (C.pp || {}).day && (C.pp || {}).day.cuts ? (C.pp || {}).day.cuts.length : 0;
         const cStops = (C.hook || {}).stops || [];
+        /* `edge-label` 没有"判据函数"，它的对照证据在 `edge-label-ctl` 那一臂上：
+           牌子关掉后牌子矩形必须消失。这里对 `pathday=0` 臂复用同一事实（不分段 ⇒ 无牌子）。 */
+        const cLabel = (C.pp || {}).edgeLabel ?? null;
         /* `cFlip[id] = true` 表示"这条判据在对照臂上**确实变红了**"
            （= 该判据在对照臂上不成立）。★ 这里容易写反：`cc.day` 是"判据成立"，
            要取反才是"变红" —— 首版把两者混用，结果 `ctl-flip` 把**四条全绿**报成通过。 */
@@ -303,14 +357,17 @@ try {
           'pathday-dash': !cc.dash,
           'cut-mark': !cc.mark,
           'edge-mark': ecEdge2.drawn !== true,
+          'edge-label': cLabel === null,
           'pathday-cuts': !(cStops.length >= 3 && cCuts === cStops.length - 1),
         };
         const flipped = Object.keys(cFlip).filter((k) => !cFlip[k]);
         check(
           'ctl-flip',
-          '把同一组判据套到对照臂上，五条全变红（证每条都有分辨力）',
+          '把同一组判据套到对照臂上，六条全变红（证每条都有分辨力）',
           flipped.length === 0,
-          flipped.length ? `仍是绿的：${flipped.join('、')}` : 'pathday / pathday-dash / cut-mark / edge-mark / pathday-cuts 五条全红',
+          flipped.length
+            ? `仍是绿的：${flipped.join('、')}`
+            : 'pathday / pathday-dash / cut-mark / edge-mark / edge-label / pathday-cuts 六条全红',
         );
       }
 

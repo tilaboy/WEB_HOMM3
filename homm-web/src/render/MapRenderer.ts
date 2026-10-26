@@ -442,6 +442,26 @@ const PATH_EDGE = ((): boolean => {
 })();
 
 /**
+ * 屏幕边缘那枚指示符旁边写一句"还有 N 天"（默认开；`?devpathedgelabel=0` 关掉，作负向对照）。
+ *
+ * 为什么要文字：那枚指示符本身只说"今天在那边收工"，不说"还差几天"。
+ * 玩家真正要判断的是"现在点这一下，是不是要花三天"——而这个数字一直只存在于
+ * 悬停提示里（手指按住时被自己的手挡住，正是最需要的时候看不见）。
+ *
+ * 两条纪律：
+ *   ① **只在出画时画**：交界在屏内时刻痕自己就是答案，再贴一块牌子只是噪音；
+ *   ② 牌子必须**自己解决对比度**（深底 + 金字的暗牌），因为它压在任意地形上，
+ *      而地图底色从雪原 `#eef3f7` 到沼泽 `#3a3a22` 差着几十级明度。
+ */
+const EDGE_LABEL = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devpathedgelabel') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
+/**
  * 路径"流动"：明天那一段的虚线沿路线**向前**走（HoMM3 同款）。
  *
  * 为什么值得做：一条静止的虚线只说明"这条路要分几天"，说不出"**往那边走**"。
@@ -912,6 +932,10 @@ export class MapRenderer {
   private pathCutLum: number | null = null;
   /** 边缘指示符（屏幕 CSS 坐标）；`null` = 没画（交界在屏内，或开关关掉）。 */
   private pathEdgeSeen: { x: number; y: number } | null = null;
+  /** 边缘指示旁的"还有 N 天"牌子（屏幕 CSS 坐标 + 文字）；`null` = 没画。 */
+  private pathEdgeLabel: { text: string; x: number; y: number; w: number; h: number } | null = null;
+  /** 本帧行程共几天（`vm.pathDays.length`；没有路径 = 1）。写牌子时要用它算"还差几天"。 */
+  private pathDayCount = 1;
   /** 交界格的屏幕坐标与视口（不管画没画都记，诊断用）。 */
   private pathEdgeCalc: {
     ex: number;
@@ -1282,6 +1306,14 @@ export class MapRenderer {
           }
         : { drawn: false, x: null, y: null, lum: null },
       edgeCalc: this.pathEdgeCalc,
+      /** 边缘牌子：文字 + 矩形 + 亮度统计（`null` = 没画）。 */
+      edgeLabel: (() => {
+        const L = this.pathEdgeLabel;
+        if (!L) return null;
+        return { ...L, ...(this.rectLum(L) ?? {}) };
+      })(),
+      /** 本帧行程天数（牌子上写的是 `edgeDays - 1`）。 */
+      edgeDays: this.pathDayCount,
       /* 原始登记（不走 `probeDots`）：中点坐标若与路径对不上，先看这一行，
          不要从 `per` 里的统计量反推（那是二次加工过的）。 */
       midsRaw: this.pathMidSpots.map((q) => ({
@@ -1328,6 +1360,49 @@ export class MapRenderer {
   }
 
   /**
+   * 一小块矩形里的亮度统计（用来判"牌子上的字读不读得出"）。
+   *
+   * `max` = 字（金）+ 描边；`p35` = 底色（牌子挡着的地图/牌底混合）——
+   * 字在 12px 粗体下大约占三成面积，取 35 分位是为了**避开字的抗锯齿边**
+   * 又不至于像最小值那样被一颗暗像素绑架。
+   * 对比度按 WCAG 相对亮度算：`(L亮+0.05)/(L暗+0.05)`（与 `lumAtCss` 同一套 γ 解码）。
+   */
+  private rectLum(r: { x: number; y: number; w: number; h: number }): {
+    px: number;
+    max: number;
+    p35: number;
+    min: number;
+    contrast: number;
+  } | null {
+    const ctx = this.ctx;
+    const { viewW, viewH } = this.camera;
+    const dpr = this.dpr;
+    const x0 = Math.max(0, Math.round(r.x * dpr));
+    const y0 = Math.max(0, Math.round(r.y * dpr));
+    const x1 = Math.min(Math.round(viewW * dpr), Math.round((r.x + r.w) * dpr));
+    const y1 = Math.min(Math.round(viewH * dpr), Math.round((r.y + r.h) * dpr));
+    if (x1 <= x0 || y1 <= y0) return null;
+    const d = ctx.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+    const f = (v: number): number => {
+      const u = v / 255;
+      return u <= 0.03928 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
+    };
+    const lum: number[] = [];
+    for (let i = 0; i < d.length; i += 4) lum.push(0.2126 * f(d[i]) + 0.7152 * f(d[i + 1]) + 0.0722 * f(d[i + 2]));
+    lum.sort((a, b) => a - b);
+    const max = lum[lum.length - 1] ?? 0;
+    const min = lum[0] ?? 0;
+    const p35 = lum[Math.floor(lum.length * 0.35)] ?? 0;
+    return {
+      px: lum.length,
+      max: +max.toFixed(4),
+      p35: +p35.toFixed(4),
+      min: +min.toFixed(4),
+      contrast: +((max + 0.05) / (p35 + 0.05)).toFixed(2),
+    };
+  }
+
+  /**
    * 交界格**中心像素**的相对亮度。
    *
    * 为什么不复用 `probeDots` 的 `min/bg`：刻痕是画在**线上面**的一小段深色短杠，
@@ -1350,8 +1425,7 @@ export class MapRenderer {
     return +(0.2126 * f(d[0]) + 0.7152 * f(d[1]) + 0.0722 * f(d[2])).toFixed(4);
   }
 
-  private cutCenterLum(): number | null {
-    if (this.pathCut <= 0 || this.pathCut >= this.pathLen) return null;
+  private cutCenterLum(): number | null {    if (this.pathCut <= 0 || this.pathCut >= this.pathLen) return null;
     const spot = this.pathSpots.find((q) => q.day === 0);
     if (!spot) return null;
     /* 交界格的坐标 = 今天的最后一步。`pathSpots` 里 day===0 的最后一枚就是它。 */
@@ -1981,6 +2055,9 @@ export class MapRenderer {
       this.pathLen = len;
       this.pathCut = cuts[0] ?? 0;
       this.pathCutsSeen = cuts.slice();
+      /* 天数表（末尾恒 = len）⇒ 条数就是总天数。边缘牌子上写的"还差几天"= 条数 − 1
+         （今天这一段不算"还差"）。 */
+      this.pathDayCount = days.length;
       /** 第 k 步（0-based）属于第几天：越过了几道交界就是第几天。0 = 今天。 */
       const segOf = (k: number): number => {
         let n = 0;
@@ -2329,6 +2406,7 @@ export class MapRenderer {
        这一段是**屏幕空间**（`restore()` 之后变换回到 dpr 基准，坐标单位 = CSS px），
        理由：它要贴着视口边缘，跟着世界走会跟着滚出画面。颜色不受光照 multiply 影响。 --- */
     this.pathEdgeSeen = null;
+    this.pathEdgeLabel = null;
     /* 只跟**第一道**交界（今天的收工点）：边缘指示回答的是"今天走到哪"，
        第二道之后的信息本来就在屏幕外，一条射线也只能指一个方向。 */
     if (afterLine && afterLine.cuts.length > 0 && PATH_EDGE) {
@@ -2389,6 +2467,42 @@ export class MapRenderer {
           ctx.fillStyle = PATH_DOT_INK;
           ctx.fillRect(-1.5, -6.5, 3.0, 13);
           ctx.restore();
+
+          /* --- "还有 N 天"：只在交界出画时画 ---
+             屏内时刻痕自己就是答案；出画时这是唯一能说出"这一下要花几天"的地方。
+             牌子压在内侧（朝外方向的反方向退开 gap），再夹进视口 —— 被裁掉半句等于没写。 */
+          if (EDGE_LABEL && this.pathDayCount > 1) {
+            const text = `还有 ${this.pathDayCount - 1} 天`;
+            ctx.save();
+            ctx.font = '600 12px ui-sans-serif, system-ui, -apple-system, "PingFang SC", sans-serif';
+            const w = Math.ceil(ctx.measureText(text).width) + 12;
+            const h = 18;
+            const gap = 12;
+            const vertical = Math.abs(uy) > Math.abs(ux);
+            const cx = px - ux * (gap + (vertical ? 0 : w / 2));
+            const cy = py - uy * (gap + (vertical ? h / 2 : 0));
+            const lx = Math.round(Math.min(Math.max(cx - w / 2, m), vw - m - w));
+            const ly = Math.round(Math.min(Math.max(cy - h / 2, m), vh - m - h));
+            const r = 4;
+            ctx.beginPath();
+            ctx.moveTo(lx + r, ly);
+            ctx.arcTo(lx + w, ly, lx + w, ly + h, r);
+            ctx.arcTo(lx + w, ly + h, lx, ly + h, r);
+            ctx.arcTo(lx, ly + h, lx, ly, r);
+            ctx.arcTo(lx, ly, lx + w, ly, r);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(26,17,9,0.88)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,230,160,0.45)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.fillStyle = PATH_DOT_CORE;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, lx + w / 2, ly + h / 2 + 0.5);
+            ctx.restore();
+            this.pathEdgeLabel = { text, x: lx, y: ly, w, h };
+          }
           this.pathEdgeSeen = { x: px, y: py };
         }
       }
