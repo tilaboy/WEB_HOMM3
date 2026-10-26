@@ -46,9 +46,12 @@ const LIGHT = opt('light', '0.68');
 const MP = Number(opt('mp', 200));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/* `--extra=` 追加查询串：钉死流动相位（`&devflowphase=0.5`）、关掉流动（`&devflow=0`）等。
+   ★ 这个参数曾经"写了但没接进 URL"（§16.3 栽过一次），这次一并接上并复核。 */
+const EXTRA = opt('extra', '');
 const BASE =
   `http://127.0.0.1:${PORT}/index.html?devquick=1&devreveal=1&devprobe=1&devbandstats=1` +
-  `&devreachprobe=1&devseed=${SEED}&devlight=${LIGHT}`;
+  `&devreachprobe=1&devseed=${SEED}&devlight=${LIGHT}${EXTRA}`;
 
 const rows = [];
 const check = (id, label, ok, detail) => {

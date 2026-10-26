@@ -308,6 +308,7 @@ function strokePath(
   dash: number[] | null,
   inkW: number,
   coreW: number,
+  dashOffset = 0,
 ): void {
   if (pts.length < 2) return;
   ctx.lineJoin = 'round';
@@ -317,6 +318,9 @@ function strokePath(
      这是"虚线画成实线"最常见的一种死法，且肉眼在长线上几乎看不出来。 */
   ctx.lineCap = dash ? 'butt' : 'round';
   ctx.setLineDash(dash ?? []);
+  /* 负号 = 让虚线沿路径**前进**（`lineDashOffset` 增大是把图案往回挪）。
+     这是流动的全部实现：几何一个像素都不动，只挪相位。 */
+  ctx.lineDashOffset = dashOffset;
   const trace = (): void => {
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
@@ -331,6 +335,7 @@ function strokePath(
   ctx.lineWidth = coreW;
   ctx.stroke();
   ctx.setLineDash([]);
+  ctx.lineDashOffset = 0;
 }
 
 /**
@@ -341,14 +346,14 @@ function strokePath(
  * 但会从地砖中间穿过去。哪一臂更好看是审美判断，可量的部分是"压了多少地形"
  * （`probe:pathdots` 的 covered 与整屏差异）—— 所以先把两臂都做成可切换的。
  */
-function drawPathLine(ctx: CanvasRenderingContext2D, L: PathLine): void {
+function drawPathLine(ctx: CanvasRenderingContext2D, L: PathLine, flow = 0): void {
   if (L.now.length < 2 && L.next.length < 2) return;
   // 今天：实线金。明天：虚线冷色 —— 虚线段长/间隔按世界 px（调用方已 scale）。
   strokePath(ctx, L.now, PATH_DOT_INK, PATH_DOT_CORE, null, 4.2, 1.9);
   /* 明天：同色、更细（3.0 / 1.3）、虚线。
      缺口 3.4 世界 px 必须**比探针的细窗宽**（2.5 世界 px，见 `probePath`），
      否则"虚线留空"这件事永远量不出来 —— 两侧的墨会被窗一起收进去。 */
-  strokePath(ctx, L.next, PATH_NEXT_INK, PATH_NEXT_CORE, [3.0, 4.2], 3.0, 1.3);
+  strokePath(ctx, L.next, PATH_NEXT_INK, PATH_NEXT_CORE, [3.0, 4.2], 3.0, 1.3, -flow);
   for (const [cx, cy, dx, dy] of L.cornersNow) drawPathArrow(ctx, cx, cy, dx, dy, false, false);
   for (const [cx, cy, dx, dy] of L.cornersNext) drawPathArrow(ctx, cx, cy, dx, dy, false, true);
   /* 交界刻痕：垂直于**明天第一步**的方向。它同时盖住今天线的末端与明天线的起点 ⇒
@@ -435,6 +440,54 @@ const PATH_EDGE = ((): boolean => {
     return true;
   }
 })();
+
+/**
+ * 路径"流动"：明天那一段的虚线沿路线**向前**走（HoMM3 同款）。
+ *
+ * 为什么值得做：一条静止的虚线只说明"这条路要分几天"，说不出"**往那边走**"。
+ * 流动的虚线把方向也一起说了，而且不需要再加箭头或文字。
+ *
+ * 三条纪律：
+ *   ① 只动**虚线相位**，不动几何 —— 位置、长度、颜色一个字都不改，判据的其余读数不受影响；
+ *   ② 尊重 `prefers-reduced-motion`：系统开了"减少动态"就完全静止（实测可机检，见 `probe:pathflow`）；
+ *   ③ `?devflowphase=0..1` 钉死相位，`?devflow=0` 关掉 —— 截图与判据要能重复，不能靠"抓一帧"。
+ */
+const FLOW = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devflow') !== '0';
+  } catch {
+    return true;
+  }
+})();
+/** 固定相位（0~1 个周期）；不给则按墙上时间自由跑。 */
+const FLOW_PIN = ((): number | null => {
+  try {
+    const v = new URLSearchParams(location.search).get('devflowphase');
+    return v === null ? null : Number(v);
+  } catch {
+    return null;
+  }
+})();
+/** 流动速度（世界 px / 秒）与虚线周期（3.0 实 + 4.2 空）。 */
+const FLOW_SPEED = 9;
+const FLOW_PERIOD = 7.2;
+/** 系统"减少动态"：整层静止。 */
+const REDUCE_MOTION = ((): boolean => {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+})();
+
+/** 当前相位（世界 px，0~周期）。三种来源：关掉 / 钉死 / 墙上时间。 */
+function flowPhase(): number {
+  if (!FLOW || REDUCE_MOTION) return 0;
+  if (FLOW_PIN !== null && Number.isFinite(FLOW_PIN)) {
+    return (((FLOW_PIN % 1) + 1) % 1) * FLOW_PERIOD;
+  }
+  return ((performance.now() / 1000) * FLOW_SPEED) % FLOW_PERIOD;
+}
 
 /**
  * 刻痕是否**横切**路径（默认开；`?devcutcross=0` 画成顺着路的一根墨杠，当负向对照）。
@@ -844,6 +897,8 @@ export class MapRenderer {
   private pathCut = 0;
   /** 本帧**全部**交界步数（多天时多于一个）。 */
   private pathCutsSeen: number[] = [];
+  /** 本帧的流动相位（`probePath` 回传，判据据此验"它在动"）。 */
+  private pathFlowSeen = { on: false, offset: 0, period: FLOW_PERIOD, reduced: false };
   /** 每道刻痕的屏幕坐标（诊断/取景用）。 */
   private pathCutsScreen: Array<{ step: number; x: number; y: number; dx: number; dy: number }> =
     [];
@@ -1242,6 +1297,8 @@ export class MapRenderer {
         /** 全部交界步数（多天时 >1 个）；`cut` 是第一道的兼容别名。 */
         cuts: this.pathCutsSeen,
         cutScreen: this.pathCutsScreen,
+        /** 流动：`on` 是否启用、`offset` 本帧相位（世界 px）、`reduced` 是否因系统设置静止。 */
+        flow: this.pathFlowSeen,
         /**
          * 每道刻痕的**横向取样**：中心 + 路径两侧各一枚（沿法线 ±3.2 世界 px）。
          *
@@ -2040,6 +2097,9 @@ export class MapRenderer {
         prevDx = dx;
         prevDy = dy;
       }
+      /** 本帧的流动相位（世界 px）；`?devflow=0` / 减少动态 ⇒ 恒 0。 */
+      const flow = flowPhase();
+      this.pathFlowSeen = { on: FLOW && !REDUCE_MOTION, offset: +flow.toFixed(2), period: FLOW_PERIOD, reduced: REDUCE_MOTION };
       if (PATH_LINE) {
         /* 分段：今天 = pts[0..cuts[0]]，其余（第 2 天起）全归"明天"那一段 ——
            它们共享交界点，线才不断开。
@@ -2078,7 +2138,7 @@ export class MapRenderer {
           afterLine = L;
         } else {
           // 负向对照：同样画在光照之前
-          drawPathLine(ctx, L);
+          drawPathLine(ctx, L, flow);
         }
       }
     }
@@ -2262,7 +2322,7 @@ export class MapRenderer {
       ctx.save();
       ctx.translate(cam.x, cam.y);
       ctx.scale(cam.zoom, cam.zoom);
-      drawPathLine(ctx, afterLine);
+      drawPathLine(ctx, afterLine, this.pathFlowSeen.offset);
       ctx.restore();
     }
     /* --- 交界在屏幕外 ⇒ 屏幕边缘补一枚指示 ---
