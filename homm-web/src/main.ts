@@ -27,6 +27,7 @@ import { LAYOUTS } from './core/data/layouts.js';
 import type { ScenarioObjective } from './core/data/scenarios.js';
 import { SCENARIO_BY_ID, scenarioGenOptions } from './core/data/scenarios.js';
 import { ownedMines } from './core/game/town.js';
+import { removeHero } from './core/game/interaction.js';
 import { endDay } from './core/game/turn.js';
 import { aiEvents } from './core/game/aiReport.js';
 import type { AiEvent, AiEventKind } from './core/game/aiReport.js';
@@ -96,6 +97,22 @@ side.id = 'side';
  */
 side.classList.add('collapsed');
 stage.appendChild(side);
+
+/**
+ * 英雄栏开着时，顶栏与拇指盘要给右缘让位（2026-10-27 主理人报「点英雄时半圆盘把英雄遮一半、
+ * 上面也看不清」）。
+ *
+ * 两处遮挡，两个不同的原因：
+ *   ① `#topbar` 是 `z-index:30` + `backdrop-filter:blur(3px)` 且**横跨整屏** ⇒ 面板顶部
+ *      （头像 / 名字 / 等级）被它盖住并**糊掉** —— 这不是"看不清"，是被毛玻璃滤了一遍；
+ *   ② `#thumb`（240×124 半圆盘）也 `z-index:30` 且贴右下 ⇒ 正好压住面板的标签行与内容区。
+ * 修法：面板展开时把两者的右边界一起收到 200px（面板宽）。**不用 `:has()`** —— Android
+ * WebView 版本不齐，JS 打一个 `body.side-open` 更稳。
+ */
+function syncSideChrome(): void {
+  document.body.classList.toggle('side-open', !side.classList.contains('collapsed'));
+}
+syncSideChrome();
 
 const sideBody = document.createElement('div');
 // `#156`（b）：面板内容容器需要类名才能进「列 flex + 段内滚动」的样式链（见 `.side-body`）。
@@ -207,6 +224,54 @@ const SHOWCASE_CHECK: Record<string, (s: GameState, foePeak: number) => boolean>
   foe: (s, foePeak) => foeHeroCount(s) < foePeak,
 };
 
+/**
+ * 三条目标的**进度分母**（2026-10-27：主理人报「全做完了没反应」——截图里三个勾全是空的，
+ * 但面板不给任何"还差多少"，玩家无从判断是没达成还是没刷新）。
+ *
+ * 勾选只是结果；玩家真正需要的是过程量，所以每条再报一个 `当前/目标`：
+ *   explore 7%/20%（开局 5.2%）· mines 1/2 · foe 0/1。
+ * 只放**数字**不放句子 —— 顶栏一行放不下第三次"还差…"。
+ */
+const SHOWCASE_TARGET: Record<
+  string,
+  { cur: (s: GameState, peak: number) => number; target: number; fmt: (have: number, target: number) => string }
+> = {
+  /* 百分比只写当前值：文案里已经有「20%」（目标），再写一遍 "5%/20%" 就是同屏两个 20%。 */
+  explore: {
+    cur: (s) => Math.floor((revealedCells(s) * 100) / (s.map.width * s.map.height)),
+    target: 20,
+    fmt: (have) => `${have}%`,
+  },
+  /* 计数写 `当前/目标`：单写一个 0 看不出分母，"0/2" 才读得出"还差两座"。 */
+  mines: {
+    cur: (s) => ownedMines(s, 'p1').length,
+    target: 2,
+    fmt: (have, target) => `${have}/${target}`,
+  },
+  foe: {
+    cur: (_s, peak) => Math.max(0, peak - foeHeroCount(_s)),
+    target: 1,
+    fmt: (have, target) => `${have}/${target}`,
+  },
+};
+
+/** `?devobjprog=0` 关掉进度数字（只给 `probe:objectives` 的负向对照用）。 */
+const OBJ_PROG = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devobjprog') !== '0';
+  } catch {
+    return true;
+  }
+})();
+/** `?devobjdone=0` 关掉"全部达成"的一次性提示（同上，负向对照）。 */
+const OBJ_DONE_HINT = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devobjdone') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
 /** 已揭开的格数：`revealed` 是定长 0/1 掩码 ⇒ 必须数 1，**不能**取 `.length`。 */
 function revealedCells(s: GameState): number {
   const r = s.players.p1?.revealed ?? [];
@@ -223,6 +288,8 @@ let objDone: Record<string, boolean> = {};
 let objFoePeak = 0;
 /** 锁存属于哪一局：`state` 对象身份变了 ⇒ 重播种。 */
 let objOwner: GameState | null = null;
+/** 「全部达成」只提示一次（换局重播）。 */
+let objAllAnnounced = false;
 
 function updateObjectives(): void {
   const on = state.config.scenario === SHOWCASE_ID;
@@ -240,6 +307,7 @@ function updateObjectives(): void {
     objOwner = state;
     objDone = {};
     objFoePeak = 0;
+    objAllAnnounced = false;
   }
   const objs = SCENARIO_BY_ID[SHOWCASE_ID]?.objectives ?? SHOWCASE_OBJECTIVES;
   // 峰值**先**刷新再判定：`foe` 比较的是"当前值 vs 峰值"。
@@ -254,20 +322,45 @@ function updateObjectives(): void {
   }
   const strip = objStripEl;
   strip.textContent = '';
+  let allDone = objs.length > 0;
   for (const o of objs) {
     const got = objDone[o.id] === true;
+    if (!got) allDone = false;
     const row = document.createElement('span');
     row.className = 'obj-row' + (got ? ' done' : '');
     row.setAttribute('role', 'listitem');
     row.setAttribute('data-obj-row', '1');
     row.setAttribute('data-obj-done', got ? '1' : '0');
-    row.setAttribute('aria-label', `${got ? '已达成' : '未达成'}：${o.text}`);
     // 勾选标记是**纯 CSS 方块**（9px 描边 / 达成则填金），不引字形 ⇒ 不碰 G-17 的图标口径。
     const mark = document.createElement('i');
     mark.className = 'obj-mark';
     mark.setAttribute('aria-hidden', 'true');
-    row.append(mark, document.createTextNode(o.text));
+    const label = document.createElement('span');
+    label.className = 'obj-text';
+    label.textContent = o.text;
+    row.append(mark, label);
+    /* 未达成的才显示「当前/目标」：达成之后数字只是噪音（勾就是答案）。
+       读屏用整句，视觉上只用数字（顶栏一行放不下第三次"还差…"）。 */
+    const t = SHOWCASE_TARGET[o.id];
+    if (OBJ_PROG && t && !got) {
+      const have = t.cur(state, objFoePeak);
+      const prog = document.createElement('b');
+      prog.className = 'obj-prog';
+      prog.textContent = t.fmt(Math.min(have, t.target), t.target);
+      row.appendChild(prog);
+      row.setAttribute('aria-label', `未达成：${o.text}（当前 ${have}，目标 ${t.target}）`);
+    } else {
+      row.setAttribute('aria-label', `${got ? '已达成' : '未达成'}：${o.text}`);
+    }
     strip.appendChild(row);
+  }
+  strip.setAttribute('data-obj-all', allDone ? '1' : '0');
+  strip.classList.toggle('all', allDone);
+  /* 三条全勾之后原来**什么都不发生**（主理人说"完全没有反应"）——
+     清单不是胜利条件，但达成该有一次明确反馈。只提示一次，不弹窗打断。 */
+  if (allDone && !objAllAnnounced) {
+    objAllAnnounced = true;
+    if (OBJ_DONE_HINT) hint('三条目标全部达成');
   }
 }
 
@@ -321,6 +414,7 @@ function toggleHeroPanel(): void {
   const collapsed = side.classList.contains('collapsed');
   side.classList.toggle('collapsed');
   if (collapsed) side.scrollTop = 0;
+  syncSideChrome();
 }
 
 /** 「城」= 经营主面直达（D-32 一等入口）：开最近/选中英雄所在的己方城镇。 */
@@ -2309,6 +2403,50 @@ if (bootParams.has('devprobe')) {
   w.__mapReachProbe = () => renderer.probeReach();
   // 预览路径地标的同帧取色 + 「路径格上还剩几枚可达点」（`probe:pathdots` 用）。
   w.__mapPathProbe = () => renderer.probePath();
+  /* 展示图三条目标的**当前判定输入**（2026-10-27：主理人报"全做完了没反应"，先得看清
+     是"没判"还是"判错"）。只读，不改状态；`human` 用来抓"玩家不是 p1"这类假设失效。 */
+  /* 测试专用：把 n 座无主矿判给 p1（不改别的状态）—— `probe:objectives` 要一个
+     确定性的"占 2 座矿"，而靠走位凑两座矿不可复现。 */
+  (w as unknown as { __devObjMines: (n?: number) => number }).__devObjMines = (n = 2) => {
+    let k = 0;
+    for (const o of Object.values(state.map.objects)) {
+      const pay = o.payload as { owner?: string } | null;
+      if (o.kind === 'mine' && pay && pay.owner !== 'p1' && k < n) {
+        pay.owner = 'p1';
+        k += 1;
+      }
+    }
+    refresh();
+    return k;
+  };
+  /* 测试专用：摘掉一名敌方英雄（= 击败一名敌将的最短路径）。 */
+  (w as unknown as { __devObjFoe: () => string | null }).__devObjFoe = () => {
+    const id = state.heroOrder.find((h) => state.heroes[h] && state.heroes[h].owner !== 'p1');
+    if (!id) return null;
+    removeHero(state, id);
+    refresh();
+    return id;
+  };
+  (w as unknown as { __objectives: () => unknown }).__objectives = () => {
+    const w2 = state.map.width;
+    const h2 = state.map.height;
+    return {
+      on: state.config.scenario === SHOWCASE_ID,
+      done: { ...objDone },
+      revealed: revealedCells(state),
+      need: Math.ceil(0.2 * w2 * h2),
+      total: w2 * h2,
+      mines: ownedMines(state, 'p1').length,
+      human: Object.keys(state.players).filter((id) => state.players[id]?.isHuman),
+      foe: foeHeroCount(state),
+      peak: objFoePeak,
+      heroOwners: state.heroOrder.map((id) => state.heroes[id]?.owner),
+      rows: [...document.querySelectorAll('#objectives .obj-row')].map((r) => ({
+        t: (r.textContent || '').trim(),
+        done: r.getAttribute('data-obj-done'),
+      })),
+    };
+  };
   /* 摆一条**真实**的预览路径（走 `updateHover` 同一条 `buildPath` + `fieldFull`）。
    * 为什么不用合成 `pointermove`：探针要的是"这条路线"，而指针坐标要先过 `camera.pick`，
    * 那是另一套口径（镜头/DPR/缩放都在中间）—— 用格子坐标直接喂，量的就是玩家真会看到的那条。 */

@@ -264,6 +264,23 @@ body {
   border-color: var(--gold);
 }
 
+/* 进度数字（2026-10-27）：只给**未达成**的行显示「当前/目标」。
+ * 12px + 等宽数字：顶栏一行要放三条（"探索 20% 7%/20% · 占 2 座矿 0/2 · 击败 1 名敌将 0/1"），
+ * 用正文 15px 会把这行撑到 420px 以上，顶栏在 844 屏上还得让 200px 给英雄栏。 */
+.obj-prog {
+  margin-left: 2px;
+  font-size: var(--t-cap);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+/* 三条全勾：整条描边转金 —— 达成要有一次"看得见"的状态变化，而不只是三个小方块变实心。 */
+#objectives.all {
+  box-shadow: inset 0 0 0 1px rgba(240, 212, 136, 0.35);
+  border-radius: 999px;
+}
+
 .btn {
   background: linear-gradient(180deg, #6b5230, #46331c);
   color: var(--parchment);
@@ -3249,6 +3266,17 @@ body.in-battle #thumb {
   stroke-linejoin: round;
   /* 图标是装饰：指针事件必须穿过去，否则按钮右半边点不到。 */
   pointer-events: none;
+}
+
+/* ---------- 英雄栏展开：顶栏与拇指盘让出右缘（2026-10-27） ----------
+ * 面板宽 200、贴右。展开时：
+ *   · `#topbar`（z30 + blur3）原先横跨到 836 ⇒ 把面板头部的头像/名字糊成一片；
+ *   · `#thumb`（240×124，z30）贴右下 ⇒ 压住面板的标签行与列表。
+ * 两条都收右边界到 208px（200 面板 + 8 间隙）。收起态一切照旧 —— 此时 `body` 没有
+ * `side-open` 类，规则不参与，`probe:dockoverlap` / `audit:touch` 的读数一个不动。 */
+body.side-open #topbar,
+body.side-open #thumb {
+  right: calc(env(safe-area-inset-right, 0px) + 208px);
 }
 
 /* 拇指盘：4 个按钮改「图标在上、12px 文字在下」。

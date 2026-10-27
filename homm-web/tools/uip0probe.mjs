@@ -212,6 +212,28 @@ const TOWNCOST = `(() => {
   };
 })()`;
 
+/**
+ * 英雄栏展开时的**遮挡**（2026-10-27 主理人报「点英雄时半圆盘把英雄遮一半、上面也看不清」）。
+ * 量三块矩形：`#side`（面板）、`#topbar`（z30 + backdrop blur）、`#thumb`（240×124 圆盘）。
+ * 判据：面板展开时，另两块**都不与它相交**。
+ */
+const SIDECLEAR = `(() => {
+  const R = (el) => { if (!el) return null; const b = el.getBoundingClientRect();
+    return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; };
+  const side = document.getElementById('side');
+  const tb = document.getElementById('topbar');
+  const th = document.getElementById('thumb');
+  const inter = (a, b) => !!a && !!b && !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+  const s = R(side), t = R(tb), d = R(th);
+  return {
+    open: !!side && !side.classList.contains('collapsed'),
+    side: s, topbar: t, thumb: d,
+    overlapTop: inter(s, t),
+    overlapThumb: inter(s, d),
+    bodyCls: document.body.className,
+  };
+})()`;
+
 const TOWNPANE = `(() => {
   const p = document.querySelector('.modal.wide .town-pane');
   if (!p) return null;
@@ -838,6 +860,39 @@ async function run() {
           : '没量到',
       );
 
+
+      /* 英雄栏遮挡（2026-10-27）：展开后顶栏与圆盘都不得压在面板上；
+         再手动摘掉 body.side-open ⇒ 同一判据必须翻红（证它量的是让位规则，不是"面板没开"）。 */
+      await send('Page.navigate', { url: `${base}?devshowcase=1&devprobe=1&devreveal=1` });
+      for (let i = 0; i < 120; i++) {
+        try {
+          if (await evaluate(`!!document.querySelector('#thumb .tb-btn')`)) break;
+        } catch {
+          /* 导航中 */
+        }
+        await sleep(100);
+      }
+      await sleep(1500);
+      await evaluate(`(() => { const b=[...document.querySelectorAll('#thumb .tb-btn')].find(x=>/英雄/.test(x.textContent||'')); if(b) b.click(); return 1; })()`);
+      await sleep(600);
+      const sideA = await evaluate(SIDECLEAR);
+      check(
+        'sideclear',
+        '英雄栏展开时 · 顶栏与拇指盘都不压在面板上（顶栏的毛玻璃会把面板头糊掉）',
+        !!sideA && sideA.open === true && sideA.overlapTop === false && sideA.overlapThumb === false,
+        sideA
+          ? `面板 x${sideA.side.x}..${sideA.side.x + sideA.side.w} · 顶栏右 ${sideA.topbar.x + sideA.topbar.w} · 圆盘右 ${sideA.thumb.x + sideA.thumb.w} · 相交 顶栏=${sideA.overlapTop} 圆盘=${sideA.overlapThumb}`
+          : '没量到',
+      );
+      await evaluate(`document.body.classList.remove('side-open')`);
+      await sleep(300);
+      const sideB = await evaluate(SIDECLEAR);
+      check(
+        'sideclear-ctl',
+        '摘掉 body.side-open ⇒ 同一判据翻红（证它量的是让位规则，不是"面板没开"）',
+        !!sideB && sideB.open === true && (sideB.overlapTop === true || sideB.overlapThumb === true),
+        sideB ? `相交 顶栏=${sideB.overlapTop} 圆盘=${sideB.overlapThumb}` : '没量到',
+      );
 
       /* ⚠️ 必须放在 `judge()` **之后**：judge 第一行是 `rows.length = 0`，
          之前加进去的对照行会被清掉（本轮就这么丢过一次，日志里少了一条还以为没跑）。 */
