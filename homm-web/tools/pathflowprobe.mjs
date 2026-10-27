@@ -17,6 +17,11 @@
  *   · `?devflow=0`：相位恒 0、像素不变（证判据量的是这一层，不是地图自己在动）；
  *   · `prefers-reduced-motion: reduce`：整层静止（无障碍要求，也是 DOM 层唯一能机检的一条）。
  *
+ * 速度不再写死（§25）：
+ *   · `flow-wired` —— 这一帧的 `mp` 必须就是英雄一整天的移动力，`speed` = 9 × clamp(mp/1800)；
+ *   · `flow-pace`  —— `?devpathpace=1200` 与 `=2700` 两臂各量**每秒相位前进**，比值 ≈ 1.75。
+ *     只读回传的 `speed` 等于在测公式本身，所以这里量的是动画真的快了。
+ *
  * 用法：`node tools/pathflowprobe.mjs [--json] [--light=0.68] [--seed=…] [--dt=360]`
  * 退出码：0 全过 / 1 有判据不过
  */
@@ -81,9 +86,13 @@ async function arm(send, evaluate, query, label) {
     `window.__mapPreviewDay ? window.__mapPreviewDay(${MP}) : { ok: false }`,
   );
   await sleep(420);
+  /* 两次读数前后各取一次**页面自己的**时钟：Node 侧的 `sleep` 不含 evaluate 往返，
+     而 `flow-pace` 要算"每秒前进多少"。用页面时钟把这段开销一起算进分母。 */
+  const t1 = await evaluate('performance.now()');
   const p1 = await evaluate('window.__mapPathProbe ? window.__mapPathProbe() : null');
   await sleep(DT);
   const p2 = await evaluate('window.__mapPathProbe ? window.__mapPathProbe() : null');
+  const t2 = await evaluate('performance.now()');
   if (!AS_JSON) {
     const d1 = (p1 && p1.day) || {};
     const f1 = d1.flow || {};
@@ -92,7 +101,7 @@ async function arm(send, evaluate, query, label) {
         ` · 流动 on=${f1.on} 相位 ${f1.offset}/${f1.period} · reduced=${f1.reduced}`,
     );
   }
-  return { hook, p1, p2 };
+  return { hook, p1, p2, t1, t2 };
 }
 
 let srv = null;
@@ -150,6 +159,60 @@ try {
         '明天段的实/空分布在两帧之间变了，今天段一个字都没变',
         nextFlips >= 2 && nowFlips === 0,
         `明天翻转 ${nextFlips} 枚 / 今天翻转 ${nowFlips} 枚（今天 ${(a1.now && a1.now.fineN) || 0} 枚、明天 ${(a1.next && a1.next.fineN) || 0} 枚采样）`,
+      );
+
+      /* --- 速度按移动力缩放：先对"接线"，再量"真的变快了" ---
+         ① 接线：这一帧回传的 `mp` 必须就是英雄一整天的移动力（`__mapPreviewDay` 的 `maxMp`），
+            并且 `speed` 等于 9 × clamp(mp/1800, 0.8, 1.4)。只量相位证明不了"速度跟谁挂钩"。
+         ② 行为：用 `?devpathpace=` 指定两个极端预算，各量一次**每秒相位前进**，
+            比值必须 ≈ 1.75（1200 ⇒ 0.8×，2700 ⇒ 1.4×）。 */
+      const expectSpeed = (mp) => 9 * Math.max(0.8, Math.min(1.4, (mp || 0) / 1800));
+      const hookMp = A.hook ? A.hook.maxMp : null;
+      check(
+        'flow-wired',
+        '流速取自英雄一整天的移动力（不是写死的 9）：mp 与 speed 两处同时对账',
+        typeof f1.mp === 'number' &&
+          typeof hookMp === 'number' &&
+          f1.mp === hookMp &&
+          Math.abs((f1.speed ?? 0) - expectSpeed(f1.mp)) < 0.05,
+        `mp=${f1.mp}（钩子 maxMp=${hookMp}）· speed=${f1.speed}（应 ${expectSpeed(f1.mp).toFixed(2)}，基准 ${f1.base}）`,
+      );
+
+      /* 每次读数都取页面自己的 `performance.now()`：Node 侧计时会被两次 evaluate 的
+         往返与探针自身取色（几十毫秒）算进去，而这里要的是**动画自己的**速率。 */
+      const rateArmWith = async (pace, extra, label) => {
+        const r = await arm(send, evaluate, `&devpathpace=${pace}${extra}`, label);
+        const g1 = (r.p1 && r.p1.day && r.p1.day.flow) || {};
+        const g2 = (r.p2 && r.p2.day && r.p2.day.flow) || {};
+        const per = g1.period || 7.2;
+        const d = ((((g2.offset ?? 0) - (g1.offset ?? 0)) % per) + per) % per;
+        const dt = Math.max(1, (r.t2 ?? 0) - (r.t1 ?? 0)) / 1000;
+        return { d, dt: +dt.toFixed(3), rate: +(d / dt).toFixed(2), speed: g1.speed, mp: g1.mp };
+      };
+      const rateArm = (pace, label) => rateArmWith(pace, '', label);
+      const rateArmFixed = (pace, label) => rateArmWith(pace, '&devflowfixed=1', label);
+      const P1 = await rateArm(1200, 'devpathpace=1200（慢英雄）');
+      const P2 = await rateArm(2700, 'devpathpace=2700（快英雄）');
+      const ratio = P1.rate > 0.5 && P2.rate > 0.5 ? P2.rate / P1.rate : 0;
+      check(
+        'flow-pace',
+        '移动力更高 ⇒ 虚线确实走得更快（1200 与 2700 两臂的**每秒**相位前进比 ≈ 1.75）',
+        ratio > 1.55 && ratio < 2.0,
+        `1200: speed ${P1.speed} · ${P1.d.toFixed(2)}px/${P1.dt}s = ${P1.rate}px/s · ` +
+          `2700: speed ${P2.speed} · ${P2.d.toFixed(2)}px/${P2.dt}s = ${P2.rate}px/s · ` +
+          `比值 ${ratio.toFixed(2)}（应 1.75）`,
+      );
+
+      /* 负向对照：把速度钉回写死的 9px/s（`?devflowfixed=1`）⇒ 两臂比值必须塌回 ≈1。
+         没有这一条，`flow-pace` 只能证明"两个数不相等"，证明不了"是移动力让它不相等"。 */
+      const F1 = await rateArmFixed(1200, 'devflowfixed=1 · 1200');
+      const F2 = await rateArmFixed(2700, 'devflowfixed=1 · 2700');
+      const fratio = F1.rate > 0.5 && F2.rate > 0.5 ? F2.rate / F1.rate : 0;
+      check(
+        'flow-pace-ctl',
+        '把流速钉回写死的 9px/s 后，两臂比值塌回 ≈1（证 flow-pace 量的是移动力这条线）',
+        F1.speed === 9 && F2.speed === 9 && fratio > 0.75 && fratio < 1.3,
+        `1200: speed ${F1.speed} rate ${F1.rate} · 2700: speed ${F2.speed} rate ${F2.rate} · 比值 ${fratio.toFixed(2)}（应 ≈1）`,
       );
 
       // ---- 2. 关掉流动：相位恒 0、像素不变 ----

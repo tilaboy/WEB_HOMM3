@@ -2013,6 +2013,8 @@ function buildViewModel(): ViewModel {
     pathFrom: previewFrom,
     pathDay: previewDay,
     pathDays: previewStops,
+    /* 一整天能走多远（`turn.ts` 换日就重置到这个值）—— 虚线流动的速度按它缩放。 */
+    pathMp: previewPath && selected && state.heroes[selected] ? maxMovePoints(state.heroes[selected], state) : undefined,
     hover,
     dest: pendingDest && state.heroes[pendingDest.heroId] ? pendingDest.dest : null,
     selectedHeroId: selected,

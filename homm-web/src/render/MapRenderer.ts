@@ -56,6 +56,14 @@ export interface ViewModel {
    * 由主程序用 `dayStops()` 一次算出整天表；渲染器只负责照表画刻痕。
    */
   pathDays?: number[];
+  /**
+   * 英雄**一整天的移动力上限**（`maxMovePoints`，满值 1800）。
+   *
+   * 只喂给"虚线流动"的速度：走得快的英雄，虚线也该走得快 —— 否则这条动画在
+   * 移速 2400 的英雄和 1200 的英雄身上是同一个节奏，等于一个与内容无关的装饰。
+   * 传 0/省略 ⇒ 用基准速度（调试路径、没有英雄的场景）。
+   */
+  pathMp?: number;
   hover: GridPos | null;
   /** 跨天行程的目的地：画一面小旗，提醒玩家"昨天没走完"。 */
   dest: GridPos | null;
@@ -488,9 +496,52 @@ const FLOW_PIN = ((): number | null => {
     return null;
   }
 })();
-/** 流动速度（世界 px / 秒）与虚线周期（3.0 实 + 4.2 空）。 */
-const FLOW_SPEED = 9;
+/** 流动的基准速度（世界 px / 秒，满移动力 1800 的英雄）与虚线周期（3.0 实 + 4.2 空）。 */
+const FLOW_BASE = 9;
 const FLOW_PERIOD = 7.2;
+/** 基准移动力：`maxMovePoints` 的满值。速度按 `mp / 1800` 线性缩放。 */
+const FLOW_REF_MP = 1800;
+/** 缩放夹紧：太慢看着像卡住、太快像在抖（1200 的慢英雄 0.8×，2700 的快英雄 1.4×）。 */
+const FLOW_MIN_K = 0.8;
+const FLOW_MAX_K = 1.4;
+/** 负向对照：`?devflowfixed=1` 让流速退回写死的基准值（`flow-pace-ctl` 用）。 */
+const FLOW_FIXED = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devflowfixed') === '1';
+  } catch {
+    return false;
+  }
+})();
+/** 测试用：`?devpathpace=2700` 直接指定移动力，不必造一个真有那么多移动力的英雄。 */
+const FLOW_PACE_OVERRIDE = ((): number | null => {
+  try {
+    const v = new URLSearchParams(location.search).get('devpathpace');
+    if (v === null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+})();
+
+/**
+ * 本帧的流动速度（世界 px/s）。
+ *
+ * 为什么按移动力缩放：这条动画唯一的语义是"**还在往前走**"。而"走多快"是有数据的 ——
+ * 英雄一天的移动力（`maxMovePoints`）。同一个 9px/s 落在移速 1200 与 2400 的英雄身上，
+ * 一个是"散步"、一个是"倒放"；跟内容挂钩之后，它才在说同一句实话。
+ *
+ * 夹紧到 0.8~1.4 是有意的：这不是仪表盘，慢到 0.3× 会像卡帧，快到 2× 会像抖动。
+ */
+function flowSpeed(mp?: number): number {
+  /* `?devflowfixed=1`：退回"写死 9px/s"的旧行为 —— `flow-pace-ctl` 的负向对照。
+     没有它，那条判据只能证明"两个数不相等"，证明不了"相等的原因是被固定住了"。 */
+  if (FLOW_FIXED) return FLOW_BASE;
+  const m = FLOW_PACE_OVERRIDE ?? mp;
+  if (!m || !Number.isFinite(m) || m <= 0) return FLOW_BASE;
+  const k = Math.max(FLOW_MIN_K, Math.min(FLOW_MAX_K, m / FLOW_REF_MP));
+  return FLOW_BASE * k;
+}
 /** 系统"减少动态"：整层静止。 */
 const REDUCE_MOTION = ((): boolean => {
   try {
@@ -501,12 +552,12 @@ const REDUCE_MOTION = ((): boolean => {
 })();
 
 /** 当前相位（世界 px，0~周期）。三种来源：关掉 / 钉死 / 墙上时间。 */
-function flowPhase(): number {
+function flowPhase(mp?: number): number {
   if (!FLOW || REDUCE_MOTION) return 0;
   if (FLOW_PIN !== null && Number.isFinite(FLOW_PIN)) {
     return (((FLOW_PIN % 1) + 1) % 1) * FLOW_PERIOD;
   }
-  return ((performance.now() / 1000) * FLOW_SPEED) % FLOW_PERIOD;
+  return ((performance.now() / 1000) * flowSpeed(mp)) % FLOW_PERIOD;
 }
 
 /**
@@ -918,7 +969,18 @@ export class MapRenderer {
   /** 本帧**全部**交界步数（多天时多于一个）。 */
   private pathCutsSeen: number[] = [];
   /** 本帧的流动相位（`probePath` 回传，判据据此验"它在动"）。 */
-  private pathFlowSeen = { on: false, offset: 0, period: FLOW_PERIOD, reduced: false };
+  private pathFlowSeen = {
+    on: false,
+    offset: 0,
+    period: FLOW_PERIOD,
+    reduced: false,
+    /** 本帧用的流速（世界 px/s）与它依据的移动力 —— 两者都要能被判据读到。 */
+    speed: FLOW_BASE,
+    mp: null as number | null,
+    base: FLOW_BASE,
+    /** 是否被 `?devflowfixed=1` 钉回基准速度（负向对照）。 */
+    fixed: false,
+  };
   /** 每道刻痕的屏幕坐标（诊断/取景用）。 */
   private pathCutsScreen: Array<{ step: number; x: number; y: number; dx: number; dy: number }> =
     [];
@@ -2175,8 +2237,19 @@ export class MapRenderer {
         prevDy = dy;
       }
       /** 本帧的流动相位（世界 px）；`?devflow=0` / 减少动态 ⇒ 恒 0。 */
-      const flow = flowPhase();
-      this.pathFlowSeen = { on: FLOW && !REDUCE_MOTION, offset: +flow.toFixed(2), period: FLOW_PERIOD, reduced: REDUCE_MOTION };
+      const flow = flowPhase(vm.pathMp);
+      /* `speed`/`mp` 一起回传：判据要能对账"这一帧用的速度是不是按移动力算出来的"，
+         而不只是"相位在变"。 */
+      this.pathFlowSeen = {
+        on: FLOW && !REDUCE_MOTION,
+        offset: +flow.toFixed(2),
+        period: FLOW_PERIOD,
+        reduced: REDUCE_MOTION,
+        speed: +flowSpeed(vm.pathMp).toFixed(2),
+        mp: FLOW_PACE_OVERRIDE ?? vm.pathMp ?? null,
+        base: FLOW_BASE,
+        fixed: FLOW_FIXED,
+      };
       if (PATH_LINE) {
         /* 分段：今天 = pts[0..cuts[0]]，其余（第 2 天起）全归"明天"那一段 ——
            它们共享交界点，线才不断开。
