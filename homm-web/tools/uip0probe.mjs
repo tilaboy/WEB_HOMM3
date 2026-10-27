@@ -175,6 +175,43 @@ const CONTRAST = `(() => {
  * 只看 `.modal` 的 scrollHeight 会被 `overflow:hidden` 吃掉 —— 改前 pane 溢出 122px，
  * 而 modal 的 scrollHeight 恰好等于 clientHeight，于是老闸全绿（铁律 §16 的同款陷阱）。
  */
+/**
+ * 造价行"去文字化"（2026-10-27 主理人："各个建筑的资源显示太长，给人感觉还是一堆 text"）。
+ *
+ * 判据只锁**可数**的那一半：
+ *   · 造价行里**不许有汉字**（全名已移进 title / aria-label）；
+ *   · 每枚 chip 必须真的挂着一个可用的 `<use>`（图标没画出来 = 只剩数字，等于没改）；
+ *   · 行不许被裁（`scrollWidth > clientWidth`）——单行不折是这批的硬约束；
+ *   · 底部库存条同样改成 7 枚图标 chip；
+ *   · `towncost-bad`：`?devpoor=1`（资源压到买不起）时缺项走 `.rc.bad` 红色（图标同步变红）。
+ * 是否"好看"仍然只能靠截图，见 §26。
+ */
+const TOWNCOST = `(() => {
+  const rows = [...document.querySelectorAll('.bcard .bs')];
+  const costs = rows.filter((r) => r.classList.contains('costs'));
+  const cjkOf = (list) => list.filter((r) => /[\\u4e00-\\u9fa5]/.test(r.textContent || '')).length;
+  const cjk = cjkOf(costs);
+  /* 全部状态行里的汉字数：对照臂（旧文字造价）靠它证"确实回到文字版"。 */
+  const cjkAll = cjkOf(rows);
+  const chips = costs.map((r) => r.querySelectorAll('.rc').length);
+  const iconless = costs
+    .flatMap((r) => [...r.querySelectorAll('.rc')])
+    .filter((c) => !c.querySelector('svg use')).length;
+  const over = rows.filter((r) => r.scrollWidth > r.clientWidth + 1).length;
+  return {
+    rows: rows.length,
+    costs: costs.length,
+    cjk,
+    cjkAll,
+    chipMin: chips.length ? Math.min(...chips) : 0,
+    iconless,
+    over,
+    bad: document.querySelectorAll('.bcard .bs.costs .rc.bad').length,
+    badIconOk: [...document.querySelectorAll('.bcard .bs.costs .rc.bad')].every((c) => !!c.querySelector('svg use')),
+    budget: document.querySelectorAll('.town-budget .rc').length,
+  };
+})()`;
+
 const TOWNPANE = `(() => {
   const p = document.querySelector('.modal.wide .town-pane');
   if (!p) return null;
@@ -383,7 +420,9 @@ async function measure(send, evaluate, url, { needStart = false, needHero = fals
 
   if (needModal) {
     // 羊皮纸层只在"非 wide 弹窗"上出现（事件 / 战报 / AI 动向 / 法术书）。
-    // 点「结束一天」必定弹「对手动向」—— 这是最稳定的一扇普通弹窗。
+    // 2026-10-27 起「对手动向」默认只在**打到玩家头上**时弹（主理人：每天弹没必要），
+    // 所以这一屏改用 `?devreport=1` 强制把当天全部 AI 事件弹出来 —— 否则这扇普通弹窗
+    // 会不会出现取决于 AI 当天干了什么，判据会随机红。
     //
     // ★ 2026-10-24：这一次点击**曾经偶发落空**（全量回归里 `contrast` 变红，单独复跑又绿）。
     //   落空有两种成因，都必须处理：① 按钮还没进 DOM/还是 disabled（上一段过天演出没结束）；
@@ -446,6 +485,8 @@ async function measure(send, evaluate, url, { needStart = false, needHero = fals
   const touch = needStart ? await evaluate(TOUCH) : null;
   const contrast = needModal ? await evaluate(CONTRAST) : null;
   const townpane = url.includes('devtown') ? await evaluate(TOWNPANE) : null;
+  /* 造价行是否已经"去文字化"（图标 + 数字）：只在城镇屏上量。 */
+  const towncost = url.includes('devtown') ? await evaluate(TOWNCOST) : null;
   const sides = url.includes('devbattle') ? await evaluate(SIDES) : null;
   const hud = url.includes('devbattle') ? await evaluate(HUD) : null;
   const icons = await evaluate(ICONS);
@@ -485,7 +526,7 @@ async function measure(send, evaluate, url, { needStart = false, needHero = fals
   }
 
   return {
-    url, sizes, material, hp, touch, contrast, townpane, sides, hud, icons, forecast,
+    url, sizes, material, hp, touch, contrast, townpane, towncost, sides, hud, icons, forecast,
     queue: { before: queue0, after: queue1, waits },
     pressed, stuck,
   };
@@ -584,6 +625,23 @@ function judge(all) {
     tp
       ? `pane ${tp.ch}/${tp.ch}（scroll ${tp.sh}）· ${tp.rows} 行 ${tp.full}/${tp.cards} 张完整可见`
       : '没打开城镇面板（?devtown=1 没进对局？）',
+  );
+
+  // ⑦b 造价行去文字化（图标 + 数字；2026-10-27）
+  const tc = all.map((s) => s.towncost).find(Boolean);
+  check(
+    'towncost',
+    '城镇造价行只剩「图标 + 数字」（无汉字 · 每枚都挂着可用 <use> · 不裁切 · 库存条 7 枚）',
+    !!tc &&
+      tc.costs > 0 &&
+      tc.cjk === 0 &&
+      tc.chipMin >= 1 &&
+      tc.iconless === 0 &&
+      tc.over === 0 &&
+      tc.budget === 7,
+    tc
+      ? `造价行 ${tc.costs} 条（含汉字 ${tc.cjk}）· 每条最少 ${tc.chipMin} 枚 chip · 无图标 ${tc.iconless} · 裁切 ${tc.over} 行 · 库存 ${tc.budget} 枚`
+      : '没量到城镇面板',
   );
 
   // ⑧ 战斗部队带：没有整块底板 + 卡片随内容长
@@ -728,7 +786,7 @@ async function run() {
         { tag: 'town', url: `${base}?devquick=1&devtown=1` },
         { tag: 'battle', url: `${base}?devbattle=1` },
         // 羊皮纸（普通弹窗）单独一屏：要真的把弹窗点出来才量得到字色
-        { tag: 'modal', url: `${base}?devquick=1&devreveal=1`, needModal: true },
+        { tag: 'modal', url: `${base}?devquick=1&devreveal=1&devreport=1`, needModal: true },
         { tag: 'start', url: `${base}?devstart=1`, needStart: true },
       ];
       for (const s of screens) {
@@ -737,6 +795,52 @@ async function run() {
       }
 
       const green = judge(all);
+      /* 负向对照（常驻）：`?devtowncost=0` 退回旧的纯文字造价行 ⇒ `towncost` 必须变红。
+         没有这一臂，那条判据只能证明"读到了东西"，证明不了它测的是"图标化"。 */
+      await send('Page.navigate', { url: `${base}?devquick=1&devtown=1&devtowncost=0` });
+      for (let i = 0; i < 120; i++) {
+        try {
+          if (await evaluate(`!!document.querySelector('.bcard')`)) break;
+        } catch {
+          /* 导航中 */
+        }
+        await sleep(100);
+      }
+      await sleep(1400);
+      const tcOld = await evaluate(TOWNCOST);
+      const tcOldCards = await evaluate(`document.querySelectorAll('.bcard').length`);
+      check(
+        'towncost-ctl',
+        'devtowncost=0（旧文字表现）下同一判据变红（证它测的是"图标化"）',
+        !!tcOld && tcOld.costs === 0 && tcOld.cjkAll > 0,
+        tcOld ? `造价行 ${tcOld.costs} 条（应 0）· 状态行含汉字 ${tcOld.cjkAll}（应 >0）· 卡片 ${tcOldCards}` : '没量到',
+      );
+
+      /* 第二臂：`?devpoor=1` 把资源压到"买不起" ⇒ 缺项必须走 `.rc.bad`（红）。
+         没有这一臂，红色分支永远没人走到 —— 判据只见过"全绿"的造价行。 */
+      await send('Page.navigate', { url: `${base}?devquick=1&devtown=1&devpoor=1` });
+      for (let i = 0; i < 120; i++) {
+        try {
+          if (await evaluate(`!!document.querySelector('.bcard')`)) break;
+        } catch {
+          /* 导航中 */
+        }
+        await sleep(100);
+      }
+      await sleep(1200);
+      const tcPoor = await evaluate(TOWNCOST);
+      check(
+        'towncost-bad',
+        '买不起时缺项变红（`.rc.bad` · 图标也红）且卡面仍无汉字',
+        !!tcPoor && tcPoor.bad > 0 && tcPoor.badIconOk === true && tcPoor.cjk === 0 && tcPoor.over === 0,
+        tcPoor
+          ? `缺项 ${tcPoor.bad} 枚（图标齐全=${tcPoor.badIconOk}）· 汉字 ${tcPoor.cjk} · 裁切 ${tcPoor.over}`
+          : '没量到',
+      );
+
+
+      /* ⚠️ 必须放在 `judge()` **之后**：judge 第一行是 `rows.length = 0`，
+         之前加进去的对照行会被清掉（本轮就这么丢过一次，日志里少了一条还以为没跑）。 */
       if (AS_JSON) {
         console.log(JSON.stringify({ green, rows, screens: all.map(({ tag, sizes, material, touch, hp, contrast, townpane, sides, hud, icons, forecast, pressed }) => ({ tag, sizes, material, touch, hp, contrast, townpane, sides, hud, pressed })) }, null, 2));
       } else {

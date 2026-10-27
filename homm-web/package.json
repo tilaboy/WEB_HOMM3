@@ -50,7 +50,8 @@
     "probe:pathdots": "node tools/pathdotsprobe.mjs",
     "probe:pathday": "node tools/pathdayprobe.mjs",
     "probe:pathflow": "node tools/pathflowprobe.mjs",
-    "probe:longlist": "node tools/longlistprobe.mjs"
+    "probe:longlist": "node tools/longlistprobe.mjs",
+    "probe:dayflow": "node tools/dayflowprobe.mjs"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",

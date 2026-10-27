@@ -2,6 +2,28 @@ import type { GameState, Hero, ResourceBag, ResourceKind } from '../core/types.j
 import { BUILDINGS, HERO_HIRE_COST } from '../core/data/buildings.js';
 import { WAR_MACHINES, WAR_MACHINE_IDS } from '../core/data/warmachines.js';
 import { getUnit } from '../core/data/units.js';
+import { viewerOf } from '../core/data/factions.js';
+
+/**
+ * 造价行是否用「图标 + 数字」（默认开）。`?devtowncost=0` 回退成旧的纯文字
+ * （`4500 金 · 4 水晶`+`还差：…`）—— **只**给 `probe:uip0` 的 `towncost` 当负向对照：
+ * 没有它，那条"造价行不许出现汉字"的判据只能证明"能读到东西"，证明不了它测的是图标化。
+ */
+const COST_CHIPS = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devtowncost') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
+/** 造价/库存里图标的固定顺序（金→木→矿→宝石→水晶→硫磺→水银）。 */
+const RES_ORDER: ResourceKind[] = ['gold', 'wood', 'ore', 'gem', 'crystal', 'sulfur', 'mercury'];
+/** 全名只进 `title`/`aria-label`：卡面上**不写汉字**，只留图标 + 数字。 */
+const RES_FULL: Record<ResourceKind, string> = {
+  gold: '金币', wood: '木材', ore: '矿石',
+  gem: '宝石', crystal: '水晶', sulfur: '硫磺', mercury: '水银',
+};
 
 /** 市场按钮上的短名（"木材"太长，挤不进小按钮）。 */
 const RESOURCE_LABEL: Partial<Record<ResourceKind, string>> = {
@@ -32,6 +54,7 @@ import {
 } from '../core/game/town.js';
 import type { BuildStatus } from '../core/game/town.js';
 import { showModal } from './Dialogs.js';
+import { installResIcons, resIcon, type ResId } from './resicons.js';
 import { sfx } from './sfx.js';
 // TP-3：城镇场景曲（audio-direction.md §10.1 接线④）。开窗立即播；
 // 关窗回 map 由 main.ts 的场景巡更补（showModal 没有 onClose，见那边注释）。
@@ -71,6 +94,8 @@ const BUILD_TABS: Record<'build' | 'dwell', readonly string[]> = {
  * ③ **决策处可见**：建筑页每张卡的造价行"还差"逐项列出；市场页补一行「我的资源」（#50）。
  */
 export function openTownDialog(parent: HTMLElement, opts: TownDialogOptions): void {
+  // 资源图标 sprite 幂等挂载：城镇是唯一用到它的地方，没必要在 boot 里也装一份。
+  installResIcons();
   const heroHere = opts.heroId ? opts.state.heroes[opts.heroId] : null;
   let note = '';
   let tab: TownTab = 'build';
@@ -93,7 +118,8 @@ export function openTownDialog(parent: HTMLElement, opts: TownDialogOptions): vo
     const { state, townId } = opts;
     const town = state.towns[townId];
     if (!town) return;
-    const res = state.players.p1?.resources ?? {};
+    // 当前玩家可能不是 p1（D-48 解锁选族后）⇒ 走 viewerOf，别写死阵营（项目铁律 10）。
+    const res = state.players[viewerOf(state)]?.resources ?? {};
 
     // 常驻只读读数（IA §3.4 #36）：每日税收 / 城防 / 周增长 —— 顶栏没有，是经营的核心读数。
     // 建筑页顶部那排**堆叠式资源 chip 行已删除**（#35）：改由每张卡造价行承担（决策处可见），
@@ -137,17 +163,14 @@ export function openTownDialog(parent: HTMLElement, opts: TownDialogOptions): vo
     };
     paintPane(pane, opts, tab, res, say);
 
+    /* 库存条同样只留「图标 + 数字」（2026-10-27）：原来 7 个「金 2500 / 木 10 / …」
+       一字排开，读起来就是一串文本。图标固定顺序 + 等宽数字之后，扫一眼就能对齐比较。 */
     budget.innerHTML = '';
     const bk = document.createElement('span');
     bk.className = 'town-budget-k';
     bk.textContent = '库存';
     budget.appendChild(bk);
-    budget.appendChild(chip(`金 ${res.gold ?? 0}`));
-    budget.appendChild(chip(`木 ${res.wood ?? 0}`));
-    budget.appendChild(chip(`矿 ${res.ore ?? 0}`));
-    for (const k of ['gem', 'crystal', 'sulfur', 'mercury'] as const) {
-      budget.appendChild(chip(`${RESOURCE_LABEL[k]} ${res[k] ?? 0}`));
-    }
+    for (const k of RES_ORDER) budget.appendChild(resChip(k, res[k] ?? 0));
   };
 
   renderAll();
@@ -563,29 +586,73 @@ function buildStateLine(st: BuildStatus): HTMLElement {
     el.textContent = '✓ 已建成';
     return el;
   }
-  if (!st.missing.length) {
-    el.className = 'bs' + (st.spentToday ? ' warn' : '');
+  /* 前置没满足：这句必须留文字（"需先建造：市场"没法图标化），它也就两个字多一点。 */
+  if (!st.unlocked) {
+    el.className = 'bs';
     el.textContent = st.reason;
     return el;
   }
-  el.className = 'bs short';
-  // 先把完整造价摆出来，再点出缺哪几项。
-  // 只写"还差"会让玩家看不到总价（4500 金 + 4 水晶），
-  // 只写总价又正是当初那条"资源不足（4500 金）"的误导来源——两行都要。
-  if (st.cost) {
-    const full = document.createElement('span');
-    full.className = 'cost';
-    full.textContent = `${formatCost(st.cost)}　`;
-    el.append(full);
+  if (st.spentToday) {
+    el.className = 'bs warn';
+    el.textContent = '今日已建 · 明日再来';
+    return el;
   }
-  el.append(document.createTextNode('还差：'));
-  st.missing.forEach((m, i) => {
-    if (i) el.append(document.createTextNode('、'));
-    const b = document.createElement('b');
-    b.className = 'lack';
-    b.textContent = `${RESOURCE_LABEL[m.resource] ?? m.resource} ${m.have}/${m.need}`;
-    el.append(b);
-  });
+  /* 造价：**图标 + 数字**，一行、不折行。
+   *
+   * 2026-10-27（主理人："各个建筑的资源显示太长，给人感觉还是一堆 text"）：
+   * 原来写 `4500 金 · 4 水晶`，买不起时再补一句 `还差：金 1000/4500、水晶 0/4` ——
+   * 一行里塞两遍同样的信息。现在：
+   *   · 数字 = 需要多少（不再重复"现有多少"，库存条就在屏幕底部，一直可见）；
+   *   · **红 = 这一项不够**（哪项缺一眼可见，而不是读一长串"还差"）；
+   *   · 全名只进 `title` / `aria-label`，卡面不写汉字。
+   * 宽度实测：最多 3 项（9000 金 / 10 木 / 20 矿）≈ 132px < 卡内宽 160px。 */
+  if (!COST_CHIPS) {
+    /* 旧表现（负向对照臂）：一行文字，缺项用「现有/需要」。 */
+    el.className = 'bs' + (st.missing.length ? ' short' : '');
+    el.textContent =
+      formatCost(st.cost) +
+      (st.missing.length
+        ? '　还差：' + st.missing.map((m) => `${RESOURCE_LABEL[m.resource] ?? m.resource} ${m.have}/${m.need}`).join('、')
+        : '');
+    return el;
+  }
+  el.className = 'bs costs';
+  const lack = new Map(st.missing.map((m) => [m.resource, m.have]));
+  for (const k of RES_ORDER) {
+    const need = st.cost[k] ?? 0;
+    if (!need) continue;
+    el.appendChild(
+      resChip(k, need, lack.has(k) ? { short: true, have: lack.get(k) ?? 0 } : undefined),
+    );
+  }
+  if (!el.childElementCount) {
+    el.className = 'bs';
+    el.textContent = '免费';
+  }
+  return el;
+}
+
+/**
+ * 一枚资源 chip：图标 + 数字。`short` = 这一项买不起（红色 + `现有/需要` 进 tooltip）。
+ *
+ * 语义不进颜色：`aria-label` 写全「金币：现有 1000，需要 4500」，读屏拿到的是完整句子；
+ * 卡面上只剩图标与数字，是**视觉**上的减法。
+ */
+function resChip(
+  kind: ResourceKind,
+  amount: number,
+  short?: { short: boolean; have: number },
+): HTMLElement {
+  const el = document.createElement('span');
+  el.className = 'rc' + (short ? ' bad' : '');
+  const full = RES_FULL[kind] ?? kind;
+  const text = short ? `${full}：现有 ${short.have}，需要 ${amount}` : `${full} ${amount}`;
+  el.title = text;
+  el.setAttribute('aria-label', text);
+  el.appendChild(resIcon(kind as ResId));
+  const b = document.createElement('b');
+  b.textContent = String(amount);
+  el.appendChild(b);
   return el;
 }
 

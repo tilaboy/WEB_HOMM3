@@ -385,28 +385,6 @@ body {
   min-width: 84px;
 }
 
-/* 未读角标。宿主是「菜单」按钮（F-3.6 后日志入口移入菜单，角标随迁）。 */
-.tb-badge {
-  display: inline-block;
-  margin-left: 4px;
-  min-width: 16px;
-  padding: 0 3px;
-  border-radius: 8px;
-  background: var(--danger);
-  color: #fff;
-  font-size: var(--t-cap);
-  line-height: 16px;
-  text-align: center;
-  vertical-align: middle;
-  font-variant-numeric: tabular-nums;
-}
-
-/* `display:inline-block`（0,1,0）会盖过 UA 的 `[hidden]{display:none}`（0,1,0 但更早），
-   于是"未读为 0"时角标会照常显示一个 0。显式补回，角标只在有未读时出现。 */
-.tb-badge[hidden] {
-  display: none;
-}
-
 /* ---------- §14.2 教学 3/3 非阻断 banner ---------- */
 /* 贴拇指带上方（`main.ts` 里插在 `#thumb` 之前，顺文档流），高 ≤48px；**不是 modal**。 */
 #obj-banner {
@@ -475,6 +453,27 @@ body {
   border: 2px solid var(--gold);
   border-radius: 4px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+}
+
+/* 「事件日志」那一行的未读条数：右对齐小胶囊（不拼进文案，见 main.ts 的注释） */
+.menu-item:has(.mi-count) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mi-count {
+  flex: 0 0 auto;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--danger);
+  color: #fff;
+  font-size: var(--t-cap);
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .menu-panel h3 {
@@ -1105,6 +1104,66 @@ table.est td:last-child {
 }
 
 /* 次行整宽：造价 / 「还差」，单行不折、超长才省略。 */
+/* ---------- 资源 chip（图标 + 数字，2026-10-27） ----------
+ * 城镇建造卡与底部库存条共用。卡面**不写汉字**：全名在 title / aria-label 里。
+ * 尺寸按"最多 3 项 × (12 icon + 4 gap + 4 位数) ≈ 132px < 卡内 160px"定的，
+ * 所以 `.bs.costs` 只允许单行，不折行（折行会把卡撑高、撞破 townfit 的 176px）。 */
+.rc {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  color: var(--parchment);
+}
+
+.rc b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-cap);
+  line-height: 1;
+}
+
+/* 不够的那一项：图标与数字一起转红 —— 并且**多一块底色**。
+ *
+ * 只有颜色的话，红绿色盲看到的是"两个明度差不多的暖色"，缺项就消失了（WCAG 1.4.1）。
+ * 补一块 `rgba(255,80,50,.16)` 的圆角底 + 1px 内描边：形状/明度上多一层差异，
+ * 不靠色相也能读出来。代价是每枚 chip 宽 +6px，最宽的 3 项造价行仍 < 卡内 164px。 */
+.rc.bad,
+.rc.bad .ri {
+  color: #ff9b7a;
+}
+
+.rc.bad {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: rgba(255, 80, 50, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 130, 100, 0.38);
+}
+
+.ri {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  fill: currentColor;
+}
+
+/* 7 种资源的色相（深棕卡面上都 ≥4.5:1，见 probe:uip0 的对比度判据） */
+.ri-gold { color: #e8c46a; }
+.ri-wood { color: #c08a52; }
+.ri-ore { color: #b3b7bd; }
+.ri-gem { color: #6ccfa7; }
+.ri-crystal { color: #86cdea; }
+.ri-sulfur { color: #dad264; }
+.ri-mercury { color: #c3c6d2; }
+
+.bcard .bs.costs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
 .bcard .bs {
   color: var(--gold-dim);
   font-size: var(--t-cap);
@@ -3215,14 +3274,6 @@ body.in-battle #thumb {
 
 #thumb .tb-btn.primary .ti {
   opacity: 1;
-}
-
-/* 未读角标从"跟在文字后面"改成贴右上角：列布局里 inline 元素会掉到第三行。 */
-#thumb .tb-badge {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  margin-left: 0;
 }
 
 /* 战斗按钮：图标与文字并排。按钮宽度自适应，命中高不变（`.btn` 的 min-height 44）。 */

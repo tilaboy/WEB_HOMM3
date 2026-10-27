@@ -281,13 +281,11 @@ function tbButton(ic: IconId, label: string, cls: string, onClick: () => void): 
   return b;
 }
 
-// 「菜单」= 全部低频项的唯一入口（§7 R6）。日志入口移入菜单后，未读指示**随迁到此按钮**：
-// 角标复用 `.tb-badge`，且 `aria-label` 也带「N 条事件未读」——数字不得是唯一语义载体（a11y 基线 §4.3）。
+// 「菜单」= 全部低频项的唯一入口（§7 R6）。日志入口搬进菜单后曾把未读条数做成按钮角标，
+// 2026-10-27 主理人裁定「去掉拇指带上的数字角标」：拇指带 4 个按钮只承担"去哪儿"，
+// 一个没有文案的红数字在 44px 里既说不清是什么，又会被读成天数/资源。
+// 条数改挂菜单里的「事件日志」那一行（含义自明、点进去即清零）—— 见 openMenu()。
 const menuBtn = tbButton('menu', '菜单', '', () => openMenu());
-const menuBadge = document.createElement('span');
-menuBadge.className = 'tb-badge';
-menuBadge.hidden = true;
-menuBtn.appendChild(menuBadge);
 
 tbButton('hero', '英雄', '', () => toggleHeroPanel());
 tbButton('castle', '城', '', () => openHomeTown());
@@ -308,11 +306,9 @@ function updateThumb(): void {
   // 只换文字、不碰图标：直接写 textContent 会把 `<svg>` 一起抹掉。
   setLabel(endDayBtn, over ? '对局结束' : '结束一天');
 
-  // F-3.6：移动力不再常驻拇指带（数值改由地图染色 + 英雄面板按需呈现），此处只维护菜单未读角标。
-  const unread = Math.max(0, state.log.length - seenLog);
-  menuBadge.hidden = unread === 0;
-  menuBadge.textContent = String(unread);
-  menuBtn.setAttribute('aria-label', unread > 0 ? `菜单，${unread} 条事件未读` : '菜单');
+  // F-3.6：移动力不再常驻拇指带（数值改由地图染色 + 英雄面板按需呈现）。
+  // 未读条数也不在这儿了（见 menuBtn 上方的注释）——拇指带只回答"去哪儿"。
+  menuBtn.setAttribute('aria-label', '菜单');
 }
 
 /**
@@ -409,12 +405,13 @@ function openMenu(): void {
   });
 
   const closer = (): void => root.remove();
-  const button = (cls: string, label: string, act: () => void): void => {
+  const button = (cls: string, label: string, act: () => void): HTMLButtonElement => {
     const b = document.createElement('button');
     b.className = `btn menu-item${cls ? ' ' + cls : ''}`;
     b.textContent = label;
     b.addEventListener('click', act);
     panel.appendChild(b);
+    return b;
   };
   const heading = (title: string): void => {
     const h = document.createElement('h3');
@@ -438,7 +435,24 @@ function openMenu(): void {
     button('', '继续', () => closer());
     button('', '存档 / 读档', () => renderSaveLoad());
     // 日志入口：F-3.6 从拇指带搬来（复用 openLogPanel，函数不变；IA §3.2 #23 ①）
-    button('', '事件日志', () => { closer(); openLogPanel(); });
+    // 未读条数挂在这一行（2026-10-27）：点开即清零 ⇒ 数字与"要不要点"在同一处。
+    /* 条数做成**行内右侧的小胶囊**，不拼进文字。
+     *
+     * 拼文字试过两版都被折行打败：菜单是 2 列网格（`§7` 一级一屏放下），格内宽约 138px，
+     * 「事件日志 · 13 条未读」= 153px。改成「· 13 未读」后一位数刚好、**两位数又折**
+     * （日志上限 60 ⇒ 两位数才是常态）。折行会把格高撑到 66px，面板跟着顶出安全区。
+     * 胶囊只吃 20px、永远不挤，文字保持「事件日志」四个字。
+     */
+    const unread = Math.max(0, state.log.length - seenLog);
+    const logBtn = button('', '事件日志', () => { closer(); openLogPanel(); });
+    if (unread > 0) {
+      const c = document.createElement('span');
+      c.className = 'mi-count';
+      c.textContent = String(unread);
+      logBtn.appendChild(c);
+      // 完整句子给读屏（数字不是唯一语义载体，a11y 基线 §4.3）
+      logBtn.setAttribute('aria-label', `事件日志，${unread} 条未读`);
+    }
     button('', '设置', () => { closer(); openSetup(); });
     /* 教学模式专属项：只在教学局里出现（2026-10-12 用户裁定「除非选择跳过」）。
      * 不进 §7 一级 6 项的常态计数 —— 它像「事件日志」一样是**情境项**，
@@ -1524,10 +1538,11 @@ function doEndDay(): void {
 }
 
 /**
- * 过天「对手动向」摘要（TP-7 / F-2.2：回合结算看不到敌方活动、英雄死活不可知）。
+ * 过天摘要：**只有打到玩家头上时才弹**（2026-10-27 起；此前是每天必弹）。
  *
  * 数据源是 AI 行动时记的结构化事件（`aiReport.ts`），不解析日志文本。
- * 有事件才弹；没有（教学场 / 对手全灭 / 第一天大家都没动）就安静走原流程。
+ * `vsPlayer`（你的英雄被击败 / 你的城易主 / AI 打你的部队）才弹；
+ * 其余（AI 之间清野怪、招兵、在自家城里挪动）只进日志，不占一屏。
  * 弹窗时把原收尾 hint 交给关闭回调 —— 否则 toast 会在模态背后 2 秒蒸发。
  */
 function showAiDayReport(): void {
@@ -1548,7 +1563,25 @@ function showAiDayReport(): void {
     hint(`第 ${state.day} 天`);
   };
 
-  const evs = aiEvents();
+  /**
+   * 只弹**打到玩家头上**的事件（2026-10-27 主理人：「每天结束一天的对手动向，没有必要」）。
+   *
+   * 原来的弹窗是"今天全世界发生了什么"：AI 之间互相清野怪、AI 招兵、AI 在自家城里挪来挪去，
+   * 每天必弹一屏。这类信息玩家既定位不了也用不上，真正的动静（交战 / 失守 / 英雄阵亡）
+   * 在日志里也有。所以：**平时不弹**，只有 `vsPlayer` 的事件（你的英雄被打、你的资产易主）
+   * 才弹 —— 那是"你必须知道"的一类，不能因为去掉噪音而一起丢掉。
+   */
+  /* `?devreport=1`：把"全部事件"都弹出来 —— 只给探针用。
+     `probe:uip0` 拿这扇普通弹窗量羊皮纸层级与文字对比度，判它"有没有弹出来"；
+     若跟着产品规则只弹 vsPlayer，那条判据就会随机红（取决于当天 AI 干了什么）。 */
+  const devAll = (() => {
+    try {
+      return new URLSearchParams(location.search).get('devreport') === '1';
+    } catch {
+      return false;
+    }
+  })();
+  const evs = devAll ? aiEvents() : aiEvents().filter((e) => e.vsPlayer);
   if (!evs.length) {
     finish();
     return;
@@ -2526,6 +2559,14 @@ if (bootParams.get('devarmy') === 't5' && selected && state.heroes[selected]) {
     { unitTypeId: 'p3_unicorn', count: 1 },
     { unitTypeId: 'p4_colossus', count: 1 },
   ];
+}
+
+/* 调试：`?devpoor=1` 把玩家资源压到"买不起"，专门给 `probe:uip0` 的 `towncost`
+   量**红色缺项**那一态（否则造价行永远全绿，红色分支没人走到过）。
+   放在 `devtown` 之前：面板一打开就按这份资源算。 */
+if (bootParams.has('devpoor')) {
+  const p = state.players[viewerOf(state)];
+  if (p) p.resources = { ...p.resources, gold: 120, wood: 2, ore: 1, gem: 0, crystal: 0, sulfur: 0, mercury: 0 };
 }
 
 // 调试：?devtown=1 直接打开我方首座城镇面板（需配合 ?devquick 才有城镇）

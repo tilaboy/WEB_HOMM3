@@ -446,8 +446,9 @@ const APP_THUMB = `(() => {
 })()`;
 
 /**
- * **真实 app** 菜单体检（④ / F-3.6 / IA §15.4）：把「日志入口」从拇指带**搬进菜单一级项**、
- * 「未读角标」迁到常驻的「菜单」按钮之后，**必须有一条会红的回归守卫**证明"搬过了、没搬丢"。
+ * **真实 app** 菜单体检（④ / F-3.6 / IA §15.4）：把「日志入口」从拇指带**搬进菜单一级项**。
+ * 2026-10-27 起未读条数不在拇指带（主理人裁定 B）⇒ 守卫改成"拇指带不许有 `.tb-badge`"，
+ * 条数挂在「菜单 → 事件日志」那一行（点开即清零）。
  * 没有它的话，谁下次把「日志」按钮加回拇指带（或从菜单删掉「事件日志」）都能绿灯放行
  * —— 这正是本次改动的语义资产（IA §3.2 #23 ①②③「信息只搬家不丢失」）。
  *
@@ -911,7 +912,10 @@ if (!appMenu || appMenu.error) {
 } else {
   const noLogThumb = appMenu.thumbHasLog === false;
   const logInMenu = appMenu.items.includes('事件日志');
-  const badgeMoved = appMenu.badgeOnMenu === true;
+  /* 2026-10-27 主理人裁定「B：去掉拇指带上的数字角标」⇒ 判据反向：
+     拇指带上**不允许**再出现 `.tb-badge`，条数改挂「菜单 → 事件日志」那一行。
+     反向不是放宽：原来守的是"角标搬过来了"，现在守的是"角标不许回来"。 */
+  const badgeGone = appMenu.badgeOnMenu === false;
   const ariaOk = appMenu.menuAria.startsWith('菜单');
   // 菜单「不膨胀」守卫：断言的是**规格上限**，不是随便一个当时读数。
   // 写死 `=== 6` 是「固化读数」（菜单加一项就红，很快被当噪声关掉 = 没守卫）；
@@ -923,12 +927,12 @@ if (!appMenu || appMenu.error) {
   // 判据 = "一个 6 项的一级菜单不该需要滚动"（需要滚动 ⇔ §7「一级 ≤6」守的"一屏看完"已不成立）。
   // ✗ 不许靠"允许它滚"达标（bd4ebb0）✗ 不许放宽 §7 上限去凑。
   const fitOk = !!appMenu.fit && appMenu.fit.overflow <= 1 && appMenu.fit.hidden === 0;
-  for (const ok of [noLogThumb, logInMenu, badgeMoved, ariaOk, countOk, fitOk]) if (!ok) bad++;
+  for (const ok of [noLogThumb, logInMenu, badgeGone, ariaOk, countOk, fitOk]) if (!ok) bad++;
   console.log(
     `[${noLogThumb ? 'PASS' : 'FAIL'}] 拇指带已无「日志」入口（实测拇指带：${appMenu.thumbLabels.join(' / ')}）`,
   );
   console.log(`[${logInMenu ? 'PASS' : 'FAIL'}] 菜单一级项含「事件日志」（复用 openLogPanel，函数不变）`);
-  console.log(`[${badgeMoved ? 'PASS' : 'FAIL'}] 未读角标已迁到「菜单」按钮（.tb-badge 在 menuBtn 内）`);
+  console.log(`[${badgeGone ? 'PASS' : 'FAIL'}] 拇指带上没有未读角标（条数改挂「菜单 → 事件日志」那一行）`);
   console.log(
     `[${ariaOk ? 'PASS' : 'FAIL'}] 「菜单」按钮 aria-label 以「菜单」起（实测「${appMenu.menuAria}」，a11y §4.3 数字不得为唯一语义）`,
   );
