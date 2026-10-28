@@ -6,7 +6,7 @@ import type { PathField } from './core/map/pathfinding.js';
 import { revealAround, isRevealed } from './core/map/fog.js';
 import { idx, inBounds } from './core/map/grid.js';
 import { TERRAIN } from './core/data/terrains.js';
-import { DEFAULT_CONFIG, factionName, viewerOf } from './core/data/factions.js';
+import { DEFAULT_CONFIG, factionIds, factionName, viewerOf } from './core/data/factions.js';
 import {
   applyHeroBattle,
   applyInteraction,
@@ -31,7 +31,7 @@ import { removeHero } from './core/game/interaction.js';
 import { endDay } from './core/game/turn.js';
 import { aiEvents } from './core/game/aiReport.js';
 import type { AiEvent, AiEventKind } from './core/game/aiReport.js';
-import { evaluateOutcome, outcomeSummary } from './core/game/victory.js';
+import { evaluateOutcome, isEliminated, livingEnemies, outcomeSummary } from './core/game/victory.js';
 import { Camera } from './render/camera.js';
 import { MapRenderer } from './render/MapRenderer.js';
 import type { ViewModel } from './render/MapRenderer.js';
@@ -271,6 +271,14 @@ const OBJ_DONE_HINT = ((): boolean => {
     return true;
   }
 })();
+/** `?devobjguide=0` 关掉「向导」标签与「敌国 n/3」计数（负向对照用）。 */
+const OBJ_GUIDE = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devobjguide') !== '0';
+  } catch {
+    return true;
+  }
+})();
 
 /** 已揭开的格数：`revealed` 是定长 0/1 掩码 ⇒ 必须数 1，**不能**取 `.length`。 */
 function revealedCells(s: GameState): number {
@@ -317,11 +325,28 @@ function updateObjectives(): void {
   if (!objStripEl) {
     objStripEl = document.createElement('div');
     objStripEl.id = 'objectives';
-    objStripEl.setAttribute('role', 'list');
+    /* 2026-10-27：条里现在有**两类**东西（向导三条 + 敌国计数）⇒ 外层只能是 group，
+       `role=list` 下移到 `.obj-rows`（列表项必须直接是 listitem 的子）。 */
+    objStripEl.setAttribute('role', 'group');
+    objStripEl.setAttribute('aria-label', '开局向导与敌国存续');
     topbar.appendChild(objStripEl);
   }
   const strip = objStripEl;
   strip.textContent = '';
+  /* 顶栏在展示图里只剩这一条 ⇒ 它必须同时回答两个问题：
+     「开局该干什么」与「这局什么时候结束」。
+     2026-10-27 主理人把三条读成胜利条件（"三个都完成不是应该结束吗"）⇒ 左侧加「向导」标签
+     说明这三条是什么，右侧加「敌国 n/3」——那才是真正的终局进度。 */
+  const rowsWrap = document.createElement('div');
+  rowsWrap.className = 'obj-rows';
+  rowsWrap.setAttribute('role', 'list');
+  if (OBJ_GUIDE) {
+    const lead = document.createElement('span');
+    lead.className = 'obj-guide';
+    lead.textContent = '向导';
+    lead.setAttribute('aria-label', '开局向导，不是胜利条件');
+    rowsWrap.appendChild(lead);
+  }
   let allDone = objs.length > 0;
   for (const o of objs) {
     const got = objDone[o.id] === true;
@@ -352,7 +377,23 @@ function updateObjectives(): void {
     } else {
       row.setAttribute('aria-label', `${got ? '已达成' : '未达成'}：${o.text}`);
     }
-    strip.appendChild(row);
+    rowsWrap.appendChild(row);
+  }
+  strip.appendChild(rowsWrap);
+  /* 敌国计数 = 真正的胜利条件（victory.ts `isEliminated`），分母是**开局时的敌族总数**。
+     它和三条向导是两回事：向导勾满照旧继续，这个数到 0 才结算。 */
+  const enemyTotal = factionIds(state).filter((id) => id !== 'p1').length;
+  const alive = livingEnemies(state).length;
+  if (OBJ_GUIDE) {
+    const foes = document.createElement('span');
+    foes.className = 'obj-foes' + (alive <= 1 ? ' last' : '');
+    foes.setAttribute('data-obj-foes', String(alive));
+    foes.textContent = `敌国 ${alive}/${enemyTotal}`;
+    foes.setAttribute(
+      'aria-label',
+      `敌对阵营还有 ${alive} 家（共 ${enemyTotal} 家）；全部出局即胜利`,
+    );
+    strip.appendChild(foes);
   }
   strip.setAttribute('data-obj-all', allDone ? '1' : '0');
   strip.classList.toggle('all', allDone);
@@ -1551,7 +1592,8 @@ function startNewGame(config: GameConfig): void {
   if (inTutorial()) {
     hint('教学模式：跟着目标清单走，想跳过就在「菜单 → 跳过教学」');
   } else {
-    hint(`${state.config.playerName} 的征程开始了`);
+    /* 开局第一句就说清终局规则（2026-10-27）：顶栏那三条是向导，不是胜利条件。 */
+    hint(`${state.config.playerName} 的征程：让三家全部出局才算赢`);
   }
 }
 
@@ -2427,6 +2469,18 @@ if (bootParams.has('devprobe')) {
     refresh();
     return id;
   };
+  /* 测试专用：让一个敌族**整族出局**（英雄全摘 + 城全删）——
+     用来验顶栏「敌国 n/3」真的跟着 `isEliminated` 走，而不是一个写死的常量。 */
+  (w as unknown as { __devObjFoeOut: () => string | null }).__devObjFoeOut = () => {
+    for (const id of factionIds(state)) {
+      if (id === 'p1' || isEliminated(state, id)) continue;
+      for (const h of [...state.heroOrder]) if (state.heroes[h]?.owner === id) removeHero(state, h);
+      for (const k of Object.keys(state.towns)) if (state.towns[k].owner === id) delete state.towns[k];
+      refresh();
+      return id;
+    }
+    return null;
+  };
   (w as unknown as { __objectives: () => unknown }).__objectives = () => {
     const w2 = state.map.width;
     const h2 = state.map.height;
@@ -2440,6 +2494,11 @@ if (bootParams.has('devprobe')) {
       human: Object.keys(state.players).filter((id) => state.players[id]?.isHuman),
       foe: foeHeroCount(state),
       peak: objFoePeak,
+      /* 向导/敌国计数：钩子自己按 `victory.isEliminated` 数一遍，供探针与 DOM 文本对账。 */
+      foesAlive: livingEnemies(state).length,
+      foesTotal: factionIds(state).filter((id) => id !== 'p1').length,
+      guide: (document.querySelector('#objectives .obj-guide') || {}).textContent || null,
+      foesText: (document.querySelector('#objectives .obj-foes') || {}).textContent || null,
       heroOwners: state.heroOrder.map((id) => state.heroes[id]?.owner),
       rows: [...document.querySelectorAll('#objectives .obj-row')].map((r) => ({
         t: (r.textContent || '').trim(),

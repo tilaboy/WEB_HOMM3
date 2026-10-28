@@ -96,11 +96,18 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
   mapHint.className = 'ss-hint';
   mapHint.textContent =
     '地形导入自 HoMM3《破碎罗盘》—— 同一张图每一局都一模一样，可以认路、可以背「那条海峡在哪」。';
+  /* 胜利条件（2026-10-27）：主理人打完三条目标问"不是该结束了吗" ⇒ 全站从未写过终局规则。
+     `.ss-hint` 在横屏矮机是 `display:none`（F-3.5 减法），而手机正好是横屏矮机 ⇒
+     这条必须用独立类，否则加了等于没加。 */
+  const mapWin = document.createElement('div');
+  mapWin.className = 'ss-win';
+  mapWin.textContent = '胜利条件：三家全部出局（打掉他们的城与将）';
+  mapWin.setAttribute('aria-label', '胜利条件：让三个敌对阵营全部出局，即打掉他们的城与英雄');
   /* 用 `.ss-mapcard` 包一层**只为**让门控的既有断言（`#start-screen .ss-mapcard` 存在）
    * 继续成立 —— 它现在是个无边框、无背景的透明容器，视觉上不存在。 */
   const mapCard = document.createElement('div');
   mapCard.className = 'ss-mapcard';
-  mapCard.append(mapName, mapSub, mapHint);
+  mapCard.append(mapName, mapSub, mapHint, mapWin);
   form.appendChild(mapCard);
 
   /* 难度：本页唯一可改的东西。破碎罗盘固定 3 家对手，所以只用最普通的那句，

@@ -11,16 +11,23 @@
  * 所以这一批把过程量写进条里（`探索 20% 7%/20%` / `占 2 座矿 0/2` / `击败 1 名敌将 0/1`），
  * 并在三条全勾时给一次提示 + 整条描边转金。判据盯的就是这两件事。
  *
- * ## 判据（6 条 + 2 条对照）
+ * ## 判据（10 条 + 4 条对照）
  *   `strip`       —— 三条都在、文案与作者数据一致、每条都带「当前/目标」，
  *                    且数字与钩子读数**独立对账**（探针自己按 revealed/total、mines、kills 算一遍）；
+ *   `guide`       —— 条里同时有「向导」标签与「敌国 n/3」计数（2026-10-27 主理人把三条读成
+ *                    胜利条件 ⇒ 前者说明这三条是什么，后者才是终局进度）；计数与钩子对账且在屏内；
  *   `prog-move`   —— 占 1 座矿时进度变 1/2 但**不勾**（证进度是过程量，不是结果量的别名）；
  *   `tick-mines`  —— 占满 2 座 ⇒ 该行 done=1、进度数字消失；
  *   `tick-foe`    —— 击败 1 名敌将 ⇒ 该行 done=1；
  *   `tick-explore`—— 揭开 ≥20% ⇒ 该行 done=1；
  *   `all-hint`    —— 三条全勾 ⇒ `#objectives[data-obj-all="1"]` + 提示条出现「全部达成」；
+ *   `foes-drop`   —— 让一个敌族整族出局 ⇒ 计数 3/3 → 2/3（证它跟着 `isEliminated` 走，不是常量）；
+ *   `guide-narrow`—— 792 宽 + 英雄栏展开（顶栏右收 208px）⇒ 计数仍完整落在顶栏内；
+ *   `startline`   —— 开局页写着「三家全部出局」，且在横屏矮机**可见**；
  *   `ctl-prog`    —— `?devobjprog=0` ⇒ 一枚进度数字都没有（证 `strip` 量的是这批新加的东西）；
- *   `ctl-hint`    —— `?devobjdone=0` ⇒ 同样三条全勾，但**不出现**提示（证 `all-hint` 的后半不是恒真）。
+ *   `ctl-hint`    —— `?devobjdone=0` ⇒ 同样三条全勾，但**不出现**提示（证 `all-hint` 的后半不是恒真）；
+ *   `ctl-guide`   —— `?devobjguide=0` ⇒ 无标签、无计数（证 `guide` 量的不是既有 DOM）；
+ *   `ctl-hidden`  —— 同视口下 `.ss-hint` 是 display:none ⇒ `startline` 的可见性判据有牙。
  *
  * 用法：`node tools/objectivesprobe.mjs [--json] [--port=5216]`
  * 退出码：0 全过 / 1 有判据不过 / 2 前置不满足
@@ -44,17 +51,41 @@ const BASE = `http://127.0.0.1:${PORT}/index.html?devprobe=1&devstart=1&devshowc
 const STRIP = `(() => {
   const strip = document.getElementById('objectives');
   const rows = [...document.querySelectorAll('#objectives .obj-row')];
+  const foes = document.querySelector('#objectives .obj-foes');
+  const guide = document.querySelector('#objectives .obj-guide');
+  const fr = foes ? foes.getBoundingClientRect() : null;
   return {
     exists: !!strip,
     all: strip ? strip.getAttribute('data-obj-all') : null,
     cls: strip ? strip.className : null,
     hint: (document.getElementById('hint') || {}).textContent || '',
+    guide: guide ? guide.textContent : null,
+    foes: foes ? foes.textContent : null,
+    foesN: foes ? Number(foes.getAttribute('data-obj-foes')) : null,
+    foesBox: fr ? { l: Math.round(fr.left), r: Math.round(fr.right), w: Math.round(fr.width), h: Math.round(fr.height) } : null,
+    vw: window.innerWidth,
+    topR: strip && strip.parentElement ? Math.round(strip.parentElement.getBoundingClientRect().right) : null,
+    sideOpen: document.body.classList.contains('side-open'),
     rows: rows.map((r) => ({
       text: (r.querySelector('.obj-text') || {}).textContent || '',
       prog: (r.querySelector('.obj-prog') || {}).textContent || null,
       done: r.getAttribute('data-obj-done') === '1',
       aria: r.getAttribute('aria-label') || '',
     })),
+  };
+})()`;
+
+/** 开局页：胜利条件那行的**可见性**（`.ss-hint` 在横屏矮机被 display:none ⇒ 借用它会失效）。 */
+const START = `(() => {
+  const win = document.querySelector('#start-screen .ss-win');
+  const hint = document.querySelector('#start-screen .ss-hint');
+  const r = win ? win.getBoundingClientRect() : null;
+  return {
+    has: !!win,
+    text: win ? win.textContent : null,
+    shown: !!(win && getComputedStyle(win).display !== 'none' && r.height > 4),
+    inView: r ? r.right <= innerWidth + 1 && r.left >= -1 && r.bottom <= innerHeight + 1 : false,
+    hintHidden: hint ? getComputedStyle(hint).display === 'none' : null,
   };
 })()`;
 
@@ -112,6 +143,23 @@ try {
           s0.rows[1].prog === `${o0.mines}/2` &&
           s0.rows[2].prog === `${Math.max(0, o0.peak - o0.foe)}/1`,
         `${texts.join(' · ')} ⇒ 进度 ${(s0.rows || []).map((r) => r.prog).join(' · ')}（钩子：revealed ${o0 && o0.revealed}/${o0 && o0.total} · mines ${o0 && o0.mines} · foe ${o0 && o0.foe}/peak ${o0 && o0.peak}）`,
+      );
+
+      // ---------------- ①b 向导 vs 敌国：两套东西都在条里 ----------------
+      /* 主理人问「三个都完成不该结束吗」的根因：条里只有三条向导，没有任何终局信息。
+         这里锁两件事：① 左边有「向导」标签；② 右边有「敌国 3/3」，且数字与钩子对账、盒子在屏内。 */
+      check(
+        'guide',
+        '「向导」标签 + 「敌国 3/3」· 数字与钩子独立对账 · 计数不被挤出屏',
+        s0.guide === '向导' &&
+          s0.foes === `敌国 ${o0.foesAlive}/${o0.foesTotal}` &&
+          s0.foesN === o0.foesAlive &&
+          !!s0.foesBox &&
+          s0.foesBox.w > 0 &&
+          s0.foesBox.h > 0 &&
+          s0.foesBox.r <= s0.vw - 1 &&
+          s0.foesBox.l >= 0,
+        `标签「${s0.guide}」· 计数「${s0.foes}」· 盒子 ${s0.foesBox && s0.foesBox.l}~${s0.foesBox && s0.foesBox.r} / 屏宽 ${s0.vw}（钩子 ${o0.foesAlive}/${o0.foesTotal}）`,
       );
 
       // ---------------- ② 占 1 座矿：进度走、勾不动 ----------------
@@ -198,7 +246,82 @@ try {
         `all=${sd.all} · hint「${sd.hint}」`,
       );
 
-      if (AS_JSON) console.log(JSON.stringify({ rows, s0, s1, s2, s3, sAll, sc, sd }, null, 2));
+      // ---------------- ⑨ 敌国计数跟着 `isEliminated` 走 ----------------
+      /* 一个写死的 "3/3" 也能通过 `guide`（只要文案对）⇒ 必须让它真的掉一格。 */
+      await boot(send, evaluate, '');
+      const sf0 = await evaluate(STRIP);
+      const gone = await evaluate(`window.__devObjFoeOut ? window.__devObjFoeOut() : null`);
+      await sleep(450);
+      const sf1 = await evaluate(STRIP);
+      const of1 = await evaluate(OBJ);
+      check(
+        'foes-drop',
+        '让一个敌族整族出局 ⇒ 「敌国」3/3 掉到 2/3（量的是存活家数，不是常量）',
+        !!gone && sf0.foes === '敌国 3/3' && sf1.foes === '敌国 2/3' && sf1.foesN === 2 && of1.foesAlive === 2,
+        `摘掉 ${gone}：${sf0.foes} → ${sf1.foes}（钩子 foesAlive=${of1.foesAlive}）`,
+      );
+
+      // ---------------- ⑨b 最窄可用形态：792 宽 + 英雄栏展开 ----------------
+      /* 「敌国」是终局进度，**任何时候都得看得见**。最坏的组合是矮机 792 + 右侧英雄栏展开
+         （顶栏右边界收 208px）⇒ 这一臂专门在那种状态下量：计数盒子必须仍完整落在顶栏之内。 */
+      await send('Emulation.setDeviceMetricsOverride', { width: 792, height: 390, deviceScaleFactor: 2, mobile: true });
+      await boot(send, evaluate, '');
+      await evaluate(`(() => {
+        const b = [...document.querySelectorAll('#thumb .tb-btn')].find((x) => (x.textContent || '').includes('英雄'));
+        if (b) b.click();
+        return !!b;
+      })()`);
+      await sleep(400);
+      const sn = await evaluate(STRIP);
+      check(
+        'guide-narrow',
+        '792 宽 + 英雄栏展开 ⇒ 「敌国」计数仍完整在顶栏内（向导先让位，终局进度不让）',
+        sn.sideOpen === true &&
+          !!sn.foesBox &&
+          sn.foesBox.w > 40 &&
+          sn.foesBox.r <= sn.topR + 1 &&
+          sn.foesBox.l >= 0,
+        `side-open=${sn.sideOpen} · 计数 ${sn.foesBox && sn.foesBox.l}~${sn.foesBox && sn.foesBox.r} / 顶栏右缘 ${sn.topR}（屏宽 ${sn.vw}）`,
+      );
+      await send('Emulation.setDeviceMetricsOverride', { width: 844, height: 390, deviceScaleFactor: 2, mobile: true });
+
+      // ---------------- ⑩ 对照：关掉向导标签与敌国计数 ----------------
+      await boot(send, evaluate, '&devobjguide=0');
+      const sg = await evaluate(STRIP);
+      check(
+        'ctl-guide',
+        '?devobjguide=0 ⇒ 无「向导」标签、无「敌国」计数（证上面量的是这批新加的东西）',
+        sg.rows.length === 3 && sg.guide === null && sg.foes === null,
+        `guide=${sg.guide} · foes=${sg.foes} · rows=${sg.rows.length}`,
+      );
+
+      // ---------------- ⑪⑫ 开局页写着胜利条件，且在横屏矮机看得见 ----------------
+      await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html?devprobe=1&devstart=1` });
+      for (let i = 0; i < 120; i++) {
+        try {
+          if (await evaluate(`!!document.querySelector('#start-screen .ss-win')`)) break;
+        } catch {
+          /* 导航中 */
+        }
+        await sleep(100);
+      }
+      const st = await evaluate(START);
+      check(
+        'startline',
+        '开局页写着胜利条件「三家全部出局」，且在横屏矮机**可见**（不随 .ss-hint 被撤）',
+        st.has && /三家全部出局/.test(st.text || '') && st.shown && st.inView,
+        `「${st.text}」· shown=${st.shown} · inView=${st.inView}`,
+      );
+      /* 负向对照（无新参数）：同一视口 `.ss-hint` 确实是 display:none ⇒
+         `shown` 这条判据有牙，而不是"凡在 DOM 里就算可见"。 */
+      check(
+        'ctl-hidden',
+        '同视口下 `.ss-hint` 是 display:none ⇒ 可见性判据不是恒真',
+        st.hintHidden === true,
+        `.ss-hint display:none = ${st.hintHidden}`,
+      );
+
+      if (AS_JSON) console.log(JSON.stringify({ rows, s0, s1, s2, s3, sAll, sc, sd, sf0, sf1, sg, st }, null, 2));
       code = rows.every((r) => r.ok) ? 0 : 1;
     },
     { devServerPort: PORT, profilePrefix: 'objectives-' },

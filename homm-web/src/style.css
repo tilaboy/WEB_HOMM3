@@ -229,12 +229,54 @@ body {
 #objectives {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   width: 100%;
   /* 顶栏整条 `pointer-events:none`（R7）⇒ 目标清单**只读**、零可点目标。 */
   font-size: var(--t-body);
   white-space: nowrap;
   overflow: hidden;
+}
+
+/**
+ * 向导三条的壳（2026-10-27）。`flex:1` + `min-width:0` 让**它**在窄屏上先被裁，
+ * 而不是把右侧「敌国 n/3」挤出顶栏 —— 那个数是终局进度，任何时候都得看得见。
+ * 裁切是明确的取舍：三条是前四天的引导，读不全不影响决策；敌国数读不到就不知道何时结束。
+ */
+.obj-rows {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* 「向导」= 这三条是什么的**标签**。主理人把清单读成胜利条件，缺的就是这两个字。 */
+.obj-guide {
+  flex: 0 0 auto;
+  padding-right: 10px;
+  border-right: 1px solid rgba(255, 232, 170, 0.22);
+  font-size: var(--t-cap);
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+
+/* 「敌国 n/3」= 真正的终局进度（victory.ts `isEliminated` 的存活家数）。 */
+.obj-foes {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--t-cap);
+  font-variant-numeric: tabular-nums;
+  color: var(--gold);
+  box-shadow: inset 0 0 0 1px rgba(240, 212, 136, 0.4);
+}
+
+/* 只剩一家：描边转亮，提示"差最后一个"（不只靠数字变化）。 */
+.obj-foes.last {
+  color: #ffd76a;
+  box-shadow: inset 0 0 0 1px rgba(255, 215, 106, 0.85);
 }
 
 .obj-row {
@@ -403,8 +445,20 @@ body {
 }
 
 /* ---------- §14.2 教学 3/3 非阻断 banner ---------- */
-/* 贴拇指带上方（`main.ts` 里插在 `#thumb` 之前，顺文档流），高 ≤48px；**不是 modal**。 */
+/**
+ * 贴拇指带上方，高 ≤48px；**不是 modal**。
+ *
+ * 2026-10-27 修：这条一直是 `flex: 0 0 48px` 的**文档流**子元素，而拇指带在 10-21
+ * 已经从"下缘 48px 通栏"改成**绝对定位的半圆盘** ⇒ banner 掉到屏底、被圆盘压住
+ * （`audit:scenario` 的 `banner 紧贴拇指带上方` 实测 `gap=-124`，恰好等于圆盘高）。
+ * 先证明与本批改动无关：`git stash` 掉本批后同一判据**同样红**。
+ * 改成绝对定位、底边正好压在圆盘上缘（`124px` = `#thumb` 的 height；两处若脱钩，这条判据会翻红）。
+ */
 #obj-banner {
+  position: absolute;
+  left: calc(env(safe-area-inset-left, 0px) + 8px);
+  right: calc(env(safe-area-inset-right, 0px) + 8px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 124px);
   flex: 0 0 48px;
   height: 48px;
   display: flex;
@@ -2436,6 +2490,16 @@ body.in-battle #thumb {
   color: var(--text-dim);
 }
 
+/**
+ * 胜利条件（2026-10-27）。**不能**用 `.ss-hint`：那条在横屏矮机被整条 `display:none`
+ * （F-3.5 减法），而手机恰好全是横屏矮机 ⇒ 借用它等于这条根本没写。
+ */
+.ss-win {
+  margin-top: 5px;
+  font-size: var(--t-cap);
+  color: var(--gold);
+}
+
 .ss-seg {
   display: flex;
   gap: 6px;
@@ -2735,6 +2799,14 @@ body.in-battle #thumb {
 
   .ss-hint {
     display: none;
+  }
+
+  /* 胜利条件在矮机必须留（它是规则，不是说明）：只压行高 + 单行省略。 */
+  .ss-win {
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .ss-seg {
