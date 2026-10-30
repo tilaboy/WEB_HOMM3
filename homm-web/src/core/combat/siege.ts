@@ -72,10 +72,16 @@ export const MOAT_DEFENSE_PENALTY = 2;
  *
  * 主楼（keep）才是墙后那座高建筑：它不占城墙列，所以拆主楼不会开出通路，
  * 但它是火力最猛的射手，攻方要么忍着挨打，要么冲进去把它敲掉。
+ *
+ * **塔数曲线是 H3 的 0/1/3**（2026-10-28 拍板，方案 A）：
+ *   - L1 木栅：墙 + 城门，**一个射手都没有**；
+ *   - L2 石墙：+ 主楼 = 1；
+ *   - L3 堡垒：+ 上下两座角塔 = 3（主楼 + 2，与 H3 的 Castle 同数）。
+ * 旧版是 1/2/3 —— L1 就有一台主楼在射，等于把"木栅"做得比 H3 的"石墙"还凶。
  */
 const TURRET_ROWS: Record<number, number[]> = {
   1: [],
-  2: [1],
+  2: [],
   3: [1, FIELD_H - 2],
 };
 
@@ -165,25 +171,26 @@ export function createSiege(level: number): SiegeState | null {
     });
   }
 
-  // 主楼：城里那座高塔，火力最猛，但不占城墙列 —— 拆它不会开出通路
+  // 主楼：城里那座高塔，火力最猛，但不占城墙列 —— 拆它不会开出通路。
   //
-  // 火力刻意压得比角塔只高一点点：主楼在 1 星城防就存在，
-  // 如果它太猛，"没墙"和"1 星墙"之间会出现一道断崖 ——
-  // 实测过一轮，主楼一轮能打死 2 个弓手时，开局那点兵去打哪怕是 1 星城也是 0% 胜率，
-  // 玩家除了"先攒兵"之外没有任何选择。现在 1 星主楼约等于多一个弓手队，
-  // 2~3 星再靠角塔把火力叠上去。
-  const keepHp = 260 + 70 * lv;
-  structures.push({
-    id: 'keep',
-    kind: 'keep',
-    hex: { col: KEEP_COL, row: GATE_ROW },
-    hp: keepHp,
-    maxHp: keepHp,
-    defense: 5,
-    shotMin: 8 + 2 * lv,
-    shotMax: 13 + 3 * lv,
-    attack: 5 + lv,
-  });
+  // **L1 不生成**（H3 的 Fort 没有箭塔）：木栅只挡路，守方零远程。
+  // 这是 2026-10-28 定的塔数曲线 0/1/3，代价是 L1 城防明显变软 ——
+  // 以前主楼在 1 星就开火，"没墙"和"1 星墙"之间几乎没有断崖；
+  // 现在 1 星的强度全部来自"墙挡路 + 挡视线"，而不是火力。
+  if (lv >= 2) {
+    const keepHp = 260 + 70 * lv;
+    structures.push({
+      id: 'keep',
+      kind: 'keep',
+      hex: { col: KEEP_COL, row: GATE_ROW },
+      hp: keepHp,
+      maxHp: keepHp,
+      defense: 5,
+      shotMin: 8 + 2 * lv,
+      shotMax: 13 + 3 * lv,
+      attack: 5 + lv,
+    });
+  }
 
   return { level: lv, structures };
 }

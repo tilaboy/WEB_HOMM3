@@ -76,14 +76,14 @@ export const B0_PALETTE: PalEntry[] = [
   { hex: '#6fc24a', family: 'leaf', idx: 4 },
   { hex: '#4a8438', family: 'leaf', idx: 2 },
   { hex: '#2f5a24', family: 'leaf', idx: 0 },
-  // §3.3 p1 晨曦军团
+  // §3.3 p1 人类
   { hex: '#22559e', family: 'p1accent', idx: 0 },
   { hex: '#3f8fe8', family: 'p1accent', idx: 2 },
   { hex: '#8ecdf8', family: 'p1accent', idx: 4 },
   { hex: '#eae3d2', family: 'p1wall', idx: 2 },
   { hex: '#b3a894', family: 'p1wall', idx: 0 },
   { hex: '#ffb020', family: 'p1clash', idx: 2 },
-  // §3.3 p2 赤焰部落
+  // §3.3 p2 妖兽
   { hex: '#9a2519', family: 'p2accent', idx: 0 },
   { hex: '#e04a34', family: 'p2accent', idx: 2 },
   { hex: '#f79a7a', family: 'p2accent', idx: 4 },
@@ -91,7 +91,7 @@ export const B0_PALETTE: PalEntry[] = [
   { hex: '#8a5a30', family: 'p2wall', idx: 0 },
   { hex: '#2fbfa0', family: 'p2clash', idx: 2 },
   { hex: '#ffd06a', family: 'p2emissive', idx: 2 },
-  // §3.3 p3 翠林守望（B1 新增）
+  // §3.3 p3 精灵（B1 新增）
   { hex: '#1f7a45', family: 'p3accent', idx: 0 },
   { hex: '#3fbe6e', family: 'p3accent', idx: 2 },
   { hex: '#93e8a8', family: 'p3accent', idx: 4 },
@@ -99,7 +99,7 @@ export const B0_PALETTE: PalEntry[] = [
   { hex: '#4f5130', family: 'p3wall', idx: 0 },
   { hex: '#e0538f', family: 'p3clash', idx: 2 },
   { hex: '#d6ff9a', family: 'p3emissive', idx: 4 },
-  // §3.3 p4 紫晶密会（B1 新增）
+  // §3.3 p4 亡灵（B1 新增）
   { hex: '#6232a8', family: 'p4accent', idx: 0 },
   { hex: '#a165e8', family: 'p4accent', idx: 2 },
   { hex: '#d4aefc', family: 'p4accent', idx: 4 },
@@ -147,7 +147,7 @@ const C = {
   p2w0: '#8a5a30',
   p2clash: '#2fbfa0',
   p2emissive: '#ffd06a',
-  // §3.3 p3 翠林守望
+  // §3.3 p3 精灵
   p3a0: '#1f7a45',
   p3a2: '#3fbe6e',
   p3a4: '#93e8a8',
@@ -155,7 +155,7 @@ const C = {
   p3w0: '#4f5130',
   p3clash: '#e0538f',
   p3emissive: '#d6ff9a',
-  // §3.3 p4 紫晶密会
+  // §3.3 p4 亡灵
   p4a0: '#6232a8',
   p4a2: '#a165e8',
   p4a4: '#d4aefc',

@@ -31,7 +31,7 @@ const theme = (f: FactionId): { body: string; accent: string } => ({
 const EXP_BY_TIER = [4, 12, 20, 45, 120];
 
 export const UNITS: Record<string, UnitType> = {
-  /* ================= p1 晨曦军团 —— 「准时打卡的正义」 ================= */
+  /* ================= p1 人类 —— 「准时打卡的正义」 ================= */
 
   p1_lampbearer: {
     id: 'p1_lampbearer', name: '提灯侍从', tier: 1,
@@ -65,7 +65,7 @@ export const UNITS: Record<string, UnitType> = {
     ...theme('p1'),
   },
 
-  /* ================= p2 赤焰部落 —— 「莽就完事了」 ================= */
+  /* ================= p2 妖兽 —— 「莽就完事了」 ================= */
 
   p2_scavenger: {
     id: 'p2_scavenger', name: '捡破烂小鬼', tier: 1,
@@ -100,7 +100,7 @@ export const UNITS: Record<string, UnitType> = {
     ...theme('p2'),
   },
 
-  /* ================= p3 翠林守望 —— 「以静制动的花园保安」 ================= */
+  /* ================= p3 精灵 —— 「以静制动的花园保安」 ================= */
 
   p3_dwarf: {
     id: 'p3_dwarf', name: '浇水矮人', tier: 1,
@@ -135,7 +135,7 @@ export const UNITS: Record<string, UnitType> = {
     ...theme('p3'),
   },
 
-  /* ================= p4 紫晶密会 —— 「魔法实验室事故」 ================= */
+  /* ================= p4 亡灵 —— 「魔法实验室事故」 ================= */
 
   p4_stoneimp: {
     id: 'p4_stoneimp', name: '石雕小怪', tier: 1,

@@ -639,6 +639,14 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     const path = paths.get(hexKey(h));
     if (!path || !path.length) return false;
     emit(actMove(battle, u, h));
+    // 护城河：踩进去本回合就到此为止（H3 的规则）。不是伤害，是时间 ——
+    // 攻方要多花一回合才能贴到墙，守方的塔因此多打一轮。
+    if (u.moatStuck) {
+      hint('护城河：本回合停在原地');
+      emit(endActivation(battle));
+      recomputeOptions();
+      return true;
+    }
     // 移动后仍可攻击：不结束行动，只是不能再走
     recomputeOptions();
     return true;

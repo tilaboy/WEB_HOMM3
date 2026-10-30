@@ -6,8 +6,8 @@
  */
 import type { BattleState, BattleUnit } from '../core/combat/battle.js';
 import { getUnit } from '../core/data/units.js';
-import { FIELD_H, FIELD_W, hexCenter, hexKey, type Hex } from '../core/combat/hex.js';
-import { MOAT_COL } from '../core/combat/siege.js';
+import { FIELD_H, FIELD_W, HEX_STEP_Y, hexCenter, hexKey, type Hex } from '../core/combat/hex.js';
+import { MOAT_COL, WALL_COL, type SiegeStructure } from '../core/combat/siege.js';
 import { hash2 } from './pixel.js';
 import { getCombatAtlas } from './combatAtlas.js';
 import type { CombatAtlas } from './combatAtlas.js';
@@ -17,6 +17,15 @@ const PAD = 6;
 export { PAD };
 export const BASE_W = 591 + PAD * 2;
 export const BASE_H = 376 + PAD * 2;
+
+/**
+ * 城墙的厚度与段高（世界 px）。
+ * `WALL_T = 13` 是一格的 ~40%：城墙是一道立面，不该和整格一样厚。
+ * `WALL_STEP = HEX_STEP_Y / 2` 让每段顶满上下两格交界，相邻段之间不留缝。
+ */
+const WALL_T = 13;
+const WALL_HALF = WALL_T / 2;
+const WALL_STEP = HEX_STEP_Y / 2;
 
 /** H5 ① idle 浮动三帧（px）：0 / -1 / -2 循环，600ms 一轮（圣经 §4 H5）。 */
 const IDLE_BOB = [0, -1, -2] as const;
@@ -265,21 +274,124 @@ export class BattleRenderer {
     const siege = d.battle.siege;
     if (!siege) return;
     this.drawMoat(g);
-    // 主楼在城内（先画），城墙列居中，角塔砌在城墙上（最后画，好压住墙顶）
-    const rank: Record<string, number> = { keep: 0, wall: 1, gate: 1, tower: 2 };
-    const list = siege.structures
-      .filter((st) => st.hp > 0)
-      .sort((a, b) => (rank[a.kind] ?? 1) - (rank[b.kind] ?? 1) || a.hex.row - b.hex.row);
-    for (const st of list) {
+    const alive = siege.structures.filter((st) => st.hp > 0);
+
+    // ① 主楼：在城内，先画（它不占城墙列，砸塌它不会开出通路）
+    for (const st of alive) {
+      if (st.kind !== 'keep') continue;
       const c = hexCenter(st.hex);
       const x = Math.round(c.x + PAD);
       const y = Math.round(c.y + PAD);
-      if (st.kind === 'wall') this.drawWallSeg(g, x, y, st.hp / st.maxHp);
-      else if (st.kind === 'gate') this.drawGateSeg(g, x, y, st.hp / st.maxHp);
-      else if (st.kind === 'keep') this.drawKeepSeg(g, x, y, st.hp / st.maxHp);
-      else this.drawTowerSeg(g, x, y, st.hp / st.maxHp);
-      this.drawStructureHp(g, x, y, st.hp / st.maxHp);
+      this.drawKeepSeg(g, x, y, st.hp / st.maxHp);
+      this.drawStructureHp(g, x, y, st.hp / st.maxHp, 22, 24);
     }
+
+    // ② 城墙列：**整条连续墙体一次画完**，再让城门 / 角塔压在它上面。
+    //    逐段各画一块的做法会把相邻段的描边叠成一道缝，整列读成"一排墓碑"
+    //    （用户 2026-10-28 的原话）。而且墙厚 34 ≈ 一格宽，看着像一堵石头堤坝，不像城墙。
+    this.drawWallRuns(g, alive);
+
+    // ③ 城门与角塔：都比墙厚、都比墙高，剪影上必须能一眼认出"这里是个建筑"
+    for (const st of alive) {
+      if (st.kind !== 'gate' && st.kind !== 'tower') continue;
+      const c = hexCenter(st.hex);
+      const x = this.wallColumnX();
+      const y = Math.round(c.y + PAD);
+      if (st.kind === 'gate') this.drawGateSeg(g, x, y, st.hp / st.maxHp);
+      else this.drawTowerSeg(g, x, y, st.hp / st.maxHp);
+      // 血条压在建筑**脚下**：挂在塔身中段会读成一道绿色横梁
+      this.drawStructureHp(g, x, y, st.hp / st.maxHp, 20, 27);
+    }
+  }
+
+  /**
+   * 城墙：整列画成**一条连续、竖直、13px 厚的墙**。
+   *
+   * 为什么不再逐格画块（2026-10-28 用户拍板）：
+   *   1. 逐段各画一块会把相邻段的描边叠成缝，整列读成"一排墓碑"；
+   *   2. 墙厚 34 ≈ 一格宽，看着像石头堤坝 —— 城墙是立面，不该和整格一样厚。
+   *
+   * 为什么墙**不跟着格心走**：本作是 pointy-top + odd-r，同一列的奇偶行中心相差 19px
+   * （比墙厚 13 还大）。跟着格心画会得到一条"错位台阶"，在 13px 厚度下必然裂开。
+   * 取两行的中点当墙线，墙就是直的；反正城墙列没有任何部队会站上去。
+   */
+  private drawWallRuns(g: CanvasRenderingContext2D, alive: SiegeStructure[]): void {
+    const walls = alive
+      .filter((st) => st.kind === 'wall' && st.hex.col === WALL_COL)
+      .sort((a, b) => a.hex.row - b.hex.row);
+    if (!walls.length) return;
+    const wallX = this.wallColumnX();
+
+    const runs: SiegeStructure[][] = [];
+    for (const st of walls) {
+      const last = runs[runs.length - 1];
+      if (last && st.hex.row === last[last.length - 1].hex.row + 1) last.push(st);
+      else runs.push([st]);
+    }
+
+    for (const run of runs) {
+      const nodes = run.map((st) => {
+        const c = hexCenter(st.hex);
+        return { y: Math.round(c.y + PAD), ratio: st.hp / st.maxHp, row: st.hex.row };
+      });
+      const yTop = nodes[0].y - WALL_STEP;
+      const yBot = nodes[nodes.length - 1].y + WALL_STEP;
+      const h = yBot - yTop;
+      const l = wallX - WALL_HALF;
+
+      // ① 一圈外描边 + 石面（一次成型，内部没有任何接缝）
+      g.fillStyle = '#38332b';
+      g.fillRect(l - 1, yTop - 1, WALL_T + 2, h + 2);
+      g.fillStyle = '#8a8477';
+      g.fillRect(l, yTop, WALL_T, h);
+      // 左亮右暗：立面有一点体积，但不要做成圆柱
+      g.fillStyle = '#9b9585';
+      g.fillRect(l + 1, yTop, 3, h);
+      g.fillStyle = '#6e695d';
+      g.fillRect(l + WALL_T - 4, yTop, 4, h);
+
+      // ② 砌块：11px 一层（7px 太密，会让整条墙读成梯子），错缝 + 每层轻微的色差
+      g.fillStyle = '#767163';
+      for (let yy = yTop + 10; yy < yBot - 1; yy += 11) g.fillRect(l, yy, WALL_T, 1);
+      for (const n of nodes) {
+        g.fillStyle = n.row % 2 === 0 ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.05)';
+        g.fillRect(l, n.y - WALL_STEP, WALL_T, WALL_STEP * 2);
+        g.fillStyle = '#6f6a5c';
+        const jx = l + 4 + (n.row % 2 === 0 ? 0 : 3);
+        g.fillRect(jx, n.y - WALL_STEP + 1, 1, WALL_STEP * 2 - 2);
+      }
+
+      // ③ 攻方一侧的垛口：每 9px 一颗，凸出墙外 3px —— "墙"最容易被认出来的齿
+      for (let yy = yTop + 2; yy < yBot - 5; yy += 9) {
+        g.fillStyle = '#8f8a7c';
+        g.fillRect(l - 3, yy, 3, 6);
+        g.fillStyle = '#b8b2a0';
+        g.fillRect(l - 3, yy, 3, 1);
+      }
+
+      // ④ 顶沿雉堞 + 墙脚阴影（让墙"站"在地上，而不是浮着）
+      g.fillStyle = '#7d786b';
+      for (let i = 0; i < 3; i++) g.fillRect(l - 1 + i * 5, yTop - 4, 4, 5);
+      g.fillStyle = 'rgba(0,0,0,0.32)';
+      g.fillRect(l - 1, yBot, WALL_T + 2, 2);
+
+      // ⑤ 受损：缺失的石块自上而下啃掉，并在**只有掉血时**画血条
+      for (const n of nodes) {
+        if (n.ratio >= 0.999) continue;
+        const ruin = 1 - n.ratio;
+        g.fillStyle = '#3f3b33';
+        const bite = Math.min(WALL_STEP * 2 - 4, Math.round(ruin * WALL_STEP * 2));
+        g.fillRect(l, n.y - WALL_STEP, WALL_T, bite);
+        this.drawStructureHp(g, wallX, n.y, n.ratio, 18);
+      }
+    }
+  }
+
+  /** 城墙列的世界 x：取该列奇偶两行格心的中点（见 `drawWallRuns` 的说明）。 */
+  private wallColumnX(): number {
+    const a = hexCenter({ col: WALL_COL, row: 0 }).x;
+    const b = hexCenter({ col: WALL_COL, row: 1 }).x;
+    return Math.round((a + b) / 2 + PAD);
   }
 
   /**
@@ -376,97 +488,98 @@ export class BattleRenderer {
     }
   }
 
-  /** 一段城墙：竖向的石带，砖缝 + 攻方一侧的垛口。 */
-  private drawWallSeg(g: CanvasRenderingContext2D, x: number, y: number, ratio: number): void {
-    const w = 34;
-    const h = 48;
-    const l = x - w / 2;
-    const t = y - h / 2;
-    // 残破度：血越少，缺口越明显（画在顶部的碎石）
-    const ruin = 1 - ratio;
-    g.fillStyle = '#4a463d';
-    g.fillRect(l - 1, t - 1, w + 2, h + 2);
-    g.fillStyle = '#7b766a';
-    g.fillRect(l, t, w, h);
-    g.fillStyle = '#918c7e';
-    g.fillRect(l + 3, t + 3, w - 6, h - 6);
-    // 砖缝
-    g.fillStyle = '#6a6559';
-    for (let r = t + 8; r < t + h - 2; r += 8) g.fillRect(l + 2, r, w - 4, 1);
-    for (let c = l + 9; c < l + w - 2; c += 11) g.fillRect(c, t + 4, 1, h - 8);
-    // 左侧（攻方）垛口，做成锯齿
-    g.fillStyle = '#5d594e';
-    for (let i = 0; i < 5; i++) g.fillRect(l - 3, t + 2 + i * 9, 4, 5);
-    // 顶部受创：石块崩掉
-    if (ruin > 0.25) {
-      g.fillStyle = '#3f3b33';
-      g.fillRect(l + 4, t + 2, w - 8, Math.min(10, Math.round(ruin * 16)));
-    }
-  }
-
-  /** 城门：包铁的双扇木门 + 拱顶。 */
+  /** 城门：比墙厚一圈的门楼 + 拱顶 + 包铁双扇门（它是墙上唯一的"建筑"，不是一段墙）。 */
   private drawGateSeg(g: CanvasRenderingContext2D, x: number, y: number, ratio: number): void {
-    const w = 34;
-    const h = 48;
+    const w = 27;
+    const h = 50;
     const l = x - w / 2;
     const t = y - h / 2;
-    g.fillStyle = '#4a463d';
-    g.fillRect(l - 1, t - 1, w + 2, h + 2);
-    // 门框石
+
+    // 门楼主体：左右各比墙宽 7px，上沿比墙顶高 8px
+    g.fillStyle = '#38332b';
+    g.fillRect(l - 1, t - 1, w + 2, h + 3);
     g.fillStyle = '#6f6a5e';
     g.fillRect(l, t, w, h);
-    g.fillRect(l + 4, t + 6, w - 8, 4);
-    // 门洞
+    g.fillStyle = '#7d7869';
+    g.fillRect(l + 2, t + 2, w - 6, h - 4);
+
+    // 拱门洞（上圆下方）
+    const ax = x;
+    const ay = t + 13;
+    const ah = h - 16;
     g.fillStyle = '#241a10';
-    g.fillRect(l + 7, t + 10, w - 14, h - 14);
-    // 两扇木门（血量越低越破：门板往下缩）
-    const doorH = Math.max(4, Math.round((h - 14) * ratio));
+    g.beginPath();
+    g.moveTo(ax - 8, ay + ah);
+    g.lineTo(ax - 8, ay + 4);
+    g.quadraticCurveTo(ax, ay - 8, ax + 8, ay + 4);
+    g.lineTo(ax + 8, ay + ah);
+    g.closePath();
+    g.fill();
+
+    // 双扇木门：血量越低，门板越矮（门是被砸穿的）
+    const doorH = Math.max(4, Math.round(ah * ratio));
     g.fillStyle = '#6b4a2f';
-    g.fillRect(l + 8, t + 10 + (h - 14 - doorH), (w - 16) / 2 - 1, doorH);
-    g.fillRect(l + 8 + (w - 16) / 2 + 1, t + 10 + (h - 14 - doorH), (w - 16) / 2 - 1, doorH);
-    // 铁包条
+    g.fillRect(ax - 7, ay + ah - doorH, 6, doorH);
+    g.fillRect(ax + 1, ay + ah - doorH, 6, doorH);
     g.fillStyle = '#3d3a33';
-    for (let i = 1; i < 3; i++) g.fillRect(l + 8, t + 10 + (h - 14 - doorH) + i * 8, (w - 16) / 2 - 1, 1);
-    for (let i = 1; i < 3; i++) g.fillRect(l + 8 + (w - 16) / 2 + 1, t + 10 + (h - 14 - doorH) + i * 8, (w - 16) / 2 - 1, 1);
+    for (let i = 1; i < 4; i++) {
+      const by = ay + ah - doorH + i * 7;
+      if (by < ay + ah - 1) {
+        g.fillRect(ax - 7, by, 6, 1);
+        g.fillRect(ax + 1, by, 6, 1);
+      }
+    }
+
+    // 门楣石 + 两侧墩柱 + 顶沿雉堞
+    g.fillStyle = '#5d594e';
+    g.fillRect(l, t + 4, w, 3);
+    g.fillRect(l - 2, t + 8, 4, h - 8);
+    g.fillRect(l + w - 2, t + 8, 4, h - 8);
+    g.fillStyle = '#8f8a7c';
+    for (let i = 0; i < 4; i++) g.fillRect(l + 1 + i * 7, t - 4, 5, 5);
   }
 
-  /** 箭塔：比城墙更宽更高，塔身带箭孔，顶上一面旗。 */
+  /** 箭塔：比墙更宽更高（h 50 vs 墙 13 厚），塔身带箭孔，顶上一面旗。 */
   private drawTowerSeg(g: CanvasRenderingContext2D, x: number, y: number, ratio: number): void {
-    const w = 30;
-    const h = 40;
+    const w = 22;
+    const h = 50;
     const l = x - w / 2;
-    const t = y - h / 2 - 6;
-    g.fillStyle = '#3f3b33';
-    g.fillRect(l - 2, t - 2, w + 4, h + 8);
+    const t = y - h / 2;
+    // 塔基压住墙带：左右各比墙宽 4.5px，上沿比墙顶高 10px
+    g.fillStyle = '#38332b';
+    g.fillRect(l - 1, t - 1, w + 2, h + 2);
     g.fillStyle = '#8a8578';
     g.fillRect(l, t, w, h);
     g.fillStyle = '#a09a8a';
-    g.fillRect(l + 2, t + 2, w - 10, h - 4);
+    g.fillRect(l + 2, t + 2, w - 7, h - 4);
     g.fillStyle = '#6a6559';
-    g.fillRect(l + w - 8, t + 2, 6, h - 4);
+    g.fillRect(l + w - 5, t + 2, 5, h - 4);
     // 石缝
     g.fillStyle = '#736e62';
     for (let r = t + 7; r < t + h - 2; r += 7) g.fillRect(l + 2, r, w - 4, 1);
-    // 箭孔（朝攻方，即左侧）
+    // 箭孔（朝攻方，即左侧）：两个竖缝
     g.fillStyle = '#22190f';
-    g.fillRect(l - 1, t + 12, 5, 8);
-    g.fillRect(l - 1, t + 26, 5, 8);
-    // 垛口
+    g.fillRect(l + 3, t + 14, 3, 8);
+    g.fillRect(l + 3, t + 30, 3, 8);
+    // 出檐：比塔身每侧宽 3px，把"塔"从"墙"的剪影里切出来
     g.fillStyle = '#5d594e';
-    for (let i = 0; i < 4; i++) g.fillRect(l + 2 + i * 7, t - 5, 5, 5);
-    // 旗：血少了旗就耷拉下来
+    g.fillRect(l - 3, t - 4, w + 6, 4);
+    // 顶沿雉堞 3 颗
+    g.fillStyle = '#8f8a7c';
+    for (let i = 0; i < 3; i++) g.fillRect(l + 1 + i * 7, t - 9, 5, 6);
+    // 旗：全城最高的红点，血量过半才展开
     g.fillStyle = '#5a4326';
-    g.fillRect(x + 8, t - 18, 1, 14);
+    g.fillRect(x + 6, t - 19, 1, 12);
     g.fillStyle = ratio > 0.5 ? '#c0392b' : '#6b4238';
     if (ratio > 0.5) {
       g.beginPath();
-      g.moveTo(x + 9, t - 18);
-      g.lineTo(x + 21, t - 14);
-      g.lineTo(x + 9, t - 10);
+      g.moveTo(x + 7, t - 19);
+      g.lineTo(x + 18, t - 15);
+      g.lineTo(x + 7, t - 11);
       g.closePath();
       g.fill();
     } else {
-      g.fillRect(x + 9, t - 12, 10, 2);
+      g.fillRect(x + 7, t - 14, 9, 2);
     }
   }
 
@@ -515,15 +628,21 @@ export class BattleRenderer {
     }
   }
 
-  /** 结构血条：画在格子底部，一眼看出还剩多少。 */
-  private drawStructureHp(g: CanvasRenderingContext2D, x: number, y: number, ratio: number): void {
-    const w = 26;
+  /** 结构血条：画在格子底部，一眼看出还剩多少。墙段只在受损时调用（满血绿条会读成青苔）。 */
+  private drawStructureHp(
+    g: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    ratio: number,
+    w = 26,
+    dy = 16,
+  ): void {
     const bx = Math.round(x - w / 2);
-    const by = Math.round(y + 16);
-    g.fillStyle = 'rgba(16,12,8,0.8)';
-    g.fillRect(bx - 1, by - 1, w + 2, 5);
+    const by = Math.round(y + dy);
+    g.fillStyle = 'rgba(16,12,8,0.72)';
+    g.fillRect(bx - 1, by - 1, w + 2, 4);
     g.fillStyle = ratio > 0.5 ? '#9ad06a' : ratio > 0.22 ? '#e8c35a' : '#e0664a';
-    g.fillRect(bx, by, Math.max(1, Math.round(w * ratio)), 3);
+    g.fillRect(bx, by, Math.max(1, Math.round(w * ratio)), 2);
   }
 
   private drawHighlights(g: CanvasRenderingContext2D, d: BattleDraw): void {

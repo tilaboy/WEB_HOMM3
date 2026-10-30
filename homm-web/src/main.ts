@@ -2661,10 +2661,14 @@ if (bootParams.has('devbattle') && selected && state.heroes[selected]) {
      P1 遗留的"6~7 队侧列要滚"需要一个**可复现的**输入才能验证 —— 手动打十几回合
      凑出满编不现实，而这条判据（轮到的卡自己滚进视野）只在溢出时才有意义。 */
   const full = bootParams.get('devbattle') === 'full';
+  /* `?devsiege=1|2|3`：带城防开一场调试战斗（配合 devbattle），用于验收
+     「木栅/石墙/堡垒」在战场上真的长出了墙、门、塔。攻方自动带投石车，
+     否则拍出来的图看不出「投石车优先砸门」这条设计。 */
+  const siegeLv = Math.max(0, Math.min(3, Number.parseInt(bootParams.get('devsiege') ?? '0', 10) || 0));
   openBattleScreen(stage, {
     state,
     heroId: selected,
-    title: t5 ? '调试战斗 · T5 顶点兵' : full ? '调试战斗 · 满编 7 队' : '调试战斗',
+    title: siegeLv ? `调试战斗 · 城防 ${siegeLv} 级` : t5 ? '调试战斗 · T5 顶点兵' : full ? '调试战斗 · 满编 7 队' : '调试战斗',
     attacker: {
       army: t5
         ? [
@@ -2694,6 +2698,7 @@ if (bootParams.has('devbattle') && selected && state.heroes[selected]) {
         spellPower: 3,
         mana: 30,
       },
+      warMachines: siegeLv ? ['catapult', 'ballista'] : undefined,
     },
     defender: {
       army: t5
@@ -2720,6 +2725,7 @@ if (bootParams.has('devbattle') && selected && state.heroes[selected]) {
       defense: 0,
     },
     seed: 20260913,
+    siegeLevel: siegeLv,
     autoStart: bootParams.has('devauto'),
     instant: bootParams.has('devinstant'),
     debugProbe: bootParams.has('devprobe'),

@@ -20,7 +20,7 @@ const { lossRatio, quickBattle } = await import(dimp('core/combat/battle.js'));
 const { previewInteraction, applyInteraction, battleSetup, enemyHeroAt, heroBattleSetup, applyHeroBattle, pendingObjectAt } = await import(dimp('core/game/interaction.js'));
 const { isPassable, castleCells, footprintOf } = await import(dimp('core/map/grid.js'));
 const { endDay } = await import(dimp('core/game/turn.js'));
-const { factionIds, viewerOf } = await import(dimp('core/data/factions.js'));
+const { factionIds, factionName, viewerOf } = await import(dimp('core/data/factions.js'));
 const {
   NO_TOWN_GRACE_DAYS,
   advanceNoTownStreaks,
@@ -1021,8 +1021,16 @@ function runTactical(attacker, defender, seed) {
     KEEP_COL,
     MOAT_COL,
   } = await import(dimp('core/combat/siege.js'));
-  const { actSiege, siegeTargets, towerPhase, estimateSiegeDamage, machinePhase } =
-    await import(dimp('core/combat/battle.js'));
+  const {
+    actSiege,
+    siegeTargets,
+    towerPhase,
+    estimateSiegeDamage,
+    machinePhase,
+    actMove,
+    reachable,
+    endActivation,
+  } = await import(dimp('core/combat/battle.js'));
   const { WAR_MACHINES } = await import(dimp('core/data/warmachines.js'));
 
   const wallsOf = (s) => s.structures.filter((x) => x.kind === 'wall').length;
@@ -1031,14 +1039,14 @@ function runTactical(attacker, defender, seed) {
   const gateOf = (s) => s.structures.find((x) => x.kind === 'gate');
   const wallAt = (s, row) => s.structures.find((x) => x.kind === 'wall' && x.hex.row === row);
 
-  // 1. 结构生成：等级决定角塔数量，主楼每一级都有
+  // 1. 结构生成：H3 的 0/1/3 曲线（Fort 无塔 / Citadel 主塔 / Castle 主塔 + 2 副塔）
   ok(createSiege(0) === null, '没有城墙 = 野战（createSiege(0) 返回 null）');
   const s1 = createSiege(1);
   const s2 = createSiege(2);
   const s3 = createSiege(3);
   ok(wallsOf(s1) === FIELD_H - 1, '城墙段数 = 列高 − 1（正中让给城门）');
-  ok(turretsOf(s1) === 0 && turretsOf(s2) === 1 && turretsOf(s3) === 2, '角塔随城防 0 / 1 / 2 座');
-  ok(keepOf(s1) && keepOf(s2) && keepOf(s3), '每一级城防都有主楼');
+  ok(turretsOf(s1) === 0 && turretsOf(s2) === 0 && turretsOf(s3) === 2, '角塔只在 L3 出现（0 / 0 / 2 座）');
+  ok(!keepOf(s1) && keepOf(s2) && keepOf(s3), '主楼 L2 才有 —— L1 木栅没有任何射手');
   ok(
     s3.structures.filter((x) => x.kind === 'tower').every((x) => x.hex.col === WALL_COL),
     '角塔砌在城墙列上（不是墙后）—— 拆掉它就是墙上一个口子',
@@ -1109,10 +1117,17 @@ function runTactical(attacker, defender, seed) {
   shooter.unitTypeId = 'archer';
   shooter.shots = 12;
   ok(shootTargets(b2, shooter).length === 0, '完整的城墙挡视线：攻方射不到城里的人');
-  ok(towerPhase(b2).length > 0, '主楼在回合开始时自动射击');
+  // 塔数曲线 0/1/3（2026-10-28 拍板走 A，对齐 H3 的 Fort/Citadel/Castle）：
+  // L1 木栅**没有射手**，主楼要到 L2 才存在 —— 这条曾把 L1 做成"比 H3 石墙还凶"。
+  ok(towerPhase(b2).length === 0, 'L1 木栅没有射手（主楼 L2 才生成）');
+  const b2k = createBattle(atk, def, 7, 2);
+  ok(towerPhase(b2k).length > 0, 'L2 主楼在回合开始时自动射击');
+  const b2c = createBattle(atk, def, 7, 3);
+  ok(liveShooters(b2c.siege).length === 3, 'L3 是主楼 + 2 角塔 = 3 个射手');
+  ok(liveShooters(b2k.siege).length === 1, 'L2 只有 1 个射手（主楼）');
 
-  // 7. 角塔在墙上（打得到），主楼在墙后（打不到）
-  const b2t = createBattle(atk, def, 7, 2);
+  // 7. 角塔在墙上（打得到），主楼在墙后（打不到）—— 角塔 L3 才有
+  const b2t = createBattle(atk, def, 7, 3);
   const shooter2 = b2t.units[0];
   shooter2.hex = { col: 2, row: GATE_ROW };
   shooter2.unitTypeId = 'archer';
@@ -1127,6 +1142,32 @@ function runTactical(attacker, defender, seed) {
     siegeTargets(b2t, shooter2, true).every((x) => x.id !== keep2.id),
     '主楼在墙后，破墙之前远程打不到',
   );
+
+  // 7b. 护城河：踩进去本回合就结束（H3 的"停一回合"，2026-10-28 拍板）
+  {
+    const bm = createBattle(atk, def, 7, 3);
+    const mu = bm.units[0];
+    // 直接摆到护城河前一列，保证这一步在移动力内
+    mu.hex = { col: MOAT_COL - 1, row: GATE_ROW };
+    ok(reachable(bm, mu).has(`${MOAT_COL},${GATE_ROW}`), '前提：护城河格子可达');
+    actMove(bm, mu, { col: MOAT_COL, row: GATE_ROW });
+    ok(mu.moatStuck === true, '攻方踩进护城河 ⇒ 本回合到此为止（不能走也不能打）');
+
+    // 负向对照：走到**非护城河**格子绝不能置位
+    const bn = createBattle(atk, def, 7, 3);
+    const nu = bn.units[0];
+    nu.hex = { col: 5, row: GATE_ROW };
+    const freeKey = [...reachable(bn, nu).keys()].find((k) => Number(k.split(',')[0]) !== MOAT_COL);
+    ok(!!freeKey, '前提：存在非护城河的可达格');
+    const [fc, fr] = freeKey.split(',').map(Number);
+    actMove(bn, nu, { col: fc, row: fr });
+    ok(nu.moatStuck === false, '普通格子不会陷住（负向对照）');
+
+    // 新回合必须清零，否则下一回合整支军队都动不了
+    let guardM = 0;
+    while (bm.round === 1 && guardM++ < 40) endActivation(bm);
+    ok(bm.round > 1 && mu.moatStuck === false, '新回合清零 moatStuck');
+  }
 
   // 8. 部队砸墙有折损，投石车按全额轰 —— 这是投石车值 1500 金的原因
   ok(UNIT_SIEGE_RESIST > 0 && UNIT_SIEGE_RESIST < 1, '部队打城防有伤害折损（箭矢砍不动石墙）');
@@ -1284,7 +1325,13 @@ console.log('\n--- M7 矿场与宝库区 ---');
   const steal = applyInteraction(g, foeId, mine.id, true);
   ok(mine.payload.owner === 'p2', '敌方英雄可以夺走矿场');
   ok(steal.title.includes('夺取'), `夺取提示：${steal.title}`);
-  ok(steal.message.includes('晨曦') || steal.message.includes('赤焰') || steal.message.includes('翠林') || steal.message.includes('紫晶'), '夺取时点名了原来的主人');
+  /* ⚠️ 这条以前把四族名的前两个字写死在这里（晨曦/赤焰/翠林/紫晶）。
+   * 2026-10-28 族名改成 人类/妖兽/精灵/亡灵 后它立刻变红 —— 不是功能坏了，是闸自己
+   * 记住了不该记的东西。族名的单一真相是 `factions.ts`，闸要问它，不要问字符串。 */
+  ok(
+    steal.message.includes(factionName('p1')) && !steal.message.includes(factionName('p2')),
+    `夺取时点名了原来的主人（应含「${factionName('p1')}」、不含「${factionName('p2')}」）：${steal.message}`,
+  );
 
   // 我方再抢回来
   h.pos = { ...mine.pos };
@@ -1315,6 +1362,23 @@ console.log('\n--- M7 矿场与宝库区 ---');
   ok(
     vaults.every((v) => v.payload.army.length > 0 && v.payload.reward.gold > 0),
     '每处宝库都有守军和财物',
+  );
+
+  // 硬闸：地图上任何守军栈都不许用旧版 H3 id（只允许 canonical id）。
+  //   旧 id 只留给 `LEGACY_UNIT_IDS` 读旧档；一旦渗进生成器，战斗里就会画出旧 H3 立绘，
+  //   而四族美术里根本没有那几个兵（见 spec §4 未决 5）。宝库就是漏掉的那一处。
+  //   负向对照：把 `VAULTS.mid` 的 `p1_oathpike` 改回 `'pikeman'` ⇒ 本行必须红。
+  const guardStacks = Object.values(g.map.objects).flatMap((o) =>
+    Array.isArray(o.payload?.army) ? o.payload.army : [],
+  );
+  const badGuards = guardStacks.filter(
+    (s) => LEGACY_UNIT_IDS[s.unitTypeId] || !UNITS[s.unitTypeId],
+  );
+  ok(
+    guardStacks.length > 0 && badGuards.length === 0,
+    `地图守军全为 canonical id（${guardStacks.length} 队，旧 id/未知 id ${badGuards.length} 队${
+      badGuards.length ? `：${badGuards.map((s) => s.unitTypeId).join(',')}` : ''
+    }）`,
   );
 
   const v = vaults[0];

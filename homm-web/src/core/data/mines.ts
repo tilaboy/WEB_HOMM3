@@ -61,12 +61,24 @@ export interface VaultDef {
   };
 }
 
+/**
+ * 宝库守军。
+ *
+ * ⚠️ 这里用**canonical id**（`p1_*`），不许再写 `pikeman` / `archer` / `knight`
+ * 这类旧版 H3 id。旧 id 只留给 `LEGACY_UNIT_IDS` 读旧档用；一旦出现在生成器里，
+ * 宝库战斗就会画出旧 H3 立绘 —— 那是四族美术之外的东西（见
+ * `production/ui-redesign-2026-10-28/spec-implementation.md` §4 未决 5）。
+ *
+ * 映射沿用 `LEGACY_UNIT_IDS` 的既有口径（旧兵整体归 p1 晨曦）：
+ *   pikeman → p1_oathpike · archer → p1_hornxbow · knight → p1_templar
+ * ⇒ 叙事上读作「晨曦骑士团留下的旧宝库」，四族都会遇到同一批守卫。
+ */
 export const VAULTS: Record<'mid' | 'strong', VaultDef> = {
   mid: {
     tier: 'mid',
     army: [
-      { unitTypeId: 'pikeman', count: [18, 26] },
-      { unitTypeId: 'archer', count: [12, 18] },
+      { unitTypeId: 'p1_oathpike', count: [18, 26] },
+      { unitTypeId: 'p1_hornxbow', count: [12, 18] },
     ],
     reward: { gold: [2500, 4000], rare: [2, 3], artifactChance: 0.25 },
   },
@@ -74,8 +86,8 @@ export const VAULTS: Record<'mid' | 'strong', VaultDef> = {
     tier: 'strong',
     army: [
       { unitTypeId: 'ogre', count: [10, 14] },
-      { unitTypeId: 'knight', count: [8, 12] },
-      { unitTypeId: 'archer', count: [16, 24] },
+      { unitTypeId: 'p1_templar', count: [8, 12] },
+      { unitTypeId: 'p1_hornxbow', count: [16, 24] },
     ],
     reward: { gold: [4500, 7000], rare: [3, 5], artifactChance: 0.5 },
   },

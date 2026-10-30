@@ -126,6 +126,14 @@ export interface BattleUnit {
   /** 本回合是否已移动过（HOMM：一回合可"移动 + 攻击"，但不能移动两次）。 */
   moved: boolean;
   /**
+   * 本回合被护城河"陷住"：踩进去就到此为止 —— 既不能再走，也不能攻击。
+   *
+   * HOMM3 的护城河核心不是伤害，而是时间：它把攻城从"一回合贴到墙"变成"两回合"，
+   * 守方的塔因此多一轮输出。只扣 2 点防御的话，这条战术意义整个消失了。
+   * `actMove` 写入，`startRound` 清零；UI 看到它就立刻 `endActivation`，AI 看到它就放弃追击。
+   */
+  moatStuck: boolean;
+  /**
    * **本回合已移动的格数**（0 = 原地没动）。每回合开始清零，`actMove` 写入路径长度。
    *
    * 存在理由：赤焰「冲锋」的判定不是"有没有移动"（`moved` 布尔），而是"冲了几格"
@@ -282,6 +290,7 @@ function deploy(army: Army, side: 0 | 1, seqBase: number): BattleUnit[] {
       waited: false,
       defending: false,
       moved: false,
+      moatStuck: false,
       moveDist: 0,
       seq: seqBase + i,
       startCount: s.count,
@@ -683,8 +692,8 @@ export function overtimeHint(s: BattleState, u: BattleUnit): string | null {
 /**
  * **事故给出的伤害系数**（只有「反重力」有：远程 ×0.9，近战不动）。
  *
- * 为什么不做成"攻击 −2"：`estimateDamage` 与结算都对攻击加成做了 `Math.max(0, …)`，
- * 英雄不加攻时负修正会被**整条吃掉**（探针 [G5] 就是这么红的）。而且 −2 点攻击
+ * 为什么不做成"攻击 −2"：`estimateDamage` 与结算必须用**同一套攻击值**，而负修正会被
+ * 0.3 的伤害地板整条吃掉（探针 [G5] 就是这么红的）。而且 −2 点攻击
  * 对 5 攻打 2 防是 ×0.8、对 20 攻打 10 防只有 ×0.97 —— 越小越狠，不是一条能写进
  * 说明书的规则。用固定系数，任何人一读就知道"远程少两成"。
  */
@@ -835,7 +844,12 @@ export function estimateDamage(
   const au = getUnit(atk.unitTypeId);
   const du = getUnit(def.unitTypeId);
   const avg = ((au.damageMin + au.damageMax) / 2) * atk.count;
-  let mod = damageMod(
+  // ⚠️ **已知缺陷（P1，排在 B4 一起修）**：这里把"加成"当成了攻击值，漏了 `au.attack`，
+  // 于是预估系统性低于实战（骑士打野猪：预估 19、实际 28）。2026-10-29 试过补上，
+  // 结果 `probe:factionverbs` 的"AI 会蹦"归零、`probe:d2` 赤焰攻方胜率 80%→25% ——
+  // 说明它会整体改写 AI 的攻击性。**必须与 B4 的 `aiValue` / 常数 / 买兵顺序同批重标**，
+  // 不许跟在数值批后面偷偷改。在此之前：**只换曲线，不动参数语义。**
+  let mod = damageMultiplier(
     Math.max(0, strikeAtkBonus(s, atk, !ranged, assumeMoveDist)),
     du.defense + defBonusOf(s, def),
   );
@@ -857,17 +871,13 @@ export function estimateDamage(
 export function estimateSiegeDamage(s: BattleState, u: BattleUnit, st: SiegeStructure, ranged: boolean): number {
   const au = getUnit(u.unitTypeId);
   const avg = ((au.damageMin + au.damageMax) / 2) * u.count;
-  let mod = damageMod(Math.max(0, au.attack + s.atkBonus[u.side] + effAtkBonus(u, !ranged)), st.defense);
+  let mod = damageMultiplier(Math.max(0, au.attack + s.atkBonus[u.side] + effAtkBonus(u, !ranged)), st.defense);
   if (ranged) {
     if (distance(u.hex, st.hex) > LONG_RANGE) mod *= 0.5;
     if (blocksLine(s.siege, u.hex, st.hex)) mod *= 0.5;
   }
   // 箭矢砍不动石墙：只有投石车能按全额伤害轰
   return Math.max(1, Math.round(avg * mod * UNIT_SIEGE_RESIST));
-}
-
-function damageMod(attack: number, defense: number): number {
-  return Math.min(Math.max(1 + 0.05 * (attack - defense), 0.3), 3.0);
 }
 
 /** 一个部队的"总血量"：满血单位 + 队首残血。 */
@@ -905,6 +915,7 @@ function startRound(s: BattleState): void {
     u.waited = false;
     u.defending = false;
     u.moved = false;
+    u.moatStuck = false;
     u.moveDist = 0;
     // 法术时效：进入新回合扣 1 轮，归零则消失
     u.effects = u.effects.filter((e) => {
@@ -983,6 +994,8 @@ export function actMove(s: BattleState, u: BattleUnit, to: Hex): BattleEvent[] {
   const from = { ...u.hex };
   u.hex = { ...to };
   u.moved = true;
+  // 护城河：踩进去本回合就结束了（见 BattleUnit.moatStuck 的说明）
+  u.moatStuck = !!s.siege && u.side === 0 && isMoat(u.hex);
   // `path` 不含起点（见 `reachable`），所以长度 = 移动格数。
   u.moveDist = path.length;
   return [{ t: 'move', unitId: u.id, path, from }];
@@ -1080,7 +1093,8 @@ export function estimateRetaliation(
   if (remain <= 0) return 0;
   const du = getUnit(def.unitTypeId);
   const avg = ((du.damageMin + du.damageMax) / 2) * remain;
-  const mod = damageMod(
+  // 同上一条已知缺陷：这里也只传了加成。口径与 `estimateDamage` 保持一致，改就一起改。
+  const mod = damageMultiplier(
     Math.max(0, retaliationAtkBonus(s, def)),
     getUnit(atk.unitTypeId).defense + defBonusOf(s, atk),
   );
@@ -1642,7 +1656,9 @@ export function aiAct(s: BattleState, u: BattleUnit): BattleEvent[] {
   }
   if (bestHex && bestTarget) {
     ev.push(...actMove(s, u, bestHex));
-    if (isAdjacent(u.hex, bestTarget.hex) && bestTarget.count > 0) ev.push(...actMelee(s, u, bestTarget));
+    if (!u.moatStuck && isAdjacent(u.hex, bestTarget.hex) && bestTarget.count > 0) {
+      ev.push(...actMelee(s, u, bestTarget));
+    }
     return ev;
   }
 
@@ -1666,7 +1682,7 @@ export function aiAct(s: BattleState, u: BattleUnit): BattleEvent[] {
     }
     if (wallHex && wallTarget) {
       ev.push(...actMove(s, u, wallHex));
-      const still = siegeTargets(s, u, false);
+      const still = u.moatStuck ? [] : siegeTargets(s, u, false);
       if (still.length) {
         const st = still.reduce((a, b) => (b.hp < a.hp ? b : a));
         ev.push(...actSiege(s, u, st));
