@@ -140,7 +140,9 @@ const budget = dayIncome.reduce((a, b) => a + b, 0);
 // 一般档：day8 夺矿、day15 议事堂
 let budgetSlow = 0;
 for (let d = 1; d <= DAYS; d++) {
-  let inc = baseIncome;
+  // 城墙产金（--tamper）对两档都要加：漏了会让负向对照的"一般档"读成 41,650，
+  // 看起来像"改了墙却只影响熟练玩家"
+  let inc = baseIncome + wallIncomeTotal;
   if (!NO_MINE && d >= 8) inc += mineIncome;
   if (d >= 15) inc += townhallIncome;
   budgetSlow += inc;

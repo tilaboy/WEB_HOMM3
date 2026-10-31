@@ -34,10 +34,10 @@ export const BUILDINGS: Record<string, BuildingDef> = {
   townhall: {
     id: 'townhall',
     name: '议事堂',
-    desc: '城镇税收提升，每日 +250 金币。',
+    desc: '城镇税收提升，每日 +450 金币。',
     cost: { gold: 1500, wood: 10, ore: 5 },
     requires: ['market'],
-    dailyGold: 250,
+    dailyGold: 450,
   },
   workshop: {
     id: 'workshop',
@@ -205,8 +205,15 @@ export const DWELLING_IDS = ['dwell1', 'dwell2', 'dwell3', 'dwell4', 'dwell5'];
 
 export const HERO_HIRE_COST = 2500;
 
-/** 城镇基础每日税收。 */
-export const BASE_TOWN_INCOME = 500;
+/**
+ * 城镇基础每日税收。
+ *
+ * 2026-10-31（B3a）：500 → **600**，议事堂 250 → **450**。
+ * 起因是城墙去掉 700/天之后，收入必须从"基建"补回来，否则 5 周预算
+ * 连基础树都建不完（G-E1 0.912）。补齐口径 = **基础税 + 议事堂 + 家门前金矿**：
+ * 600 + 450 + 400 = **1,450/天**（满建）。三个数字合起来才是 §27 的预算 45,900。
+ */
+export const BASE_TOWN_INCOME = 600;
 
 export function getBuilding(id: string): BuildingDef {
   const b = BUILDINGS[id];

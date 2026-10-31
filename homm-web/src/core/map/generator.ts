@@ -20,6 +20,7 @@ import { TERRAIN } from '../data/terrains.js';
 import { ARTIFACTS } from '../data/artifacts.js';
 import { LAYOUTS } from '../data/layouts.js';
 import {
+  HOME_GOLD_GUARD,
   HOME_MINE_RING,
   MINE_PER_DAY,
   RARE_RESOURCES,
@@ -1058,16 +1059,24 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
     }
   }
 
-  // 1.5) **每座玩家主城**再保底一座金矿，同一个环带、同一套退档（TP-11③）。
-  //     场景覆盖（图三）：默认散布规则的金矿全在"深处"（deepness ≥ 8·kl），
-  //     实测 p2/p3/p4 的 D1 带金矿 = 0（p1 因家在地图西缘顺路够到一座）——
-  //     经济节奏不对称。规格：每玩家 D1 带至少 1 座金矿。
-  //     中立城不参与：它们的中立木石已由上面的 allTowns 循环覆盖，
-  //     金矿是"玩家对称性"规格，不扩散到可被征服的中立资产。
-  //     ⚠️ 默认不开（gen?.homeGoldRing 缺省）⇒ 不执行、不消耗 spots
-  //        ⇒ 自由对局 / 图一 / 图二生成逐字节一致。
-  if (gen?.homeGoldRing) {
-    for (const town of homeSpots) {
+  // 1.5) **每座玩家主城**再保底一座**带守卫的**金矿，同一个环带、同一套退档（B3a）。
+  //
+  //     为什么是"怪 + 掉落矿"而不是"矿 + 怪"（决策 46）：
+  //       `grantGuard()` 的 `mine` 分支是**新建**一个 mine 对象写进该格，不是"接管已有矿"。
+  //       先 `addMine()` 再叠怪 ⇒ 同一格两个矿对象：新矿占 `tile.objectId`，
+  //       旧矿变成**永远中立、永远走不到**的孤儿（收入不会双算，但地图上多一个收不到的矿，
+  //       且"这格到底有什么"无法解释）。⇒ **只放怪，删掉 addMine**。
+  //
+  //     什么时候开：**自由对局默认开**；场景只在 `gen.homeGoldRing === true` 时开
+  //     （图三《破碎罗盘》开着，图一/图二强制关 —— 教学场要保持"零守卫"的呼吸空间）。
+  //     ⇒ 自由对局的**地图指纹会变**（这是 2026-10-31 之后的新基线）；图一/图二逐字节不变。
+  //
+  //     为什么每族狼数不同见 `HOME_GOLD_GUARD` 的注释：四族开局 T2 差太多，
+  //     一个数字没法让四族都打出 20~30% 战损。守卫**不吃** `monsterMul`。
+  const wantHomeGold = cfg.scenario ? gen?.homeGoldRing === true : true;
+  if (wantHomeGold) {
+    homeSpots.forEach((town, i) => {
+      const fid = factions[i] ?? 'p1';
       const dHome = (q: GridPos): number => Math.abs(q.x - town.x) + Math.abs(q.y - town.y);
       let p = takeWhere(
         (q) => dHome(q) >= HOME_MINE_RING.min && dHome(q) <= HOME_MINE_RING.max,
@@ -1075,8 +1084,21 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
       if (!p) {
         p = takeWhere((q) => dHome(q) >= 2 && dHome(q) <= HOME_MINE_RING.max + 5);
       }
-      if (p) addMine(p, 'gold');
-    }
+      if (!p) return;
+      const band = HOME_GOLD_GUARD[fid] ?? HOME_GOLD_GUARD.p1;
+      placer.add({
+        kind: 'wanderingMonster',
+        pos: p,
+        payload: {
+          army: [{ unitTypeId: 'wolf', count: randInt(rng, band.min, band.max) }],
+          tier: 'weak',
+          guard: { kind: 'mine', resource: 'gold', perDay: MINE_PER_DAY.gold },
+        },
+        once: true,
+        blocking: false,
+        visitedBy: [],
+      });
+    });
   }
 
   // 2) 散布的金矿与稀有矿：金矿别贴着主城，稀有矿一律藏在深处

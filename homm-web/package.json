@@ -59,7 +59,8 @@
     "probe:dayflow": "node tools/dayflowprobe.mjs",
     "probe:objectives": "node tools/objectivesprobe.mjs",
     "probe:pockets": "node tools/probes/pockets.mjs",
-    "probe:outbreak": "node tools/probes/outbreak.mjs"
+    "probe:outbreak": "node tools/probes/outbreak.mjs",
+    "probe:homegold": "node tools/probes/homegold.mjs"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",

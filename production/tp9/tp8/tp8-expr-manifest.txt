@@ -1,6 +1,6 @@
 # TP-8② 手机表情可读 · 素材清单
 dist: /Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist
-指纹: {"dir":"/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist","md5":"c3714628daa761f922376dc72c0ca290","sha256":"4172c796a39bdd7d","mtime":"2026-10-27T14:02:52.011Z","files":["main.js","style.css","index.html"]}
+指纹: {"dir":"/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist","md5":"b81b5dd3084d1b1d9a4c34d7f40e00da","sha256":"3459e26c515a8bb8","mtime":"2026-10-31T11:36:39.848Z","files":["main.js","style.css","index.html"]}
 seed: 20261020   rounds: 3
 口径: 792×320 CSS @ dpr3 · 战场 BASE 603×388（BattleRenderer.ts:18-19）
       s = 0.8247（缩放）· k = 2.4742 设备像素/美术像素
