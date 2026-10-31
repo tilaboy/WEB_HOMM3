@@ -12,6 +12,7 @@ import { hash2 } from './pixel.js';
 import { getCombatAtlas } from './combatAtlas.js';
 import type { CombatAtlas } from './combatAtlas.js';
 import { quality } from './quality.js';
+import { unitCombatFrame } from './unitFrames.js';
 
 const PAD = 6;
 export { PAD };
@@ -719,7 +720,7 @@ export class BattleRenderer {
       Math.round(cx + team.ax), Math.round(cy + team.ay), team.w, team.h,
     );
 
-    const idleName = `cu_${u.unitTypeId}`;
+    const idleName = unitCombatFrame(u.unitTypeId);
     // TP-5①：攻击表演期换 atk 帧（帧早已烘焙、成本已付，此前渲染器从不 blit）。
     // 中性怪（狼/野猪/食人魔）没烘 atk 帧 ⇒ 回退 idle，不影响它们的表现。
     const atkName = `${idleName}_atk`;

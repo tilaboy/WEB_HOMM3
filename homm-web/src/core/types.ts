@@ -105,6 +105,16 @@ export interface UnitType {
   expValue: number;
   growthPerWeek: number;
   cost: ResourceBag;
+  /**
+   * **AI 眼里的强弱**（§25.2–25.4，决策 44/63）。量纲 = **B 口径战力**（`powerRef()`），
+   * **不是血量** —— 同一个概念以前用 `armyHp` 读，两把尺不能混用（`armyHp` 仍在，只给探针）。
+   *
+   * 远程 ×1.25（只进本字段，不进 `cost`）；飞行 / 吸血 / 免反击**不折** ——
+   * 那三项已经被 `quickBattle` 的真打结果覆盖，再折是双重计价（决策 48）。
+   *
+   * **浮点**：取整会把 T1 的 `aiValue` 极差从 30.7% 顶到 50%，V6 直接红（决策 63）。
+   */
+  aiValue: number;
   body: string;
   accent: string;
   /**
@@ -119,7 +129,7 @@ export interface UnitType {
    * 语义严格：**这一支主动攻击时，守方不能回手**。守方身份不受影响（它被攻击时照常反击）。
    * 和"免疫反击"（守方不打回去）是两件不同的事，别混。缺省 `false`。
    *
-   * 目前只有紫晶 T3 `p4_hopgolem`（蹦跳魔偶）带这条：它蹦过去砸一下又弹开，对手够不着。
+   * 目前只有赤焰 T3 `p2_threewolf`（三头狼）带这条：扑过去咬一口又弹开，对手够不着。
    * 新增单位带这条之前先想清楚——这是"免掉一次交换成本"，对平衡的撬动和 +2 攻同一量级。
    */
   noRetaliate?: boolean;
@@ -166,6 +176,14 @@ export interface Hero {
   movePoints: number;
   army: Army;
   artifacts: string[];
+  /**
+   * 穿戴表（§9.1 数据口径，2026-10-31）。**旧档没有这个字段** ⇒ 读时按
+   * 「每个槽取 `artifacts` 里第一个匹配」兜底（`game/exchange.ts equippedOf`），
+   * 与现有面板显示逐字一致，因此**不需要迁移器**。
+   *
+   * 物品**仍留在 `artifacts` 里**（不搬数组，避免下标/顺序失效）；这里只记"哪个 id 在哪个槽"。
+   */
+  equipped?: Partial<Record<ArtifactSlot, string>>;
   /** 已学会的法术 id（M4）。 */
   spells: string[];
   /** 携带的攻城器械（M6）：在带「工坊」的己方城镇花钱装配。 */
@@ -380,6 +398,15 @@ export interface PlayerState {
 
 /** 一局的终局状态。playing 之外的状态会锁定操作并弹结算界面。 */
 export type GameStatus = 'playing' | 'won' | 'lost';
+
+/**
+ * 存档 schema 版本。**唯一来源**：生成器写它、`persistence.ts` 用它判"能不能读 / 要不要迁"。
+ *
+ * v8（2026-10-31，B1）：兵种阵容 v3 —— 20 个 canonical id 全换，v7 档必须过
+ * `normalizeLegacyUnitIds()` 才能读。⚠️ 迁移**只能跑一次**：新旧阵容里 `p3_treant`
+ * 是同一个字符串、指两个兵（旧 T4 树人 / 新 T3 树人）⇒ 对 v8 档再跑一遍会把树人变猿人。
+ */
+export const SAVE_VERSION = 8;
 
 export interface GameState {
   version: number;

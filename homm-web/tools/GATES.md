@@ -49,7 +49,16 @@
 | `audit:tutorial` | `tutorialgate.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | **本轮新增**。首次启动自动进教学模式的三环节（自动进 / 菜单能跳过 / 跳过不再回来）。**必须跑在全新 Chrome profile**（`_chrome.mjs` 每次 `mkdtempSync` ⇒ 天然满足；若改成复用 profile，① 会假绿） |
 | `audit:androidsync` | `androidsync.mjs` | 工具 | ✓ 隐式 | ✓ | ✓ | — | 无显式 `0`；成功走自然退出。⚠️ **第 1 步就是 `npx cap sync android` ⇒ 会清空 `android/app/src/main/assets/public/`**（该目录被 `android/.gitignore:96` ignore，是 `dist/` 的拷贝、可重新生成）。想跑断言必须先接受这次清空 |
 | `audit:hpbudget` | `hpbudget.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | `#156` 英雄栏信息预算量尺。**2026-10-12**：场景卡没了 ⇒ 改走 `?devscenario=<id>` 进门（顺带消掉原来 12s 空等） |
+| `audit:power` | `powerref.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | H1 的尺子：20 组攻防血按 **B 口径**复算（实测最大差 0.83%）+ 两套 clamp 边界 + 单调性 + **A 口径负对照**（小孩必须 4.5，B 是 3.3）。⚠️ 那 20 组数是**硬抄在脚本里**的 ⇒ 只证"公式能复现文档"，不证"`units.ts` 装的就是这 20 个兵"（缺口由 `audit:balance` 补） |
+| `audit:balance` | `balance-p2.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | **B0 新增（2026-10-30）**。从 `dist` 读真实 20 兵，与 §16.2 **逐字段**对差（差异清单就是 B1 的工单）；V1–V6 全部**读代码**。开关：`--a`（A 口径，T1 单只必须读 78%）、`--upgrades`（20 个 `_u` 封顶）、`--tamper`（p1 T5 血量 ×1.3 ⇒ V1 必须变大）、`--json=`（落基线） |
+| `audit:econ` | `econ-check.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | **B0 新增（2026-10-30）**。造价**从 `buildings.ts` 累加**（不许手写 40,800）、收入只在这里算；G-E1~G-E5 五条。开关：`--nomine`（G-E1 必须 0.801）、`--nobanner`（必须 1.153）、`--tamper`（城墙 +700/天 ⇒ G-E1 必须破 1.20）、`--json=` |
 | `audit:panelgate` | `panelgate.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | 拇指带「英雄」三向（能开能关能再开）。**2026-10-12**：入口改 `?devstart=1`、按钮文案「开始新游戏」→「开始」 |
+| `probe:factionverbs` | `probes/factionverbs.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | 四族动词 89 条（冲锋 / 三口齐咬 / 加班 / 缠根 / 事故）。**奖励类读数（使用率、整军胜率）不是 0/1**，见文件头负向对照 |
+| `probe:sidebias` | `probes/sidebias.mjs` | **报表** | **恒 0** | ✗ | ✓ `requireFile` | — | 不带 `--gate` 时只打表（走位 / 贴脸 / 整军）。要判词必须加 `--gate=d1` / `--gate=d2` |
+| `probe:d1` | 同上 `--gate=d1` | 门 | ✓ | ✓ | ✓ `requireFile` | — | 走位：停在威胁区 ≤55~60% / 让手 >0 / 首次近战归攻方 ≥40% |
+| `probe:d2` | 同上 `--gate=d2` | 门 | ✓ | ✓ | ✓ `requireFile` | — | 反击全额（首击→反击 ≥60%）+ 贴脸 40~80% + 整军攻方 5~98%（**区间只判"有没有一侧被结构性剥夺"**，平衡读数见文件内置顶注释） |
+| `probe:exchange` | `probes/exchange.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | 会面交换 25 条（U1）。`=full` 场景的总量从场景自身求和，不写死 |
+| `probe:frames` | `probes/frames.mjs` | 门 | ✓ | ✓ | — （纯 Node，无 Chrome） | — | 帧别名层（S0）15 条：20 行对照 / 20 个基名互异 / map·idle·atk 都存在 / 静态扫描"除定义方外无人拼帧名" |
 | `audit:haloflip` | `haloflip.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | ④ halo 光环翻转；自带 dev server（`?devquick=` 起步） |
 | （无 npm script，直接 `node tools/showcasegate.mjs`） | `showcasegate.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | 展示图可玩性门（点击数 / 开局页滚动比 / 常驻文字条）。**2026-10-12**：「试这张图」并入「开始」，A 组从"证明减法生效"改为"证明没倒退回 2 次点击" |
 | （无 npm script，直接 `node tools/iaaccept.mjs`） | `iaaccept.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | **独立验收探针**（不复用被验方的 `scenarioaudit`）。⚠️ **默认连外部 5173**，须先 `node tools/serve.mjs`；**且必须带 `NO_PROXY='*'`**（见 §六） |

@@ -69,16 +69,20 @@ export interface VaultDef {
  * 宝库战斗就会画出旧 H3 立绘 —— 那是四族美术之外的东西（见
  * `production/ui-redesign-2026-10-28/spec-implementation.md` §4 未决 5）。
  *
- * 映射沿用 `LEGACY_UNIT_IDS` 的既有口径（旧兵整体归 p1 晨曦）：
- *   pikeman → p1_oathpike · archer → p1_hornxbow · knight → p1_templar
+ * 映射沿用 `LEGACY_UNIT_IDS` 的既有口径（旧兵整体归 p1 晨曦），B1 后按**同档**改指新兵：
+ *   pikeman → **p1_eagle**（旧 T3 → 新 T3）· archer → **p1_crossbow** · knight → **p1_knight**
  * ⇒ 叙事上读作「晨曦骑士团留下的旧宝库」，四族都会遇到同一批守卫。
+ *
+ * ⚠️ 守军是**按旧兵的强度**配的数量（18~26 枪兵），而新 T3 是鹰（HP 14 vs 旧 20）。
+ * 数量没跟着重算 ⇒ 宝库比 v7 略软。**这是已知的暂时态**：宝库难度没有独立闸，
+ * 由 B5 的首轮基线（A1–A6）一起读；要调也只调 `count`，不要在这里塞第三个兵种。
  */
 export const VAULTS: Record<'mid' | 'strong', VaultDef> = {
   mid: {
     tier: 'mid',
     army: [
-      { unitTypeId: 'p1_oathpike', count: [18, 26] },
-      { unitTypeId: 'p1_hornxbow', count: [12, 18] },
+      { unitTypeId: 'p1_eagle', count: [18, 26] },
+      { unitTypeId: 'p1_crossbow', count: [12, 18] },
     ],
     reward: { gold: [2500, 4000], rare: [2, 3], artifactChance: 0.25 },
   },
@@ -86,8 +90,8 @@ export const VAULTS: Record<'mid' | 'strong', VaultDef> = {
     tier: 'strong',
     army: [
       { unitTypeId: 'ogre', count: [10, 14] },
-      { unitTypeId: 'p1_templar', count: [8, 12] },
-      { unitTypeId: 'p1_hornxbow', count: [16, 24] },
+      { unitTypeId: 'p1_knight', count: [8, 12] },
+      { unitTypeId: 'p1_crossbow', count: [16, 24] },
     ],
     reward: { gold: [4500, 7000], rare: [3, 5], artifactChance: 0.5 },
   },

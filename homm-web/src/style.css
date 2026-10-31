@@ -3650,3 +3650,331 @@ body.side-open #thumb {
   margin: 0 4px;
   opacity: 0.5;
 }
+
+/* ==================== 会面交换（§9.2，2026-10-31） ====================
+ *
+ * 尺寸账（352 / 320 两档都要装下）：
+ *   常规（≥341px 高）：头部 33 + 英雄头 48 + 5 行×40=200 + 装备行 38 = 319 ≤ 324 ✓
+ *   矮机（≤340px）  ：头部 33 + 英雄头 34 + 5 行×32=160 + 装备行 32 = 259 ≤ 272 ✓
+ * `--ex-*` 三个变量是**唯一**的尺寸来源：两套 DOM 必然会有一边没人测，所以只切变量。
+ *
+ * ⚠️ 40px 行不是"随手定的"：48px 兵牌 5 行 = 240，加装备行与头部就是 332 > 320
+ *    （§9.2 空间核算）—— 矮机上会直接吃掉最后一行。
+ */
+.modal.exchange {
+  --ex-row: 40px;
+  --ex-head: 48px;
+  --ex-art: 32px;
+  width: min(760px, 96vw);
+  height: min(352px, 94%);
+  max-height: min(352px, 94%);
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal.exchange .modal-head {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+}
+
+.modal.exchange .modal-head h2 {
+  font-size: var(--t-cap);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ex {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 40px 1fr;
+}
+
+/* ---------- 一侧 ---------- */
+
+.ex-side {
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.ex-head {
+  flex: 0 0 auto;
+  height: var(--ex-head);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid rgba(58, 42, 18, 0.22);
+  margin-bottom: 2px;
+}
+
+.ex-face {
+  flex: 0 0 auto;
+  width: calc(var(--ex-head) - 12px);
+  height: calc(var(--ex-head) - 12px);
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--gold-dim);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--parch-ink);
+  font-size: var(--t-body);
+}
+
+.ex-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.ex-name {
+  font-size: var(--t-body);
+  color: var(--parch-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ex-sub {
+  font-size: var(--t-cap);
+  color: #6b5a3a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 满编：只在"对面选中的东西塞不进来"时出现，不常驻 */
+.ex-full {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: var(--t-cap);
+  color: #9c3220;
+  border: 1px solid rgba(156, 50, 32, 0.5);
+  border-radius: 3px;
+  padding: 1px 4px;
+  background: rgba(156, 50, 32, 0.08);
+}
+
+/* ---------- 部队行 ---------- */
+
+.ex-army {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.ex-row {
+  height: var(--ex-row);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--parch-ink);
+  font-size: var(--t-cap);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ex-row + .ex-row {
+  margin-top: 1px;
+}
+
+.ex-row.on {
+  border-color: var(--gold-dim);
+  background: rgba(240, 212, 136, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.ex-row.blocked {
+  border-color: #9c3220;
+}
+
+.ex-row.drop {
+  border-style: dashed;
+  border-color: rgba(58, 42, 18, 0.4);
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.ex-row.empty {
+  justify-content: center;
+  border-style: dashed;
+  border-color: rgba(58, 42, 18, 0.18);
+  color: rgba(58, 42, 18, 0.45);
+  cursor: default;
+}
+
+.ex-row.empty.drop {
+  cursor: pointer;
+  border-color: rgba(58, 42, 18, 0.45);
+}
+
+.ex-art {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 30px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.ex-art.chip {
+  height: 22px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+}
+
+.ex-uname {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ex-count {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 装备行（6 槽 + 背包） ---------- */
+
+.ex-arts {
+  flex: 0 0 auto;
+  height: calc(var(--ex-art) + 6px);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.ex-slot {
+  flex: 0 0 auto;
+  width: var(--ex-art);
+  height: var(--ex-art);
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(58, 42, 18, 0.3);
+  border-radius: 3px;
+  background: transparent;
+  color: rgba(58, 42, 18, 0.5);
+  font-size: var(--t-cap);
+  cursor: pointer;
+}
+
+.ex-slot.filled {
+  border-style: solid;
+  border-color: var(--gold-dim);
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--parch-ink);
+}
+
+.ex-slot.on {
+  box-shadow: 0 0 0 2px var(--gold);
+  border-color: #6b4415;
+}
+
+.ex-bag {
+  flex: 0 0 auto;
+  margin-left: auto;
+  height: var(--ex-art);
+  padding: 0 6px;
+  border: 1px solid rgba(58, 42, 18, 0.32);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--parch-ink);
+  font-size: var(--t-cap);
+  cursor: pointer;
+}
+
+/* 分兵三键：占用**装备行**的位置（行下方会被下一行盖住，矮机上点不到） */
+.ex-split {
+  gap: 6px;
+  justify-content: flex-start;
+}
+
+.ex-amt {
+  min-width: 48px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid rgba(58, 42, 18, 0.42);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.45);
+  color: var(--parch-ink);
+  font-size: var(--t-cap);
+  cursor: pointer;
+}
+
+.ex-amt.on {
+  background: var(--gold);
+  border-color: #6b4415;
+}
+
+/* ---------- 中栏 ---------- */
+
+.ex-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-left: 1px solid rgba(58, 42, 18, 0.22);
+  border-right: 1px solid rgba(58, 42, 18, 0.22);
+}
+
+.ex-swap {
+  font-size: var(--t-h);
+  color: #6b4415;
+  line-height: 1;
+}
+
+.ex-mp {
+  font-size: var(--t-cap);
+  color: #6b5a3a;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 矮机（≤340px 高） ---------- */
+
+@media (max-height: 340px) {
+  /* 320 高的机器上，`#modal-root` 只有 stage 那么高（顶栏以下 ≈286）⇒
+     94% ≈ 269，减掉头部 28 = **241** 才是真正能用的内容高。
+     所以矮机档不是"缩一点点"，而是按 218px 反推：30+5×30+4+2+28+4 = 218。 */
+  .modal.exchange {
+    --ex-row: 30px;
+    --ex-head: 30px;
+    --ex-art: 22px;
+  }
+
+  .modal.exchange .ex-side {
+    padding: 2px 8px;
+  }
+
+  .modal.exchange .ex-arts {
+    height: calc(var(--ex-art) + 6px);
+  }
+
+  .modal.exchange .ex-sub {
+    display: none;
+  }
+
+  .ex-art {
+    height: 24px;
+  }
+
+  .ex-slot {
+    width: var(--ex-art);
+    height: var(--ex-art);
+  }
+}

@@ -19,6 +19,7 @@ import {
   type BadgeFrame,
   type BBox,
 } from './mapBadge.js';
+import { unitMapFrame } from './unitFrames.js';
 
 export interface ViewModel {
   state: GameState;
@@ -1747,7 +1748,7 @@ export class MapRenderer {
     if (!hero) return;
     const cid = pickRepresentativeUnit(hero.army);
     if (!cid) return; // 空队 / 野怪 / 未登记兵种
-    const frameName = `u_${cid}_map`; // ⑤ 帧名只用 canonical id，owner 不参与
+    const frameName = unitMapFrame(cid); // ⑤ 帧名只经别名层；owner 不参与
     const g = this.silOf(frameName);
     // 缺帧 ⇒ 只跳过这一枚**徽标**（不是英雄本体——本体在上面先画）。
     // T5 四族的 u_*_map 已于 2026-10-14（TP-1）并入 UNIT_FRAMES，这里不再是"T5 恒缺"；

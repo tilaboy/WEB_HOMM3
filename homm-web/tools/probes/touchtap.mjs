@@ -33,7 +33,7 @@
  * 退出码：0 全过 · 1 有断言不过 · 2 前置不满足
  */
 import path from 'node:path';
-import { distDir, printHeader, requireFile, freePort, serveInProcess } from '../_dist.mjs';
+import { distDir, distUrl, printHeader, requireFile, freePort, serveInProcess } from '../_dist.mjs';
 import { withHeadlessChrome, chromeAvailable } from '../_chrome.mjs';
 
 const DIST = distDir();
@@ -101,11 +101,14 @@ try {
      * 真机 OPPO 上就是这样：机器里有过一局 ⇒ 开局页开出 ⇒ 战斗层躺在它下面。
      * 先跑一局 `?devquick=1` 让存档落地，再进 `?devbattle=1`。 */
     await send('Page.navigate', { url: BASE + '&devquick=1' });
+    // 版本号从 `dist` 读，别写死：B1 把存档升到 v8 之后，写死的 `=== 7`
+    // 会让这条前置永远红，而后面 20 条因为"没有开局页"变成假绿（正是它要防的病）。
+    const { SAVE_VERSION } = await import(distUrl('core/types.js', DIST));
     let seeded = false;
     for (let i = 0; i < 60; i++) {
       await sleep(200);
       try {
-        seeded = await evaluate(`(() => { const r = localStorage.getItem('homm-save-v1'); if (!r) return false; try { return JSON.parse(r).version === 7; } catch (e) { return false; } })()`);
+        seeded = await evaluate(`(() => { const r = localStorage.getItem('homm-save-v1'); if (!r) return false; try { return JSON.parse(r).version === ${SAVE_VERSION}; } catch (e) { return false; } })()`);
         if (seeded) break;
       } catch { /* 导航中 */ }
     }

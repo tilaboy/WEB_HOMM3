@@ -18,6 +18,12 @@ export interface ModalOptions {
    * ⇒ 出口随内容滚走，长内容要滚到底才能关（用户反馈 F4）。
    */
   headClose?: boolean;
+  /**
+   * 追加到 `.modal` 上的类名（2026-10-31，会面面板）。
+   * 会面是 760×352 的三栏固定盒，`.wide`（560×300）装不下，而再复制一套
+   * 「宽版」布尔会变成第三个尺寸开关 ⇒ 用一个类名挂样式，尺寸仍在 CSS 里。
+   */
+  className?: string;
 }
 
 let root: HTMLElement | null = null;
@@ -36,7 +42,7 @@ export function showModal(parent: HTMLElement, opts: ModalOptions): void {
   host.innerHTML = '';
 
   const box = document.createElement('div');
-  box.className = 'modal' + (opts.wide ? ' wide' : '');
+  box.className = 'modal' + (opts.wide ? ' wide' : '') + (opts.className ? ` ${opts.className}` : '');
 
   if (opts.headClose) {
     const bar = document.createElement('div');

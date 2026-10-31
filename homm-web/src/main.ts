@@ -19,6 +19,8 @@ import {
   previewInteraction,
 } from './core/game/interaction.js';
 import { openBattleScreen, isBattleOpen } from './ui/BattleScreen.js';
+import { ExchangeDialog } from './ui/ExchangeDialog.js';
+import { canMeet, friendlyHeroAt, totalCount } from './core/game/exchange.js';
 import { castAdventure, canAdventureCast, type AdventureTarget } from './core/game/spells.js';
 import { getSpell } from './core/data/spells.js';
 import { manaMaxOf, maxMovePoints } from './core/game/hero.js';
@@ -889,6 +891,28 @@ const panel = new HeroPanel(
 
 const hud = new HUD(topbar);
 
+/* ---------------- 会面交换（§9.2） ---------------- */
+
+const exchangeDialog = new ExchangeDialog(stage);
+
+/**
+ * 打开会面面板。**不消耗移动力**（会面本身不花 MP，只做物资转运）。
+ *
+ * 战斗屏开着时不弹：`stage` 被 `.battle` 整屏接管，弹在下面等于"点不到又关不掉"。
+ */
+function openExchange(aId: string, bId: string): void {
+  if (isBattleOpen()) return;
+  const chk = canMeet(state, aId, bId);
+  if (!chk.ok) {
+    if (chk.reason !== 'same-hero') hint(chk.message);
+    return;
+  }
+  exchangeDialog.open(state, aId, bId, () => {
+    refresh();
+    saveGame(state);
+  });
+}
+
 const STEP_MS = 165;
 
 /**
@@ -1066,11 +1090,18 @@ function tickAnim(dt: number): void {
     }
   }
   if (anim && anim.i >= anim.path.length) {
+    const endedId = anim.heroId;
     anim = null;
     pendingDest = null;
     recomputeField();
     refresh();
     saveGame(state);
+    /* §9.2 触发：**移动结束**时与友军同格 ⇒ 弹会面面板。
+       `friendlyHeroAt` 只认同阵营同格 —— 敌方英雄在 `tickAnim` 上面那一支
+       已经被拦成遭遇战了，不会走到这里。 */
+    const ended = state.heroes[endedId];
+    const mate = ended ? friendlyHeroAt(state, ended) : null;
+    if (ended && mate) openExchange(ended.id, mate.id);
   }
 }
 
@@ -1994,8 +2025,15 @@ function handleClick(e: PointerEvent): void {
     const h = state.heroes[id];
     if (!h || h.pos.x !== g.x || h.pos.y !== g.y) continue;
     // 敌将不能选中：点他就是"打过去"（走过去的那一步会触发遭遇战）
-    if (h.owner !== 'p1') {
+    // ⚠️ 判"是不是我"必须走 `viewerOf(state)`，不许写 `'p1'`（决策 4 的同一类错）。
+    if (h.owner !== viewerOf(state)) {
       if (selected) tryMove(g);
+      return;
+    }
+    // §9.2：点**同格**的另一位友军 = 会面交换（不是"切英雄"）
+    const cur = selected ? state.heroes[selected] : null;
+    if (cur && cur.id !== id && cur.owner === h.owner) {
+      openExchange(cur.id, id);
       return;
     }
     selected = id;
@@ -2672,23 +2710,23 @@ if (bootParams.has('devbattle') && selected && state.heroes[selected]) {
     attacker: {
       army: t5
         ? [
-            { unitTypeId: 'p1_overangel', count: 3 },
-            { unitTypeId: 'p3_unicorn', count: 4 },
+            { unitTypeId: 'p1_angel', count: 3 },
+            { unitTypeId: 'p3_greendragon', count: 4 },
           ]
         : full
           ? [
-              { unitTypeId: 'p1_lampbearer', count: 40 },
-              { unitTypeId: 'p1_hornxbow', count: 28 },
-              { unitTypeId: 'p1_oathpike', count: 24 },
-              { unitTypeId: 'p1_templar', count: 12 },
-              { unitTypeId: 'p1_overangel', count: 3 },
+              { unitTypeId: 'p1_child', count: 40 },
+              { unitTypeId: 'p1_crossbow', count: 28 },
+              { unitTypeId: 'p1_eagle', count: 24 },
+              { unitTypeId: 'p1_knight', count: 12 },
+              { unitTypeId: 'p1_angel', count: 3 },
               { unitTypeId: 'p3_dwarf', count: 30 },
-              { unitTypeId: 'p3_unicorn', count: 6 },
+              { unitTypeId: 'p3_greendragon', count: 6 },
             ]
           : [
-              { unitTypeId: 'archer', count: 20 },
-              { unitTypeId: 'pikeman', count: 12 },
-              { unitTypeId: 'knight', count: 6 },
+              { unitTypeId: 'p1_crossbow', count: 20 },
+              { unitTypeId: 'p1_eagle', count: 12 },
+              { unitTypeId: 'p1_knight', count: 6 },
             ],
       attack: 3,
       defense: 4,
@@ -2703,18 +2741,18 @@ if (bootParams.has('devbattle') && selected && state.heroes[selected]) {
     defender: {
       army: t5
         ? [
-            { unitTypeId: 'p2_lavatroll', count: 2 },
-            { unitTypeId: 'p4_colossus', count: 3 },
+            { unitTypeId: 'p2_devil', count: 2 },
+            { unitTypeId: 'p4_wraith', count: 3 },
           ]
         : full
           ? [
-              { unitTypeId: 'p2_scavenger', count: 45 },
-              { unitTypeId: 'p2_axethrower', count: 26 },
-              { unitTypeId: 'p2_wolfrider', count: 18 },
-              { unitTypeId: 'p2_firebrand', count: 9 },
-              { unitTypeId: 'p2_lavatroll', count: 4 },
-              { unitTypeId: 'p4_stoneimp', count: 50 },
-              { unitTypeId: 'p4_colossus', count: 5 },
+              { unitTypeId: 'p2_matchman', count: 45 },
+              { unitTypeId: 'p2_bronze', count: 26 },
+              { unitTypeId: 'p2_threewolf', count: 18 },
+              { unitTypeId: 'p2_lavagiant', count: 9 },
+              { unitTypeId: 'p2_devil', count: 4 },
+              { unitTypeId: 'p4_skeleton', count: 50 },
+              { unitTypeId: 'p4_wraith', count: 5 },
             ]
           : [
               { unitTypeId: 'wolf', count: 26 },
@@ -2757,10 +2795,10 @@ if (bootParams.has('devsetup') && state.players.p1) {
 // ⚠️ 只动"当前选中英雄"的 army，不碰生产路径；不传即零影响。
 if (bootParams.get('devarmy') === 't5' && selected && state.heroes[selected]) {
   state.heroes[selected].army = [
-    { unitTypeId: 'p1_overangel', count: 1 },
-    { unitTypeId: 'p2_lavatroll', count: 1 },
-    { unitTypeId: 'p3_unicorn', count: 1 },
-    { unitTypeId: 'p4_colossus', count: 1 },
+    { unitTypeId: 'p1_angel', count: 1 },
+    { unitTypeId: 'p2_devil', count: 1 },
+    { unitTypeId: 'p3_greendragon', count: 1 },
+    { unitTypeId: 'p4_wraith', count: 1 },
   ];
 }
 
@@ -2776,4 +2814,106 @@ if (bootParams.has('devpoor')) {
 if (bootParams.has('devtown')) {
   const home = Object.values(state.towns).find((t) => t.owner === 'p1');
   if (home) openTownById(home.id);
+}
+
+/* ---------------- 会面交换的调试入口（`?devexchange=1` / `?devexchange=full`） ---------------- */
+
+/**
+ * 为什么需要它：会面要求「两位友军同格」，正常开局只有一位英雄，第二只要先建酒馆、
+ * 攒 2,500 金、招出来、再走回来 —— 一条**依赖随机地图**的长路径，做不了回归。
+ *
+ * `=1`     ：A 两栈（灯侍 12 / 角弓 8），B 三栈（灯侍 5 / 誓枪 4 / 圣殿 2）⇒ 合并 / 换 /
+ *            移入三种落点都能一次点到。
+ * `=full`  ：B 满编 5 栈，且**没有**与 A 同兵种的 ⇒ 专门验「满编红描边 + 点击无效」。
+ *
+ * `window.__exchange()` 返回快照，供 `probe:exchange` 读；生产路径不受影响
+ * （与 `__mapShadow` / `__mapReachProbe` 同一套惯例）。
+ */
+if (bootParams.has('devexchange')) {
+  const owner = viewerOf(state);
+  const own: Hero[] = [];
+  for (const id of state.heroOrder) {
+    const h = state.heroes[id];
+    if (h && h.owner === owner) own.push(h);
+  }
+  const a = own[0];
+  if (!a) {
+    console.warn('[devexchange] 没有可用英雄（需要先 ?devquick 开一局）');
+  } else {
+    a.army = [
+      { unitTypeId: 'p1_child', count: 12 },
+      { unitTypeId: 'p1_crossbow', count: 8 },
+    ];
+    a.artifacts = ['blade_of_fury', 'aegis'];
+
+    const full = bootParams.get('devexchange') === 'full';
+    let b = own[1];
+    if (!b) {
+      b = {
+        id: 'hero_devex2',
+        name: '试交换',
+        heroClass: '骑士',
+        portrait: '#4a7fb5',
+        level: 1,
+        exp: 0,
+        primary: { attack: 1, defense: 2, spellPower: 1, knowledge: 1 },
+        mana: 10,
+        manaMax: 10,
+        movePoints: maxMovePoints(a, state),
+        army: [],
+        artifacts: [],
+        spells: [],
+        pos: { x: a.pos.x, y: a.pos.y },
+        owner,
+      };
+      state.heroes[b.id] = b;
+      state.heroOrder.push(b.id);
+    }
+    b.pos = { x: a.pos.x, y: a.pos.y };
+    b.artifacts = ['ring_of_prosperity'];
+    b.army = full
+      ? [
+          { unitTypeId: 'p1_eagle', count: 4 },
+          { unitTypeId: 'p1_knight', count: 2 },
+          { unitTypeId: 'p1_angel', count: 1 },
+          { unitTypeId: 'p3_dwarf', count: 3 },
+          { unitTypeId: 'p2_matchman', count: 2 },
+        ]
+      : [
+          { unitTypeId: 'p1_child', count: 5 },
+          { unitTypeId: 'p1_eagle', count: 4 },
+          { unitTypeId: 'p1_knight', count: 2 },
+        ];
+
+    selected = a.id;
+    recomputeField();
+    refresh();
+
+    const snap = () => {
+      const ja = state.heroes[a!.id];
+      const jb = state.heroes[b!.id];
+      const box = document.querySelector('.modal.exchange') as HTMLElement | null;
+      const ex = document.querySelector('.ex') as HTMLElement | null;
+      return {
+        open: !!box,
+        reason: ex?.getAttribute('data-reason') ?? '',
+        msg: ex?.getAttribute('data-msg') ?? '',
+        a: ja ? { id: ja.id, army: ja.army.map((s) => [s.unitTypeId, s.count]), artifacts: ja.artifacts.slice(), total: totalCount(ja) } : null,
+        b: jb ? { id: jb.id, army: jb.army.map((s) => [s.unitTypeId, s.count]), artifacts: jb.artifacts.slice(), total: totalCount(jb) } : null,
+        box: box ? { w: box.clientWidth, h: box.clientHeight, scrollH: box.scrollHeight, clientH: box.clientHeight } : null,
+        ex: ex ? { scrollH: ex.scrollHeight, clientH: ex.clientHeight } : null,
+        rows: [...document.querySelectorAll('.ex-row')].map((e) => Math.round(e.getBoundingClientRect().height)),
+        blocked: document.querySelectorAll('.ex-row.blocked').length,
+        fullBadge: !!document.querySelector('.ex-full'),
+      };
+    };
+    // 先挂快照再开面板：面板若抛错，探针仍能读到 state（否则只剩"没打开"三个字）
+    (window as unknown as { __exchange: () => unknown; __exchangeError?: string }).__exchange = snap;
+    try {
+      openExchange(a.id, b.id);
+    } catch (e) {
+      (window as unknown as { __exchangeError?: string }).__exchangeError = String(e);
+      console.error('[devexchange] 打开面板失败', e);
+    }
+  }
 }

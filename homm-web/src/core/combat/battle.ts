@@ -114,10 +114,11 @@ export interface BattleUnit {
   /** 本回合是否已反击过（每回合限一次）。 */
   retaliated: boolean;
   /**
-   * 「弹跳袭击」是否已经用掉（**每队每场一次**）。
+   * 「三口齐咬」是否已经用掉（**每队每场一次**）。
    *
-   * 为什么不给无限次：免反击让这一支在近战里"只输出不挨打"，实测（§11.7）
-   * 无限次会让紫晶对晨曦的攻方胜率 +38pt、贴脸镜像 70%→100%（结构性必赢）。
+   * 为什么不给无限次：免反击让这一支在近战里"只输出不挨打"，实测（§11.7，
+   * 当时这条特性挂在紫晶 T4 蹦跳魔偶上）无限次会让紫晶对晨曦的攻方胜率 +38pt、
+   * 贴脸镜像 70%→100%（结构性必赢）。
    * 收成每队一次之后，它变成一个**要挑时机花掉的资源**，而不是永久免疫。
    */
   freeHitUsed: boolean;
@@ -216,7 +217,7 @@ export type BattleEvent =
       longRange: boolean;
     }
   | { t: 'retaliate'; unitId: string; targetId: string; damage: number; killed: number }
-  /** 「弹跳袭击」生效：攻方砸完弹开，守方这一下没能回手（每队每场一次）。 */
+  /** 「三口齐咬」生效：攻方咬完退开，守方这一下没能回手（每队每场一次）。 */
   | { t: 'bounce'; unitId: string; targetId: string }
   /** 翠林「缠根」生效：目标速度 −2，到它下一次行动结束。 */
   | { t: 'root'; unitId: string; targetId: string }
@@ -1035,9 +1036,9 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
   // ⚠️ 反击**不吃族动词**（冲锋）：这是"被撞了一下回手"，不是自己冲过去。
   //    否则赤焰部队站着挨打反而更赚，动词会退化成"别动"。
   //
-  // 「弹跳袭击」(`noRetaliate`)：攻方带这条 ⇒ 守方**不能**回手（HOMM3 吸血伯爵同款）。
+  // 「三口齐咬」(`noRetaliate`)：攻方带这条 ⇒ 守方**不能**回手（HOMM3 吸血伯爵同款）。
   //   注意方向：只免"我打你时你的反击"，不免"你打我时我的反击"。
-  //   **每队每场一次**：无限次实测会把紫晶推成结构性强族（见 §11.7），
+  //   **每队每场一次**：无限次实测会把带这条的族推成结构性强族（见 §11.7），
   //   收成一次性之后它变成"要挑时机花掉的资源"。
   //   判定与 `estimateRetaliation` 必须同源，否则提示说"不会挨反击"、实际还是挨了一记。
   const wouldRetaliate = target.count > 0 && !target.retaliated;
@@ -1074,7 +1075,7 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
  *   ④ 反击按**减掉这一击伤亡之后**的人数出手（`countAfterDamage`）；
  *   ⑤ 反击不吃冲锋，但**吃加班**（加班是"全军攻击力变高"，不是"这一下有加成"），
  *      所以统一走 `retaliationAtkBonus`（和 actMelee 里那行参数同源）；
- *   ⑥ 攻方这一击能触发「弹跳袭击」⇒ 恒为 0（和 actMelee 的 `noRetaliate` 判定同源：
+ *   ⑥ 攻方这一击能触发「三口齐咬」⇒ 恒为 0（和 actMelee 的 `noRetaliate` 判定同源：
  *      带标记 + 这次攻击前移动过 + 这场还没用过）。
  */
 export function estimateRetaliation(
@@ -1851,7 +1852,7 @@ export function describeEvent(s: BattleState, e: BattleEvent): string {
     case 'retaliate':
       return `${name(e.unitId)} 反击 ${name(e.targetId)}，造成 ${e.damage} 伤害${e.killed ? `，击杀 ${e.killed}` : ''}`;
     case 'bounce':
-      return `${name(e.unitId)} 弹跳袭击，${name(e.targetId)} 来不及反击`;
+      return `${name(e.unitId)} 三口齐咬，${name(e.targetId)} 来不及反击`;
     case 'root':
       return `${name(e.unitId)} 缠根：${name(e.targetId)} 速度 −${ROOT_SPEED_PENALTY}（到它下次行动）`;
     case 'machine': {

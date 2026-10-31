@@ -1,10 +1,19 @@
 import type { GameConfig, GameState } from '../core/types.js';
-import { normalizeLegacyUnitIds } from '../core/data/units.js';
+import { SAVE_VERSION } from '../core/types.js';
+import { dropUnknownUnits, normalizeLegacyUnitIds } from '../core/data/units.js';
 
 const KEY = 'homm-save-v1';
 const CONFIG_KEY = 'homm-config-v1';
-/** 存档结构版本：字段有增删就 +1，旧存档会被安全丢弃而不是崩在半路。 */
-const VERSION = 7;
+/**
+ * 存档结构版本：字段有增删就 +1，旧存档会被安全丢弃而不是崩在半路。
+ * **真值在 `core/types.ts` 的 `SAVE_VERSION`**（生成器也读它），这里只做别名。
+ */
+const VERSION = SAVE_VERSION;
+/**
+ * 能被**迁移**的最老版本。比它更老的档直接丢（没有迁移器 = 读到就是错数据）。
+ * v7 → v8：兵种阵容 v3，20 个 canonical id 全换（§16.6）。
+ */
+const MIN_MIGRATABLE = 7;
 
 /* ------------------------------------------------------------------ *
  * 原生存储桥（@capacitor/preferences）—— M-13，规格 §2.8 / §7 风险③
@@ -154,12 +163,25 @@ export function loadGame(): GameState | null {
   if (!raw) return null;
   try {
     const obj = JSON.parse(raw) as GameState;
-    if (!obj || obj.version !== VERSION) return null;
+    if (!obj || typeof obj.version !== 'number') return null;
     if (!obj.map || !obj.heroes || !obj.config) return null;
-    // 旧档兼容（D-58 §6.4.4）：把 4 个容器里的旧通用兵种 id 一次性换成 canonical id。
-    // **只在这里做一次** —— 写档一律写新 id，旧词不会通过「读 → 改 → 存」渗回来。
-    // 不放进 getUnit()：写档用的是调用方传进来的字符串，getUnit 兜底救不了写档。
-    normalizeLegacyUnitIds(obj);
+    /* v7 → v8（B1 阵容 v3）：把 4 个容器里的旧兵种 id 一次性换成新 canonical id。
+       **必须用版本闸锁住"只跑一次"**：`p3_treant` 在新旧阵容里指两个不同的兵，
+       对 v8 档再跑一遍会把新 T3 树人变成 T4 猿人（静默、且看起来"只是换了个兵"）。 */
+    if (obj.version < VERSION) {
+      if (obj.version < MIN_MIGRATABLE) return null;
+      normalizeLegacyUnitIds(obj);
+      obj.version = VERSION;
+    }
+    if (obj.version !== VERSION) return null;
+    /* 迁移之后仍可能有未知 id（手改档 / 更早的实验数据）。**在这里丢掉并留日志**，
+       而不是让 `getUnit()` 在战斗第一帧抛 —— 抛了就是白屏，玩家只会说"读档坏了"。 */
+    const unknown = dropUnknownUnits(obj);
+    if (unknown.stacks || unknown.keys) {
+      console.warn(
+        `[存档] 丢弃未知兵种：部队 ${unknown.stacks} 栈 / 产量键 ${unknown.keys} 个（${unknown.ids.join(', ')}）`,
+      );
+    }
     return obj;
   } catch {
     return null;

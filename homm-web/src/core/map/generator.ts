@@ -15,7 +15,7 @@ import type {
   Town,
 } from '../types.js';
 import type { StaticMapData } from '../data/static-maps/static-map.js';
-import { MAP_SIZES } from '../types.js';
+import { MAP_SIZES, SAVE_VERSION } from '../types.js';
 import { TERRAIN } from '../data/terrains.js';
 import { ARTIFACTS } from '../data/artifacts.js';
 import { LAYOUTS } from '../data/layouts.js';
@@ -1422,7 +1422,7 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
   });
 
   const state: GameState = {
-    version: 7,
+    version: SAVE_VERSION,
     seed,
     config: cfg,
     map,

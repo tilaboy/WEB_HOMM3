@@ -908,18 +908,24 @@ checkTierMatrix({ label: 'map 地图帧', kind: 'map', targets: TIER_TARGET_PCT_
  *   · 请求侧 = `FACTION_UNITS` 的全部 20 个兵种 id ∪ `MONSTER_UNIT_IDS`（中立怪）。
  *   · 供给侧 = `UNIT_FRAMES` 里 kind ≠ 'map' 的帧名 ∪ `LEGACY_COMBAT_SPRITE_IDS`。
  * 两侧都从真值源算，任何一边漏了都会在这里红。
+ *
+ * ⚠️ 帧名**不再由 id 直拼**（S0）：图集里装的仍是旧 id 的帧，`unitCombatFrame()` 负责
+ * 把新 id 映到旧帧名。这里直拼会让 18 个改名兵全部报缺帧（2026-10-31 B1 实测），
+ * 而实际上它们都画得出来 —— 和 `probe:frames` 的静态扫描是同一条规矩。
  */
 {
   const { FACTION_UNITS, MONSTER_UNIT_IDS } = await import(u('core/data/units.js'));
+  const { unitCombatFrame } = await import(u('render/unitFrames.js'));
   const { LEGACY_COMBAT_SPRITE_IDS } = await import(u('render/combatAtlas.js'));
-  const want = new Set([...Object.values(FACTION_UNITS).flat(), ...MONSTER_UNIT_IDS]);
   const have = new Set([
-    ...UNIT_FRAMES.filter((f) => f.kind !== 'map').map((f) => f.name.replace(/^cu_/, '')),
-    ...LEGACY_COMBAT_SPRITE_IDS,
+    ...UNIT_FRAMES.filter((f) => f.kind !== 'map').map((f) => f.name),
+    ...LEGACY_COMBAT_SPRITE_IDS.map((id) => `cu_${id}`),
   ]);
-  const missing = [...want].filter((id) => !have.has(id)).sort();
+  const wantIds = [...new Set([...Object.values(FACTION_UNITS).flat(), ...MONSTER_UNIT_IDS])];
+  const wantFrames = new Map(wantIds.map((id) => [id, unitCombatFrame(id)]));
+  const missing = wantIds.filter((id) => !have.has(wantFrames.get(id))).sort();
   const detail = {
-    want: `${want.size} 个兵种 id`,
+    want: `${wantFrames.size} 个兵种 id`,
     baked: `${have.size} 个 cu_* 帧`,
     missing: missing.length ? missing.join(', ') : 0,
   };
@@ -928,7 +934,8 @@ checkTierMatrix({ label: 'map 地图帧', kind: 'map', targets: TIER_TARGET_PCT_
   }
   record('C', '战斗精灵覆盖率（请求的 cu_* ⊆ 烘焙的 cu_*）', missing.length === 0, detail);
   // 反向也查：供过于求不是错误，但列出来便于发现"退役了却没删"的帧
-  const extra = [...have].filter((id) => !want.has(id)).sort();
+  const wantedFrames = new Set(wantFrames.values());
+  const extra = [...have].filter((n) => !wantedFrames.has(n)).sort();
   if (extra.length) console.log(`\n[信息] 图集里有 ${extra.length} 个当前无消费者的帧（非失败）：${extra.join(', ')}`);
 }
 
@@ -946,9 +953,10 @@ checkTierMatrix({ label: 'map 地图帧', kind: 'map', targets: TIER_TARGET_PCT_
  */
 {
   const { FACTION_UNITS } = await import(u('core/data/units.js'));
+  const { unitMapFrame } = await import(u('render/unitFrames.js'));
   const wantMap = [...new Set(Object.values(FACTION_UNITS).flat())].sort();
-  const haveMap = new Set(UNIT_FRAMES.filter((f) => f.kind === 'map').map((f) => f.name.replace(/^u_/, '').replace(/_map$/, '')));
-  const missingMap = wantMap.filter((id) => !haveMap.has(id));
+  const haveMap = new Set(UNIT_FRAMES.filter((f) => f.kind === 'map').map((f) => f.name));
+  const missingMap = wantMap.filter((id) => !haveMap.has(unitMapFrame(id)));
   const d = {
     请求: `${wantMap.length} 个四族兵种 id`,
     已烘焙: `${haveMap.size} 个 u_*_map 帧`,

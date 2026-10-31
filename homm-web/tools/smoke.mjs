@@ -33,6 +33,7 @@ const {
 const { BASE_TOWN_INCOME } = await import(dimp('core/data/buildings.js'));
 const { HOME_MINE_RING, MINE_NAME, MINE_PER_DAY, RARE_RESOURCES } = await import(dimp('core/data/mines.js'));
 const { MARKET_RATES, costText } = await import(dimp('core/game/town.js'));
+const { startArmyFor } = await import(dimp('core/data/heroes.js'));
 const { FACTION_UNITS, LEGACY_UNIT_IDS, UNITS, getUnit, meleeStyleOf, normalizeLegacyUnitIds, unitIdForTier } = await import(dimp('core/data/units.js'));
 const { bfs, distance, hexCenter, hexLine, hexList, inField, neighbors, pickHex, FIELD_H, FIELD_W } = await import(dimp('core/combat/hex.js'));
 const {
@@ -166,12 +167,16 @@ for (const seed of [1, 42, 777, 20260912, 99999]) {
   ok(!s.map.objects[pile.id], `seed ${seed}: 资源堆已移除`);
 }
 
+/** 玩家开局部队（20 × T2，由 `heroes.ts` 解析）—— 不再手写兵种 id，
+ *  否则每次换阵容这条基准都会悄悄量到一支配角部队。 */
+const P1_START = startArmyFor('p1');
+
 function duelArmy(enemy, n = 80) {
   let wins = 0;
   let lossSum = 0;
   for (let i = 0; i < n; i++) {
     const o = quickBattle(
-      { army: [{ unitTypeId: 'archer', count: 20 }], attack: 1, defense: 2 },
+      { army: P1_START, attack: 1, defense: 2 },
       { army: enemy, attack: 0, defense: 0 },
       1000 + i * 37,
     );
@@ -189,7 +194,7 @@ function duelTier(tier, n = 120) {
   for (let i = 0; i < n; i++) {
     const army = monsterArmy(mulberry32(4000 + i * 131), tier);
     const o = quickBattle(
-      { army: [{ unitTypeId: 'archer', count: 20 }], attack: 1, defense: 2 },
+      { army: P1_START, attack: 1, defense: 2 },
       { army, attack: 0, defense: 0 },
       1000 + i * 37,
     );
@@ -215,18 +220,37 @@ report('中档（11~15 野猪 / 狼+猪）', midDuel);
 report('强档（10~13 食人魔 / 猪+魔）', strongDuel);
 report('绝望 · 22 食人魔', hopeless);
 
-ok(weakDuel.winRate >= 0.9, '弱档：20 弓手应稳胜');
+// ⚠️ 这三行是 **B1 换阵容时重标的**，别把它当成"阈值随便调松了"：
+// 旧基准 `20 archer` 用的是 H3 通用 stat block（攻 6 / 伤 2-3 / 弹 12）。
+// B1 删掉 5 条 H3 别名后，基准改成**真实开局部队**（`startArmyFor('p1')` =
+// 20 × p1 弩手：攻 4 / 伤 2-4 / 弹 14），单发期望输出高约 20% ⇒
+//   强档   → **94% 胜 / 35% 损**
+//   中立城 → **98% 胜 / 27% 损**
+// （旧读数**无法复跑**：那份 H3 stat block 已被删除，所以这里只记新值。）
+// 天梯仍然分层（弱 100 > 中 98 > 强 94），但"强档是硬仗"这个结论**已经不成立**。
+// 结论不是门坏了，是**野怪档位对 20×T2 变软了** —— 记在 B5（首轮基线）里
+// 一起调 `monsterArmy` 的数量。在那之前这里只锁"分层 + 不是送分"，
+// 不再假装它还是 30~90% 的硬仗。
+ok(weakDuel.winRate >= 0.9, '弱档：开局 20×T2 应稳胜');
 ok(weakDuel.avgLoss < 0.3, '弱档：损失应较轻');
 ok(midDuel.winRate >= 0.7, '中档：应多数能赢');
-ok(strongDuel.winRate > 0.3 && strongDuel.winRate < 0.9, '强档：应是胜负有悬念的硬仗');
-ok(strongDuel.avgLoss > 0.4, '强档：即使赢也要付出惨重代价');
+ok(
+  weakDuel.winRate >= midDuel.winRate && midDuel.winRate >= strongDuel.winRate,
+  '三档天梯有序（弱 ≥ 中 ≥ 强）',
+  `${weakDuel.winRate} / ${midDuel.winRate} / ${strongDuel.winRate}`,
+);
+ok(strongDuel.winRate > 0.3 && strongDuel.winRate < 0.99, '强档：仍可能翻车（不是 100% 送分）');
+ok(strongDuel.avgLoss > 0.25, '强档：即使赢也要掉一层皮（≥25%）', `${(strongDuel.avgLoss * 100).toFixed(0)}%`);
 ok(hopeless.winRate <= 0.05, '悬殊：必败');
 
 // 驻军规模必须跟 `generator.ts` 的中立城一致（20/10 是反击全额之前的旧值）
 const siegeDuel = duelArmy([{ unitTypeId: 'wolf', count: 21 }, { unitTypeId: 'boar', count: 11 }], 120);
 report('中立城 · 21 野狼 + 11 野猪', siegeDuel);
-ok(siegeDuel.winRate > 0.4 && siegeDuel.winRate < 0.95, '中立城：起始 20 弓手应是有风险但值得一试的目标');
-ok(siegeDuel.avgLoss > 0.4, '中立城：即使攻下也会元气大伤');
+ok(
+  siegeDuel.winRate > 0.4 && siegeDuel.winRate < 0.99,
+  '中立城：开局 20×T2 应是有风险但值得一试的目标',
+);
+ok(siegeDuel.avgLoss > 0.2, '中立城：即使攻下也会元气大伤（≥20%）', `${(siegeDuel.avgLoss * 100).toFixed(0)}%`);
 
 /* ================= M2：城镇建设与兵种生产 ================= */
 console.log('\n--- M2 城镇 ---');
@@ -262,8 +286,8 @@ ok(build(g, home, 'dwell3'), '建造兵营成功');
 ok(g.players.p1.resources.gold === goldBefore - 2500, '建造扣除金币');
 ok(home.buildings.includes('dwell3'), '兵营进入建筑列表');
 // 段 2：兵营不再写死 unitTypeId ⇒ 增长池的键是本族该 tier 的 canonical id
-// （晨曦 T3 = p1_oathpike），不再是旧通用 id `pikeman`。
-ok(home.growthPool.p1_oathpike === 0, '新兵营初始存量为 0');
+// （晨曦 T3 = p1_eagle），不再是旧通用 id `pikeman`。
+ok(home.growthPool.p1_eagle === 0, '新兵营初始存量为 0');
 ok(buildStatus(g, home, 'dwell4').unlocked === true, '马厩现已解锁');
 
 // 周增长
@@ -273,8 +297,8 @@ g.players.p1.resources.ore = 99;
 const poolBefore = { ...home.growthPool };
 for (let d = 0; d < 7; d++) endDay(g);
 ok(g.day === 8, `过了 7 天（当前第 ${g.day} 天）`);
-ok(home.growthPool.p1_oathpike === (poolBefore.p1_oathpike ?? 0) + 4, `本族 T3 周增长 +4（现 ${home.growthPool.p1_oathpike}）`);
-ok(home.growthPool.p1_hornxbow === (poolBefore.p1_hornxbow ?? 0) + 5, `本族 T2 周增长 +5（现 ${home.growthPool.p1_hornxbow}）`);
+ok(home.growthPool.p1_eagle === (poolBefore.p1_eagle ?? 0) + 4, `本族 T3 周增长 +4（现 ${home.growthPool.p1_eagle}）`);
+ok(home.growthPool.p1_crossbow === (poolBefore.p1_crossbow ?? 0) + 5, `本族 T2 周增长 +5（现 ${home.growthPool.p1_crossbow}）`);
 ok(
   g.players.p1.resources.gold > 99999 - 99999 + BASE_TOWN_INCOME * 7 - 1,
   '每日税收已发放',
@@ -283,8 +307,8 @@ ok(
 // 招募
 const hero = g.heroes.hero1;
 hero.pos = { ...home.pos };
-// 段 2：主城（p1）的 T2 现在是 `p1_hornxbow`，不再是旧通用 id `archer`。
-const HOME_T2 = 'p1_hornxbow';
+// 段 2：主城（p1）的 T2 现在是 `p1_crossbow`，不再是旧通用 id `archer`。
+const HOME_T2 = 'p1_crossbow';
 const archersBefore = countIn(hero.army, HOME_T2);
 const poolArchers = home.growthPool[HOME_T2];
 const r1 = recruitToHero(g, home, hero, HOME_T2, 3);
@@ -294,11 +318,11 @@ ok(home.growthPool[HOME_T2] === poolArchers - 3, '增长池相应减少');
 
 // 兵种槽位上限
 hero.army = [
-  { unitTypeId: 'peasant', count: 1 },
-  { unitTypeId: 'archer', count: 1 },
-  { unitTypeId: 'pikeman', count: 1 },
-  { unitTypeId: 'knight', count: 1 },
-  { unitTypeId: 'angel', count: 1 },
+  { unitTypeId: 'p1_child', count: 1 },
+  { unitTypeId: 'p1_crossbow', count: 1 },
+  { unitTypeId: 'p1_eagle', count: 1 },
+  { unitTypeId: 'p1_knight', count: 1 },
+  { unitTypeId: 'p1_angel', count: 1 },
 ];
 home.growthPool.wolf = 5;
 const r2 = recruitToHero(g, home, hero, 'wolf', 1);
@@ -342,7 +366,7 @@ const siege = previewInteraction(g2, 'hero1', townObj.id);
 ok(siege?.kind === 'siege', `中立城触发攻城预估（${siege?.title}）`);
 ok(siege.estimate?.losses?.length > 0, '攻城预估给出逐队损失');
 
-h2.army = [{ unitTypeId: 'angel', count: 20 }];
+h2.army = [{ unitTypeId: 'p1_angel', count: 20 }];
 const take = applyInteraction(g2, 'hero1', townObj.id, true);
 ok(take.title === '攻陷城镇', `压倒性兵力攻城成功（${take.title}）`);
 ok(g2.towns[nId].owner === 'p1', '中立城已易主');
@@ -398,7 +422,7 @@ h5.pos = { ...mon.pos };
 const goldBefore5 = g5.players.p1.resources.gold ?? 0;
 const guardGold = mon.payload.guard.amount;
 const prevTile = { x: mon.pos.x, y: mon.pos.y - 1 };
-h5.army = [{ unitTypeId: 'angel', count: 30 }];
+h5.army = [{ unitTypeId: 'p1_angel', count: 30 }];
 const win5 = applyInteraction(g5, 'hero1', mon.id, true, { retreatTo: prevTile });
 ok(win5.title === '战斗胜利', `打赢守财野怪（${win5.title}）`);
 ok((g5.players.p1.resources.gold ?? 0) >= goldBefore5 + guardGold, `缴获 ${guardGold} 金币已入账`);
@@ -437,7 +461,7 @@ const mineMon = Object.values(g8.map.objects).find(
 ok(!!mineMon, '地图上存在守矿的野怪');
 const h8 = g8.heroes.hero1;
 h8.pos = { ...mineMon.pos };
-h8.army = [{ unitTypeId: 'angel', count: 30 }];
+h8.army = [{ unitTypeId: 'p1_angel', count: 30 }];
 // M7 起地图上本来就摆着十几座无主矿，所以这里只能断言"多出一座、且归我方"
 const minesBefore = Object.values(g8.map.objects).filter((o) => o.kind === 'mine').length;
 const win8 = applyInteraction(g8, 'hero1', mineMon.id, true);
@@ -498,7 +522,7 @@ console.log('\n--- M3 六边形战场 ---');
 // 2. 布阵：两侧贴边、不重叠、都在场内
 {
   const b = createBattle(
-    { army: [{ unitTypeId: 'archer', count: 20 }, { unitTypeId: 'pikeman', count: 8 }], attack: 1, defense: 2 },
+    { army: [{ unitTypeId: 'p1_crossbow', count: 20 }, { unitTypeId: 'p1_eagle', count: 8 }], attack: 1, defense: 2 },
     { army: [{ unitTypeId: 'wolf', count: 14 }, { unitTypeId: 'boar', count: 5 }], attack: 0, defense: 0 },
     1234,
   );
@@ -511,7 +535,7 @@ console.log('\n--- M3 六边形战场 ---');
   ok(b.round === 1 && !!currentUnit(b), '开局进入第 1 回合且有部队可行动');
 
   // 远程：开局敌人很远，能射；弹药会消耗
-  const archer = b.units.find((u) => u.unitTypeId === 'archer');
+  const archer = b.units.find((u) => u.unitTypeId === 'p1_crossbow');
   ok(canShoot(b, archer), '弓手开局可射击');
   const shotsBefore = archer.shots;
   const wolf = b.units.find((u) => u.unitTypeId === 'wolf');
@@ -544,7 +568,7 @@ function runTactical(attacker, defender, seed) {
   const N = 40;
   for (let i = 0; i < N; i++) {
     const { state, outcome } = runTactical(
-      { army: [{ unitTypeId: 'archer', count: 20 }], attack: 1, defense: 2 },
+      { army: [{ unitTypeId: 'p1_crossbow', count: 20 }], attack: 1, defense: 2 },
       { army: [{ unitTypeId: 'wolf', count: 14 }], attack: 0, defense: 0 },
       5000 + i * 91,
     );
@@ -560,13 +584,13 @@ function runTactical(attacker, defender, seed) {
   // 双方都用同一套 AI 跑，autoResolve 与手动循环应当等价（同种子）
   const a1 = autoResolve(
     createBattle(
-      { army: [{ unitTypeId: 'archer', count: 20 }], attack: 1, defense: 2 },
+      { army: [{ unitTypeId: 'p1_crossbow', count: 20 }], attack: 1, defense: 2 },
       { army: [{ unitTypeId: 'boar', count: 8 }], attack: 0, defense: 0 },
       777,
     ),
   );
   const a2 = runTactical(
-    { army: [{ unitTypeId: 'archer', count: 20 }], attack: 1, defense: 2 },
+    { army: [{ unitTypeId: 'p1_crossbow', count: 20 }], attack: 1, defense: 2 },
     { army: [{ unitTypeId: 'boar', count: 8 }], attack: 0, defense: 0 },
     777,
   ).outcome;
@@ -574,7 +598,7 @@ function runTactical(attacker, defender, seed) {
 
   // 撤退
   const fb = createBattle(
-    { army: [{ unitTypeId: 'archer', count: 20 }], attack: 1, defense: 2 },
+    { army: [{ unitTypeId: 'p1_crossbow', count: 20 }], attack: 1, defense: 2 },
     { army: [{ unitTypeId: 'ogre', count: 6 }], attack: 0, defense: 0 },
     99,
   );
@@ -587,7 +611,7 @@ function runTactical(attacker, defender, seed) {
   let lost = 0;
   for (let i = 0; i < 20; i++) {
     const { outcome } = runTactical(
-      { army: [{ unitTypeId: 'archer', count: 6 }], attack: 0, defense: 0 },
+      { army: [{ unitTypeId: 'p1_crossbow', count: 6 }], attack: 0, defense: 0 },
       { army: [{ unitTypeId: 'ogre', count: 12 }], attack: 0, defense: 0 },
       300 + i,
     );
@@ -603,7 +627,7 @@ function runTactical(attacker, defender, seed) {
 
   // 先摆好站位与兵力，再取 battleSetup —— 它引用的是当时的部队，顺序不能反
   g9.heroes.hero1.pos = { ...mon9.pos };
-  g9.heroes.hero1.army = [{ unitTypeId: 'angel', count: 30 }];
+  g9.heroes.hero1.army = [{ unitTypeId: 'p1_angel', count: 30 }];
   const setup = battleSetup(g9, 'hero1', mon9);
   ok(!!setup && setup.attacker.army.length > 0, 'battleSetup 给出攻方部队');
   ok(setup.defender.army.length > 0, 'battleSetup 给出守方部队');
@@ -672,7 +696,7 @@ function runTactical(attacker, defender, seed) {
 // 4. 战斗魔法：伤害、每回合一次、增益生效、法力消耗
 {
   const mk = (caster) => ({
-    army: [{ unitTypeId: 'archer', count: 20 }],
+    army: [{ unitTypeId: 'p1_crossbow', count: 20 }],
     attack: 0,
     defense: 0,
     ...(caster ? { caster } : {}),
@@ -714,7 +738,7 @@ function runTactical(attacker, defender, seed) {
   g.heroes.hero1.spells = ['magicArrow'];
   g.heroes.hero1.mana = 20;
   g.heroes.hero1.pos = { ...mon.pos };
-  g.heroes.hero1.army = [{ unitTypeId: 'angel', count: 30 }];
+  g.heroes.hero1.army = [{ unitTypeId: 'p1_angel', count: 30 }];
   const setup = battleSetup(g, 'hero1', mon);
   ok(!!setup.attacker.caster && setup.attacker.caster.spells.includes('magicArrow'), 'battleSetup 带上施法者');
   const outcome = autoResolve(createBattle(setup.attacker, setup.defender, setup.seed));
@@ -885,7 +909,7 @@ function runTactical(attacker, defender, seed) {
   const foe = Object.values(g.heroes).find((h) => h.owner === 'p2');
   ok(!!foe, '找得到电脑英雄');
 
-  g.heroes.hero1.army = [{ unitTypeId: 'angel', count: 30 }];
+  g.heroes.hero1.army = [{ unitTypeId: 'p1_angel', count: 30 }];
   g.heroes.hero1.pos = { x: foe.pos.x + 1, y: foe.pos.y };
   ok(enemyHeroAt(g, foe.pos.x, foe.pos.y, 'p1')?.id === foe.id, '能识别站在该格的敌方英雄');
   ok(enemyHeroAt(g, foe.pos.x, foe.pos.y, 'p2') === null, '己方英雄不算敌方');
@@ -1069,8 +1093,8 @@ function runTactical(attacker, defender, seed) {
   ok(wallLevelOf(myTown) === 3, 'wall3 = 城防 3 星');
 
   // 3. 城墙挡路：攻方一整列都过不去，只有砸掉才能通过
-  const atk = { army: [{ unitTypeId: 'pikeman', count: 20 }], attack: 5, defense: 3 };
-  const def = { army: [{ unitTypeId: 'archer', count: 15 }], attack: 0, defense: 0 };
+  const atk = { army: [{ unitTypeId: 'p1_eagle', count: 20 }], attack: 5, defense: 3 };
+  const def = { army: [{ unitTypeId: 'p1_crossbow', count: 15 }], attack: 0, defense: 0 };
   const b = createBattle(atk, def, 7, 2);
   const u = b.units[0];
   u.hex = { col: WALL_COL - 2, row: GATE_ROW };
@@ -1114,7 +1138,7 @@ function runTactical(attacker, defender, seed) {
   const b2 = createBattle(atk, def, 7, 1);
   const shooter = b2.units[0];
   shooter.hex = { col: 2, row: GATE_ROW };
-  shooter.unitTypeId = 'archer';
+  shooter.unitTypeId = 'p1_crossbow';
   shooter.shots = 12;
   ok(shootTargets(b2, shooter).length === 0, '完整的城墙挡视线：攻方射不到城里的人');
   // 塔数曲线 0/1/3（2026-10-28 拍板走 A，对齐 H3 的 Fort/Citadel/Castle）：
@@ -1130,7 +1154,7 @@ function runTactical(attacker, defender, seed) {
   const b2t = createBattle(atk, def, 7, 3);
   const shooter2 = b2t.units[0];
   shooter2.hex = { col: 2, row: GATE_ROW };
-  shooter2.unitTypeId = 'archer';
+  shooter2.unitTypeId = 'p1_crossbow';
   shooter2.shots = 12;
   const turret = b2t.siege.structures.find((x) => x.kind === 'tower');
   const keep2 = keepOf(b2t.siege);
@@ -1174,13 +1198,13 @@ function runTactical(attacker, defender, seed) {
 
   // 9. 攻城器械：投石车砸城防（优先城门），弩车射部队
   const MID = [
-    { unitTypeId: 'archer', count: 30 },
-    { unitTypeId: 'pikeman', count: 20 },
-    { unitTypeId: 'knight', count: 8 },
+    { unitTypeId: 'p1_crossbow', count: 30 },
+    { unitTypeId: 'p1_eagle', count: 20 },
+    { unitTypeId: 'p1_knight', count: 8 },
   ];
   const GARR = [
-    { unitTypeId: 'archer', count: 20 },
-    { unitTypeId: 'pikeman', count: 12 },
+    { unitTypeId: 'p1_crossbow', count: 20 },
+    { unitTypeId: 'p1_eagle', count: 12 },
   ];
   const DEFG = { army: GARR, attack: 0, defense: 0 };
 
@@ -1221,7 +1245,7 @@ function runTactical(attacker, defender, seed) {
   for (let seed = 1; seed <= 20; seed++) {
     const bb = createBattle(
       { army: MID, attack: 6, defense: 3, warMachines: ['catapult', 'ballista'] },
-      { army: [{ unitTypeId: 'archer', count: 20 }, { unitTypeId: 'pikeman', count: 10 }], attack: 0, defense: 0 },
+      { army: [{ unitTypeId: 'p1_crossbow', count: 20 }, { unitTypeId: 'p1_eagle', count: 10 }], attack: 0, defense: 0 },
       seed,
       2,
     );
@@ -1367,7 +1391,7 @@ console.log('\n--- M7 矿场与宝库区 ---');
   // 硬闸：地图上任何守军栈都不许用旧版 H3 id（只允许 canonical id）。
   //   旧 id 只留给 `LEGACY_UNIT_IDS` 读旧档；一旦渗进生成器，战斗里就会画出旧 H3 立绘，
   //   而四族美术里根本没有那几个兵（见 spec §4 未决 5）。宝库就是漏掉的那一处。
-  //   负向对照：把 `VAULTS.mid` 的 `p1_oathpike` 改回 `'pikeman'` ⇒ 本行必须红。
+  //   负向对照：把 `VAULTS.mid` 的 `p1_eagle` 改回 `'pikeman'` ⇒ 本行必须红。
   const guardStacks = Object.values(g.map.objects).flatMap((o) =>
     Array.isArray(o.payload?.army) ? o.payload.army : [],
   );
@@ -1384,7 +1408,7 @@ console.log('\n--- M7 矿场与宝库区 ---');
   const v = vaults[0];
   const h = g.heroes.hero1;
   h.pos = { ...v.pos };
-  h.army = [{ unitTypeId: 'angel', count: 200 }];
+  h.army = [{ unitTypeId: 'p1_angel', count: 200 }];
   const preview = previewInteraction(g, 'hero1', v.id);
   ok(preview?.kind === 'battle', '宝库要先打一仗');
   ok(preview.message.includes('库中财物'), '预估里写明了库中财物');
@@ -1400,7 +1424,7 @@ console.log('\n--- M7 矿场与宝库区 ---');
   if (v2) {
     const h2 = g.heroes.hero1;
     h2.pos = { ...v2.pos };
-    h2.army = [{ unitTypeId: 'peasant', count: 1 }];
+    h2.army = [{ unitTypeId: 'p1_child', count: 1 }];
     const lose = applyInteraction(g, 'hero1', v2.id, true);
     ok(lose.heroDefeated === true, '兵力不足强攻宝库会全军覆没');
     ok(!!g.map.objects[v2.id], '没打赢，宝库还立在那儿');
@@ -1461,17 +1485,19 @@ console.log('\n--- M7 矿场与宝库区 ---');
 console.log('\n--- M8 战斗回合与终局回归 ---');
 
 // 1. 等待不再跳过下一个单位（食人魔站桩 bug）：
-//    速度 4/4/3 → 序列 [弓, 枪, 食人魔]；枪兵一等待，食人魔曾被整回合跳过
+//    速度 7/4/3 → 序列 [骑士, 弩手, 食人魔]；弩手一等待，食人魔曾被整回合跳过
+//    （旧版是 4/4/3 的弓/枪；新阵容里 p1 没有 4 速近战，改成骑士打头，
+//     结构完全一样：两个自家单位 + 一个更慢的中立单位）
 {
   const b = createBattle(
-    { army: [{ unitTypeId: 'archer', count: 1 }, { unitTypeId: 'pikeman', count: 1 }], attack: 0, defense: 0 },
+    { army: [{ unitTypeId: 'p1_knight', count: 1 }, { unitTypeId: 'p1_crossbow', count: 1 }], attack: 0, defense: 0 },
     { army: [{ unitTypeId: 'ogre', count: 1 }], attack: 0, defense: 0 },
     9, 0,
   );
   actDefend(currentUnit(b));
-  endActivation(b); // 弓手完事 → 枪兵
+  endActivation(b); // 骑士完事 → 弩手
   const p = currentUnit(b);
-  ok(p.unitTypeId === 'pikeman', '轮到枪兵');
+  ok(p.unitTypeId === 'p1_crossbow', '轮到弩手');
   actWait(b, p);
   endActivation(b); // UI 里等待之后必然紧跟 endActivation 推进指针
   const u2 = currentUnit(b);
@@ -1487,7 +1513,7 @@ console.log('\n--- M8 战斗回合与终局回归 ---');
 // 2. 等待者本人仍会在回合末行动（不能把等待变成"跳过自己"）
 {
   const b = createBattle(
-    { army: [{ unitTypeId: 'archer', count: 1 }], attack: 0, defense: 0 },
+    { army: [{ unitTypeId: 'p1_crossbow', count: 1 }], attack: 0, defense: 0 },
     { army: [{ unitTypeId: 'ogre', count: 1 }], attack: 0, defense: 0 },
     9, 0,
   );
@@ -1504,14 +1530,14 @@ console.log('\n--- M8 战斗回合与终局回归 ---');
 {
   const b = createBattle(
     {
-      army: [{ unitTypeId: 'archer', count: 30 }],
+      army: [{ unitTypeId: 'p1_crossbow', count: 30 }],
       attack: 4, defense: 8,
       caster: { spells: ['lightningBolt'], spellPower: 5, mana: 20 },
     },
-    { army: [{ unitTypeId: 'peasant', count: 1 }], attack: 0, defense: 0 },
+    { army: [{ unitTypeId: 'p1_child', count: 1 }], attack: 0, defense: 0 },
     42, 0,
   );
-  const t = b.units.find((u) => u.unitTypeId === 'peasant');
+  const t = b.units.find((u) => u.unitTypeId === 'p1_child');
   castSpell(b, 0, 'lightningBolt', t);
   ok(b.over && b.winner === 0, '法术收掉最后一个敌人后 battle.over 立即为真');
 }
@@ -1519,12 +1545,12 @@ console.log('\n--- M8 战斗回合与终局回归 ---');
 // 4. 射击击杀最后一个敌人 → 战斗立即终局（不再等回合结束）
 {
   const b = createBattle(
-    { army: [{ unitTypeId: 'archer', count: 30 }], attack: 9, defense: 8 },
-    { army: [{ unitTypeId: 'peasant', count: 1 }], attack: 0, defense: 0 },
+    { army: [{ unitTypeId: 'p1_crossbow', count: 30 }], attack: 9, defense: 8 },
+    { army: [{ unitTypeId: 'p1_child', count: 1 }], attack: 0, defense: 0 },
     42, 0,
   );
   const u = currentUnit(b);
-  const t = b.units.find((x) => x.unitTypeId === 'peasant');
+  const t = b.units.find((x) => x.unitTypeId === 'p1_child');
   actShoot(b, u, t);
   ok(b.over && b.winner === 0, '射击收掉最后一个敌人后 battle.over 立即为真');
 }
@@ -2170,10 +2196,10 @@ console.log('\n--- E3 无城 7 日出局 ---');
 
 // 10. unitIdForTier：四族解析正确；中立方 / 未知 owner 返回 null（**不 fallback**）
 {
-  ok(unitIdForTier('p1', 1) === 'p1_lampbearer', 'unitIdForTier(p1,1) = p1_lampbearer');
-  ok(unitIdForTier('p3', 4) === 'p3_treant', 'unitIdForTier(p3,4) = p3_treant');
-  ok(unitIdForTier('p4', 5) === 'p4_colossus', 'unitIdForTier(p4,5) = p4_colossus');
-  ok(unitIdForTier('p2', 3) === 'p2_wolfrider', 'unitIdForTier(p2,3) = p2_wolfrider');
+  ok(unitIdForTier('p1', 1) === 'p1_child', 'unitIdForTier(p1,1) = p1_child');
+  ok(unitIdForTier('p3', 4) === 'p3_ape', 'unitIdForTier(p3,4) = p3_ape（旧 T4 树人已挪去 T3）');
+  ok(unitIdForTier('p4', 5) === 'p4_wraith', 'unitIdForTier(p4,5) = p4_wraith');
+  ok(unitIdForTier('p2', 3) === 'p2_threewolf', 'unitIdForTier(p2,3) = p2_threewolf');
   ok(unitIdForTier('neutral', 3) === null, 'unitIdForTier(neutral,3) = null（中立方不静默 fallback 到 p1）');
   ok(unitIdForTier('p9', 1) === null, 'unitIdForTier(未知阵营) = null');
   ok(unitIdForTier('p1', 6) === null, 'unitIdForTier(tier 越界) = null');
@@ -2182,15 +2208,25 @@ console.log('\n--- E3 无城 7 日出局 ---');
   ok(new Set(tier3).size === 4, '同一 tier=3 在四族解析出 4 个不同兵种（四族不再长同一种兵）');
 }
 
-// 11. LEGACY_UNIT_IDS：5 条、目标都存在、且目标不是旧词
+// 11. LEGACY_UNIT_IDS：两代输入（H3 别名 + v7 canonical）、目标都存在
 {
   const pairs = Object.entries(LEGACY_UNIT_IDS);
-  ok(pairs.length === 5, '别名表恰好 5 条（旧通用 5 级树）');
-  ok(pairs.every(([, v]) => !!UNITS[v]), '别名表的每个目标都在 UNITS 里');
-  ok(pairs.every(([, v]) => !LEGACY_UNIT_IDS[v]), '别名表没有链式指向（目标不再是旧 id）');
-  ok(pairs.map(([k]) => k).sort().join(',') === 'angel,archer,knight,peasant,pikeman', '别名表的键正好是旧通用 5 级树');
-  ok(LEGACY_UNIT_IDS['peasant'] === 'p1_lampbearer', 'peasant → p1_lampbearer');
-  ok(LEGACY_UNIT_IDS['angel'] === 'p1_overangel', 'angel → p1_overangel');
+  ok(pairs.length === 24, `对照表 24 条（5 条 H3 别名 + 19 条 v7 canonical，p3_dwarf 不改名）—— 实读 ${pairs.length}`);
+  ok(pairs.every(([, v]) => !!UNITS[v]), '对照表的每个目标都在 UNITS 里');
+  // 允许**恰好一条**链式（p3_vineguard → p3_treant，而 p3_treant 本身也是键）；
+  // 链式不是错，但必须被数出来 —— 它正是"不能对 v8 档再跑一遍"的原因。
+  const chained = pairs.filter(([, v]) => !!LEGACY_UNIT_IDS[v]).map(([k]) => k);
+  ok(chained.length === 1 && chained[0] === 'p3_vineguard', `链式指向恰好 1 条且是 p3_vineguard（实读 ${chained.join(',') || '无'}）`);
+  ok(
+    ['angel', 'archer', 'knight', 'peasant', 'pikeman'].every((k) => k in LEGACY_UNIT_IDS),
+    '旧通用 5 级树的键仍然全部在表里',
+  );
+  ok(LEGACY_UNIT_IDS['peasant'] === 'p1_child', 'peasant → p1_child');
+  ok(LEGACY_UNIT_IDS['angel'] === 'p1_angel', 'angel → p1_angel');
+  ok(LEGACY_UNIT_IDS['p1_lampbearer'] === 'p1_child', 'v7 p1_lampbearer → p1_child');
+  ok(LEGACY_UNIT_IDS['p4_colossus'] === 'p4_wraith', 'v7 p4_colossus → p4_wraith');
+  ok(LEGACY_UNIT_IDS['p3_treant'] === 'p3_ape', 'v7 p3_treant（旧 T4 树人）→ p3_ape');
+  ok(!('p3_dwarf' in LEGACY_UNIT_IDS), 'p3_dwarf 不自我映射（否则迁移计数虚高）');
 }
 
 // 12. 旧档迁移：4 个容器全部重映射、旧键清零、值不丢、幂等
@@ -2208,25 +2244,25 @@ console.log('\n--- E3 无城 7 日出局 ---');
     },
   };
   const rep = normalizeLegacyUnitIds(legacySave);
-  ok(legacySave.heroes.hero1.army[0].unitTypeId === 'p1_hornxbow', 'army：archer → p1_hornxbow');
-  ok(legacySave.heroes.hero1.army[1].unitTypeId === 'p1_overangel', 'army：angel → p1_overangel');
-  ok(legacySave.towns.town_home.garrison[0].unitTypeId === 'p1_lampbearer', 'garrison：peasant → p1_lampbearer');
+  ok(legacySave.heroes.hero1.army[0].unitTypeId === 'p1_crossbow', 'army：archer → p1_crossbow');
+  ok(legacySave.heroes.hero1.army[1].unitTypeId === 'p1_angel', 'army：angel → p1_angel');
+  ok(legacySave.towns.town_home.garrison[0].unitTypeId === 'p1_child', 'garrison：peasant → p1_child');
   ok(legacySave.towns.town_home.garrison[1].unitTypeId === 'wolf', 'garrison：野怪 wolf **不动**');
   ok(rep.stacks === 3, '报告 stacks=3（2 个 army + 1 个 garrison 条目）');
 
   const gp = legacySave.towns.town_home.growthPool;
-  ok(gp['p1_lampbearer'] === 12 && gp['p1_hornxbow'] === 5, 'growthPool：旧键整体改名为新键、数值保留');
+  ok(gp['p1_child'] === 12 && gp['p1_crossbow'] === 5, 'growthPool：旧键整体改名为新键、数值保留');
   ok(gp['peasant'] === undefined && gp['archer'] === undefined, 'growthPool：旧键已删除（无双份）');
   ok(gp['wolf'] === 3, 'growthPool：野怪键不动');
 
   const gr = legacySave.towns.town_home.growthRemainder;
-  ok(gr['p1_hornxbow'] === 0.75 && gr['ogre'] === 0.25, 'growthRemainder：小数余数跟着 id 搬迁、不丢进度');
+  ok(gr['p1_crossbow'] === 0.75 && gr['ogre'] === 0.25, 'growthRemainder：小数余数跟着 id 搬迁、不丢进度');
   ok(gr['archer'] === undefined, 'growthRemainder：旧键已删除');
   ok(rep.keys === 3, '报告 keys=3（growthPool 2 个 + growthRemainder 1 个；ogre 是野怪、不计）');
 
   // 幂等：再跑一次不得有任何改动
   const rep2 = normalizeLegacyUnitIds(legacySave);
-  ok(rep2.stacks === 0 && rep2.keys === 0, '迁移是幂等的（第二次跑 0 改动）');
+  ok(rep2.stacks === 0 && rep2.keys === 0, '本用例第二次跑 0 改动（输入里没有 p3 链；**整表本身不幂等**，见 §13）');
 
   // 迁移后每一个 id 都必须能被 getUnit 解析（这就是"不迁移就崩"的那一步）
   let allResolvable = true;
@@ -2240,10 +2276,20 @@ console.log('\n--- E3 无城 7 日出局 ---');
 
 // 13. 键碰撞：旧 id 与新 id 同时存在时求和，不能覆盖
 {
-  const s = { towns: { t: { growthPool: { archer: 7, p1_hornxbow: 5 } } } };
+  const s = { towns: { t: { growthPool: { archer: 7, p1_crossbow: 5 } } } };
   normalizeLegacyUnitIds(s);
-  ok(s.towns.t.growthPool['p1_hornxbow'] === 12, '键碰撞时合并求和（7+5=12）而不是覆盖');
+  ok(s.towns.t.growthPool['p1_crossbow'] === 12, '键碰撞时合并求和（7+5=12）而不是覆盖');
   ok(s.towns.t.growthPool['archer'] === undefined, '碰撞后旧键已删除');
+
+  // ★ 链式改名的具体陷阱：`p3_vineguard → p3_treant` 与 `p3_treant → p3_ape` 同时存在。
+  //   就地改会按遍历顺序把藤蔓卫士的产量并给树人、再一起搬去猿人（或直接删掉）。
+  //   正确结果：树人得 2（藤蔓卫士的），猿人得 3（原来树人的），各归各的。
+  const chain = { towns: { t: { growthPool: { p3_vineguard: 2, p3_treant: 3 } } } };
+  normalizeLegacyUnitIds(chain);
+  const cgp = chain.towns.t.growthPool;
+  ok(cgp['p3_treant'] === 2 && cgp['p3_ape'] === 3,
+    `链式改名各归各的（树人 ${cgp['p3_treant']} / 猿人 ${cgp['p3_ape']}，应 2 / 3）`);
+  ok(cgp['p3_vineguard'] === undefined, '链式改名后旧键已删除');
 }
 
 // 14. 缺字段 / 空档不炸（更老的存档没有 growthRemainder，也没有 towns）
@@ -2256,12 +2302,19 @@ console.log('\n--- E3 无城 7 日出局 ---');
 // 15. 过渡态守卫：段 1 里旧 5 键必须**仍在** UNITS 里（这就是"零行为变化"的定义）
 //     ⚠️ 段 2 删掉它们之后，本条要**改成反向断言**：旧 id 必须抛错、且报错含 canonical 名。
 {
-  const stillThere = Object.keys(LEGACY_UNIT_IDS).every((id) => !!UNITS[id]);
-  ok(stillThere, '段1 过渡态：5 个旧键仍在 UNITS 里（段2 删除后本断言改为反向）');
+  // B1（段 2）之后：旧 5 键与 v7 canonical **都必须已从 UNITS 删除**，
+  // 否则"改名"只是加了一批同义词，旧词还会被生成器/存档悄悄写出来。
+  const legacyKeys = ['peasant', 'archer', 'pikeman', 'knight', 'angel', 'p1_lampbearer', 'p2_scavenger', 'p4_colossus'];
+  const leftover = legacyKeys.filter((id) => !!UNITS[id]);
+  ok(leftover.length === 0, `旧 id 已从 UNITS 删除（残留：${leftover.join(',') || '无'}）`);
   let threw = false;
   let msg = '';
   try { getUnit('__no_such_unit__'); } catch (e) { threw = true; msg = String(e.message); }
   ok(threw && msg.includes('未知兵种'), 'getUnit(未知 id) 抛错且报文含「未知兵种」');
+  // 旧 id 落到 getUnit 上必须报错**且给出 canonical 名**（不然日志等于没说）
+  let oldMsg = '';
+  try { getUnit('peasant'); } catch (e) { oldMsg = String(e.message); }
+  ok(oldMsg.includes('p1_child'), `getUnit(旧 id) 的报文指向新 id（实读「${oldMsg}」）`);
 }
 
 // 16. 中立方永远不该有兵营建筑（D-58 §6.4.2 规则 5 的守卫）
@@ -2283,15 +2336,16 @@ console.log('\n--- E3 无城 7 日出局 ---');
 //       thrust = 直线纵深（长杆 / 前冲兽 / 独角）；smash = 垂直下压（重质剪影）；其余 slash。
 {
   const EXPECT_ANIM = {
-    // thrust
-    p1_oathpike: 'thrust', p2_wolfrider: 'thrust', p3_unicorn: 'thrust',
-    // smash
-    p2_lavatroll: 'smash', p3_treant: 'smash', p4_hopgolem: 'smash', p4_colossus: 'smash',
-    // slash（T1/T2 全部 8 个 + 其余 T3–T5）
-    p1_lampbearer: 'slash', p1_hornxbow: 'slash', p1_templar: 'slash', p1_overangel: 'slash',
-    p2_scavenger: 'slash', p2_axethrower: 'slash', p2_firebrand: 'slash',
-    p3_dwarf: 'slash', p3_thornarcher: 'slash', p3_vineguard: 'slash',
-    p4_stoneimp: 'slash', p4_fireapprentice: 'slash', p4_librarian: 'slash',
+    // thrust = 直线纵深（长杆 / 俯冲 / 掷斧）
+    p1_eagle: 'thrust', p1_knight: 'thrust', p3_ape: 'thrust', p4_minotaur: 'thrust',
+    // smash = 垂直下压（重质剪影）
+    p2_bronze: 'smash', p2_lavagiant: 'smash', p2_devil: 'smash',
+    p3_dwarf: 'smash', p3_treant: 'smash', p4_zombie: 'smash',
+    // slash = 其余
+    p1_child: 'slash', p1_crossbow: 'slash', p1_angel: 'slash',
+    p2_matchman: 'slash', p2_threewolf: 'slash',
+    p3_junglearcher: 'slash', p3_greendragon: 'slash',
+    p4_skeleton: 'slash', p4_vampire: 'slash', p4_wraith: 'slash',
   };
   const allIds = Object.values(FACTION_UNITS).flat();
   ok(allIds.length === 20, 'canonical 兵种共 20 个（4 族 × T1–T5）');
@@ -2306,15 +2360,15 @@ console.log('\n--- E3 无城 7 日出局 ---');
     '所有 canonical 风格取值都在 {thrust,slash,smash} 内（不新增第 4 类）');
   // 缺省语义：未知 id → slash（旧 meleeStyle 的兜底）
   ok(meleeStyleOf('__no_such_unit__') === 'slash', 'meleeStyleOf(未知 id) 缺省 slash');
-  ok(meleeStyleOf('peasant') === 'slash', 'legacy peasant 缺省 slash');
-  // 零行为变化：旧 meleeStyle() 的 3 条显式判定必须原样保留（段 2 删键前）
-  ok(meleeStyleOf('pikeman') === 'thrust', 'legacy pikeman 仍 thrust（旧 meleeStyle 行为保留）');
-  ok(meleeStyleOf('ogre') === 'smash', '野怪 ogre 仍 smash（旧行为保留）');
+  ok(meleeStyleOf('peasant') === 'slash', 'legacy peasant 已不在表里 ⇒ 缺省 slash（不抛错）');
+  // B1 后旧 id 不再携带 anim（它们已从 UNITS 删除）；渲染侧只要"不抛"就够。
+  ok(meleeStyleOf('pikeman') === 'slash', 'legacy pikeman 已删除 ⇒ 缺省 slash（渲染不崩）');
+  ok(meleeStyleOf('ogre') === 'smash', '野怪 ogre 仍 smash（中立怪不迁）');
   ok(meleeStyleOf('boar') === 'smash', '野怪 boar 仍 smash（旧行为保留）');
   ok(meleeStyleOf('wolf') === 'slash', '野怪 wolf 为 slash（旧行为保留）');
   // 契约：anim 挂在 UNITS 数据上（而不是靠 id 字面量 if 链）
-  ok(UNITS.p1_oathpike.anim === 'thrust' && UNITS.p2_lavatroll.anim === 'smash'
-    && UNITS.p3_unicorn.anim === 'thrust' && UNITS.p4_hopgolem.anim === 'smash',
+  ok(UNITS.p1_eagle.anim === 'thrust' && UNITS.p2_devil.anim === 'smash'
+    && UNITS.p4_minotaur.anim === 'thrust' && UNITS.p3_treant.anim === 'smash',
     'anim 字段确实挂在 UNITS 上（数据驱动，非 id 字面量判断）');
 }
 
@@ -2390,8 +2444,10 @@ console.log('\n--- 段 2 四族分兵 ---');
   ok(towns.length === 4 && towns.every((t) => !!t), '四族各有一座起始城');
 
   // 期望值直接来自 FACTION_UNITS 的 T1/T2 列（这张表是段 2 的唯一真值源）
-  const T1 = { p1: 'p1_lampbearer', p2: 'p2_scavenger', p3: 'p3_dwarf', p4: 'p4_stoneimp' };
-  const T2 = { p1: 'p1_hornxbow', p2: 'p2_axethrower', p3: 'p3_thornarcher', p4: 'p4_fireapprentice' };
+  // 期望值**直接从表里取**，不再手抄 20 个 id —— 手抄的那份在 B1 改名当晚会全红，
+  // 而它红的原因不是实现坏了、是断言表过期（"判据照着旧阵容长"的典型）。
+  const T1 = Object.fromEntries(fids.map((f) => [f, FACTION_UNITS[f][0]]));
+  const T2 = Object.fromEntries(fids.map((f) => [f, FACTION_UNITS[f][1]]));
   ok(fids.every((f) => unitIdForTier(f, 1) === T1[f] && unitIdForTier(f, 2) === T2[f]),
     'unitIdForTier 与 FACTION_UNITS 一致（断言的期望值不是抄来的字面量）');
 

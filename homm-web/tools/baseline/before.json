@@ -1,0 +1,982 @@
+{
+  "balance": {
+    "caliber": "B",
+    "dist": "/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist",
+    "distMd5": "f6df43e87f8296f8c565565c42ebe03c",
+    "printedPowerDriftPct": 0.83,
+    "rows": [
+      {
+        "fam": "p1",
+        "tier": 1,
+        "id": "p1_lampbearer",
+        "name": "小孩",
+        "target": {
+          "attack": 1,
+          "defense": 1,
+          "damageMin": 1,
+          "damageMax": 2,
+          "hp": 3,
+          "speed": 2,
+          "shots": 0,
+          "growthPerWeek": 16,
+          "gold": 20,
+          "remote": false
+        },
+        "code": {
+          "attack": 1,
+          "defense": 2,
+          "damageMin": 1,
+          "damageMax": 2,
+          "hp": 4,
+          "speed": 3,
+          "shots": 0,
+          "growthPerWeek": 11,
+          "cost": {
+            "gold": 25
+          },
+          "aiValue": null
+        },
+        "targetPower": 3.27,
+        "codePower": 4.47,
+        "weeklyCode": 49.1,
+        "deltaPct": 36.4
+      },
+      {
+        "fam": "p1",
+        "tier": 2,
+        "id": "p1_hornxbow",
+        "name": "弩手",
+        "target": {
+          "attack": 4,
+          "defense": 2,
+          "damageMin": 2,
+          "damageMax": 4,
+          "hp": 10,
+          "speed": 4,
+          "shots": 14,
+          "growthPerWeek": 5,
+          "gold": 110,
+          "remote": true
+        },
+        "code": {
+          "attack": 4,
+          "defense": 2,
+          "damageMin": 2,
+          "damageMax": 4,
+          "hp": 10,
+          "speed": 4,
+          "shots": 14,
+          "growthPerWeek": 5,
+          "cost": {
+            "gold": 110
+          },
+          "aiValue": null
+        },
+        "targetPower": 26.51,
+        "codePower": 26.51,
+        "weeklyCode": 132.6,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p1",
+        "tier": 3,
+        "id": "p1_oathpike",
+        "name": "鹰",
+        "target": {
+          "attack": 6,
+          "defense": 3,
+          "damageMin": 4,
+          "damageMax": 6,
+          "hp": 14,
+          "speed": 9,
+          "shots": 0,
+          "growthPerWeek": 4,
+          "gold": 240,
+          "remote": false
+        },
+        "code": {
+          "attack": 4,
+          "defense": 7,
+          "damageMin": 3,
+          "damageMax": 5,
+          "hp": 20,
+          "speed": 4,
+          "shots": 0,
+          "growthPerWeek": 4,
+          "cost": {
+            "gold": 220,
+            "wood": 2
+          },
+          "aiValue": null
+        },
+        "targetPower": 70,
+        "codePower": 80,
+        "weeklyCode": 320,
+        "deltaPct": 14.3
+      },
+      {
+        "fam": "p1",
+        "tier": 4,
+        "id": "p1_templar",
+        "name": "骑士",
+        "target": {
+          "attack": 7,
+          "defense": 8,
+          "damageMin": 7,
+          "damageMax": 9,
+          "hp": 36,
+          "speed": 7,
+          "shots": 0,
+          "growthPerWeek": 3,
+          "gold": 520,
+          "remote": false
+        },
+        "code": {
+          "attack": 7,
+          "defense": 8,
+          "damageMin": 7,
+          "damageMax": 9,
+          "hp": 36,
+          "speed": 6,
+          "shots": 0,
+          "growthPerWeek": 3,
+          "cost": {
+            "gold": 520,
+            "ore": 3
+          },
+          "aiValue": null
+        },
+        "targetPower": 342.49,
+        "codePower": 342.49,
+        "weeklyCode": 1027.5,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p1",
+        "tier": 5,
+        "id": "p1_overangel",
+        "name": "天使",
+        "target": {
+          "attack": 10,
+          "defense": 10,
+          "damageMin": 13,
+          "damageMax": 17,
+          "hp": 65,
+          "speed": 8,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "gold": 1500,
+          "remote": false
+        },
+        "code": {
+          "attack": 9,
+          "defense": 9,
+          "damageMin": 11,
+          "damageMax": 15,
+          "hp": 60,
+          "speed": 8,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "cost": {
+            "gold": 1300,
+            "ore": 5,
+            "wood": 5
+          },
+          "aiValue": null
+        },
+        "targetPower": 1392.86,
+        "codePower": 1040,
+        "weeklyCode": 2080,
+        "deltaPct": -25.3
+      },
+      {
+        "fam": "p2",
+        "tier": 1,
+        "id": "p2_scavenger",
+        "name": "火柴人",
+        "target": {
+          "attack": 2,
+          "defense": 1,
+          "damageMin": 1,
+          "damageMax": 3,
+          "hp": 3,
+          "speed": 4,
+          "shots": 8,
+          "growthPerWeek": 12,
+          "gold": 30,
+          "remote": true
+        },
+        "code": {
+          "attack": 2,
+          "defense": 1,
+          "damageMin": 1,
+          "damageMax": 3,
+          "hp": 3,
+          "speed": 4,
+          "shots": 0,
+          "growthPerWeek": 12,
+          "cost": {
+            "gold": 18
+          },
+          "aiValue": null
+        },
+        "targetPower": 4.64,
+        "codePower": 4.64,
+        "weeklyCode": 55.6,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p2",
+        "tier": 2,
+        "id": "p2_axethrower",
+        "name": "铜人",
+        "target": {
+          "attack": 3,
+          "defense": 9,
+          "damageMin": 2,
+          "damageMax": 3,
+          "hp": 15,
+          "speed": 2,
+          "shots": 0,
+          "growthPerWeek": 5,
+          "gold": 120,
+          "remote": false
+        },
+        "code": {
+          "attack": 4,
+          "defense": 1,
+          "damageMin": 3,
+          "damageMax": 4,
+          "hp": 9,
+          "speed": 4,
+          "shots": 10,
+          "growthPerWeek": 5,
+          "cost": {
+            "gold": 105
+          },
+          "aiValue": null
+        },
+        "targetPower": 37.5,
+        "codePower": 27.2,
+        "weeklyCode": 136,
+        "deltaPct": -27.5
+      },
+      {
+        "fam": "p2",
+        "tier": 3,
+        "id": "p2_wolfrider",
+        "name": "三头狼",
+        "target": {
+          "attack": 7,
+          "defense": 3,
+          "damageMin": 3,
+          "damageMax": 8,
+          "hp": 13,
+          "speed": 7,
+          "shots": 0,
+          "growthPerWeek": 4,
+          "gold": 230,
+          "remote": false
+        },
+        "code": {
+          "attack": 7,
+          "defense": 3,
+          "damageMin": 4,
+          "damageMax": 6,
+          "hp": 16,
+          "speed": 7,
+          "shots": 0,
+          "growthPerWeek": 4,
+          "cost": {
+            "gold": 200,
+            "ore": 2
+          },
+          "aiValue": null
+        },
+        "targetPower": 74.9,
+        "codePower": 83.81,
+        "weeklyCode": 335.2,
+        "deltaPct": 11.9
+      },
+      {
+        "fam": "p2",
+        "tier": 4,
+        "id": "p2_firebrand",
+        "name": "熔岩巨人",
+        "target": {
+          "attack": 9,
+          "defense": 7,
+          "damageMin": 6,
+          "damageMax": 9,
+          "hp": 34,
+          "speed": 4,
+          "shots": 0,
+          "growthPerWeek": 3,
+          "gold": 520,
+          "remote": false
+        },
+        "code": {
+          "attack": 9,
+          "defense": 5,
+          "damageMin": 6,
+          "damageMax": 9,
+          "hp": 30,
+          "speed": 6,
+          "shots": 0,
+          "growthPerWeek": 3,
+          "cost": {
+            "gold": 480,
+            "ore": 3
+          },
+          "aiValue": null
+        },
+        "targetPower": 322.11,
+        "codePower": 270,
+        "weeklyCode": 810,
+        "deltaPct": -16.2
+      },
+      {
+        "fam": "p2",
+        "tier": 5,
+        "id": "p2_lavatroll",
+        "name": "恶魔",
+        "target": {
+          "attack": 12,
+          "defense": 7,
+          "damageMin": 14,
+          "damageMax": 18,
+          "hp": 55,
+          "speed": 9,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "gold": 1250,
+          "remote": false
+        },
+        "code": {
+          "attack": 11,
+          "defense": 7,
+          "damageMin": 12,
+          "damageMax": 16,
+          "hp": 55,
+          "speed": 5,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "cost": {
+            "gold": 1200,
+            "ore": 5,
+            "wood": 5
+          },
+          "aiValue": null
+        },
+        "targetPower": 1250.53,
+        "codePower": 1053.68,
+        "weeklyCode": 2107.4,
+        "deltaPct": -15.7
+      },
+      {
+        "fam": "p3",
+        "tier": 1,
+        "id": "p3_dwarf",
+        "name": "矮人",
+        "target": {
+          "attack": 2,
+          "defense": 3,
+          "damageMin": 1,
+          "damageMax": 2,
+          "hp": 5,
+          "speed": 3,
+          "shots": 0,
+          "growthPerWeek": 10,
+          "gold": 25,
+          "remote": false
+        },
+        "code": {
+          "attack": 1,
+          "defense": 3,
+          "damageMin": 1,
+          "damageMax": 2,
+          "hp": 5,
+          "speed": 3,
+          "shots": 0,
+          "growthPerWeek": 10,
+          "cost": {
+            "gold": 25
+          },
+          "aiValue": null
+        },
+        "targetPower": 6.07,
+        "codePower": 5.71,
+        "weeklyCode": 57.1,
+        "deltaPct": -5.9
+      },
+      {
+        "fam": "p3",
+        "tier": 2,
+        "id": "p3_thornarcher",
+        "name": "丛林射手",
+        "target": {
+          "attack": 4,
+          "defense": 3,
+          "damageMin": 2,
+          "damageMax": 3,
+          "hp": 11,
+          "speed": 4,
+          "shots": 16,
+          "growthPerWeek": 5,
+          "gold": 115,
+          "remote": true
+        },
+        "code": {
+          "attack": 4,
+          "defense": 3,
+          "damageMin": 2,
+          "damageMax": 3,
+          "hp": 11,
+          "speed": 4,
+          "shots": 16,
+          "growthPerWeek": 5,
+          "cost": {
+            "gold": 115
+          },
+          "aiValue": null
+        },
+        "targetPower": 24.88,
+        "codePower": 24.88,
+        "weeklyCode": 124.4,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p3",
+        "tier": 3,
+        "id": "p3_vineguard",
+        "name": "树人",
+        "target": {
+          "attack": 4,
+          "defense": 10,
+          "damageMin": 3,
+          "damageMax": 5,
+          "hp": 20,
+          "speed": 2,
+          "shots": 0,
+          "growthPerWeek": 4,
+          "gold": 260,
+          "remote": false
+        },
+        "code": {
+          "attack": 4,
+          "defense": 8,
+          "damageMin": 3,
+          "damageMax": 5,
+          "hp": 22,
+          "speed": 3,
+          "shots": 0,
+          "growthPerWeek": 4,
+          "cost": {
+            "gold": 240,
+            "wood": 2
+          },
+          "aiValue": null
+        },
+        "targetPower": 86.86,
+        "codePower": 90.38,
+        "weeklyCode": 361.5,
+        "deltaPct": 4.1
+      },
+      {
+        "fam": "p3",
+        "tier": 4,
+        "id": "p3_treant",
+        "name": "猿人",
+        "target": {
+          "attack": 8,
+          "defense": 4,
+          "damageMin": 7,
+          "damageMax": 10,
+          "hp": 30,
+          "speed": 5,
+          "shots": 10,
+          "growthPerWeek": 4,
+          "gold": 540,
+          "remote": true
+        },
+        "code": {
+          "attack": 6,
+          "defense": 10,
+          "damageMin": 6,
+          "damageMax": 9,
+          "hp": 42,
+          "speed": 3,
+          "shots": 0,
+          "growthPerWeek": 3,
+          "cost": {
+            "gold": 560,
+            "wood": 6,
+            "ore": 2
+          },
+          "aiValue": null
+        },
+        "targetPower": 286.1,
+        "codePower": 378,
+        "weeklyCode": 1134,
+        "deltaPct": 32.1
+      },
+      {
+        "fam": "p3",
+        "tier": 5,
+        "id": "p3_unicorn",
+        "name": "绿龙",
+        "target": {
+          "attack": 11,
+          "defense": 9,
+          "damageMin": 11,
+          "damageMax": 15,
+          "hp": 62,
+          "speed": 7,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "gold": 1100,
+          "remote": false
+        },
+        "code": {
+          "attack": 8,
+          "defense": 11,
+          "damageMin": 10,
+          "damageMax": 14,
+          "hp": 65,
+          "speed": 6,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "cost": {
+            "gold": 1250,
+            "gem": 2,
+            "wood": 5
+          },
+          "aiValue": null
+        },
+        "targetPower": 1164.22,
+        "codePower": 1055.29,
+        "weeklyCode": 2110.6,
+        "deltaPct": -9.4
+      },
+      {
+        "fam": "p4",
+        "tier": 1,
+        "id": "p4_stoneimp",
+        "name": "骷髅",
+        "target": {
+          "attack": 2,
+          "defense": 1,
+          "damageMin": 1,
+          "damageMax": 3,
+          "hp": 4,
+          "speed": 4,
+          "shots": 0,
+          "growthPerWeek": 9,
+          "gold": 25,
+          "remote": false
+        },
+        "code": {
+          "attack": 1,
+          "defense": 4,
+          "damageMin": 2,
+          "damageMax": 3,
+          "hp": 4,
+          "speed": 2,
+          "shots": 0,
+          "growthPerWeek": 9,
+          "cost": {
+            "gold": 30
+          },
+          "aiValue": null
+        },
+        "targetPower": 6.18,
+        "codePower": 7.8,
+        "weeklyCode": 70.2,
+        "deltaPct": 26.3
+      },
+      {
+        "fam": "p4",
+        "tier": 2,
+        "id": "p4_fireapprentice",
+        "name": "僵尸",
+        "target": {
+          "attack": 2,
+          "defense": 8,
+          "damageMin": 2,
+          "damageMax": 3,
+          "hp": 15,
+          "speed": 2,
+          "shots": 0,
+          "growthPerWeek": 5,
+          "gold": 115,
+          "remote": false
+        },
+        "code": {
+          "attack": 5,
+          "defense": 1,
+          "damageMin": 3,
+          "damageMax": 5,
+          "hp": 8,
+          "speed": 4,
+          "shots": 8,
+          "growthPerWeek": 5,
+          "cost": {
+            "gold": 120
+          },
+          "aiValue": null
+        },
+        "targetPower": 34.46,
+        "codePower": 29.09,
+        "weeklyCode": 145.5,
+        "deltaPct": -15.6
+      },
+      {
+        "fam": "p4",
+        "tier": 3,
+        "id": "p4_hopgolem",
+        "name": "吸血鬼",
+        "target": {
+          "attack": 7,
+          "defense": 4,
+          "damageMin": 3,
+          "damageMax": 6,
+          "hp": 15,
+          "speed": 8,
+          "shots": 0,
+          "growthPerWeek": 5,
+          "gold": 250,
+          "remote": false
+        },
+        "code": {
+          "attack": 6,
+          "defense": 4,
+          "damageMin": 4,
+          "damageMax": 6,
+          "hp": 15,
+          "speed": 6,
+          "shots": 0,
+          "growthPerWeek": 4,
+          "cost": {
+            "gold": 230,
+            "ore": 2
+          },
+          "aiValue": null
+        },
+        "targetPower": 72.44,
+        "codePower": 76.83,
+        "weeklyCode": 307.3,
+        "deltaPct": 6.1
+      },
+      {
+        "fam": "p4",
+        "tier": 4,
+        "id": "p4_librarian",
+        "name": "牛头怪",
+        "target": {
+          "attack": 9,
+          "defense": 6,
+          "damageMin": 7,
+          "damageMax": 10,
+          "hp": 30,
+          "speed": 6,
+          "shots": 10,
+          "growthPerWeek": 5,
+          "gold": 540,
+          "remote": true
+        },
+        "code": {
+          "attack": 8,
+          "defense": 4,
+          "damageMin": 8,
+          "damageMax": 11,
+          "hp": 28,
+          "speed": 5,
+          "shots": 8,
+          "growthPerWeek": 3,
+          "cost": {
+            "gold": 520,
+            "crystal": 2
+          },
+          "aiValue": null
+        },
+        "targetPower": 313.85,
+        "codePower": 298.44,
+        "weeklyCode": 895.3,
+        "deltaPct": -4.9
+      },
+      {
+        "fam": "p4",
+        "tier": 5,
+        "id": "p4_colossus",
+        "name": "摄魂怪",
+        "target": {
+          "attack": 10,
+          "defense": 8,
+          "damageMin": 10,
+          "damageMax": 13,
+          "hp": 60,
+          "speed": 9,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "gold": 800,
+          "remote": false
+        },
+        "code": {
+          "attack": 10,
+          "defense": 8,
+          "damageMin": 12,
+          "damageMax": 16,
+          "hp": 58,
+          "speed": 7,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "cost": {
+            "gold": 1250,
+            "crystal": 4,
+            "ore": 3
+          },
+          "aiValue": null
+        },
+        "targetPower": 932.43,
+        "codePower": 1097.3,
+        "weeklyCode": 2194.6,
+        "deltaPct": 17.7
+      }
+    ],
+    "family": {
+      "p1": {
+        "weeklyPower": 3609.1,
+        "weeklyBill": 6305,
+        "weeklyAi": 3642.3
+      },
+      "p2": {
+        "weeklyPower": 3444.3,
+        "weeklyBill": 5781,
+        "weeklyAi": 3458.2
+      },
+      "p3": {
+        "weeklyPower": 3787.6,
+        "weeklyBill": 6445,
+        "weeklyAi": 4102.3
+      },
+      "p4": {
+        "weeklyPower": 3612.9,
+        "weeklyBill": 6310,
+        "weeklyAi": 3836.8
+      }
+    },
+    "gates": [
+      {
+        "name": "V1 族级周产战力极差 ≤8%",
+        "ok": false,
+        "detail": "10.0%"
+      },
+      {
+        "name": "V2 周账单极差 ≤12%",
+        "ok": true,
+        "detail": "11.5%"
+      },
+      {
+        "name": "V3 T5 战力极差 ∈[1.40,1.60]×",
+        "ok": false,
+        "detail": "1.06×"
+      },
+      {
+        "name": "V4 T5 每金单调 + 极差 20~30%",
+        "ok": false,
+        "detail": "单调=false 极差 9.8%"
+      },
+      {
+        "name": "V5 同档（T1 周产 ≤30%）",
+        "ok": false,
+        "detail": "43.0%"
+      },
+      {
+        "name": "V5 口径 T1 单只应读 88.9%",
+        "ok": true,
+        "detail": "88.9%"
+      },
+      {
+        "name": "V5 同档（T2 近战 ≤10%）",
+        "ok": true,
+        "detail": "6.9%"
+      },
+      {
+        "name": "V5 同档（T2 远程 ≤10%）",
+        "ok": true,
+        "detail": "6.6%"
+      },
+      {
+        "name": "V5 同档（T3 ≤40%）",
+        "ok": true,
+        "detail": "17.6%"
+      },
+      {
+        "name": "V5 同档（T4 ≤40%）",
+        "ok": true,
+        "detail": "40.0%"
+      }
+    ]
+  },
+  "econ": {
+    "dist": "/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist",
+    "noMine": false,
+    "noBanner": false,
+    "buildings": {
+      "tavern": {
+        "gold": 0,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "growth": null
+      },
+      "market": {
+        "gold": 500,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "growth": null
+      },
+      "townhall": {
+        "gold": 1500,
+        "dailyGold": 250,
+        "growthBonus": 0,
+        "growth": null
+      },
+      "workshop": {
+        "gold": 2000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "growth": null
+      },
+      "wall1": {
+        "gold": 1000,
+        "dailyGold": 100,
+        "growthBonus": 0,
+        "growth": null
+      },
+      "wall2": {
+        "gold": 2500,
+        "dailyGold": 200,
+        "growthBonus": 0,
+        "growth": null
+      },
+      "wall3": {
+        "gold": 5000,
+        "dailyGold": 400,
+        "growthBonus": 0.25,
+        "growth": null
+      },
+      "dwell1": {
+        "gold": 300,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "growth": {
+          "tier": 1
+        }
+      },
+      "dwell2": {
+        "gold": 1000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "growth": {
+          "tier": 2
+        }
+      },
+      "dwell3": {
+        "gold": 2500,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "growth": {
+          "tier": 3
+        }
+      },
+      "dwell4": {
+        "gold": 5000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "growth": {
+          "tier": 4
+        }
+      },
+      "dwell5": {
+        "gold": 9000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "growth": {
+          "tier": 5
+        }
+      },
+      "guild1": {
+        "gold": 2000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "growth": null
+      },
+      "guild2": {
+        "gold": 3000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "growth": null
+      },
+      "guild3": {
+        "gold": 4500,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "growth": null
+      }
+    },
+    "bannerPresent": false,
+    "tree": 40800,
+    "income": {
+      "base": 500,
+      "townhall": 250,
+      "mine": 400,
+      "wallDaily": 700
+    },
+    "weeks": [
+      10400,
+      12450,
+      12950,
+      12950,
+      12950
+    ],
+    "budget": 61700,
+    "budgetSlow": 33950,
+    "bills": {
+      "W1 dwell1+2": 825,
+      "W2 +dwell3": 1705,
+      "W3 +dwell4": 3265,
+      "W4 +主力营": 3705,
+      "W5 全开（T5 起售）": 6305,
+      "满建（+50% 增长）": 7881
+    },
+    "recruit5w": 15805,
+    "cashEnd": 25595,
+    "gates": [
+      {
+        "name": "G-E1 预算 ÷ 全树 ∈[1.00,1.20]",
+        "ok": false,
+        "detail": "1.512（目标 1.125）"
+      },
+      {
+        "name": "G-E2 W5 账单占比 ∈[55%,75%]",
+        "ok": false,
+        "detail": "49%（目标 68%）"
+      },
+      {
+        "name": "G-E3 城防线日金合计 = 0",
+        "ok": false,
+        "detail": "700（B2 之前为 700，红是预期的）"
+      },
+      {
+        "name": "G-E4 满建名义账单 ≤110%",
+        "ok": true,
+        "detail": "61%（目标 102%）"
+      },
+      {
+        "name": "G-E5 (预算−招募) ÷ 全树 ∈[0.65,0.80]",
+        "ok": false,
+        "detail": "1.125（目标 0.71）"
+      }
+    ]
+  }
+}

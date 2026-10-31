@@ -59,7 +59,7 @@ const state = { heroes: {} };
 openBattleScreen(document.getElementById('stage'), {
   state, heroId: 'h', title: '悬停残留回归',
   attacker: { army: [
-    { unitTypeId: 'archer', count: 30 }, { unitTypeId: 'pikeman', count: 20 }, { unitTypeId: 'knight', count: 8 },
+    { unitTypeId: 'p1_crossbow', count: 30 }, { unitTypeId: 'p1_eagle', count: 20 }, { unitTypeId: 'p1_knight', count: 8 },
   ], attack: 6, defense: 3, caster: { spells: ['magicArrow', 'lightningBolt', 'bless', 'haste'], spellPower: 3, mana: 40 }, warMachines: [] },
   defender: { army: [
     { unitTypeId: 'ogre', count: 6 }, { unitTypeId: 'wolf', count: 12 },

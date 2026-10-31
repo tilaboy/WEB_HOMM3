@@ -1028,9 +1028,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         break;
       }
       case 'bounce': {
-        // 弹跳袭击：砸完弹开，守方没来得及回手。只给一行浮字，不做位移
+        // 三口齐咬：咬完退开，守方没来得及回手。只给一行浮字，不做位移
         //（攻方的出击动作已经在这条事件之前演完了）
-        addFloat('弹开！', hexOf(e.unitId), '#c9b6ff');
+        addFloat('免反击', hexOf(e.unitId), '#c9b6ff');
         anim = { t: 0, dur: 380, step: () => undefined };
         break;
       }
@@ -1285,7 +1285,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       // 反击全额之后，"我会挨多少"和"我能打多少"一样是决策依据，必须摆在提示里
       // （远程/一击打死/本回合已反击过 ⇒ 不会挨反击，也明说，省得玩家自己推）。
       const back = estimateRetaliation(battle, u, target, ranged, dmg);
-      // 带「弹跳袭击」的单位要报**原因**，否则玩家会以为"这一击刚好能秒"。
+      // 带「三口齐咬」的单位要报**原因**，否则玩家会以为"这一击刚好能秒"。
       const immune = !ranged && back === 0 && getUnit(u.unitTypeId).noRetaliate === true;
       hint(
         `${getUnit(target.unitTypeId).name} ×${target.count}　预计伤害 ${dmg}` +
@@ -1294,7 +1294,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
           (back > 0
             ? `　·　会被反击 ${back}`
             : immune
-              ? '　·　弹跳袭击：不挨反击（每队 1 次）'
+              ? '　·　三口齐咬：不挨反击（每队 1 次）'
               : ranged
                 ? ''
                 : '　·　不会挨反击'),

@@ -13,7 +13,7 @@
  *     unitFilter = 逗号分隔的兵种 id 子串，如 lavatroll,colossus；省略 = 整批
  *
  * 例：node tools/unitsheet.mjs /tmp/t5.png B3 6
- *     node tools/unitsheet.mjs /tmp/one.png B3 14 p2_lavatroll   ← 单体放大看细节
+ *     node tools/unitsheet.mjs /tmp/one.png B3 14 p2_devil   ← 单体放大看细节
  *
  * 不入门控（b0audit 管"画得对不对"，这张表管"看起来对不对"——人工项）。
  * 零依赖：PNG 编码与 b0audit 同法。
