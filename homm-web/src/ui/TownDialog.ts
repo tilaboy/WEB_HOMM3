@@ -80,8 +80,16 @@ type TownTab = 'build' | 'dwell' | 'recruit' | 'army' | 'market';
  * 拆成 7 + 8 张（列分布各 3 行）后两页都不必滚动。⚠️ 卡片高不均（状态行文字行数
  * 不同）时视觉行数会到 4（tp6-townpanel 探针实测），仍 ≤5 —— 别按"恰好 3 行"写断言。
  */
+/**
+ * 建筑页签。两页各 8 格 = 面板的 4×2 网格（760×352）刚好一屏，不滚动。
+ *
+ * `banner` 放「建设」页而不是「兵营」页：兵营页已是 8 格满，且它是
+ * **加成**不是"第 6 座兵营"（`requires: dwell3`，建成后不产生新的招募行）。
+ * §2.2 的"任意空 plot 可建"尚未实装（现在没有 plot 坐标系，只有这张表），
+ * 所以这里的槽位 = 表位置；将来做 plot 时按 §0.4 第 2 条补四族坐标。
+ */
 const BUILD_TABS: Record<'build' | 'dwell', readonly string[]> = {
-  build: ['tavern', 'market', 'townhall', 'workshop', 'wall1', 'wall2', 'wall3'],
+  build: ['tavern', 'market', 'townhall', 'workshop', 'wall1', 'wall2', 'wall3', 'banner'],
   dwell: ['dwell1', 'dwell2', 'dwell3', 'dwell4', 'dwell5', 'guild1', 'guild2', 'guild3'],
 };
 

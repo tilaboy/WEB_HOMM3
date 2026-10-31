@@ -55,9 +55,13 @@ import { SCENARIO_BY_ID } from '../data/scenarios.js';
  * 建造顺序：先把 3 级兵营和市场拿到手，再考虑高级兵与经济/防御。
  * 市场必须排在高阶兵营前面——木/矿只有矿场能产，而矿场基本被中档以上的野怪守着，
  * 不先开市场换资源，AI 会一路卡在 dwell4 的 10 木上（实测过，这是最容易踩的坑）。
+ *
+ * `banner` 紧跟在 `dwell3` 之后（§27.9 #4 / §23.4）：它只吃 1,000 金 + 5 木 5 矿，
+ * 却把每周 T3 产量乘 1.5 —— 对 AI 是"花小钱把兵营变成两座"。排在市场前面
+ * 不会卡资源：`aiBuild` 逐条 try，买不起就跳过继续下一条。
  */
 const BUILD_ORDER = [
-  'dwell3', 'market', 'workshop', 'wall1', 'dwell4', 'guild1', 'townhall', 'dwell5', 'guild2', 'wall2', 'wall3', 'guild3',
+  'dwell3', 'banner', 'market', 'workshop', 'wall1', 'dwell4', 'guild1', 'townhall', 'dwell5', 'guild2', 'wall2', 'wall3', 'guild3',
 ];
 
 /** 出兵门槛：起始 20 弓手 = 200 血。aggression 越低越早出门。 */

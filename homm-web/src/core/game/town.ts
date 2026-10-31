@@ -65,10 +65,53 @@ export function townDefenseBonus(town: Town): number {
   return d;
 }
 
+/**
+ * 建筑的**全档**周增长倍率（1 = 不加成）。
+ *
+ * ⚠️ 它只负责"建筑那一半"，**难度加成要由调用方加进来、周事件要用乘法套在外面**
+ * （§27.10 / 决策 53）。用法一律走 `weeklyGrowthMultiplier()`：
+ *   建筑倍率 + 难度加成 = 加算（地板 0.5 只套这一段）
+ *   再 × 周事件倍率      = 乘算
+ * 把事件当成"负的 bonus"塞进来会让 `城墙 +50%` 与 `瘟疫 −50%` 抵消成 1.0，
+ * 而正确值是 `1.5 × 0.5 = 0.75`。
+ */
 export function townGrowthMultiplier(town: Town): number {
   let m = 1;
   for (const id of town.buildings) m += BUILDINGS[id]?.growthBonus ?? 0;
   return m;
+}
+
+/**
+ * 只看**某一档**的周产倍率（`banner`：本族 T3 ×1.5）。与 `growthBonus` 乘算。
+ *
+ * 用连乘而不是 `max`：同档多座加成建筑要能叠（现在只有一座，但语义别写死）。
+ */
+export function tierGrowthMultiplier(town: Town, tier: number): number {
+  let m = 1;
+  for (const id of town.buildings) {
+    const b = BUILDINGS[id]?.tierGrowthBoost;
+    if (b && b.tier === tier) m *= b.mult;
+  }
+  return m;
+}
+
+/**
+ * 周增长总倍率 —— **§27.10 的顺序就写在这一行里**，不许在别处重排。
+ *
+ *   townMult = max(0.5, 建筑倍率 + 难度加成)   // 加算，地板只套这一段
+ *   mult     = townMult × eventMult             // 周事件乘算
+ *
+ * 两条负向对照（`audit:econ` 的 G-E6 就是这么量的）：
+ *   ① wall2 + wall3 + 瘟疫：`1.5 × 0.5 = 0.75`；把 −0.5 塞进 bonus 会读成 **1.00**
+ *   ② 无墙 + 瘟疫：`1.0 × 0.5 = 0.50`；把地板套在乘积上会读成 **0.25**
+ */
+export function weeklyGrowthMultiplier(
+  town: Town,
+  difficultyBonus = 0,
+  eventMult = 1,
+): number {
+  const townMult = Math.max(0.5, townGrowthMultiplier(town) + difficultyBonus);
+  return townMult * eventMult;
 }
 
 export function ownedTowns(state: GameState, player: PlayerId): Town[] {
@@ -362,15 +405,21 @@ export interface AssembleResult {
  * 同一座农舍在四个族里长出四种兵，也长出四个不同的数字。
  *
  * 玩家侧按 `playerGrowthBonus` 缩放（困难档为 0、即不罚）。
- * `Math.max(0.5, ...)` 钳制：防止负向加成把乘数压到过低导致几乎不长兵。
+ * 口径见 `weeklyGrowthMultiplier()`：建筑+难度**加算**、地板只在那一半，
+ * 周事件**乘算**（§27.10）。`banner` 另乘一档（`tierGrowthMultiplier`），
+ * 于是满建 T3 = `1.5 × 1.5 = 2.25×`。
+ *
+ * `eventMult` 是 §19.2 周事件的唯一接入点（现在没有事件系统，恒 1）。
+ * 加这个参数而不是让调用方自己乘：顺序（先地板后乘）只在 `weeklyGrowthMultiplier`
+ * 里写一次，探针能直接量到它。
  */
-export function applyWeeklyGrowth(state: GameState): void {
+export function applyWeeklyGrowth(state: GameState, eventMult = 1): void {
   const diff = DIFFICULTIES[state.config?.difficulty ?? 'normal'];
   for (const player of factionIds(state)) {
     const isHuman = state.players[player]?.isHuman;
     const bonus = isHuman ? diff.playerGrowthBonus : diff.growthBonus;
     for (const town of ownedTowns(state, player)) {
-      const mult = Math.max(0.5, townGrowthMultiplier(town) + bonus);
+      const mult = weeklyGrowthMultiplier(town, bonus, eventMult);
       if (!town.growthRemainder) town.growthRemainder = {};
       for (const id of town.buildings) {
         const g = BUILDINGS[id]?.growth;
@@ -378,7 +427,8 @@ export function applyWeeklyGrowth(state: GameState): void {
         // 段 2：兵种按 owner × tier 现解析（中立方 → null ⇒ 跳过，不 fallback）。
         const unitTypeId = dwellUnitId(town, g.tier, 'applyWeeklyGrowth');
         if (!unitTypeId) continue;
-        const exact = getUnit(unitTypeId).growthPerWeek * mult;
+        const exact =
+          getUnit(unitTypeId).growthPerWeek * mult * tierGrowthMultiplier(town, g.tier);
         const whole = Math.floor(exact);
         const frac = exact - whole;
         let pool = (town.growthPool[unitTypeId] ?? 0) + whole;
@@ -465,10 +515,20 @@ export function buildingDesc(town: Town, id: string): string {
   const def = BUILDINGS[id];
   if (!def) return '';
   const g = def.growth;
-  if (!g) return def.desc;
-  const unitTypeId = unitIdForTier(town.owner, g.tier);
-  if (!unitTypeId) return def.desc;
-  return `${def.desc}（本族每周 +${getUnit(unitTypeId).growthPerWeek}）`;
+  if (g) {
+    const unitTypeId = unitIdForTier(town.owner, g.tier);
+    if (!unitTypeId) return def.desc;
+    return `${def.desc}（本族每周 +${getUnit(unitTypeId).growthPerWeek}）`;
+  }
+  // `banner`：把"×1.5"翻成本族的具体数字（16 → 24），否则玩家得自己算
+  const boost = def.tierGrowthBoost;
+  if (boost) {
+    const unitTypeId = unitIdForTier(town.owner, boost.tier);
+    if (!unitTypeId) return def.desc;
+    const from = getUnit(unitTypeId).growthPerWeek;
+    return `${def.desc}（本族 ${boost.tier} 级兵每周 ${from} → ${Math.round(from * boost.mult)}）`;
+  }
+  return def.desc;
 }
 
 export function maxAffordable(

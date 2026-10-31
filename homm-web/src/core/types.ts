@@ -348,8 +348,20 @@ export interface BuildingDef {
      * 现在 `tier` 只负责"这是第几级兵的槽位"，数值一律查兵种。
      */
   };
-  /** 全局周增长比例加成 */
+  /** 全局周增长比例加成（**加算**：城防线 wall2 + wall3 = +50%，§27.3） */
   growthBonus?: number;
+  /**
+   * 只给**指定档位**的周产乘一个系数（`banner`「主力营」= 本族 T3 ×1.5）。
+   *
+   * 与 `growthBonus` 的两点区别，缺一条就会读错数：
+   *   ① **只作用一档**（`growthBonus` 作用全档）；
+   *   ② **乘算**（`growthBonus` 与难度加成加算，§27.10）。
+   *
+   * ⇒ 满建时 T3 实际是 `(1 + 0.25 + 0.25) × 1.5 = 2.25×`，不是 `1 + 0.5 + 0.5`。
+   * 写成 `{ tier, mult }` 而不是复用 `growth`：`growth` 是"这一档的兵营"，
+   * 一座城对同一 tier 只能有一个；`banner` 是**加成**，将来多座也要能叠（故用乘）。
+   */
+  tierGrowthBoost?: { tier: number; mult: number };
   /** 解锁的城镇功能 */
   feature?: 'tavern' | 'market' | 'guild' | 'workshop';
 }

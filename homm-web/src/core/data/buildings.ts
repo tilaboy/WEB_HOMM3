@@ -1,10 +1,17 @@
 import type { BuildingDef } from '../types.js';
 
 /**
- * 建筑树共 12 座（含预置的酒馆），分三条线：
+ * 建筑树共 16 座（含预置的酒馆），分四条线：
  *   经济线  market → townhall
- *   城防线  wall1 → wall2 → wall3
+ *   城防线  wall1 → wall2 → wall3      —— **零金币**，卖的是防御与周增长（§27.3）
  *   兵营线  dwell1 → dwell2 → dwell3 → dwell4 → dwell5
+ *   王牌线  dwell3 → banner            —— 本族 T3 周产 ×1.5（§23.4 / §27.3）
+ *
+ * ⚠️ 城防线**不产金**（对齐 H3：Fort / Citadel / Castle 收入全 0）。
+ * 2026-10-29 之前这里是 100 / 200 / 400，等于给每个玩家开了第二条收入线，
+ * 于是"建筑越贵越赚"——城墙变成投资品，而 H3 里它是**消耗品**。
+ * 回报改成**增长**：wall2 +25%、wall3 +25%（合计 +50%，H3 是 +50%/+100%，取半量）。
+ * `audit:econ` 的 G-E3 机检这一条：任一座 wall 出现 `dailyGold` 就红。
  */
 export const BUILDINGS: Record<string, BuildingDef> = {
   tavern: {
@@ -44,29 +51,27 @@ export const BUILDINGS: Record<string, BuildingDef> = {
   wall1: {
     id: 'wall1',
     name: '木栅',
-    desc: '驻军防御 +2，每日 +100 金。',
+    desc: '驻军防御 +2。不产金——城墙买的是守得住的夜晚。',
     cost: { gold: 1000, wood: 10 },
     requires: ['tavern'],
     defenseBonus: 2,
-    dailyGold: 100,
   },
   wall2: {
     id: 'wall2',
     name: '石墙',
-    desc: '驻军防御 +4，每日 +200 金。',
+    desc: '驻军防御 +4，全城周增长 +25%。',
     cost: { gold: 2500, ore: 10 },
     requires: ['wall1'],
     defenseBonus: 4,
-    dailyGold: 200,
+    growthBonus: 0.25,
   },
   wall3: {
     id: 'wall3',
     name: '堡垒',
-    desc: '驻军防御 +6，每日 +400 金，全城周增长 +25%。',
+    desc: '驻军防御 +6，再为全城周增长 +25%（与石墙合计 +50%）。',
     cost: { gold: 5000, wood: 10, ore: 15 },
     requires: ['wall2'],
     defenseBonus: 6,
-    dailyGold: 400,
     growthBonus: 0.25,
   },
 
@@ -129,6 +134,26 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     growth: { tier: 5 },
   },
 
+  /* ---------------- 王牌线：banner（§23.4 / §27.3） ----------------
+   *
+   * 为什么它必须挂在 `dwell3` 上、而且**只能**挂 T3：
+   *   四族各挑一档去加成都算不平 —— 同一档在四族里的价值差 **11.9×**
+   *   （T1 便宜到加成看不见，T5 一队就顶半支军队）。T3 是唯一
+   *   "每周多出来的一队真的会上场、又不至于一波定胜负"的档位。
+   *
+   * 为什么是 1,000 金而不是更贵：它与城防线增长**乘算**，
+   *   满建 `1.5 × 1.5 = 2.25×`。若定价过高，玩家会先买兵再建它，
+   *   而"每周多半队 T3"正是这条线要卖的**复利**（§27.3 的 D-6 测算）。
+   */
+  banner: {
+    id: 'banner',
+    name: '主力营',
+    desc: '本族 3 级兵周产 ×1.5（与城防线增长乘算，满建 2.25×）。',
+    cost: { gold: 1000, wood: 5, ore: 5 },
+    requires: ['dwell3'],
+    tierGrowthBoost: { tier: 3, mult: 1.5 },
+  },
+
   /* ---------------- 魔法线（M4）：guild1 → guild2 → guild3 ---------------- */
   guild1: {
     id: 'guild1',
@@ -167,6 +192,7 @@ export const BUILDING_ORDER = [
   'dwell1',
   'dwell2',
   'dwell3',
+  'banner',
   'dwell4',
   'dwell5',
   'guild1',

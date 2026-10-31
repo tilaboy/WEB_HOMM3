@@ -20,6 +20,8 @@
  * | G-E3 | 城防线 `dailyGold` 合计 = 0 | 0（B2 之前是 700 ⇒ 红） |
  * | G-E4 | 满建名义账单 ÷ 收入 ≤ 110% | 102% |
  * | G-E5 | (预算 − 5 周招募) ÷ 全树 ∈ [0.65, 0.80] | 0.71 |
+ * | G-E6 | §27.10 加算/乘算：`(1.5)×0.5 = 0.75`、`(1.0)×0.5 = 0.50` | 两条都要 |
+ * | G-E7 | 城防线增长合计 +50%，满建 T3 = `1.5 × 1.5 = 2.25×` | 2.25 |
  *
  * ## 用法
  * ```
@@ -27,6 +29,7 @@
  * node tools/econ-check.mjs --nomine     # 决策 57：金矿丢了，不补偿
  * node tools/econ-check.mjs --nobanner   # 负向：全树少 1,000（40,800 → 39,800）
  * node tools/econ-check.mjs --tamper     # 自检：城墙恢复 100/200/400，G-E1 必须爆
+ * node tools/econ-check.mjs --wallgold=1 # 负向：给 wall2 填 1 金/天，G-E3 必须红
  * ```
  * 退出码：`0` 全绿 · `1` 有闸红 · `2` 前置缺失
  */
@@ -39,14 +42,22 @@ printHeader(DIST, 'gate=econ');
 requireFile(DIST, 'core/data/buildings.js');
 requireFile(DIST, 'core/data/units.js');
 requireFile(DIST, 'core/data/mines.js');
+requireFile(DIST, 'core/game/town.js');
 
 const { BUILDINGS, BASE_TOWN_INCOME } = await import(distUrl('core/data/buildings.js', DIST));
 const { UNITS, FACTION_UNITS } = await import(distUrl('core/data/units.js', DIST));
 const { MINE_PER_DAY } = await import(distUrl('core/data/mines.js', DIST));
+// §27.10 的写法只能从**实现**里量，不能在这里重写一遍公式（重写 = 第二份真相）
+const { weeklyGrowthMultiplier, tierGrowthMultiplier } = await import(
+  distUrl('core/game/town.js', DIST)
+);
 
 const NO_MINE = process.argv.includes('--nomine');
 const NO_BANNER = process.argv.includes('--nobanner');
 const TAMPER = process.argv.includes('--tamper');
+const WALLGOLD = Number((process.argv.find((a) => a.startsWith('--wallgold=')) ?? '').split('=')[1] ?? 0);
+// 负向对照：在**代码现值**上给 wall2 塞 N 金/天。G-E3 必须红（§27.4）。
+if (WALLGOLD) BUILDINGS.wall2.dailyGold = WALLGOLD;
 
 /* ---------------- §27 的目标值（只用来对比，不参与计算） ---------------- */
 const SPEC = {
@@ -79,7 +90,11 @@ const ids = Object.keys(BUILDINGS);
 const costOf = (id) => BUILDINGS[id]?.cost?.gold ?? 0;
 const bannerPresent = Boolean(BUILDINGS.banner);
 const bannerCost = bannerPresent ? costOf('banner') : SPEC.bannerCost;
-const tree = ids.reduce((s, id) => s + costOf(id), 0) + (NO_BANNER ? 0 : bannerCost);
+// ⚠️ `ids` 一旦包含 banner，**不能再加一次** bannerCost（B2 落地时这里真的多算过 1,000，
+// 全树读 41,800、G-E1 掉到 1.10，看起来像"数值偏了"其实是门自己错）。
+const tree =
+  ids.filter((id) => id !== 'banner').reduce((s, id) => s + costOf(id), 0) +
+  (NO_BANNER ? 0 : bannerCost);
 const wallDaily = ['wall1', 'wall2', 'wall3'].reduce((s, id) => s + (BUILDINGS[id]?.dailyGold ?? 0), 0);
 const wallGrowth = ['wall1', 'wall2', 'wall3'].reduce((s, id) => s + (BUILDINGS[id]?.growthBonus ?? 0), 0);
 
@@ -88,7 +103,8 @@ for (const id of ids) {
   const b = BUILDINGS[id];
   console.log(
     `  ${pad(id, 9)} 金 ${padl(costOf(id), 5)}  日金 ${padl(b.dailyGold ?? 0, 4)}  增长 +${((b.growthBonus ?? 0) * 100).toFixed(0)}%` +
-      `${b.growth ? `  产 T${b.growth.tier}` : ''}`,
+      `${b.growth ? `  产 T${b.growth.tier}` : ''}` +
+      `${b.tierGrowthBoost ? `  T${b.tierGrowthBoost.tier} ×${b.tierGrowthBoost.mult}` : ''}`,
   );
 }
 console.log(
@@ -100,7 +116,7 @@ console.log(
     ` ｜ 城防线日金合计 ${wallDaily}（目标 0） ｜ 城防增长 +${(wallGrowth * 100).toFixed(0)}%（目标 +50%）`,
 );
 if (TAMPER) {
-  console.log('\n  ★ --tamper：城墙额外产 700/天（负向对照；B2 之后应读到预算 70,400、G-E1 1.73）');
+  console.log('\n  ★ --tamper：城墙额外产 700/天（负向对照；B3a 税率落地后应读到预算 70,400、G-E1 1.73）');
 }
 
 /* ---------------- 2) 收入 ---------------- */
@@ -144,7 +160,8 @@ console.log(
 /* ---------------- 3) 账单 ---------------- */
 const growthOf = (fam) => FACTION_UNITS[fam].map((id) => UNITS[id]);
 // banner 未实装时按 §23.4 的 ×1.5 预演（上面已显式打印"未实装"，不是静默兜底）
-const t3Bonus = SPEC.bannerT3;
+const bannerBoost = BUILDINGS.banner?.tierGrowthBoost;
+const t3Bonus = bannerBoost?.mult ?? SPEC.bannerT3;
 const bannerOn = !NO_BANNER;
 
 /** tiers = 已解锁到第几档；walls = 是否已建满（增长倍率另算）；banner = 是否已建主力营 */
@@ -232,6 +249,34 @@ chk('G-E4 满建名义账单 ≤110%', gE4 <= 1.1, `${(gE4 * 100).toFixed(0)}%�
 const gE5 = (budget - recruit5w) / tree;
 chk('G-E5 (预算−招募) ÷ 全树 ∈[0.65,0.80]', gE5 >= 0.65 && gE5 <= 0.8, `${gE5.toFixed(3)}（目标 ${SPEC.G_E5}）`);
 
+/* ---------------- §27.10：两种写法各自会读成什么 ----------------
+ * 只量实现（`weeklyGrowthMultiplier`），不在这里重写公式。
+ * ① 把瘟疫塞进 `bonus`：1.5 + (−0.5) = **1.00**（正确 0.75）
+ * ② 把地板套在乘积上：0.5 × 0.5 = **0.25**（正确 0.50）
+ */
+const fakeTown = (buildings) => ({ buildings });
+const WALLS = fakeTown(['wall1', 'wall2', 'wall3']);
+const BARE = fakeTown(['dwell1']);
+const mWallsPlague = weeklyGrowthMultiplier(WALLS, 0, 0.5);
+const mBarePlague = weeklyGrowthMultiplier(BARE, 0, 0.5);
+const mWalls = weeklyGrowthMultiplier(WALLS, 0, 1);
+const near = (a, b) => Math.abs(a - b) < 1e-9;
+chk(
+  'G-E6 §27.10 加算/乘算（1.5×0.5=0.75；1.0×0.5=0.50）',
+  near(mWallsPlague, 0.75) && near(mBarePlague, 0.5),
+  `满墙+瘟疫 ${mWallsPlague.toFixed(2)}（错法 1.00）｜无墙+瘟疫 ${mBarePlague.toFixed(2)}（错法 0.25）`,
+);
+
+/* ---------------- 满建 T3：城防线 × banner，两段乘算 ---------------- */
+const bannerT3 = tierGrowthMultiplier(fakeTown(['banner']), 3);
+const bannerTier = BUILDINGS.banner?.tierGrowthBoost?.tier ?? 0;
+const fullT3 = mWalls * bannerT3;
+chk(
+  'G-E7 城防线 +50%、满建 T3 = 2.25×',
+  near(wallGrowth, 0.5) && bannerTier === 3 && near(fullT3, 2.25),
+  `城防线 +${(wallGrowth * 100).toFixed(0)}% × banner(T${bannerTier}) ${bannerT3.toFixed(2)} = ${fullT3.toFixed(2)}×`,
+);
+
 console.log('\n=== 闸 ===');
 for (const v of verdict) console.log(`  ${v.ok ? '✓' : '✗'} ${pad(v.name, 26)} ${v.detail}`);
 
@@ -271,7 +316,13 @@ if (jsonArg) {
     buildings: Object.fromEntries(
       ids.map((id) => [
         id,
-        { gold: costOf(id), dailyGold: BUILDINGS[id].dailyGold ?? 0, growthBonus: BUILDINGS[id].growthBonus ?? 0, growth: BUILDINGS[id].growth ?? null },
+        {
+          gold: costOf(id),
+          dailyGold: BUILDINGS[id].dailyGold ?? 0,
+          growthBonus: BUILDINGS[id].growthBonus ?? 0,
+          tierGrowthBoost: BUILDINGS[id].tierGrowthBoost ?? null,
+          growth: BUILDINGS[id].growth ?? null,
+        },
       ]),
     ),
     bannerPresent,
