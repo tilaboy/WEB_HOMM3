@@ -761,9 +761,16 @@ export function captureTown(state: GameState, town: Town, player: PlayerId): voi
   if (guildLevel(town) > 0) spreadGuildSpells(state, town);
 }
 
-/** 城镇驻军是否还有战斗力。 */
+/**
+ * 城镇驻军的"够不够守"—— **战力**，不是血量（§25.4 ③，2026-10-31 B4 换量纲）。
+ *
+ * 函数名故意没改：调用点有 6 处（AI 攻城判断、回城富余、`refillFromGarrison` 等），
+ * 改名只会制造一次无收益的 diff；但**读数的量纲变了**，所以原来那些绝对常数
+ * （`GARRISON_KEEP_HP = 200`、`need × 1.15` 的 `60` 地板）必须一起换，
+ * 否则等于用"血"的阈值去卡"战力"的数——`count × aiValue` 一般比血量高 1.6~2.2 倍。
+ */
 export function garrisonStrength(garrison: Army): number {
-  return garrison.reduce((s, st) => s + (st.count > 0 ? st.count * getUnit(st.unitTypeId).hp : 0), 0);
+  return garrison.reduce((s, st) => s + (st.count > 0 ? st.count * getUnit(st.unitTypeId).aiValue : 0), 0);
 }
 
 export { isNewWeek };

@@ -59,6 +59,7 @@
 | `probe:d2` | 同上 `--gate=d2` | 门 | ✓ | ✓ | ✓ `requireFile` | — | 反击全额（首击→反击 ≥60%）+ 贴脸 40~80% + 整军攻方 5~98%（**区间只判"有没有一侧被结构性剥夺"**，平衡读数见文件内置顶注释） |
 | `probe:exchange` | `probes/exchange.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | 会面交换 25 条（U1）。`=full` 场景的总量从场景自身求和，不写死 |
 | `probe:frames` | `probes/frames.mjs` | 门 | ✓ | ✓ | — （纯 Node，无 Chrome） | — | 帧别名层（S0）15 条：20 行对照 / 20 个基名互异 / map·idle·atk 都存在 / 静态扫描"除定义方外无人拼帧名" |
+| `probe:aiscale` | `probes/aiscale.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | **B4 新增（2026-10-31）**。AI 换尺验收 A1–A6：首攻日 / 场均战斗 / D28 兵力（对基线）、丢光城镇 ≤1、五周一局内买到 T5 ≥60%、编队结构、招募城守住。**A3 的 D28 读数只打印不判**（见文件头）。`--save=` 落基线、`--baseline=` 对比、`--dist=` 对旧构建跑 |
 | `audit:haloflip` | `haloflip.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | ④ halo 光环翻转；自带 dev server（`?devquick=` 起步） |
 | （无 npm script，直接 `node tools/showcasegate.mjs`） | `showcasegate.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | 展示图可玩性门（点击数 / 开局页滚动比 / 常驻文字条）。**2026-10-12**：「试这张图」并入「开始」，A 组从"证明减法生效"改为"证明没倒退回 2 次点击" |
 | （无 npm script，直接 `node tools/iaaccept.mjs`） | `iaaccept.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | **独立验收探针**（不复用被验方的 `scenarioaudit`）。⚠️ **默认连外部 5173**，须先 `node tools/serve.mjs`；**且必须带 `NO_PROXY='*'`**（见 §六） |

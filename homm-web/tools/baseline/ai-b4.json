@@ -1,0 +1,282 @@
+{
+  "difficulty": "normal",
+  "seeds": 8,
+  "days": 60,
+  "distMd5": "b81b5dd3084d1b1d9a4c34d7f40e00da",
+  "firstBattleDayMedian": 1,
+  "battlesMean": 38.375,
+  "capturesMean": 30.75,
+  "lostAll": 0,
+  "t5Games": 4,
+  "t5Share": 0.5,
+  "perGold": 0.5148293166088546,
+  "heroValueD28Median": 656,
+  "games": [
+    {
+      "seed": 4242,
+      "firstBattleDay": 1,
+      "battles": 67,
+      "captures": 49,
+      "lostAll": 0,
+      "firstT5Day": 35,
+      "t5Structure": null,
+      "garrisonAtT5": 6119.18,
+      "t5Ready": null,
+      "t5BuyLag": null,
+      "perFaction": {
+        "p2": {
+          "d5": null,
+          "t5": null
+        },
+        "p3": {
+          "d5": 28,
+          "t5": 35
+        },
+        "p4": {
+          "d5": null,
+          "t5": null
+        }
+      },
+      "recruitValue": 105405.0000000001,
+      "recruitGold": 203215,
+      "heroValueD28": 1355,
+      "townCountD28": 6,
+      "heroAtT5": 0,
+      "nakedTowns": 1
+    },
+    {
+      "seed": 5219,
+      "firstBattleDay": 1,
+      "battles": 46,
+      "captures": 39,
+      "lostAll": 0,
+      "firstT5Day": 28,
+      "t5Structure": null,
+      "garrisonAtT5": 8095.58,
+      "t5Ready": null,
+      "t5BuyLag": null,
+      "perFaction": {
+        "p2": {
+          "d5": 32,
+          "t5": 35
+        },
+        "p3": {
+          "d5": 27,
+          "t5": 28
+        },
+        "p4": {
+          "d5": 31,
+          "t5": 38
+        }
+      },
+      "recruitValue": 101534.90999999997,
+      "recruitGold": 173440,
+      "heroValueD28": 998,
+      "townCountD28": 4,
+      "heroAtT5": 0,
+      "nakedTowns": 0
+    },
+    {
+      "seed": 6196,
+      "firstBattleDay": 1,
+      "battles": 13,
+      "captures": 13,
+      "lostAll": 0,
+      "firstT5Day": 42,
+      "t5Structure": null,
+      "garrisonAtT5": 10589.45,
+      "t5Ready": null,
+      "t5BuyLag": null,
+      "perFaction": {
+        "p2": {
+          "d5": 41,
+          "t5": 42
+        },
+        "p3": {
+          "d5": 35,
+          "t5": 42
+        },
+        "p4": {
+          "d5": 35,
+          "t5": 49
+        }
+      },
+      "recruitValue": 59989.59000000002,
+      "recruitGold": 114470,
+      "heroValueD28": 625,
+      "townCountD28": 3,
+      "heroAtT5": 0,
+      "nakedTowns": 0
+    },
+    {
+      "seed": 7173,
+      "firstBattleDay": 1,
+      "battles": 29,
+      "captures": 20,
+      "lostAll": 0,
+      "firstT5Day": 49,
+      "t5Structure": null,
+      "garrisonAtT5": 12966.07,
+      "t5Ready": null,
+      "t5BuyLag": null,
+      "perFaction": {
+        "p2": {
+          "d5": null,
+          "t5": null
+        },
+        "p3": {
+          "d5": 31,
+          "t5": null
+        },
+        "p4": {
+          "d5": 41,
+          "t5": 49
+        }
+      },
+      "recruitValue": 66912.88,
+      "recruitGold": 149190,
+      "heroValueD28": 1176,
+      "townCountD28": 5,
+      "heroAtT5": 0,
+      "nakedTowns": 0
+    },
+    {
+      "seed": 8150,
+      "firstBattleDay": 1,
+      "battles": 33,
+      "captures": 31,
+      "lostAll": 0,
+      "firstT5Day": 23,
+      "t5Structure": null,
+      "garrisonAtT5": 4794.28,
+      "t5Ready": null,
+      "t5BuyLag": null,
+      "perFaction": {
+        "p2": {
+          "d5": 48,
+          "t5": 49
+        },
+        "p3": {
+          "d5": 59,
+          "t5": null
+        },
+        "p4": {
+          "d5": 19,
+          "t5": 23
+        }
+      },
+      "recruitValue": 66286.41,
+      "recruitGold": 120230,
+      "heroValueD28": 383,
+      "townCountD28": 3,
+      "heroAtT5": 0,
+      "nakedTowns": 0
+    },
+    {
+      "seed": 9127,
+      "firstBattleDay": 1,
+      "battles": 43,
+      "captures": 25,
+      "lostAll": 0,
+      "firstT5Day": 26,
+      "t5Structure": {
+        "stacks": 5,
+        "maxShare": 0.3485676969112157,
+        "screen": true,
+        "holder": "阿尔文"
+      },
+      "garrisonAtT5": 1200.09,
+      "t5Ready": null,
+      "t5BuyLag": null,
+      "perFaction": {
+        "p2": {
+          "d5": null,
+          "t5": null
+        },
+        "p3": {
+          "d5": 18,
+          "t5": 26
+        },
+        "p4": {
+          "d5": null,
+          "t5": null
+        }
+      },
+      "recruitValue": 80162.30000000005,
+      "recruitGold": 156590,
+      "heroValueD28": 687,
+      "townCountD28": 5,
+      "heroAtT5": 4103.88,
+      "nakedTowns": 2
+    },
+    {
+      "seed": 10104,
+      "firstBattleDay": 2,
+      "battles": 40,
+      "captures": 19,
+      "lostAll": 0,
+      "firstT5Day": 25,
+      "t5Structure": {
+        "stacks": 5,
+        "maxShare": 0.525667686799552,
+        "screen": true,
+        "holder": "阿尔文"
+      },
+      "garrisonAtT5": 3602.4,
+      "t5Ready": null,
+      "t5BuyLag": null,
+      "perFaction": {
+        "p2": {
+          "d5": 32,
+          "t5": 35
+        },
+        "p3": {
+          "d5": null,
+          "t5": null
+        },
+        "p4": {
+          "d5": 18,
+          "t5": 25
+        }
+      },
+      "recruitValue": 79625.48000000001,
+      "recruitGold": 149760,
+      "heroValueD28": 505,
+      "townCountD28": 5,
+      "heroAtT5": 0,
+      "nakedTowns": 2
+    },
+    {
+      "seed": 11081,
+      "firstBattleDay": 1,
+      "battles": 36,
+      "captures": 50,
+      "lostAll": 0,
+      "firstT5Day": 44,
+      "t5Structure": null,
+      "garrisonAtT5": 4902.27,
+      "t5Ready": null,
+      "t5BuyLag": null,
+      "perFaction": {
+        "p2": {
+          "d5": null,
+          "t5": null
+        },
+        "p3": {
+          "d5": 40,
+          "t5": 44
+        },
+        "p4": {
+          "d5": null,
+          "t5": null
+        }
+      },
+      "recruitValue": 66414.48000000004,
+      "recruitGold": 149685,
+      "heroValueD28": 68,
+      "townCountD28": 5,
+      "heroAtT5": 0,
+      "nakedTowns": 2
+    }
+  ]
+}

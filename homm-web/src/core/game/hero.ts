@@ -96,13 +96,32 @@ export function armySize(hero: Hero): number {
   return hero.army.reduce((s, st) => s + st.count, 0);
 }
 
-/** 部队总血量，用作"这支部队有多强"的粗略度量（AI 决策与驻军评估共用）。 */
+/**
+ * 部队总血量。**不是战力**——只用于"还剩多少血"这类按血说话的场合
+ * （战斗结算、探针读数、`armyHp` 的既有消费者）。
+ *
+ * ⚠️ 想量"这支部队有多强"请用 `armyValue()`。两者的区别不是系数，是**量纲**：
+ * 20 个小孩（60 血、几乎打不动人）和 6 个骑士同血量级，但战力差 4 倍。
+ */
 export function armyHp(army: Army): number {
   return army.reduce((s, st) => s + (st.count > 0 ? st.count * getUnit(st.unitTypeId).hp : 0), 0);
 }
 
-/** 英雄的战斗力：血量 × 四维带来的粗略加成，只用于比较大小。 */
+/**
+ * 部队总战力：`count × aiValue`（§25.4 ①②）。
+ *
+ * `aiValue` 是 `powerRef()`（B 口径战力）× 远程 1.25 —— 也就是**同一把尺子**，
+ * 和 `balance-p2` 判平衡、`aiValue` 定征兵优先级用的是同一个数。
+ * 在此之前 AI 到处用血量当战力：血量把"血厚但打不动"的兵算得过高
+ * （僵尸 20 血、伤害 1~2，和弩手 10 血、伤害 2~4 同分），
+ * 于是 AI 会为了堆血量去买最不划算的兵。**AI 与玩家之间的差距就从这里来。**
+ */
+export function armyValue(army: Army): number {
+  return army.reduce((s, st) => s + (st.count > 0 ? st.count * getUnit(st.unitTypeId).aiValue : 0), 0);
+}
+
+/** 英雄的战斗力：**战力** × 四维加成（系数 0.03 不变）。只用于比较大小。 */
 export function heroPower(hero: Hero): number {
   const p = effectivePrimary(hero);
-  return armyHp(hero.army) * (1 + (p.attack + p.defense) * 0.03);
+  return armyValue(hero.army) * (1 + (p.attack + p.defense) * 0.03);
 }

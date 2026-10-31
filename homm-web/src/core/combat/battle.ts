@@ -845,13 +845,16 @@ export function estimateDamage(
   const au = getUnit(atk.unitTypeId);
   const du = getUnit(def.unitTypeId);
   const avg = ((au.damageMin + au.damageMax) / 2) * atk.count;
-  // ⚠️ **已知缺陷（P1，排在 B4 一起修）**：这里把"加成"当成了攻击值，漏了 `au.attack`，
-  // 于是预估系统性低于实战（骑士打野猪：预估 19、实际 28）。2026-10-29 试过补上，
-  // 结果 `probe:factionverbs` 的"AI 会蹦"归零、`probe:d2` 赤焰攻方胜率 80%→25% ——
-  // 说明它会整体改写 AI 的攻击性。**必须与 B4 的 `aiValue` / 常数 / 买兵顺序同批重标**，
-  // 不许跟在数值批后面偷偷改。在此之前：**只换曲线，不动参数语义。**
+  // 攻方攻击力 = **基础攻击 + 各种加成**，和 `rollDamage(attacker.attack + attackBonus, …)` 同源。
+  //
+  // 2026-10-31 B4 修（§28.6 的已知缺陷）：这里以前只传了 `strikeAtkBonus(...)`，
+  // **漏了 `au.attack`** —— 于是预估恒按"0 攻"算，系统性低于实战（骑士打野猪：预估 19、实际 28，
+  // 比值 1.27）。后果不是"提示不准"这么轻：AI 用 `previewInteraction → estimate` 判断
+  // "打不打得过"，系统性低估 ⇒ 该打的怪不敢打、该攻的城不去攻。
+  // 当年单独修它会把 `probe:factionverbs` 的「AI 会蹦」打到 0、`probe:d2` 赤焰攻方 88%→25%，
+  // 因为 AI 突然变得敢打了；所以它**必须**和 `aiValue` / 常数 / 买兵顺序同批（就是这一批）。
   let mod = damageMultiplier(
-    Math.max(0, strikeAtkBonus(s, atk, !ranged, assumeMoveDist)),
+    Math.max(0, au.attack + strikeAtkBonus(s, atk, !ranged, assumeMoveDist)),
     du.defense + defBonusOf(s, def),
   );
   if (ranged) {
@@ -1094,9 +1097,10 @@ export function estimateRetaliation(
   if (remain <= 0) return 0;
   const du = getUnit(def.unitTypeId);
   const avg = ((du.damageMin + du.damageMax) / 2) * remain;
-  // 同上一条已知缺陷：这里也只传了加成。口径与 `estimateDamage` 保持一致，改就一起改。
+  // 同 `estimateDamage`：攻方 = 基础攻击 + 加成（这里漏的同样是 `du.attack`）。
+  // 两处口径必须一起改 —— 只改一处会让"我打你多少"和"我会挨多少"用两把尺。
   const mod = damageMultiplier(
-    Math.max(0, retaliationAtkBonus(s, def)),
+    Math.max(0, du.attack + retaliationAtkBonus(s, def)),
     getUnit(atk.unitTypeId).defense + defBonusOf(s, atk),
   );
   return Math.max(1, Math.round(avg * mod));

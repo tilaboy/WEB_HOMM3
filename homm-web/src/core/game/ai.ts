@@ -19,7 +19,7 @@ import {
   pendingObjectAt,
   previewInteraction,
 } from './interaction.js';
-import { heroPower, manaMaxOf } from './hero.js';
+import { armyValue, heroPower, manaMaxOf } from './hero.js';
 import {
   build,
   canBuildToday,
@@ -59,13 +59,72 @@ import { SCENARIO_BY_ID } from '../data/scenarios.js';
  * `banner` 紧跟在 `dwell3` 之后（§27.9 #4 / §23.4）：它只吃 1,000 金 + 5 木 5 矿，
  * 却把每周 T3 产量乘 1.5 —— 对 AI 是"花小钱把兵营变成两座"。排在市场前面
  * 不会卡资源：`aiBuild` 逐条 try，买不起就跳过继续下一条。
+ *
+ * `townhall` 提到 `workshop` **之前**（§25.4 尾，2026-10-31 B4）：城墙不再产金之后，
+ * 先花 2,000 金建工坊会让 AI 比玩家穷一截 —— 议事堂 1,500 金换 **+450/天**，
+ * 第 4 天就回本；工坊只是让攻城器械能造，没有即时收益。
+ *
+ * `dwell5` 提到 `guild*` / `wall*` **之前**（2026-10-31 B4 实测改）：城墙不产金之后
+ * 全树 40,800 金只够"一条半线"，`guild1..3`（9,500）+ 城墙（8,500）会把 `dwell5` 顶到
+ * 第 6 周之后 —— 实测 8 种子 × 60 天只有 2 局在 D53/D57 才买到第一只 T5，
+ * 而 §16.2 给四族各配了一只 T5，**AI 一辈子看不到自己的顶级兵**。
+ * 魔法线与城防属于"有余钱再补"，`dwell5` 才是 T5 的唯一入口。
+ * `workshop` 也一起排到 `dwell5` 之后：它 2,000 金，只换来"攻城器械能造"，
+ * 而 AI 在兵力不足时本来就不该去啃有墙的城（`pickTarget` 会算 `townDefenseBonus`）。
+ * 排在前面等于用 1.4 天的收入换一个中期才用得上的能力。
  */
 const BUILD_ORDER = [
-  'dwell3', 'banner', 'market', 'workshop', 'wall1', 'dwell4', 'guild1', 'townhall', 'dwell5', 'guild2', 'wall2', 'wall3', 'guild3',
+  'dwell3', 'banner', 'market', 'townhall', 'dwell4', 'dwell5', 'workshop', 'guild1', 'wall1', 'guild2', 'wall2', 'wall3', 'guild3',
 ];
 
-/** 出兵门槛：起始 20 弓手 = 200 血。aggression 越低越早出门。 */
-const BASE_COMMIT = 200;
+/**
+ * 本城"下一座"目标：`BUILD_ORDER` 里第一座**前置已满足**的未建建筑。
+ *
+ * 提出来单独一份，是因为它现在有**两个**消费者（`aiBuild` 的"不许往下跳"与
+ * `buildReserve` 的"给下一座留钱"）。两处各写一遍，某天改一处就会变成
+ * "攒钱为了 A、建造却先建 B"，两个规则互相抵消，而且查起来像随机行为。
+ */
+function nextBuildTarget(town: Town): string | null {
+  for (const id of BUILD_ORDER) {
+    if (town.buildings.includes(id)) continue;
+    const def = BUILDINGS[id];
+    if (!def) continue;
+    if (!def.requires.every((r) => town.buildings.includes(r))) continue;
+    return id;
+  }
+  return null;
+}
+
+/**
+ * 目标建筑是否**只差金币**（木/矿都够了）。
+ *
+ * 这种状态下不许往后面的便宜建筑跳：`aiBuild` 原来的写法是"逐条 try，失败就下一条"，
+ * 于是每一次"钱不够"都自动变成"买一座更便宜的侧楼"——9,000 金的 `dwell5`
+ * 永远排不到队（实测 D28 时 AI 已经建了 13 座，`dwell5` 还是没影）。
+ *
+ * 只差木/矿时**允许**往下跳：那说明瓶颈不是金币，等着也变不出来（矿场可能被怪守着），
+ * 而便宜的建筑至少能消化金币。这一条同时防住了"严格顺序死锁"。
+ */
+function shortOfGoldOnly(state: GameState, player: FactionId, id: string): boolean {
+  const bag = state.players[player]?.resources;
+  const cost = BUILDINGS[id]?.cost;
+  if (!bag || !cost) return false;
+  return (
+    (bag.gold ?? 0) < (cost.gold ?? 0) &&
+    (bag.wood ?? 0) >= (cost.wood ?? 0) &&
+    (bag.ore ?? 0) >= (cost.ore ?? 0)
+  );
+}
+
+/**
+ * 出兵门槛：**战力**，不是血量（2026-10-31 B4 换量纲）。
+ *
+ * 旧注释写"起始 20 弓手 = 200 血"；换成 `aiValue` 之后同一支部队 ≈ 660（T2 远程 33/个）。
+ * 取 400 = **约 12 个 T2**：开局那 20 个兵不够，得再攒半队才敢打有主的城/敌将。
+ * 这个形状和改前一致（改前 200 血 ≈ 开局部队的 0.9 倍，改后 400 ≈ 0.6 倍）——
+ * 改前的数字其实是**偏低**的，`aggression` 三档长期空转，这里顺手把它拉回"要攒一下"。
+ */
+const BASE_COMMIT = 400;
 
 /**
  * ★ `aggression`（= `commit`）是**两处**门槛，缺一不可（2026-09-29 实测修）。
@@ -156,8 +215,12 @@ function armyTop(army: Army): string {
 function aiBuild(state: GameState, player: FactionId, rng: () => number): void {
   for (const town of ownedTowns(state, player)) {
     if (!canBuildToday(state, town)) continue;
+    // 只差金币的目标 ⇒ 今天**只**试它，不许往后面的便宜建筑跳（见 `shortOfGoldOnly`）
+    const target = nextBuildTarget(town);
+    const saving = target ? shortOfGoldOnly(state, player, target) : false;
     let built = false;
     for (const id of BUILD_ORDER) {
+      if (saving && id !== target) continue;
       if (town.buildings.includes(id)) continue;
       const def = BUILDINGS[id];
       if (!def) continue;
@@ -167,8 +230,9 @@ function aiBuild(state: GameState, player: FactionId, rng: () => number): void {
         break;
       }
     }
-    // 主顺序里再也没有能建的了，就随机补一座（免得后期资源堆着不用）
-    if (!built && rng() < 0.3) {
+    // 主顺序里再也没有能建的了，就随机补一座（免得后期资源堆着不用）。
+    // 攒钱期间不补：那笔钱就是留给 `target` 的。
+    if (!built && !saving && rng() < 0.3) {
       const rest = Object.keys(BUILDINGS).filter((id) => !town.buildings.includes(id));
       for (const id of shuffle(rng, rest)) {
         if (build(state, town, id, player)) break;
@@ -194,6 +258,9 @@ function aiArmWarMachines(state: GameState, player: FactionId): void {
   if (!bag) return;
   const towns = ownedTowns(state, player).filter((t) => hasBuilding(t, 'workshop'));
   if (!towns.length) return;
+  // 攒钱期间不添器械：一件 500~800 金，正好是下一座建筑（`dwell5` 9,000）的零头，
+  // 而它不解决"AI 一辈子见不到 T5"的问题。`aiBuild`/`aiRecruit` 已经同口径。
+  if (buildReserve(state, player) > 0) return;
 
   for (const hero of heroesOf(state, player)) {
     for (const town of towns) {
@@ -280,14 +347,18 @@ function aiBuyRare(state: GameState, player: FactionId): void {
 /* ---------------- 2.5 驻军 → 英雄 ---------------- */
 
 /**
- * 守城要留的血量：两波兵。
+ * 守城要留的**战力**（§25.4 ④，2026-10-31 B4 换量纲；旧名 `GARRISON_KEEP_HP = 400`）。
  *
- * 取两波而不是一波，是实测调出来的：留一波（200 血）时英雄会把城搬空，
- * 主城只剩 200 血的驻军 + 城墙，被另一个 AI 一波带走 —— 8 种子 × 60 天里
+ * 1,200 是"400 血 × 值/血 ≈3"换算出来的**起点**，然后按同一把尺子重标：
+ * 判据是**丢城局数 ≤1**（8 种子 × 60 天），不是"换算对了"。
+ *
+ * 取两波而不是一波，是实测调出来的：留一波时英雄会把城搬空，
+ * 主城只剩一波驻军 + 城墙，被另一个 AI 一波带走 —— 8 种子 × 60 天里
  * 有 7 局 AI 丢掉全部城镇（原状只有 1 局），丢城之后它没有收入、没有回城点，
  * 建筑数与募兵直接归零，"不建设"反而更严重。
+ * ⇒ **不要把 1,200 往下调来"让 AI 更有攻击性"**：省下的那点兵力换的是一整座城。
  */
-const GARRISON_KEEP_HP = BASE_COMMIT * 2;
+const GARRISON_KEEP_VALUE = 1200;
 
 /**
  * 把驻军的富余兵力搬给英雄。
@@ -303,40 +374,177 @@ const GARRISON_KEEP_HP = BASE_COMMIT * 2;
  * 而同期驻军兵数增长 23~40 次——军队全长在玩家看不见的地方。
  */
 function refillFromGarrison(state: GameState, hero: Hero, town: Town): void {
-  let ghHp = garrisonStrength(town.garrison);
-  if (ghHp <= GARRISON_KEEP_HP) return;
+  let ghValue = garrisonStrength(town.garrison);
+  if (ghValue <= GARRISON_KEEP_VALUE) return;
   // 先搬高档兵：把最值钱的战力放到英雄身上，城防留低档的够用就行
   const stacks = [...town.garrison].sort(
     (a, b) => getUnit(b.unitTypeId).tier - getUnit(a.unitTypeId).tier,
   );
   let moved = 0;
   for (const st of stacks) {
-    if (ghHp <= GARRISON_KEEP_HP) break;
-    const hpEach = getUnit(st.unitTypeId).hp;
-    const spare = Math.floor((ghHp - GARRISON_KEEP_HP) / hpEach);
+    if (ghValue <= GARRISON_KEEP_VALUE) break;
+    // ⚠️ 量纲必须与 `garrisonStrength` 一致：按 `hp` 扣会把 `spare` 高估 10 倍以上
+    //    （`aiValue` 一般比 `hp` 大 1.6~2.2 倍 ⇒ 反过来会抽过头，驻军被抽到底线以下），
+    //    结果就是"AI 丢光城镇"那个老 bug 换个形式回来。
+    const valueEach = getUnit(st.unitTypeId).aiValue;
+    const spare = Math.floor((ghValue - GARRISON_KEEP_VALUE) / valueEach);
     const count = Math.min(st.count, spare);
     if (count <= 0) continue;
     const t = garrisonToHero(hero, town, st.unitTypeId, count);
     moved += t;
-    ghHp -= t * hpEach;
+    ghValue -= t * valueEach;
   }
   if (moved > 0) {
     pushLog(state, `${hero.name} 从 ${town.name} 的驻军带走了 ${moved} 名士兵（${armyTop(hero.army)}）`);
   }
 }
 
-function aiRecruit(state: GameState, player: FactionId): void {
+/**
+ * 增长池的取兵顺序：**高档优先**（§25.5，2026-10-31 B4）。
+ *
+ * `Object.keys()` 是**建造序**（dwell1 → dwell5），也就是低档在前。后果是金币不够时
+ * 钱全花在 T1–T3 上，T5（1,500 金一只）永远排不到队 —— AI 的军队"数量很多、质量很烂"。
+ * 和 `refillFromGarrison` 的 `sort` **必须同一口径**。
+ *
+ * 两处调用（`aiRecruit` 与 `runAiTurn` 的城内补兵）共用这一个函数：
+ * 各写一遍的话，某天只改一处，就等于"一处买高档、一处买低档"，净效果为零。
+ */
+function poolOrder(pool: Record<string, number>): string[] {
+  return Object.keys(pool).sort((a, b) => getUnit(b).tier - getUnit(a).tier);
+}
+
+/** 会出现在**兵种**造价里的稀有资源（`aiStockUnitRares` 与 `buildReserve` 共用一份）。 */
+const RARE_RES: TradableResource[] = ['gem', 'crystal', 'sulfur', 'mercury'];
+
+/**
+ * 给"下一座建筑"留的金币：**大头留给建筑、小头继续买兵**（2026-10-31 B4 新增）。
+ *
+ * 为什么必须有这一步：`aiRecruit` 每天都把增长池买光，金币长期停在 0~30（实测 4 局 × 60 天）。
+ * 于是 9,000 金的 `dwell5` 永远攒不到 —— **8 局 × 60 天只有 1 局在 D56 摸到 T5**，
+ * 一个五周的对局里 AI 根本不会出现 5 级兵。这不是"AI 弱"，是"T5 对 AI 不存在"：
+ * 新阵容给四族各配了一只 T5，玩家会买，AI 一辈子看不到。
+ *
+ * **比例是量出来的，不是拍的**：先取"对半分"（`gold × 0.5`），实测 8 局里
+ * `dwell5` 落在 D17~D34、`p2` 八局全落空（金币每天只涨净收入的一半，
+ * 9,000 要涨到第 6 周）。改成 `0.8` 之后四族都能在五周内建起来（见 A3 读数）。
+ * 留 20% 是**刻意**的：`aiArmWarMachines`、`aiBuyRare` 和一两队兵还要从这里面出，
+ * 全额锁死会让 AI 在攒钱那几天彻底不买兵 —— 那正是 A2 盯的失败模式。
+ *
+ * 上限 `gap`：只攒"还差多少"，攒够就停 —— 否则它会为了一座买不起的 dwell5 一直囤钱。
+ * 例外：**建得起却没建**（缺木/矿，或今天已经建过一座）时不留钱 —— 那笔钱攒着也没用。
+ */
+/** 攒钱比例：留 80% 给下一座建筑，20% 继续买兵（见 `buildReserve` 的长注释）。 */
+const BUILD_RESERVE_SHARE = 0.8;
+
+function buildReserve(state: GameState, player: FactionId): number {
+  const gold = state.players[player]?.resources.gold ?? 0;
+  if (gold <= 0) return 0;
+  // 池子里躺着 **T4/T5** 时，攒钱的目标改成"把它买下来"：
+  // · 还买不起 ⇒ 全部金币留给它（返回 `gold`，预算归零）
+  // · 买得起   ⇒ 不留钱，让 `aiRecruit` 立刻买走
+  //
+  // 只留"按比例的预算"是**不够的**：实测 19 个阵营建成了 `dwell5`，只有 3 个买到了 T5 ——
+  // 每天的预算只有 200~400 金，`floor(预算 / 1,500) = 0` 于是当天一只都不买、
+  // 转头把这点钱买成 T1（低档池天天都在产），T5 在池子里躺到下个月。
+  // 这就是 §25.5 说的"为一只 T5 抽空金币"的**反面**：连抽都抽不出来。
+  for (const town of ownedTowns(state, player)) {
+    for (const [unitTypeId, n] of Object.entries(town.growthPool ?? {})) {
+      if (n <= 0 || getUnit(unitTypeId).tier < 4) continue;
+      // ⚠️ 价格必须**把稀有资源折成金币**：`p4_wraith` 只写 `gold: 800`，
+      //    但还要 4 水晶（市场 800/个）⇒ 真价 4,000。只看 `cost.gold` 的话
+      //    "买得起"永远成立，预算每天照常放出去买 T1，T5 反而永远攒不齐。
+      const cost = getUnit(unitTypeId).cost;
+      const bag = state.players[player]?.resources;
+      const price =
+        (cost.gold ?? 0) +
+        RARE_RES.filter((r) => (cost[r] ?? 0) > 0).reduce(
+          (s, r) => s + Math.max(0, (cost[r] ?? 0) - (bag?.[r] ?? 0)) * MARKET_RATES[r].buyGold,
+          0,
+        );
+      return gold >= price ? 0 : gold;
+    }
+  }
+  let gap = 0;
+  // 目标如果是**高级兵营**（dwell4 / dwell5），而且部队已经够打一场：
+  // 全额攒钱，连那 20% 也不买。理由：这两座是 5,000 / 9,000 的整笔支出，
+  // 按 80% 攒要 10 天以上，而五周一局只剩三周；有兵在身时"多买两个 T1"
+  // 远不如"早四天有 T5"。部队不够时仍按 80% 走（A2 盯的就是这个）。
+  const army = heroesOf(state, player).reduce((s, h) => s + armyValue(h.army), 0);
+  const rush = army >= BASE_COMMIT * 2.5;
+  for (const town of ownedTowns(state, player)) {
+    const id = nextBuildTarget(town);
+    if (!id) continue; // 这座城已经建完了，不用给它留钱
+    const need = (BUILDINGS[id].cost.gold ?? 0) - gold;
+    if (need <= 0) return 0; // 建得起 ⇒ 今天不用攒，交给 `aiBuild`
+    gap = gap === 0 ? need : Math.min(gap, need);
+    if (rush && (id === 'dwell4' || id === 'dwell5')) return gold;
+  }
+  return Math.min(gap, Math.floor(gold * BUILD_RESERVE_SHARE));
+}
+
+/**
+ * 给**增长池里的兵**补稀有资源（2026-10-31 B4 新增）。
+ *
+ * 兵种造价里也吃稀有资源：吸血鬼 `crystal 1`、摄魂怪 `crystal 4`、绿龙 `sulfur` 等。
+ * `aiBuyRare` 只按**建筑**的造价补货，于是这些兵会永远躺在池子里 ——
+ * 实测（seed 10104 / p4）：摄魂怪在池子里等了 20+ 天，金币 2,471 也买不动，
+ * 因为缺 4 水晶；同一个池子里的牛头怪（只吃矿）天天被买走。
+ * 后果不是"AI 弱"，是**AI 永远没有 5 级兵**：19 个建成了 `dwell5` 的阵营里只有 3 个买到了 T5。
+ *
+ * 只补"够买一只"的量，且手里至少留 2 份的钱 —— 稀有资源 800 金/个，
+ * 4 个水晶就是 3,200 金，比兵本身还贵，不能无脑囤。
+ */
+function aiStockUnitRares(state: GameState, player: FactionId): void {
+  const bag = state.players[player]?.resources;
+  if (!bag) return;
+  const towns = ownedTowns(state, player);
+  if (!towns.some((t) => t.buildings.includes('market'))) return;
+
+  for (const town of towns) {
+    for (const unitTypeId of poolOrder(town.growthPool)) {
+      if ((town.growthPool[unitTypeId] ?? 0) <= 0) continue;
+      const cost = getUnit(unitTypeId).cost;
+      for (const res of RARE_RES) {
+        const need = cost[res] ?? 0;
+        if (!need) continue;
+        let guard = 0;
+        while (
+          (bag[res] ?? 0) < need &&
+          (bag.gold ?? 0) >= MARKET_RATES[res].buyGold * 2 &&
+          guard++ < 8
+        ) {
+          if (!marketBuy(state, res, player)) break;
+        }
+      }
+    }
+  }
+}
+
+/** 本回合买兵可用的金币：`{ left }` 逐笔扣减，**一处买兵、两处共用**。 */
+type GoldBudget = { left: number };
+
+function recruitBudget(state: GameState, player: FactionId): GoldBudget {
+  const gold = state.players[player]?.resources.gold ?? 0;
+  return { left: Math.max(0, gold - buildReserve(state, player)) };
+}
+
+function aiRecruit(state: GameState, player: FactionId, budget: GoldBudget): void {
   const heroes = heroesOf(state, player);
   for (const town of ownedTowns(state, player)) {
     const inTown = heroes.find((h) => h.pos.x === town.pos.x && h.pos.y === town.pos.y) ?? null;
-    for (const unitTypeId of Object.keys(town.growthPool)) {
+    for (const unitTypeId of poolOrder(town.growthPool)) {
+      const goldEach = getUnit(unitTypeId).cost.gold ?? 0;
       let guard = 0;
       while ((town.growthPool[unitTypeId] ?? 0) > 0 && guard++ < 40) {
         const left = town.growthPool[unitTypeId] ?? 0;
+        // 预算不够就整批跳过（不去"能买几个买几个"——那样高档兵永远轮不到）
+        const ask = goldEach > 0 ? Math.min(left, Math.floor(budget.left / goldEach)) : left;
+        if (ask <= 0) break;
         const res = inTown
-          ? recruitToHero(state, town, inTown, unitTypeId, left)
-          : recruitToGarrison(state, town, unitTypeId, left);
+          ? recruitToHero(state, town, inTown, unitTypeId, ask)
+          : recruitToGarrison(state, town, unitTypeId, ask);
         if (res.taken <= 0) break;
+        budget.left -= res.taken * goldEach;
       }
     }
   }
@@ -418,8 +626,10 @@ function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate 
       // ★ 出击门槛（`aggression`）：打**有主**的城算开战，兵力不到 `commit` 就不进候选表。
       //   中立城不算（那是扩张，不是开战），否则轻松档 AI 连发育都不会。
       if (town.owner !== 'neutral' && power < commit) continue;
-      const need = garrisonStrength(town.garrison) + townDefenseBonus(town) * 12;
-      const odds = power / Math.max(60, need * 1.15);
+      // 城防折成"战力"：`townDefenseBonus × 24`（B4 前是 ×12，量纲从血换战力后同步翻倍）。
+      // 分母地板 `max(120, …)` 同理 —— 空城也要有守卫成本，否则任何一支小队都算"稳赢"。
+      const need = garrisonStrength(town.garrison) + townDefenseBonus(town) * 24;
+      const odds = power / Math.max(120, need * 1.15);
       if (odds < 0.85) continue; // 打不过就别去
       const value = town.owner === 'neutral' ? 620 : 760;
       candidates.push({
@@ -493,7 +703,7 @@ function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate 
     if (!isFinite(cost) || cost <= 0) continue;
     // ★ 同上：打敌方英雄是最纯粹的"出击"，同样受 `commit` 门槛约束。
     if (power < commit) continue;
-    const odds = power / Math.max(60, heroPower(foe));
+    const odds = power / Math.max(120, heroPower(foe));
     if (odds < 1.15) continue;
     candidates.push({ pos: foe.pos, kind: 'monster', score: 820 * Math.min(1.5, odds) - cost * 0.05 });
   }
@@ -539,23 +749,36 @@ function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate 
   // 回城补给：家里攒着兵、家里有富余驻军、或部队打残了就回家。
   //
   // 为什么"驻军富余"也要算成回城的理由：`aiRecruit` 每天在英雄行动**之前**
-  // 就把增长池抽干送进驻军，所以轮到 pickTarget 做决定时 pool 恒为 0 ——
+  // 就把增长池抽干送进驻军，所以轮到 pickTarget 做决定时池子基本是空的 ——
   // 唯一那个"家里有兵"的信号被自己抹掉了，英雄于是永远不回家，
-  // 驻军囤到 2000+ 血也没人带走（实测：去掉这一条，36 局里英雄补兵次数从 2.8 掉到 1.7）。
+  // 驻军囤到 2000+ 战力也没人带走（实测：去掉这一条，36 局里英雄补兵次数从 2.8 掉到 1.7）。
   // 加上它之后闭环才成立：回家 → 带走富余驻军 → 再出门。
+  //
+  // ⚠️ **`poolValue` 不是 `pool`**（§25.5，2026-10-31 B4）：买兵改成高档优先之后，
+  // 金币不够时 T1 池会一直躺着 ⇒ `pool > 0` 恒真 ⇒ 每一回合都多出一个回城候选，
+  // AI 被自己拖在家里。判据必须是"池子里的兵**值一次出征**"：
+  // `BASE_COMMIT × 0.5`（写成公式，不写死 200 —— 它跟着 `BASE_COMMIT` 缩放）。
   const homes = ownedTowns(state, player);
-  const pool = homes.reduce((s, t) => s + Object.values(t.growthPool).reduce((a, b) => a + b, 0), 0);
+  const poolValue = homes.reduce(
+    (s, t) =>
+      s +
+      Object.entries(t.growthPool).reduce(
+        (a, [id, n]) => a + (n > 0 ? n * getUnit(id).aiValue : 0),
+        0,
+      ),
+    0,
+  );
   const surplus = homes.reduce(
-    (s, t) => s + Math.max(0, garrisonStrength(t.garrison) - GARRISON_KEEP_HP),
+    (s, t) => s + Math.max(0, garrisonStrength(t.garrison) - GARRISON_KEEP_VALUE),
     0,
   );
   const wounded = power < commit * 0.6;
-  if (pool > 0 || surplus > 0 || wounded) {
+  if (poolValue >= BASE_COMMIT * 0.5 || surplus > 0 || wounded) {
     for (const town of homes) {
       const cost = costAt(town.pos);
       if (!isFinite(cost) || cost <= 0) continue; // 到不了 / 已经在家
       const pull =
-        Math.min(120, pool * 22) + (surplus > 0 ? Math.min(300, surplus * 0.4) : 0) + (wounded ? 400 : 0);
+        Math.min(120, poolValue * 0.5) + (surplus > 0 ? Math.min(300, surplus * 0.4) : 0) + (wounded ? 400 : 0);
       candidates.push({ pos: town.pos, kind: 'home', score: pull - cost * 0.03 });
     }
   }
@@ -778,7 +1001,7 @@ function foeNameOf(obj: MapObject): string {
 
 /** AI 主动打敌方英雄：无头结算，结果写回世界。 */
 function aiFightHero(state: GameState, attacker: Hero, defender: Hero): void {
-  const odds = heroPower(attacker) / Math.max(60, heroPower(defender));
+  const odds = heroPower(attacker) / Math.max(120, heroPower(defender));
   if (odds < 1.05) return; // 打不赢就绕开，等下次
   const setup = heroBattleSetup(state, attacker.id, defender.id);
   if (!setup) return;
@@ -889,8 +1112,12 @@ export function runAiTurn(state: GameState, player: FactionId): void {
   aiBuild(state, player, rng);
   aiTrade(state, player);
   aiBuild(state, player, rng);
+  // 先补"池里那只兵缺的稀有资源"，再算募兵预算：顺序反了就会用旧金币数算预算
+  aiStockUnitRares(state, player);
   aiArmWarMachines(state, player);
-  aiRecruit(state, player);
+  // 一份预算贯穿"募兵"与"城内补兵"两处：只卡一处等于没卡
+  const budget = recruitBudget(state, player);
+  aiRecruit(state, player, budget);
 
   for (const hero of heroesOf(state, player)) {
     if (state.status !== 'playing') break;
@@ -903,8 +1130,18 @@ export function runAiTurn(state: GameState, player: FactionId): void {
     const town = ownedTowns(state, player).find((t) => t.pos.x === hero.pos.x && t.pos.y === hero.pos.y);
     if (town) {
       if (guildLevel(town) > 0) teachGuildSpells(state, hero, town);
-      for (const unitTypeId of Object.keys(town.growthPool)) {
-        recruitToHero(state, town, hero, unitTypeId, town.growthPool[unitTypeId] ?? 0);
+      // ⚠️ **必须走同一份预算**。这里原来是无条件把增长池的剩余买空：
+      //    `aiRecruit` 刚按预算买过一轮，剩下的刚好是"预算买不起"的那部分，
+      //    这一段再买就等于把留给下一座建筑的钱花掉 —— 实测 p3 拿着 3,500 金
+      //    卡在 12 座建筑 26 天，`dwell5` 一次都没动工。
+      for (const unitTypeId of poolOrder(town.growthPool)) {
+        const left = town.growthPool[unitTypeId] ?? 0;
+        if (left <= 0) continue;
+        const goldEach = getUnit(unitTypeId).cost.gold ?? 0;
+        const ask = goldEach > 0 ? Math.min(left, Math.floor(budget.left / goldEach)) : left;
+        if (ask <= 0) continue;
+        const got = recruitToHero(state, town, hero, unitTypeId, ask).taken;
+        budget.left -= got * goldEach;
       }
       // 增长池通常已被当天的 aiRecruit 抽干送进驻军，这里把驻军的富余兵力搬回英雄身上
       refillFromGarrison(state, hero, town);
