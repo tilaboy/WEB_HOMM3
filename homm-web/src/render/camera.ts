@@ -1,8 +1,15 @@
 import type { GridPos } from '../core/types.js';
 import { TILE, gridCenter, gridToWorld, worldToGrid } from './ortho.js';
 
-/** 允许的缩放档位。整数/半整数保证像素放大后不出现锯齿不均。 */
-const STEPS = [0.75, 1, 1.5, 2, 3];
+/**
+ * 允许的缩放档位：**0.5 / 1 / 2**（决策 8）。
+ *
+ * 只保留"整数或整数分之一"这三档：地图格 32 世界 px 在 1× 下正好 32 屏 px、
+ * 0.5× 下 16、2× 下 64，源像素块边长恒为整数，最近邻放大不会出现 1/2px 交替。
+ * 旧表 `[0.75, 1, 1.5, 2, 3]` 里 0.75 / 1.5 / 3 是 1.5 倍关系，加上默认值 1.2
+ * **不在表里**，第一次双指缩放会直接跳档（放大到 1.5、缩到 1.0），手感上也像"卡一下"。
+ */
+const STEPS = [0.5, 1, 2];
 
 /** 缩放动画时间常数（ms）：越小越跟手，越大越"滑"。 */
 const ZOOM_TAU = 90;
@@ -28,20 +35,21 @@ export class Camera {
   x = 0;
   y = 0;
   /**
-   * 初始缩放 **1.2**（2026-10-21 主理人拍板；旧值 2，中间试过 1.5）。
+   * 初始缩放 **1.0**（2026-10-31 E1 批；旧值 1.2，更早试过 2 与 1.5）。
    *
-   * 真机实测（OPPO PMA110 · 792×360 CSS）：城堡宽 ~90、高 96 世界 px，按比例外推
-   *   zoom 2.0 ⇒ 占屏宽 22.9% / 占屏高 53%（地图只剩一条，城堡像贴脸）；
-   *   zoom 1.4 ⇒ 16.0% / 37%；
-   *   **zoom 1.2 ⇒ 约 13.7% / 32%**，一格 38.4px，横向能看到 ~20 格 —— 一眼看清半张图。
-   * 代价（已知并接受）：1.2 不是整数倍，最近邻放大后像素宽窄不均（1.25/1.5 才整齐）；
-   * 若观感上"格子发虚"，最省事的收敛点是 1.25。`?devzoom=` 仍可逐档覆盖。
+   * 为什么放弃 1.2（真机实测，OPPO PMA110 · 792×360 CSS）：
+   *   1.2 不是整数倍，最近邻放大后同一张图上的源像素宽度在 1 与 2 屏 px 之间跳，
+   *   格线 / 道路边缘时粗时细 —— 这就是"地图糊"的两个来源之一（另一个是画布不整除）；
+   *   1.2 还**不在 STEPS 里**，第一次双指缩放必然跳档。
+   * 1.0 的代价：横向可见格从 22 涨到 26.4、城堡占屏高从 28% 降到 23%，
+   * 读起来"退远了一档"，但每个像素都是 1:1。
+   * `?devzoom=1.2` 仍然可用（`setZoom()` 只钳制不取档），供旧基线对账。
    */
-  zoom = 1.2;
+  zoom = 1;
   /** 缩放动画的目标值；无动画时与 zoom 相等。 */
-  targetZoom = 1.2;
-  minZoom = 0.75;
-  maxZoom = 3;
+  targetZoom = 1;
+  minZoom = 0.5;
+  maxZoom = 2;
 
   /** 惯性速度（屏幕 px/s）。拖拽中由 trackFling 更新，松手后自行衰减。 */
   vx = 0;
@@ -107,9 +115,14 @@ export class Camera {
     this.zooming = true;
   }
 
-  /** 立即设定缩放（调试入口等），跳过动画。 */
-  setZoom(z: number): void {
-    this.zoom = Math.min(this.maxZoom, Math.max(this.minZoom, z));
+  /**
+   * 立即设定缩放（调试入口等），跳过动画。
+   * `force` = 不钳到 `[minZoom, maxZoom]`：**只给 `?devzoom=` 用** ——
+   * 探针里有 `?devzoom=2.4`（把路径交界挤出画面）与 `?devzoom=0.55`（一屏塞下 20 步），
+   * 这两个值本来就在三档之外，钳了会让探针**静默换成另一档**（画面变了，判据还以为在量原口径）。
+   */
+  setZoom(z: number, force = false): void {
+    this.zoom = force ? z : Math.min(this.maxZoom, Math.max(this.minZoom, z));
     this.targetZoom = this.zoom;
     this.zooming = false;
     this.clamp();

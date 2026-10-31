@@ -6,7 +6,7 @@
  */
 import type { BattleState, BattleUnit } from '../core/combat/battle.js';
 import { getUnit } from '../core/data/units.js';
-import { FIELD_H, FIELD_W, HEX_STEP_Y, hexCenter, hexKey, type Hex } from '../core/combat/hex.js';
+import { FIELD_H, FIELD_PX_H, FIELD_PX_W, FIELD_W, HEX_STEP_Y, hexCenter, hexKey, type Hex } from '../core/combat/hex.js';
 import { MOAT_COL, WALL_COL, type SiegeStructure } from '../core/combat/siege.js';
 import { hash2 } from './pixel.js';
 import { getCombatAtlas } from './combatAtlas.js';
@@ -16,8 +16,14 @@ import { unitCombatFrame } from './unitFrames.js';
 
 const PAD = 6;
 export { PAD };
-export const BASE_W = 591 + PAD * 2;
-export const BASE_H = 376 + PAD * 2;
+/**
+ * 战场离屏画布 = **几何战场 + 四周 PAD**。
+ * 2026-10-31 E1：R 22→17.5 后战场从 591×376 收到 469.8×297.5，这里跟着收到 482×310。
+ * **不要再写死数字** —— 写死的那一版在缩格后会多出 120px 空白，
+ * 而 `fit()` 是"按画布宽高填满容器"的，多出来的空白会直接变成黑边。
+ */
+export const BASE_W = Math.round(FIELD_PX_W) + PAD * 2;
+export const BASE_H = Math.round(FIELD_PX_H) + PAD * 2;
 
 /**
  * 城墙的厚度与段高（世界 px）。
@@ -137,8 +143,15 @@ export class BattleRenderer {
     this.scale = s;
     this.canvas.width = Math.round(BASE_W * s * dpr);
     this.canvas.height = Math.round(BASE_H * s * dpr);
-    this.canvas.style.width = `${Math.round(BASE_W * s)}px`;
-    this.canvas.style.height = `${Math.round(BASE_H * s)}px`;
+    /**
+     * CSS 尺寸**由 backing store 反算**，不许两边各自 `Math.round`。
+     *
+     * 两边各自取整时，只有 `round(W·s·dpr) == dpr·round(W·s)` 才碰巧对齐；
+     * 旧 BASE_W=603 在 s=0.5 / 1.5 两档比值差 3‰ / 1‰ ⇒ 浏览器把整屏重采样一遍，
+     * 比 1.2 的非整数缩放还糊（§13.1 第 2 条，这是本次 E1 顺带修掉的真 bug）。
+     */
+    this.canvas.style.width = `${this.canvas.width / dpr}px`;
+    this.canvas.style.height = `${this.canvas.height / dpr}px`;
     this.ctx.imageSmoothingEnabled = false;
   }
 

@@ -114,7 +114,10 @@ const tap = await (async () => {
   const units = await evaluate(`((window.__battleScene || {}).units || []).map((u) => ({ id: u.id, side: u.side, fx: u.fx, fy: u.fy }))`);
   if (!units.length) return { err: '__battleScene 没有单位（devprobe 没生效？）' };
   const box = await evaluate(`(() => { const cv = document.querySelector('.bt-canvas'); const b = cv.getBoundingClientRect(); return { l: b.left, t: b.top, w: b.width, h: b.height }; })()`);
-  const BASE_W = 603, BASE_H = 388, PAD = 6;
+  // 场坐标 → 屏幕坐标：**读渲染器给的 BASE 尺寸**，不许写死（E1 缩格后 603/388 已过期）
+  const base = await evaluate(`(() => { const s = window.__battleScene || {}; return { w: s.baseW, h: s.baseH, pad: s.pad }; })()`);
+  if (!base || !base.w) return { err: '__battleScene 没给出 baseW/baseH/pad（构建过期？）' };
+  const BASE_W = base.w, BASE_H = base.h, PAD = base.pad;
   // 先试**我方**：点自己人永远不会起动画（`playerMove/playerAttack` 都排除在外），
   // 所以这一串点击不会把 `busy()` 打开、也就不会把后面的点击都吃掉。
   const order = [...units].sort((a, b) => a.side - b.side);

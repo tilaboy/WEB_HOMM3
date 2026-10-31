@@ -1,9 +1,9 @@
 # TP-8② 手机表情可读 · 素材清单
 dist: /Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist
-指纹: {"dir":"/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist","md5":"b81b5dd3084d1b1d9a4c34d7f40e00da","sha256":"3459e26c515a8bb8","mtime":"2026-10-31T11:36:39.848Z","files":["main.js","style.css","index.html"]}
+指纹: {"dir":"/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist","md5":"b81b5dd3084d1b1d9a4c34d7f40e00da","sha256":"3459e26c515a8bb8","mtime":"2026-10-31T14:42:05.221Z","files":["main.js","style.css","index.html"]}
 seed: 20261020   rounds: 3
-口径: 792×320 CSS @ dpr3 · 战场 BASE 603×388（BattleRenderer.ts:18-19）
-      s = 0.8247（缩放）· k = 2.4742 设备像素/美术像素
+口径: 792×320 CSS @ dpr3 · 战场 BASE 482×310（BattleRenderer.ts:18-19）
+      s = 1.0000（缩放）· k = 3.0000 设备像素/美术像素
 底景: L=208（与 ① 同）· 格 52×42 · 间距 8
 帧数: 20 个 cu_ idle（中立怪 wolf/boar/ogre 不进人类闸，H3 对兽类是另一条）
 通道: h3 13 · glow 6 · profile 1
@@ -35,11 +35,11 @@ files:
   [PASS] Eye 每只眼都是 2×2（间距 ≥1，不粘成一条） 20/20
   [PASS] Mouth 嘴线：1~2 行高、3~14 宽、在眼下 1~8 行（h3 恒有 / glow 仅声明帧 / profile 无） 13 个 h3 帧 · 0 红
   [PASS] Contr 最小 ΔE76 ≥ 20 最低 22.2 · 次低 28.2 · 中位 65.5
-  [PASS] Phone 眼块在设备像素里仍 ≥2×2（没被采样掉一行/一列） 最小 4×5 设备px（≈1.65 CSS px）
+  [PASS] Phone 眼块在设备像素里仍 ≥2×2（没被采样掉一行/一列） 最小 6×6 设备px（≈2.00 CSS px）
   [PASS] Mat 3 轮素材都生成了（设备像素 + CSS 像素两版） tp8-expr-E-r1.png / tp8-expr-Ecss-r1.png / tp8-expr-E-r2.png / tp8-expr-Ecss-r2.png / tp8-expr-E-r3.png / tp8-expr-Ecss-r3.png
 
 协议口径:
-  E   = 设备像素：按 k=2.474 最近邻放大 ⇒ 与手机上看到的物理像素一一对应（评分用这张）。
-  Ecss= CSS 像素：按 s=0.825 降采样 ⇒ 布局实际给的尺寸（**只作参照**，用来解释
+  E   = 设备像素：按 k=3.000 最近邻放大 ⇒ 与手机上看到的物理像素一一对应（评分用这张）。
+  Ecss= CSS 像素：按 s=1.000 降采样 ⇒ 布局实际给的尺寸（**只作参照**，用来解释
         "为什么设备像素够大、但玩家还是可能看不清"——两者差 dpr 倍）。
   脸窗 = 左眼左上 (-5,-4) 到 右眼/嘴 右侧 (+6/+2)、下 (+4)，裁自 cu_* idle 帧，不含全身。

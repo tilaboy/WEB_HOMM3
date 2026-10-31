@@ -158,14 +158,23 @@ export function stepToward(from: Hex, to: Hex, passable: (h: Hex) => boolean): H
 
 /* ---------------- 像素几何 ---------------- */
 
-/** 六边形外接圆半径（= 尖角到中心的距离）。 */
-export const HEX_SIZE = 22;
-/** 单格精灵尺寸：宽度取 40 是为了把左右两个尖角完整装进去（略大于 √3×22≈38.1）。 */
-export const HEX_SPRITE_W = 40;
-export const HEX_SPRITE_H = 46;
-/** 相邻格中心间距：横向 √3×size≈38，纵向 1.5×size=33。 */
-export const HEX_STEP_X = 38;
-export const HEX_STEP_Y = 33;
+/**
+ * 六边形外接圆半径（= 尖角到中心的距离）。
+ *
+ * **R = 17.5**（2026-10-31 E1 批；原 22）。15×11 的格数不变，只把格子缩小：
+ * 战场从 591×376 收到 **469.8×297.5**，正好塞进 792×320 矮机的 486×342 战斗窗，
+ * 且 1:1 不缩放（缩放才是"糊"的主因，见 §13）。
+ *
+ * 单位帧（`cu_*` 64×56）**不缩**：脚底仍落格心，于是单位会溢出约 1.6 格 ——
+ * 这是 HoMM3 的观感（单位比格子大），不是 bug。
+ */
+export const HEX_SIZE = 17.5;
+/** 单格精灵盒：缩格后不再额外留白（宽 √3R = 30.3、高 2R = 35）。 */
+export const HEX_SPRITE_W = 30.3;
+export const HEX_SPRITE_H = 35;
+/** 相邻格中心间距：横向 √3×R = 30.31，纵向 1.5×R = 26.25。 */
+export const HEX_STEP_X = 30.31;
+export const HEX_STEP_Y = 26.25;
 
 /** 格子中心在战场位图中的坐标。 */
 export function hexCenter(h: Hex): { x: number; y: number } {

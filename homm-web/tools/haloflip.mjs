@@ -154,6 +154,11 @@ try {
     await send('Page.addScriptToEvaluateOnNewDocument', {
       source:
         `(() => { const t0 = performance.now(); try { performance.now = () => t0; } catch (e) {}` +
+        /* ★ 钉住画质档位（2026-10-31 E1 实测）：`quality.ts` 会在运行时按实测帧率**改档**
+         *   （`classifySamples`），而本机在被别的 headless Chrome / 编译任务占满时，
+         *   四次导航可能落在不同档位 ⇒ 两臂差出 **1000+ 块**的"噪声"，把信号淹掉
+         *   （实测一次 `floor=1130 / signal=1534` ⇒ 假红）。同一场景必须同档才可比。 */
+        ` try { localStorage.setItem('homm.tierMode', 'high'); } catch (e) {}` +
         ` const add = () => { const s = document.createElement('style'); s.textContent = '#hint{display:none !important}';` +
         ` (document.head || document.documentElement).appendChild(s); };` +
         ` if (document.head) add(); else document.addEventListener('DOMContentLoaded', add); })();`,
@@ -192,6 +197,22 @@ try {
       const K = 10;            // 信号 / 本底 的倍数下限（实测 ≥24×）
       const floor = diffBlocks(A, A2);
       const ab = diffBlocks(A, B), ac = diffBlocks(A, C);
+      if (process.env.HALO_MAP) {
+        const show = (x, y, tag) => {
+          console.log(`--- ${tag} ---`);
+          for (let by = 0; by < x.bh; by++) {
+            let s = '';
+            for (let bx = 0; bx < x.bw; bx += 2) {
+              let n = 0;
+              for (let k = 0; k < 2 && bx + k < x.bw; k++) if (x.blocks[by * x.bw + bx + k] !== y.blocks[by * x.bw + bx + k]) n++;
+              s += n === 2 ? '#' : n === 1 ? '+' : ' ';
+            }
+            console.log(s);
+          }
+        };
+        show(A, A2, 'noise A vs A2');
+        show(A, C, 'on vs off');
+      }
       console.log(`--- 逐块差（单位=块，分母=${A.bw * A.bh}）： 本底(default vs default#2) → ${floor}； default vs =1 → ${ab}； default vs =0 → ${ac}`);
       const sound = Math.max(K * floor, SIGNAL_MIN);
       console.log(`    判据： ① 须 ≤ ${floor} + ${NOISE_MARGIN} = ${floor + NOISE_MARGIN}； ② 须 ≥ max(${K}×${floor}, ${SIGNAL_MIN}) = ${sound}`);

@@ -150,7 +150,20 @@ try {
     const units = await evaluate(`((window.__battleScene || {}).units || []).map((u) => ({ id: u.id, side: u.side, fx: u.fx, fy: u.fy, name: u.name }))`);
     PASS(units.length > 0, `[触屏] 渲染器给出了当帧单位真值（${units.length} 支）`);
     const box = await evaluate(`(() => { const cv = document.querySelector('.bt-canvas'); const b = cv.getBoundingClientRect(); return { l: b.left, t: b.top, w: b.width, h: b.height }; })()`);
-    const BASE_W = 603, BASE_H = 388, PAD = 6; // = BattleRenderer 的 BASE_W/BASE_H/PAD
+    /**
+     * 场坐标 → 屏幕坐标的**唯一正确口径**：读 `__battleScene.baseW/baseH/pad`
+     * （= `BattleRenderer` 的 `BASE_W/BASE_H/PAD`，`hexCenter` 就在这个空间里）。
+     *
+     * ⚠️ 这里曾经写死 `603/388`，E1 缩格（战场 591×376 → 469.8×297.5）后没有跟着改，
+     * 于是点击点整体偏出格子、**点自己人碰巧还中（三栈都在左侧同一带）、点敌方就全落空**，
+     * 报成"点敌方不弹牌"——看着像功能回归，实际是尺子过期。别再写死。
+     */
+    const base = await evaluate(`(() => { const s = window.__battleScene || {}; return { w: s.baseW, h: s.baseH, pad: s.pad }; })()`);
+    if (!base || !base.w) {
+      console.log('[触屏] ✗ `__battleScene` 没给出 baseW/baseH/pad ⇒ 点击口径无从计算（构建过期？）');
+      process.exit(2);
+    }
+    const BASE_W = base.w, BASE_H = base.h, PAD = base.pad;
     const tapUnit = async (u) => {
       const x = box.l + (u.fx + PAD) * (box.w / BASE_W);
       const y = box.t + (u.fy + PAD) * (box.h / BASE_H);

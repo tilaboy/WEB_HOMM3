@@ -127,13 +127,15 @@ export class CombatAtlas {
       frames.set(name, shelf.place(name, pb, ax, ay));
     };
 
-    for (let v = 0; v < 4; v++) put(`cf_${v}`, hexFloor(v), -20, -23);
-    put('chi_move', hexOverlay('#4a86d8', 0.34, '#9fd0ff', '#dff0ff'), -20, -23);
-    put('chi_atk', hexOverlay('#c0392b', 0.36, '#ff8f7a', '#ffd9cf'), -20, -23);
-    put('chi_sel', hexOverlay('#e8be5a', 0.18, '#ffdf8a', '#fff3c8'), -20, -23);
-    put('chi_hover', hexOverlay('#ffffff', 0.1, '#ffffff', '#ffffff'), -20, -23);
+    // 地砖锚点 = 格心在像素盒里的位置取负；与 HW/HH/HEX_CX/HEX_CY 同源，
+    // 换格尺寸时不许只改一边（否则地砖整体相对单位偏移）。
+    for (let v = 0; v < 4; v++) put(`cf_${v}`, hexFloor(v), -HEX_CX, -HEX_CY);
+    put('chi_move', hexOverlay('#4a86d8', 0.34, '#9fd0ff', '#dff0ff'), -HEX_CX, -HEX_CY);
+    put('chi_atk', hexOverlay('#c0392b', 0.36, '#ff8f7a', '#ffd9cf'), -HEX_CX, -HEX_CY);
+    put('chi_sel', hexOverlay('#e8be5a', 0.18, '#ffdf8a', '#fff3c8'), -HEX_CX, -HEX_CY);
+    put('chi_hover', hexOverlay('#ffffff', 0.1, '#ffffff', '#ffffff'), -HEX_CX, -HEX_CY);
     // 施法目标：紫色，和移动蓝/攻击红区分开
-    put('chi_spell', hexOverlay('#8e44ad', 0.34, '#d7a6ef', '#f0d9ff'), -20, -23);
+    put('chi_spell', hexOverlay('#8e44ad', 0.34, '#d7a6ef', '#f0d9ff'), -HEX_CX, -HEX_CY);
 
     put('cbase_0', teamRing('#2f6fbf', '#9fd0ff'), -20, -8);
     put('cbase_1', teamRing('#a8322a', '#ff9b8c'), -20, -8);
@@ -170,16 +172,36 @@ export function getCombatAtlas(): CombatAtlas {
 
 /* ---------------- hex ---------------- */
 
-const HW = 40;
-const HH = 46;
-const HEX_PTS: [number, number][] = [
-  [20, 1],
-  [39, 12],
-  [39, 34],
-  [20, 45],
-  [1, 34],
-  [1, 12],
-];
+/**
+ * 格精灵像素盒 **31×36**：几何是 30.3×35（`hex.ts` 的 `HEX_SPRITE_W/H`），
+ * 像素缓冲必须取整，所以四周各多留半像素。中心固定在 (15.15, 17.5)，
+ * 因此 `put(...)` 的锚点是 **−15.15 / −17.5** —— 换格尺寸时**这两处一起改**，
+ * 只改一处会让整片地砖相对单位平移（表现为单位浮在格缝上）。
+ *
+ * 2026-10-31 E1：R 22 → 17.5，盒从 40×46 收到 31×36。旧盒是给 R=22 的尖角留白的，
+ * 缩格后不留白；再留白会在 30px 格上读成一圈黑边。
+ */
+const HW = 31;
+const HH = 36;
+/** 格心在像素盒里的位置（= `HEX_SPRITE_W/2, HEX_SPRITE_H/2`）。 */
+const HEX_CX = 15.15;
+const HEX_CY = 17.5;
+
+/** 以 (cx,cy) 为心、外接圆 r 的尖顶六边形顶点；`inset` 用于内圈描边。 */
+function hexPts(cx: number, cy: number, r: number, inset = 0): [number, number][] {
+  const h = r - inset;
+  const w = (Math.sqrt(3) / 2) * h;
+  return [
+    [cx, cy - h],
+    [cx + w, cy - h / 2],
+    [cx + w, cy + h / 2],
+    [cx, cy + h],
+    [cx - w, cy + h / 2],
+    [cx - w, cy - h / 2],
+  ];
+}
+
+const HEX_PTS = hexPts(HEX_CX, HEX_CY, 17.5);
 
 function strokePoly(pb: PixBuf, pts: [number, number][], color: string): void {
   for (let i = 0; i < pts.length; i++) {
@@ -204,9 +226,10 @@ function hexFloor(variant: number): PixBuf {
       else if (n > 0.9) pb.set(x, y, shade(base, 0.18));
     }
   }
+  // 碎石：位置按新盒收（旧值 34/38 是按 40×46 算的，照搬会全落到格角外）
   for (let i = 0; i < 10; i++) {
-    const x = 3 + Math.floor(hash2(i, 3, seed) * 34);
-    const y = 4 + Math.floor(hash2(i, 5, seed) * 38);
+    const x = 2 + Math.floor(hash2(i, 3, seed) * 27);
+    const y = 3 + Math.floor(hash2(i, 5, seed) * 30);
     if (pb.alphaAt(x, y) > 200) {
       pb.set(x, y, shade(base, -0.3));
       pb.set(x, y - 1, shade(base, 0.25));
@@ -214,18 +237,7 @@ function hexFloor(variant: number): PixBuf {
   }
   // 内侧描一圈暗边，格子之间才有"格子感"（要足够深，否则绿底上一片糊）
   strokePoly(pb, HEX_PTS, '#16260f');
-  strokePoly(
-    pb,
-    [
-      [20, 2],
-      [38, 12],
-      [38, 34],
-      [20, 44],
-      [2, 34],
-      [2, 12],
-    ],
-    shade(base, 0.22),
-  );
+  strokePoly(pb, hexPts(HEX_CX, HEX_CY, 17.5, 1.2), shade(base, 0.22));
   return pb;
 }
 
@@ -233,15 +245,7 @@ function hexOverlay(fill: string, alpha: number, ring: string, inner: string): P
   const pb = new PixBuf(HW, HH);
   pb.poly(HEX_PTS, fill, alpha);
   strokePoly(pb, HEX_PTS, ring);
-  const inset: [number, number][] = [
-    [20, 3],
-    [37, 13],
-    [37, 33],
-    [20, 43],
-    [3, 33],
-    [3, 13],
-  ];
-  strokePoly(pb, inset, inner);
+  strokePoly(pb, hexPts(HEX_CX, HEX_CY, 17.5, 2), inner);
   return pb;
 }
 

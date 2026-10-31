@@ -59,8 +59,9 @@
 | `probe:d2` | 同上 `--gate=d2` | 门 | ✓ | ✓ | ✓ `requireFile` | — | 反击全额（首击→反击 ≥60%）+ 贴脸 40~80% + 整军攻方 5~98%（**区间只判"有没有一侧被结构性剥夺"**，平衡读数见文件内置顶注释） |
 | `probe:exchange` | `probes/exchange.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | 会面交换 25 条（U1）。`=full` 场景的总量从场景自身求和，不写死 |
 | `probe:frames` | `probes/frames.mjs` | 门 | ✓ | ✓ | — （纯 Node，无 Chrome） | — | 帧别名层（S0）15 条：20 行对照 / 20 个基名互异 / map·idle·atk 都存在 / 静态扫描"除定义方外无人拼帧名" |
+| `probe:hexgeom` | `probes/hexgeom.mjs` | 门 | ✓ | ✓ | ✓ 自带（dist 未构建） | — | **E1 新增（2026-10-31）**。缩格几何 G1–G3：常量（R 17.5 / 30.31·26.25 / 战场 469.8×297.5）、15×11 格心对公式（≤0.5px）、相邻格共享边两端点 <1px。纯 Node 读 `dist/core/combat/hex.js`，**不开 Chrome**（"算错"与"画错"必须分开量）。`--legacy` 换回 22/38/33 必须整体变红 |
 | `probe:aiscale` | `probes/aiscale.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | **B4 新增（2026-10-31）**。AI 换尺验收 A1–A6：首攻日 / 场均战斗 / D28 兵力（对基线）、丢光城镇 ≤1、五周一局内买到 T5 ≥60%、编队结构、招募城守住。**A3 的 D28 读数只打印不判**（见文件头）。`--save=` 落基线、`--baseline=` 对比、`--dist=` 对旧构建跑 |
-| `audit:haloflip` | `haloflip.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | ④ halo 光环翻转；自带 dev server（`?devquick=` 起步） |
+| `audit:haloflip` | `haloflip.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | ④ halo 光环翻转；自带 dev server（`?devquick=` 起步）。**2026-10-31 E1**：四次导航前钉 `homm.tierMode=high` —— 画质档位会被运行时按帧率改，机器被占满时四臂落在不同档，本底从 14 块飙到 **1130 块**把信号淹掉（假红）。钉档后连跑三次本底 0/14/14、信号 531~542。`HALO_MAP=1` 可打印两臂的空间差异图（诊断"分不开"用） |
 | （无 npm script，直接 `node tools/showcasegate.mjs`） | `showcasegate.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | 展示图可玩性门（点击数 / 开局页滚动比 / 常驻文字条）。**2026-10-12**：「试这张图」并入「开始」，A 组从"证明减法生效"改为"证明没倒退回 2 次点击" |
 | （无 npm script，直接 `node tools/iaaccept.mjs`） | `iaaccept.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | **独立验收探针**（不复用被验方的 `scenarioaudit`）。⚠️ **默认连外部 5173**，须先 `node tools/serve.mjs`；**且必须带 `NO_PROXY='*'`**（见 §六） |
 | （无 npm script，直接 `node tools/verify-static-map.mjs`） | `verify-static-map.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | 图三静态地形 24 项断言（地形逐格相等 / 城堡矿山英雄零冲突 / 36 条路径） |

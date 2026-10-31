@@ -1645,6 +1645,10 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       const actId = actU && actU.side === 0 ? actU.id : null;
       const actHex = actId ? unitById(battle, actId)?.hex : undefined;
       w['__battleScene'] = {
+        /* 场坐标系的画布尺寸。**探针必须读这三个数，不许再写死 603/388**（E1 缩格后
+         * 正是这个写死值让 `probe:touchtap` 的点击坐标整体偏出格子、点敌方弹不出牌）。
+         * 与 `units[].fx/fy` 同源：fx/fy 是 BASE 空间坐标，点击点 = (fx+PAD)*(cssW/baseW)。 */
+        baseW: BASE_W, baseH: BASE_H, pad: PAD,
         units: battle.units
           .filter((u) => u.count > 0)
           .map((u) => {

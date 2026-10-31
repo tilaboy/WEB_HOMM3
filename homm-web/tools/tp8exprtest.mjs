@@ -68,17 +68,20 @@ const TRACE = argOf('trace', '');
 
 /**
  * 手机口径（**逐字复刻**两处源码，改一处就要回来改这里）：
- *   `BattleRenderer.ts:18-19`  BASE_W = 591 + PAD*2、BASE_H = 376 + PAD*2（PAD=6）⇒ 603 × 388
- *   `BattleRenderer.ts:114-120` s = clamp(min(availW/BASE_W, availH/BASE_H), 0.6, 4)，整数倍优先
+ *   `BattleRenderer.ts`  BASE_W = round(FIELD_PX_W)+PAD*2、BASE_H = round(FIELD_PX_H)+PAD*2（PAD=6）
+ *   `BattleRenderer.ts`  s = clamp(min(availW/BASE_W, availH/BASE_H), 0.35, 4)，整数倍优先
  *   `quality.ts` 旗舰档 dprCap = 3
- * 取 792×320 CSS（项目既有"真机口径"）⇒ raw = min(1.313, 0.825) = 0.825。
- * 注意 s < 1：**战场在手机上是被缩小的**，不是放大的 —— 这正是"表情可读"值得单独量一次的原因。
+ * 取 792×320 CSS（项目既有"真机口径"）。
+ *
+ * ★ 2026-10-31 E1：R 22→17.5 ⇒ BASE 603×388 → **482×310**。raw = min(1.643, 1.032) = 1.032，
+ *   取整优先后 **s = 1**（旧值 0.825）⇒ 每个美术像素从 2.475 个设备像素变成 **3.0**，
+ *   这就是缩格的收益：手机上不再先把战场缩小再画。
  */
-const VIEW = { w: 792, h: 320, dpr: 3, baseW: 603, baseH: 388 };
+const VIEW = { w: 792, h: 320, dpr: 3, baseW: 482, baseH: 310 };
 
 function fitScale(vw, vh) {
   const raw = Math.min(vw / VIEW.baseW, vh / VIEW.baseH);
-  let s = Math.min(4, Math.max(0.6, raw));
+  let s = Math.min(4, Math.max(0.35, raw));
   const fl = Math.floor(s);
   if (fl >= 1 && s / fl <= 1.12) s = fl;
   return s;

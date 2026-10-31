@@ -2428,9 +2428,10 @@ if (bootParams.has('devreveal') && state.players.p1) {
   state.players.p1.revealed = new Array(state.map.width * state.map.height).fill(1);
 }
 // 调试：?devzoom=0.6 缩到整图，一眼看完四方势力（缩放后重新对到当前英雄，不然镜头还停在旧缩放的夹紧位置）
+// `force=true`：调试口**不受三档钳制** —— `tools/probes/pathdayprobe.mjs` 用 2.4、`reachshot` 用 0.55。
 const devZoom = Number.parseFloat(bootParams.get('devzoom') ?? '');
 if (Number.isFinite(devZoom) && devZoom > 0) {
-  camera.setZoom(devZoom);
+  camera.setZoom(devZoom, true);
   const h = currentHero();
   if (h) camera.centerOn(h.pos.x, h.pos.y);
 }
