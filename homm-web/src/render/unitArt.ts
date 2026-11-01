@@ -762,6 +762,116 @@ export function buildB0Frame(name: string, outline = true): PixBuf {
 }
 
 /* ==========================================================================
+ * 2b. 兵牌立绘（S2 · 43×37 全身缩略，牌上不写名字）
+ * ========================================================================== */
+
+/**
+ * 立绘盒的**唯一**尺寸来源（CSS 与机检都读这两个数，不许各自写 43/37）。
+ *
+ * **2026-11-01 改版（主理人：「可以只放图标，不放文字么」）**：22×30 → 43×37。
+ * 名字让出的 52px 全给了立绘。为什么必须同时放大：
+ *   · 22×30 的缩放率是 **0.34×**（源剪影平均 40×43、最宽 57×55），
+ *     缩到这个尺寸只剩色块 —— 之前"认得出是谁"靠的其实是名字那 12px 汉字；
+ *   · 43×37 的可画区 41×35 ⇒ 平均 0.81×、宽体 0.94×，**剪影重新可读**；
+ *   · 牌高仍是 48（4 + 37 + 7），一行只会更矮不会更高 ⇒ 矮机可显示张数不变。
+ * 名字没有丢：点击弹出的详情卡、回合胶囊的「下一 X」、战报里都还在。
+ */
+export const PORTRAIT_W = 43;
+export const PORTRAIT_H = 37;
+
+/** 1px 描边要往外长，所以可画区域四周各留 1px。 */
+const PORTRAIT_PAD = 1;
+
+/**
+ * 兵牌立绘：把 `cu_*` 战斗帧**全身**缩进 43×37。
+ *
+ * 三条设计约束（S2 的验收就是量这三条）：
+ *   ① **保持体型**：等比缩到盒子里，短的那一轴居中留白 —— 宽体（狼骑/牛头怪）
+ *      在牌上就该是宽的、巨物（天使/绿龙）就该顶到上下边。绝不拉伸填满。
+ *   ② **1px 描边仍是 1px**：源帧先**不描边**缩小，缩完在 43×37 上重跑一次
+ *      `outline()`。直接缩带描边的图会把那圈 1px 断成虚线（64×56 → 43×37 ≈ 0.8
+ *      倍也一样：一条斜边上的描边像素本来就不同行，重采样时会淡掉）。
+ *   ③ **色板不掺色**：缩放路径只**复制**源像素，不做插值/混合。
+ *
+ * 缩放路径（**覆盖重采样**，不是删行删列）：
+ *   每个目标像素 = 它对应的源矩形里"出现次数最多的不透明色"，只要矩形里**有**
+ *   不透明像素就画。为什么不用 `normalizeTier` 那套删行删列：
+ *     · 删行删列保的是"不造违规相邻对"，而**立绘不参与 `b0audit` 的材质断言**
+ *       （那张表只读 `UNIT_FRAMES`），这条好处用不上；
+ *     · 它的准入判据是"删了不违规"，于**细窄的末端**（石像鬼的角、狼的耳朵）
+ *       会被优先删掉 —— 实测 `cu_p4_stoneimp` 缩完从 33 行掉到 16 行，
+ *       剪影宽高比误差 **29.9%**（判据写的是 ≤15%）。
+ *   覆盖重采样按"任一不透明"判存在，剪影只会**变实**、不会整块消失 ⇒
+ *   宽高比误差只剩取整那一档。
+ *   变实的代价是 1~2px 的缝（例如腿间）在缩略图上被并住 —— 这一档本来
+ *   就读不出缝（0.8× 之后更不要紧）。
+ *
+ * 量尺在 `probe:card` 里由**像素反推**（源帧 bbox 宽高比 vs 立绘 bbox 宽高比），
+ * 不由本函数自报 —— 自报的数字永远等于盒子，测不出"被拉伸填满"。
+ */
+export function buildPortraitFrame(cuName: string, w = PORTRAIT_W, h = PORTRAIT_H): PixBuf {
+  // 本体不描边：描边在缩略图上重跑（见 ②）。
+  const src = buildB0Frame(cuName, false);
+
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (let y = 0; y < src.h; y++) {
+    for (let x = 0; x < src.w; x++) {
+      if (src.alphaAt(x, y) <= 8) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  const out = new PixBuf(w, h);
+  if (x1 < x0) return out; // 空帧保护：宁可牌上留白，也不抛错
+
+  const sw = x1 - x0 + 1;
+  const sh = y1 - y0 + 1;
+  const innerW = Math.max(1, w - PORTRAIT_PAD * 2);
+  const innerH = Math.max(1, h - PORTRAIT_PAD * 2);
+  // 等比：取两轴里更"紧"的那一轴。+0.001 防浮点把 22 算成 21.999… 再被 round 掉。
+  const scale = Math.min(innerW / sw, innerH / sh);
+  const dw = Math.max(1, Math.min(innerW, Math.round(sw * scale + 0.001)));
+  const dh = Math.max(1, Math.min(innerH, Math.round(sh * scale + 0.001)));
+  const ox = PORTRAIT_PAD + Math.floor((innerW - dw) / 2);
+  const oy = PORTRAIT_PAD + Math.floor((innerH - dh) / 2);
+
+  for (let j = 0; j < dh; j++) {
+    const ry0 = y0 + Math.floor((j * sh) / dh);
+    const ry1 = Math.max(ry0, y0 + Math.ceil(((j + 1) * sh) / dh) - 1);
+    for (let i = 0; i < dw; i++) {
+      const rx0 = x0 + Math.floor((i * sw) / dw);
+      const rx1 = Math.max(rx0, x0 + Math.ceil(((i + 1) * sw) / dw) - 1);
+      // 出现次数最多的不透明色（同票取扫描序第一个 ⇒ 结果与遍历顺序一样确定）
+      let best = '';
+      let bestN = 0;
+      const tally = new Map<string, number>();
+      for (let sy = ry0; sy <= ry1; sy++) {
+        for (let sx = rx0; sx <= rx1; sx++) {
+          const p = src.px(sx, sy);
+          if (p[3] <= 8) continue;
+          const hx = rgbHex(p);
+          const n = (tally.get(hx) ?? 0) + 1;
+          tally.set(hx, n);
+          if (n > bestN) {
+            bestN = n;
+            best = hx;
+          }
+        }
+      }
+      if (best) out.set(ox + i, oy + j, best);
+    }
+  }
+  // 重跑描边：22×30 上这一圈必然是 1px 连续线。
+  out.outline(C.ink0, 1);
+  return out;
+}
+
+/* ==========================================================================
  * 3. 通用原语
  * ========================================================================== */
 

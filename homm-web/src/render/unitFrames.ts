@@ -65,6 +65,22 @@ export function unitCombatFrame(id: string): string {
   return `cu_${unitFrameAlias(id)}`;
 }
 
+/**
+ * 兵牌立绘帧名（`atlas` 的 `pt_*`，22×30 全身缩略，S2）。
+ *
+ * 从**战斗帧名**推而不是从 id 推：烘焙侧手里只有 `cu_<base>`，消费侧只有 id，
+ * 两边必须落在同一个帧名上。`pt_` 取 `cu_` 后面那段，因此这张表也自动继承
+ * 别名层 —— M5 重画美术时逐条删别名，帧名跟着走，两边不会各改一半。
+ */
+export function portraitOfCombatFrame(combatFrame: string): string {
+  return `pt_${combatFrame.replace(/^cu_/, '')}`;
+}
+
+/** 兵种 id → 兵牌立绘帧名（消费侧唯一入口）。 */
+export function unitPortraitFrame(id: string): string {
+  return portraitOfCombatFrame(unitCombatFrame(id));
+}
+
 const warned = new Set<string>();
 
 /**

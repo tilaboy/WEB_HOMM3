@@ -6,7 +6,8 @@
  * ③ core/ 完全不知道美术的存在，跟之前程序化绘制一样保持零耦合。
  */
 import { PixBuf, chamferRect, fbm, hash2, mix, pnoise, shade } from './pixel.js';
-import { NEUTRAL_ART_COLORS, UNIT_FRAMES, buildB0Frame } from './unitArt.js';
+import { NEUTRAL_ART_COLORS, UNIT_FRAMES, buildB0Frame, buildPortraitFrame } from './unitArt.js';
+import { portraitOfCombatFrame } from './unitFrames.js';
 import { FACTIONS, NEUTRAL_COLOR, NEUTRAL_DARK } from '../core/data/factions.js';
 
 export const TILE = 32;
@@ -1293,6 +1294,29 @@ export class Atlas {
       b = p(16, 16);
       decoration(b, k);
       put(`deco_${k}`, b);
+    }
+
+    /**
+     * 兵牌立绘 `pt_*`（S2 · 22×30 全身缩略，§16.9④）。
+     *
+     * 为什么进**这张**图集而不是战斗图集：
+     *   · 战斗图集是 1024×512，最宽行已到 1005/1024，22×30 的帧塞不进去；
+     *   · 这张是 2048×2048，23 帧只占约 0.3%，而 `audit:atlas` 的红线
+     *     （横向 ≤2042 / 纵向 ≤2048）本来就在这条图上量。
+     *
+     * ⚠️ **必须放在 build() 的最后**（2026-11-01 实测）：这批帧一开始插在
+     * `u_*_map` 之后，结果把一条**本来正好 2042/2048** 的窄行顶到了 2048/2048
+     * —— 压线没越界，但已经踩到红线上（`audit:atlas` 只会报"装得下"，
+     * 拦不住这件事）。追加到末尾则只往最后一行（原本就只用到 562px）里长，
+     * 前三条行的落点**逐帧不变**。
+     *
+     * 为什么按 `kind === 'idle'` 而不是按 20 个新 id：中立野怪（狼/猪/食人魔）
+     * 也会出现在战场上，**任何能上场的单位都必须有立绘**，否则那张牌上是空的。
+     * 帧名由 `portraitOfCombatFrame` 统一给（别名层自带），这里不拼字符串。
+     */
+    for (const spec of UNIT_FRAMES) {
+      if (spec.kind !== 'idle') continue;
+      put(portraitOfCombatFrame(spec.name), buildPortraitFrame(spec.name));
     }
 
     const atlas = new Atlas(packer);

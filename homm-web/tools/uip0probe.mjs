@@ -79,7 +79,7 @@ const COLLECT_SIZES = `(() => {
 
 /** 给可点元素打标，供 forcePseudoState 逐只按压。 */
 const TAG_CLICKABLE = `(() => {
-  const pick = 'button, .btn, .ss-seg-item, .bcard .bn, .hp-face, .bt-chip';
+  const pick = 'button, .btn, .ss-seg-item, .bcard .bn, .hp-face';
   const all = [...document.querySelectorAll(pick)].filter((e) => {
     if (e.disabled) return false;
     const cs = getComputedStyle(e);
@@ -252,8 +252,14 @@ const TOWNPANE = `(() => {
 /**
  * 战斗部队带：撤掉整块底板之后，"两栏"应该只剩**随内容长的卡**。
  *   · 底板不许回来：background alpha ≤ 0.05 且无边框（改前是 .22 + 1px）；
- *   · 每张卡 28~44px（改前是 30px 的纯文字行，撑不开也压不小）；
- *   · 涂色高度 ≤ 行数×44+26 ⇒ 卡是"内容驱动"的，不是把 374px 撑满。
+ *   · 每张卡 **48px**（S2 起：22×30 立绘 + 名字 + 血条 + 数量），带预估行的临时
+ *     加高到 ~63px ⇒ 判据带 44~68 的容差。改前是 28px 的纯文字行；
+ *   · 涂色高度 ≤ 行数×68+26 ⇒ 卡是"内容驱动"的，不是把 374px 撑满。
+ *
+ * ⚠️ 这条判据**必须**能区分"48"和"被 flex 压扁到 42.8"：48px 卡在 110px 的
+ * 矮机余高里会被 `flex-shrink` 压成 min-content（实测 42.8），压下去之后
+ * 立绘上下贴边、行高再也量不到 48 —— 42.8 仍落在 44 的下界外，所以能抓住。
+ * （下界取 44 而不是 47：`has-fc` 的卡也是 48 起，宁可留 1px 给字体行高取整。）
  */
 const SIDES = `(() => {
   const cols = [...document.querySelectorAll('.bt-side')].map((c) => {
@@ -361,24 +367,25 @@ const CLICK_WAIT = `(() => {
 })()`;
 
 /**
- * 行动队列（回合胶囊第二行）。
+ * 左上角**不许有文字**（2026-11-01 主理人裁定撤掉「回合 / 法力 / 下一行动」）。
  *
- * 三件事一起看：**可见**（display:none 会宽度 0）、**没被截断**（名字被切一半等于没报）、
- * **没压到棋盘**（胶囊右边界要停在 canvas 左边界之前 —— 这就是这两轮一直在修的那类遮挡）。
- * "是不是活的"由调用方比对两次读数（点「等待」前后）来判，静态字符串过不了。
+ * 这条判据因此从"队列可见且随出手变化"翻转为两面：
+ *   · **负面**：`.bt-chip` / `.bt-next` / `.bt-round` / `.bt-mana` 等一整串
+ *     必须不在 DOM 里。撤控件不删判据，下一轮就会有人以"信息有用"为由把它加回来；
+ *   · **正面**：当前行动者必须**仍然认得出** —— 兵牌 `.act` 金框在，且点「等待」
+ *     后换到另一张卡上（"活的"检查，替代旧队列的文案变化检查）。
+ * 法力单独在 `probe:card` 之外不设闸：它只在施法面板里出现（`.bt-spell-mana`），
+ * 由 `spellbook` 相关流程自己管。
  */
-const QUEUE = `(() => {
-  const el = document.querySelector('.bt-next');
-  const chip = document.querySelector('.bt-chip');
-  const canvas = document.querySelector('.bt-canvas');
-  if (!el || !chip || !canvas) return null;
-  const r = el.getBoundingClientRect();
+const NOHUD_TEXT = `(() => {
+  const dead = ['.bt-chip', '.bt-next', '.bt-round', '.bt-mana', '.bt-title', '.bt-stats', '.bt-info']
+    .filter((s) => document.querySelector(s));
+  const rows = [...document.querySelectorAll('.bt-side-row')];
+  const act = rows.filter((r) => r.classList.contains('act'));
   return {
-    text: (el.textContent || '').trim(),
-    visible: r.width > 6 && r.height > 0,
-    clipped: el.scrollWidth > el.clientWidth + 1,
-    chipRight: Math.round(chip.getBoundingClientRect().right),
-    canvasLeft: Math.round(canvas.getBoundingClientRect().left),
+    dead,
+    actCount: act.length,
+    actName: act.length ? (act[0].getAttribute('aria-label') || '') : '',
   };
 })()`;
 
@@ -402,10 +409,11 @@ const INJECT_CSS = {
   // 回退到改前的**右上横排** ⇒ 这簇必然与棋盘相交，正是主理人说的"遮挡"
   hud: `.bt-head-actions { left: auto !important; right: 8px !important; top: 8px !important; bottom: auto !important;
          flex-direction: row !important; width: auto !important; }`,
-  // 队列被藏掉（等于退回"只有一行回合"的老胶囊）
-  queue: `.bt-next { display: none !important; }`,
   // 预估被藏掉（等于回到 hover-only 的可见性）
   forecast: `.fc { display: none !important; }`,
+  // 把"左上文字 HUD"加回 DOM（模拟下一轮有人以"信息有用"为由重新常驻回合/法力/队列）
+  // ⇒ nohud 必须变红。CSS 注入造不出元素，所以这条走 JS（见 applyInject 的特例分支）。
+  nohud: '__js__',
   // 回退**整组**（不是只关 overflow）：修法是"标签一行、数值一行"（flex-direction:column），
   // 所以必须把方向也退回 row + space-between，否则两行永远不溢出 ⇒ 负向对照假绿。
   hpbar: `.hp-bar-top { flex-direction: row !important; justify-content: space-between !important;
@@ -413,9 +421,25 @@ const INJECT_CSS = {
           .hp-bar-v { min-width: auto !important; flex: 0 0 auto !important; margin-left: 0 !important; }`,
 };
 
-async function applyInject(send, which) {
+async function applyInject(send, evaluate, which) {
   const css = INJECT_CSS[which];
   if (!css) return;
+  if (css === '__js__') {
+    // 唯一一条 JS 负向对照：DOM 级的回归，CSS 造不出来
+    await evaluate(`(() => {
+      const head = document.querySelector('.bt-head');
+      if (!head) return 0;
+      const chip = document.createElement('div');
+      chip.className = 'bt-chip';
+      const next = document.createElement('div');
+      next.className = 'bt-next';
+      next.textContent = '下一 弩手';
+      chip.appendChild(next);
+      head.appendChild(chip);
+      return 1;
+    })()`);
+    return;
+  }
   await send('Runtime.evaluate', {
     expression: `(() => { const s=document.createElement('style'); s.id='p0-inject'; s.textContent=${JSON.stringify(css)}; document.head.appendChild(s); return 1; })()`,
     returnByValue: true,
@@ -497,7 +521,7 @@ async function measure(send, evaluate, url, { needStart = false, needHero = fals
     await sleep(700);
   }
 
-  if (INJECT) await applyInject(send, INJECT);
+  if (INJECT) await applyInject(send, evaluate, INJECT);
 
   const sizes = await evaluate(COLLECT_SIZES);
   const material = await evaluate(MATERIAL);
@@ -532,24 +556,35 @@ async function measure(send, evaluate, url, { needStart = false, needHero = fals
 
   // 预估伤害：只可能在战斗屏上。按玩家方式点「等待」把回合让出去，直到出现目标。
   let forecast = null;
-  let queue0 = null;
-  let queue1 = null;
-  let waits = 0;
+  let fcWaits = 0;
   if (sides) {
-    queue0 = await evaluate(QUEUE);
     for (let i = 0; i < 4; i++) {
       forecast = await evaluate(FORECAST);
       if (forecast.fcs > 0) break;
       if (!(await evaluate(CLICK_WAIT))) break;
+      fcWaits++;
+      await sleep(1800);
+    }
+  }
+
+  // 左上无文字 + 高亮认人：只在战斗屏上验。按玩家方式点「等待」把行动权让出去，
+  // 看金框是否真的换到另一张卡上（旧队列判据的"活的"检查平移到这里）。
+  let nohud = null;
+  let waits = 0;
+  if (sides) {
+    const before = await evaluate(NOHUD_TEXT);
+    for (let i = 0; i < 4; i++) {
+      if (!(await evaluate(CLICK_WAIT))) break;
       waits++;
       await sleep(1800);
     }
-    queue1 = await evaluate(QUEUE);
+    const after = await evaluate(NOHUD_TEXT);
+    nohud = { before, after, waits };
   }
 
   return {
     url, sizes, material, hp, touch, contrast, townpane, towncost, sides, hud, icons, forecast,
-    queue: { before: queue0, after: queue1, waits },
+    nohud,
     pressed, stuck,
   };
 }
@@ -669,11 +704,11 @@ function judge(all) {
   // ⑧ 战斗部队带：没有整块底板 + 卡片随内容长
   const sd = all.map((s) => s.sides).find(Boolean);
   const slab = sd ? sd.filter((c) => c.alpha > 0.05 || c.border > 0) : [];
-  const badH = sd ? sd.flatMap((c) => c.rowH.filter((h) => h < 28 || h > 56)) : [];
-  const tooTall = sd ? sd.filter((c) => c.painted > c.rows * 56 + 26) : [];
+  const badH = sd ? sd.flatMap((c) => c.rowH.filter((h) => h < 44 || h > 68)) : [];
+  const tooTall = sd ? sd.filter((c) => c.painted > c.rows * 68 + 26) : [];
   check(
     'sides',
-    '部队带：无整块底板 · 每卡 28~56px · 涂色不撑满整列',
+    '部队带：无整块底板 · 每卡 44~68px（48 基本 + 预估行）· 涂色不撑满整列',
     !!sd && slab.length === 0 && badH.length === 0 && tooTall.length === 0,
     sd
       ? `${sd.length} 列 · 宽 ${sd.map((c) => c.w).join('/')}px · 卡高 ${sd[0].rowH.join(',') || '—'} · 涂色 ${sd.map((c) => c.painted).join('/')}px` +
@@ -748,29 +783,26 @@ function judge(all) {
     );
   }
 
-  // ⑫ 行动队列：胶囊第二行必须**看得见、不被截断、不上棋盘**，且**随出手变化**
-  const q = all.map((s) => s.queue).find((x) => x && x.before);
-  const qb = q?.before;
-  const qa = q?.after;
-  const live = q && q.waits > 0 ? !!qa && qa.text !== qb.text : true;
+  // ⑫ 左上无文字（2026-11-01 主理人裁定）+ 当前行动者仍靠高亮认得出
+  const h = all.map((s) => s.nohud).find((x) => x && x.before);
+  const hb = h?.before;
+  const ha = h?.after;
+  const moved = h && h.waits > 0 ? !!hb && !!ha && ha.actName !== hb.actName : true;
   check(
-    'queue',
-    '行动队列：看得见 · 名字没被截断 · 不压棋盘 · 随出手变化',
-    !!qb &&
-      qb.visible &&
-      !!qa &&
-      qa.visible &&
-      !qb.clipped &&
-      !qa.clipped &&
-      qb.chipRight <= qb.canvasLeft + 24 &&
-      qa.chipRight <= qa.canvasLeft + 24 &&
-      live,
-    qb
-      ? `「${qb.text}」→（让 ${q?.waits ?? 0} 次）「${qa?.text ?? '—'}」 · 胶囊右 ${qb.chipRight}/${qb.canvasLeft}(canvas)` +
-        (!qb.visible || !qa?.visible ? ' · ❌ 不可见' : '') +
-        (qb.clipped || qa?.clipped ? ' · ❌ 名字被截断' : '') +
-        (qb.chipRight > qb.canvasLeft + 24 ? ' · ❌ 压到棋盘' : '') +
-        (!live ? ' · ❌ 点「等待」后没变化（静态文案）' : '')
+    'nohud',
+    '左上无回合/法力/队列文字 · 当前行动者靠兵牌金框且随出手切换',
+    !!hb &&
+      hb.dead.length === 0 &&
+      hb.actCount === 1 &&
+      !!ha &&
+      ha.dead.length === 0 &&
+      ha.actCount === 1 &&
+      moved,
+    hb
+      ? `残留 ${hb.dead.join(' ') || '无'} · 金框「${hb.actName || '—'}」→（让 ${h?.waits ?? 0} 次）「${ha?.actName ?? '—'}」` +
+        (hb.dead.length ? ' · ❌ 文字又回来了' : '') +
+        (hb.actCount !== 1 ? ` · ❌ 高亮 ${hb.actCount} 张` : '') +
+        (!moved ? ' · ❌ 点「等待」后金框没换（静态高亮）' : '')
       : '没进战斗（?devbattle=1 没起？）',
   );
 
@@ -916,7 +948,7 @@ async function run() {
   if (SELFCHECK) {
     // 负向对照：每次注入一条，闸必须变红
     let bad = 0;
-    for (const which of ['press', 'type', 'material', 'touch', 'hpbar', 'contrast', 'townfit', 'sides', 'icons', 'forecast', 'hud', 'queue']) {
+    for (const which of ['press', 'type', 'material', 'touch', 'hpbar', 'contrast', 'townfit', 'sides', 'icons', 'forecast', 'hud', 'nohud']) {
       INJECT = which;
       const green = await run();
       const ok = green === false;

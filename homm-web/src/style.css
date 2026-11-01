@@ -1516,7 +1516,7 @@ table.est td:last-child {
   pointer-events: none;
 }
 
-/* 左上：回合 · 法力 胶囊 + 事故/器械小胶囊，竖着排（每枚都 nowrap，永不参与 flex 收缩） */
+/* 左上只留事故 / 器械等整场规则提示；回合、法力、下一行动不再常驻。 */
 .bt-chips {
   position: absolute;
   left: 8px;
@@ -1526,69 +1526,6 @@ table.est td:last-child {
   align-items: flex-start;
   gap: 4px;
   max-width: 360px;
-}
-
-.bt-chip {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 38px;
-  padding: 0 12px;
-  pointer-events: auto;
-  color: var(--parchment);
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  background: rgba(24, 16, 7, 0.62);
-  border: 1px solid rgba(255, 232, 170, 0.24);
-  border-radius: 999px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(3px);
-}
-
-.bt-chip:active {
-  background: rgba(48, 34, 16, 0.78);
-}
-
-/* 战况卡：标题 + 英雄攻防。默认收起 —— 这两条对"这回合怎么打"几乎无用，
-   但也不能丢（点一下就能看），所以做成按需展开而不是塞进常驻条。 */
-.bt-info {
-  position: absolute;
-  left: 8px;
-  top: 54px;
-  display: none;
-  max-width: 360px;
-  padding: 6px 12px;
-  background: rgba(18, 12, 5, 0.9);
-  border: 1px solid var(--frame);
-  border-radius: 8px;
-  font-size: var(--t-body);
-  line-height: 1.7;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
-}
-
-.bt-head.info-open .bt-info {
-  display: block;
-}
-
-.bt-info > * {
-  white-space: nowrap;
-}
-
-.bt-title {
-  color: var(--gold);
-  font-size: var(--t-h);
-  font-weight: 500;
-  letter-spacing: 0.5px;
-}
-
-.bt-round {
-  color: var(--parchment);
-  font-variant-numeric: tabular-nums;
-}
-
-.bt-stats {
-  color: var(--text-dim);
 }
 
 /* 攻城器械：只有攻城战、且攻方带了器械时才出现 */
@@ -1891,9 +1828,15 @@ body.in-battle #thumb {
 
 /* ---------- battle spellbook (M4) ---------- */
 
-.bt-mana {
-  color: #6fa8dc;
+/* 法力只在施法面板打开时出现（2026-11-01），不作为常驻 HUD 读数。 */
+.bt-spell-mana {
+  align-self: center;
+  padding: 0 6px;
+  color: #8fc7f0;
+  font-size: var(--t-cap);
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .bt-spells {
@@ -3040,8 +2983,7 @@ body.in-battle #thumb {
 
 /* 铁牌：半透明 + 模糊 = "浮在画面之上"，与不透明木框区分开 */
 #hint,
-#rotate-hint,
-.bt-info {
+#rotate-hint {
   background-color: rgba(12, 8, 3, 0.66);
   border: 1px solid rgba(255, 232, 170, 0.16);
   backdrop-filter: blur(8px);
@@ -3054,11 +2996,10 @@ body.in-battle #thumb {
 }
 
 /* ---------- #2 触屏按压 ----------
- * 改前：2,738 行 CSS 里 `:active` 只有 1 条（`.bt-chip`），所有 `.btn` 只有 `:hover`
- * —— 手机上永不触发。按下去什么都不发生，这就是"不流畅"最直接的来源。
+ * 手机上没有 hover，按下去必须有立即的位移 / 明暗反馈。
  * 判据：任一按钮在按压时 `getComputedStyle().transform !== 'none'`。
  * `translateY(1px)` 用整数像素：CSS 像素在 DPR2 上正好落两物理像素，不产生半像素模糊。 */
-:is(button, .btn, .ss-seg-item, .bcard .bn, .hp-face, .chip-info, .bt-chip) {
+:is(button, .btn, .ss-seg-item, .bcard .bn, .hp-face, .chip-info) {
   transition:
     transform 120ms cubic-bezier(0.32, 0.7, 0.4, 1),
     filter 120ms ease,
@@ -3067,7 +3008,7 @@ body.in-battle #thumb {
     color 120ms ease;
 }
 
-:is(button, .btn, .ss-seg-item, .bcard .bn, .hp-face, .chip-info, .bt-chip):active:not(:disabled) {
+:is(button, .btn, .ss-seg-item, .bcard .bn, .hp-face, .chip-info):active:not(:disabled) {
   transform: translateY(1px) scale(0.985);
   filter: brightness(0.9);
 }
@@ -3240,13 +3181,51 @@ body.in-battle #thumb {
   padding-left: 8px;
 }
 
+/* 卡间距 **3px**（不是 4）—— 这是 792×320 上"3 栈刚好不进滚动"的唯一余量：
+ *   两列余高都是 304 − 6(上) − 148(动作簇) = **150**；3×48 + 2×4 = 152 ⇒ 差 2px，
+ *   满编 3 栈就要滚一滚（真机上表现为第三张卡的 3px 血条被切掉）。
+ *   改 3px：3×48 + 2×3 = 150，正正落在余高上。
+ *   （左列曾经还要让开左上胶囊 46px，只能看 2 张；胶囊撤掉后两列拉平。） */
 .bt-side-list {
-  gap: 4px;
+  gap: 3px;
 }
 
+/* ---------- 兵牌 48px（S2 · 纯立绘 43×37）----------
+ *
+ * 尺寸账（92 宽 / 48 高）：内容宽 79，43px 立绘在其中水平居中；
+ * 高 = 4(上) + 37(立绘) + 7(下，含卡底 3px 血条) = 48。
+ *
+ * 2026-11-01 主理人两次裁定：先撤名字，再撤数量 —— 数量已在战场单位脚下，
+ * 兵牌再写一遍只会制造第二个需要同步的读数。牌面因此**没有常驻文字**：
+ * 立绘负责认人，金框负责「轮到谁」，血条负责剩余总血；名字 / 数量仍保留在
+ * `title` / `aria-label` 与点击详情卡里。预估伤害是唯一的按需文字行。
+ */
 .bt-side-row {
   position: relative;
-  padding: 5px 7px 7px 11px;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  align-content: center;
+  align-items: end;
+  justify-items: center;
+  row-gap: 1px;
+  /* **定高 48**（不是 min-height）：`1fr` 只有在高度确定时才按"余量"解，
+   * 写成 min-height 时它按内容解，实测把卡撑到 **54.8**。
+   * 带预估行（`.fc`）的卡是 §16.9④ 允许的第二档，才放开成 auto。 */
+  height: 48px;
+  /* ⚠️ `flex: 0 0 auto` 不是可选优化：`.bt-side-list` 是 flex 列，默认
+   * `flex-shrink: 1` 会在余高不够时把每张卡**压到 min-content**（实测 48 → 42.8），
+   * 于是"行高 48"这条判据永远量不到 48 —— 而且卡会缩到立绘上下贴边。
+   * 48 是设计常量，超出就让列表滚（主理人 2026-11-01 裁定）。 */
+  flex: 0 0 auto;
+  /* 下边 7：卡底那 3px 是血条（见 `-bar`），立绘下沿与它之间留 4px 气。
+   * ⚠️ 四个内边写成变量：血条是绝对定位的，横向包含块是**内容盒**
+   * （grid 容器里 abspos 子元素实测 `left:0` 落在 15 而不是 8），
+   * 所以必须用 `calc(-1 * var(...))` 顶回卡边。写死 0 会让条左右各短 7/6px。 */
+  --side-pad-x1: 7px;
+  --side-pad-x2: 6px;
+  --side-pad-b: 7px;
+  padding: 4px var(--side-pad-x2) var(--side-pad-b) var(--side-pad-x1);
   border-radius: 5px;
   background: rgba(12, 8, 3, 0.62);
   box-shadow:
@@ -3254,7 +3233,35 @@ body.in-battle #thumb {
     0 3px 8px -3px rgba(0, 0, 0, 0.7);
   /* 12px 是"密集读数"档：战斗里数量是扫一眼就够的信息，不需要 15px。 */
   font-size: var(--t-cap);
-  line-height: 1.2;
+  line-height: 1.15;
+}
+
+/* 带预估行的卡（最多 3 张敌军卡会在这一栏显示「伤12 · 反5」）放开到内容高。 */
+.bt-side-row.has-fc {
+  height: auto;
+  min-height: 48px;
+}
+
+/* 立绘盒：43×37，1× 美术像素（整倍交给 `image-rendering: pixelated`，
+   与战场 canvas 同一条像素纪律：不插值、不做小数缩放）。 */
+.bt-side-row .pt {
+  grid-column: 1;
+  grid-row: 1;
+  width: 43px;
+  height: 37px;
+  align-self: end;
+  justify-self: center;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 43px 37px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* 缺帧降级成色块时给个圆角，免得读成"画错了的黑方块"。 */
+.bt-side-row .pt.none {
+  height: 30px;
+  border-radius: 3px;
 }
 
 /* 侧色条：我方金 / 敌方赤。位置的左/右已经表达了阵营，但打到中盘两边都死人时
@@ -3268,26 +3275,35 @@ body.in-battle #thumb {
   width: 3px;
   border-radius: 5px 0 0 5px;
   background: var(--gold);
+  /* 血条铺到卡底整条边（见 `.bt-side-bar`），色条要压在它上面 ——
+   * 否则底部 3px 会把阵营色咬掉一截，读成「色条没画到头」。 */
+  z-index: 1;
 }
 
 .bt-side-row.theirs::before {
   background: #c4573f;
 }
 
-.bt-side-row .n {
-  color: var(--parchment);
-}
-
-/* 数量是这张卡的第二重要信息（仅次于"是谁"），不该比名字暗一档。 */
-.bt-side-row .q {
-  color: var(--parchment);
-  opacity: 0.9;
-}
-
-/* 血条 3 → 4px 并下压 2px：3px 在真机上容易被看成一枚分隔线。 */
+/* 血条：**3px 通栏贴卡底**（§16.9④）。
+ *
+ * 为什么不放在名字下面：3px 的满血条紧贴名字，第一眼读成「标题下划线」——
+ * 在 6× 目视里它就是一条实线，不像仪表。贴到卡底边就只剩「这张卡的基线」这一种读法，
+ * 和 H3 的兵牌一致。
+ * 位置用绝对定位而不是 grid 行：立绘要跨满三行（30px 高），把它挤进文字列就没有通栏。
+ * 圆角跟卡走，色条用 z-index 压在它上面（见 `::before`）。 */
 .bt-side-bar {
-  height: 4px;
-  margin-top: 2px;
+  position: absolute;
+  /* 水平：abspos 子元素在 grid 卡里按**内容盒**定位（`left:0` 落在 15 而不是 8）
+   * ⇒ 用 `calc(-1 * padding)` 顶回卡边。
+   * 垂直：`bottom:0` 已经落在**卡底边**（112，不是内容盒底 105）—— 同一元素
+   * 横竖两轴用了不同的参照，实测如此，`probe:card` ⑰ᵇ 锁着这条。 */
+  left: calc(-1 * var(--side-pad-x1, 7px));
+  right: calc(-1 * var(--side-pad-x2, 6px));
+  bottom: 0;
+  height: 3px;
+  border-radius: 0 0 5px 5px;
+  background: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
 }
 
 .bt-side-row.act {
@@ -3295,10 +3311,6 @@ body.in-battle #thumb {
   box-shadow:
     inset 0 0 0 1px rgba(240, 212, 136, 0.45),
     0 3px 8px -3px rgba(0, 0, 0, 0.7);
-}
-
-.bt-side-row.dead .q {
-  text-decoration: line-through;
 }
 
 /* 矮机（≤340 高，典型 792×320）：库存条让位。
@@ -3390,9 +3402,17 @@ body.side-open #thumb {
 }
 
 /* 预估伤害：只出现在"这一回合真打得到"的敌人卡上（见 BattleScreen.renderSides）。
- * 92px 宽里只放得下两个事实：`伤12 · 反5`（要挨反击）/ `伤12 · 杀3`（不挨）。 */
+ * 92px 宽里只放得下两个事实：`伤12 · 反5`（要挨反击）/ `伤12 · 杀3`（不挨）。
+ * 它是**额外的一行**：有它时卡长高（48 → ~63），没有时严格 48 —— 48 是牌的基本
+ * 尺寸，预估是"这一回合才有"的临时信息，不该反过来把常驻卡压小。 */
+.bt-side-row.has-fc {
+  height: auto;
+  min-height: 48px;
+}
+
 .bt-side-row .fc {
   grid-column: 1 / -1;
+  grid-row: 4;
   margin-top: 2px;
   font-size: var(--t-cap);
   line-height: 1.05;
@@ -3408,17 +3428,15 @@ body.side-open #thumb {
   opacity: 1;
 }
 
-/* 6 队以上：每张卡都多一行会把整列顶出屏幕。此时宁可关掉预估，
- * 也不能让最后两支敌军的卡跑到战场外面去（`probe:uip0` 的 ⑦ 会红）。 */
-.bt-side-list:has(.bt-side-row:nth-child(6)) .fc {
-  display: none;
-}
+/* 「≥6 队就关掉预估」的第二条护栏也已删除（2026-11-01，与上面 `:has(nth-child(4))`
+ * 那条同批）：它防的是"卡被顶出屏幕"，而滚动已经解决了这件事。留着两条中的任何
+ * 一条，都会在满编——也就是最需要预估的局面——把触屏唯一的预估通道关掉。 */
 
 /* ==========================================================================
  * P1 · 战斗 HUD 四角重排（2026-10-23 主理人）
  *
  * 改前实测（844×390）：
- *   · 左上「第 1 回合 · 法力 30」145×38；
+ *   · 左上曾常驻「回合 / 法力 / 下一行动」（2026-11-01 已按主理人裁定撤掉）；
  *   · 右上「速度 / 自动战斗 / 撤退」**517×52**，横跨 517..836 —— 棋盘右边界 ≈682，
  *     也就是说这组按钮**把自己盖在棋盘右上角**、还压住敌方部队带的列顶；
  *   · 右下「防御 / 等待 / 施法」压住棋盘右下角。
@@ -3433,13 +3451,6 @@ body.side-open #thumb {
  *
  * 尺寸一个没动：每个按钮仍是 44px 命中高（`probe:uip0` / `audit:touch` 都还在看）。
  * ========================================================================== */
-
-/* 「法力」是读数，比「第 N 回合」低一档；蓝调保留（它是全界面唯一的蓝，认位靠它） */
-.bt-mana {
-  font-size: var(--t-cap);
-  letter-spacing: 0.3px;
-  opacity: 0.92;
-}
 
 /* 右上 → 左下：竖排。宽度对齐部队带（92px），落在列的 x 范围内，不上棋盘。 */
 .bt-head-actions {
@@ -3496,9 +3507,17 @@ body.side-open #thumb {
   padding: 6px 0 148px;
 }
 
-/* 左列仍要让开左上那枚胶囊（145 宽，压住列顶 38px）。 */
+/* 左列**默认不再**让开左上那枚胶囊 —— 2026-11-01 主理人裁定撤掉「回合 / 法力 /
+ * 下一行动」整块文字，46px 归还给名单（792×320 上左列余高 110 → 150，
+ * 正好塞进 3 张 48px 的卡）。只有左上真的浮出整场规则提示时才重新让位。 */
 .battle.has-sides .bt-side:first-child {
-  padding-top: 46px;
+  padding-top: 6px;
+}
+
+/* 两枚胶囊叠起来 ≈56px（8 顶距 + 24 事故 + 4 间隙 + 20 器械）⇒ 让 58px。
+ * 放在 `:first-child` 之后：两者特异度相同，后出现者胜。 */
+.battle.has-chips .bt-side:first-child {
+  padding-top: 58px;
 }
 
 /* 右列不再需要让开右上按钮组（它已经挪到下面了）⇒ 归还 46px 给敌方名单。 */
@@ -3507,21 +3526,39 @@ body.side-open #thumb {
 }
 
 /* 名单超出余高时自己滚，而不是被 `overflow:hidden` 静默裁掉。
-   只在 6~7 队这种满编局面才会触发（见下方预估行的那条护栏）。 */
-.bt-side-list {
+ *
+ * S2：48px 的卡 + 22×30 立绘之后，**792×320 上 5 栈就装不下了**
+ * （余高 110px，5×48 + 4×4 = 256）。主理人裁定「保 48px，5 栈滚动」，
+ * 所以滚动从"满编 6~7 队才发生"变成**常态**。列表因此改成绝对定位铺满
+ * `.bt-side-body`（不滚的定位壳），渐隐与「▼」角标挂在壳上 —— 它们必须
+ * 相对**可视窗**固定，跟着内容滚走的提示等于没有提示。 */
+.bt-side-body {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.bt-side-list {
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
+  padding-right: 1px; /* 给 `mask` 的 18px 渐隐留一点呼吸，不被卡片阴影吃掉 */
 }
 
-/* 预估行护栏：从 ≥6 队提前到 ≥4 队。
- * 4 张带预估的卡 = 4×51 + 3×5 = 219px，而让位后只剩 ~200px；
- * 与其让第 4 张卡被切掉一截（切的正好是预估行），不如整组关掉、四张卡都完整。 */
-.bt-side-list:has(.bt-side-row:nth-child(4)) .fc {
-  display: none;
-}
+/* 预估行（`.fc`）**不再有"≥4 队就整组关掉"的护栏**（2026-11-01 删除）。
+ *
+ * 那条护栏属于"名单不滚、卡片会被裁一截"的旧世界：满编时它把第 4 张卡的预估行
+ * 切掉，于是整组关掉。但 S2 起主理人裁定「保 48px，5 栈滚动」—— 名单超出余高
+ * 就滚，**没有卡会被裁**，护栏要防的那个症状已经不存在。
+ *
+ * 而它在触屏上的代价是致命的：`.fc` 是手机上**唯一**的预估通道（D-70：
+ * 触屏没有 hover，`hint()` 那套在手机上等于不存在）。满编 7 队恰恰是最需要
+ * 预估的时刻，却恰好是护栏触发的条件 ⇒ 留着它等于"越需要越没有"。
+ *
+ * 现在 3 张带预估的敌卡 = 3×63 + 4×48 + 6×3 = 399px > 150px 余高 ⇒ 列表滚，
+ * 这正是设计（`probe:card` 的 `.more` + 箭头判据守着"滚得看得出来"）。 */
 
 /* 底部提示条：两个竖排簇之间只剩中间 628px，提示居中当"字幕"。
  * 它有 4 秒自动淡出，且 `pointer-events:none`，不会挡住点击。 */
@@ -3533,10 +3570,13 @@ body.side-open #thumb {
 }
 
 /* ---------- 长名单：可滚，但必须"看得出来还能拨" ----------
- * 动作簇占掉 148px 后，390 高的列只剩 160px 给卡（≈4.7 张）。
- * 满编 7 队时列表必须滚 —— 而触屏没有滚动条，静默裁掉正是 P1 修过的那个坑
- * （城镇面板溢出 122px 却毫无提示）。所以：底部渐隐 + 标题后缀，两处都在说"下面还有"。
- * `.more` 由 `renderSides()` 按 scrollHeight/clientHeight 实时打上，不会误报。 */
+ * 触屏没有滚动条，静默裁掉正是 P1 修过的那个坑（城镇面板溢出 122px 却毫无提示）。
+ * 三处提示，缺一不可：
+ *   ① 底部渐隐（mask，18px）；
+ *   ② 标题后缀「· 可滚动」—— **矮机上标题是 display:none，这条在那儿不存在**；
+ *   ③ 「▼」角标：CSS 画的三角（不用字形当图标，G-17），挂在 `.bt-side-body` 上，
+ *      绝对定位贴可视窗底边 ⇒ 矮机上唯一还活着的提示就是它。
+ * `.more` 由 `syncSideOverflow()` 按 scrollHeight/clientHeight 实时打上，不会误报。 */
 .bt-side {
   position: relative;
 }
@@ -3551,34 +3591,45 @@ body.side-open #thumb {
   opacity: 0.6;
 }
 
-/* 5 队起把卡压到 28px（名字 + 血条不变，只收上下内边）：
- * 390 高下 5 张 = 156px，正好落在 160px 的余高里，不必滚。 */
-.bt-side-list:has(.bt-side-row:nth-child(5)) .bt-side-row {
-  padding-top: 3px;
-  padding-bottom: 3px;
+.bt-side-more {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 1px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s linear;
+}
+
+.bt-side-more::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--gold);
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.85));
+}
+
+.bt-side.more .bt-side-more {
+  opacity: 0.85;
 }
 
 /* ---------- 矮机（≤340 高，典型 792×320）----------
- * 304px 高的列里，148px 给动作簇、46px 让胶囊 ⇒ 只剩 110px。
- * 3 张 34px 的卡 = 110px，一张都不多 —— 所以这个高度上不再设"宽松档"：
- * 卡一律 28px、标题让位（阵营已由左侧 3px 色条 + 左右位置表达）。
- * 这不是偏好，是 304 = 46 + 148 + 20(标题) + 90 的算术结果。 */
+ * 304px 高的列里，148px 给动作簇 ⇒ 左列剩 150px、右列剩 150px。
+ * 48px 的卡 + 3px 间隙 ⇒ 3×48 + 2×3 = 150，正正落在余高上（3 栈满编不滚）。
+ * 4 栈起才滚（主理人 2026-11-01 裁定：保 48px 不动，宁可滚）—— 压到 28px
+ * 会把立绘裁成一条缝，那正是 S2 要修的东西。
+ * 标题仍然让位（阵营已由左侧 3px 色条 + 左右位置表达），腾出的 20px 给卡。 */
 @media (max-height: 340px) {
   .battle.has-sides .bt-side {
     padding-top: 6px;
   }
 
-  .battle.has-sides .bt-side:first-child {
-    padding-top: 46px;
-  }
-
   .bt-side-h {
     display: none;
-  }
-
-  .bt-side-list .bt-side-row {
-    padding-top: 3px;
-    padding-bottom: 3px;
   }
 }
 
@@ -3590,65 +3641,6 @@ body.side-open #thumb {
   overflow: hidden;
   text-overflow: ellipsis;
   justify-content: center;
-}
-
-/* ==========================================================================
- * P2 · 行动队列（2026-10-23）
- *
- * HoMM3 里"下一支是谁"是战术的一半：决定要不要等待、要不要先把这支按下。
- * 数据 core 早就算好了（`battle.order` = 速度降序 + 同速攻方先 + 等待会改写），
- * 只是界面上一直没露过脸 —— 和"预估伤害只写在 hover 里"是同一类漏。
- *
- * 放在**回合胶囊的第二行**，因为它是唯一一块"不加新控件、不上棋盘"的空地：
- *   · 胶囊原本 137×38，只装了 15px 的一行字，宽度是现成的；
- *   · 棋盘左边界 ≈148，所以第二行必须 ≤ 148 宽 —— 这也是只放**两支**的原因：
- *     「▸ 树人大叔 › 投斧蛮子」= 142px 刚好，"下一个"三个字反而会顶到棋盘上。
- * ========================================================================== */
-
-.bt-chip {
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 2px;
-  padding: 4px 12px;
-  /* 压行高：两行要塞进 41px（左列 padding-top 只有 46，撑破就压到第一张卡） */
-  line-height: 1.15;
-}
-
-.bt-chip-top {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.bt-next {
-  display: flex;
-  align-items: baseline;
-  max-width: 148px;
-  font-size: var(--t-cap);
-  letter-spacing: 0.2px;
-  color: var(--text-dim);
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-/* 我方金 / 敌方赤 —— 与部队带左侧那道 3px 色条同一套语义 */
-.bt-next .u {
-  color: var(--parchment);
-}
-
-.bt-next .u.foe {
-  color: #e0897a;
-}
-
-.bt-next .k {
-  color: var(--text-dim);
-  margin-right: 4px;
-}
-
-.bt-next .sep {
-  margin: 0 4px;
-  opacity: 0.5;
 }
 
 /* ==================== 会面交换（§9.2，2026-10-31） ====================

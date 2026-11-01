@@ -10,7 +10,6 @@ import { getUnit, meleeStyleOf } from '../core/data/units.js';
 import { sfx } from './sfx.js';
 import { installIcons, labelIcon, setLabel } from './icons.js';
 import { WAR_MACHINES } from '../core/data/warmachines.js';
-import { effectivePrimary } from '../core/game/hero.js';
 import {
   actDefend,
   actFlee,
@@ -46,7 +45,6 @@ import {
   unitAt,
   unitById,
   unitSpeed,
-  upcomingUnits,
   type BattleEvent,
   type BattleOutcome,
   type BattleSide,
@@ -58,6 +56,8 @@ import { STRUCTURE_NAME, structureAt, structureById, type SiegeStructure } from 
 import { getSpell } from '../core/data/spells.js';
 import { BattleRenderer, BASE_H, BASE_W, PAD } from '../render/BattleRenderer.js';
 import type { FloatText } from '../render/BattleRenderer.js';
+import { getAtlas } from '../render/atlas.js';
+import { unitPortraitFrame, warnMissingFrame } from '../render/unitFrames.js';
 // TP-3：战斗场景曲（audio-direction.md §10.1 接线③）。开关都在屏内 ——
 // openBattleScreen 有三个调用点（野怪战 / 英雄遭遇 / ?devbattle），
 // 把音乐接在屏自身比在 main.ts 逐点包一层漏不了。
@@ -146,7 +146,6 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   // sprite 可能已由 main.ts 挂过（幂等）；战斗若被单独拉起也不会缺图标。
   installIcons();
   const battle = createBattle(opts.attacker, opts.defender, opts.seed, opts.siegeLevel ?? 0);
-  const hero = opts.state.heroes[opts.heroId];
 
   /* ---------------- DOM ---------------- */
 
@@ -154,61 +153,21 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   root.className = 'battle';
 
   /**
-   * 战斗顶栏 → **浮动 HUD**（2026-10-21 主理人：「上栏…所有的字都是竖着的，太难看了」）。
+   * 浮动 HUD：2026-11-01 主理人裁定撤掉左上「回合 / 法力 / 下一行动」整块文字。
    *
-   * 旧顶栏是**一条 44px 的 flex 横条**，把标题/回合/英雄/法力/器械/事故六段文字塞进 752px，
-   * 每段都被 `flex-shrink` 压到只剩一个汉字宽 ⇒ CJK 逐字换行 = 竖排。这不是字号问题，
-   * 是"一条通栏 + 可收缩文字"的结构问题。
+   * 三条信息不再常驻：
+   *   · 回合数不作为战斗中的持续读数（结算仍会报告历时）；
+   *   · 法力只在点开施法面板时出现（见 `renderSpellBook()`）；
+   *   · 当前行动者由战场高亮 + 兵牌 `.act` 金框表达，不再另写一串名字。
    *
-   * 新结构：左上**一枚胶囊**只留「回合 · 法力」（点它展开战况卡：标题 + 英雄攻防），
-   * 事故/器械各一枚独立小胶囊（规则变了必须整场可见，不能藏），右上三个动作按钮浮着。
-   * **所有文字块 `flex: 0 0 auto` + `white-space: nowrap`** ⇒ 竖排从结构上不可能再出现。
-   * 类名仍叫 `.bt-head`：`probes/touchtap.mjs` 与 `phone-ui-probe.mjs` 靠 `.bt-head .btn` 找速度键。
+   * 左上只保留**会改变整场规则**的提示（紫晶事故 / 攻城器械）。没有这类提示时，
+   * `.has-chips` 不存在，左列也不再为空胶囊预留 46px。
+   * 类名仍叫 `.bt-head`：探针靠 `.bt-head .btn` 找速度键。
    */
   const head = document.createElement('div');
   head.className = 'bt-head';
   const chips = document.createElement('div');
   chips.className = 'bt-chips';
-  const chip = document.createElement('button');
-  chip.type = 'button';
-  chip.className = 'bt-chip';
-  chip.setAttribute('aria-label', '战况：点开看战斗标题与英雄属性');
-  chip.setAttribute('aria-expanded', 'false');
-  const chipTop = document.createElement('div');
-  chipTop.className = 'bt-chip-top';
-  const roundEl = document.createElement('div');
-  roundEl.className = 'bt-round';
-  const manaEl = document.createElement('div');
-  manaEl.className = 'bt-mana';
-  /**
-   * 行动队列（2026-10-23）：只报"接下来两支"。
-   *
-   * 数据来自 core 的 `upcomingUnits()`（= `battle.order` 的下一段，权威顺序，含"等待"改写）。
-   * 为什么不另排一遍：`waitUnit` 会把部队挪到队尾，前端自己排必然和真正出手顺序对不上 ——
-   * 显示一个错的队列比不显示更糟。
-   * 为什么只放两格：胶囊宽 137、棋盘左边界 ≈148 —— 三格「食人魔 › 食人魔 › 食人魔」
-   * 要 176px，就会压到棋盘上（正是这两轮一直在拆的那种遮挡）。
-   */
-  const nextEl = document.createElement('div');
-  nextEl.className = 'bt-next';
-  chipTop.append(roundEl, manaEl);
-  chip.append(chipTop, nextEl);
-  const title = document.createElement('div');
-  title.className = 'bt-title';
-  title.textContent = opts.title;
-  const statsEl = document.createElement('div');
-  statsEl.className = 'bt-stats';
-  if (hero) {
-    const p = effectivePrimary(hero);
-    statsEl.textContent = `${hero.name} · 攻 ${p.attack} 防 ${p.defense}`;
-  }
-  const info = document.createElement('div');
-  info.className = 'bt-info';
-  info.append(title, statsEl);
-  chip.addEventListener('click', () => {
-    const open = head.classList.toggle('info-open');
-    chip.setAttribute('aria-expanded', String(open));
-  });
   // 攻城器械：攻方带了才显示，提醒玩家"这几样东西每回合都会自动开火"
   const machineEl = document.createElement('div');
   machineEl.className = 'bt-machines';
@@ -226,8 +185,10 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   accidentEl.className = 'bt-accident';
   if (battle.accident) accidentEl.textContent = accidentLabel(battle.accident);
   else accidentEl.style.display = 'none';
-  chips.append(chip, accidentEl, machineEl);
-  head.append(chips, info, headActions);
+  if (battle.accident || carriedMachines.length) root.classList.add('has-chips');
+  else chips.style.display = 'none';
+  chips.append(accidentEl, machineEl);
+  head.append(chips, headActions);
   root.appendChild(head);
 
   const body = document.createElement('div');
@@ -241,6 +202,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   const spellPanel = document.createElement('div');
   spellPanel.className = 'bt-spells';
   spellPanel.style.display = 'none';
+  const manaEl = document.createElement('div');
+  manaEl.className = 'bt-spell-mana';
+  manaEl.setAttribute('aria-live', 'polite');
   fieldWrap.appendChild(spellPanel);
   /**
    * 两侧**紧凑名单**（2026-10-21 主理人裁定「C+A」）。
@@ -249,17 +213,33 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
    * 两侧本来就没地方。手机横屏不一样：可用区 752×304 而战场是 15×11（1.55:1），
    * 等比缩放后左右各空 ~195px（**48% 宽度**）⇒ 空白是白送的，不放信息才浪费。
    * 桌面（body 窄）由 `fit()` 摘掉 `has-sides` 类，两块名单自动消失 ⇒ 不影响旧观感。
+   *
+   * S2（2026-11-01）：卡从 34px 涨到 48px、并加 22×30 立绘盒。**5 栈在 792×320 上
+   * 放不进 110px 的余高**（5×48 + 4×4 = 256）——主理人裁定「保 48px，5 栈滚动」。
+   * 既然滚动成了常态而不是满编时的例外，就必须**一直看得出来还能拨**：
+   *   · `.bt-side-body` 是不滚的定位壳（列表绝对定位铺满它），
+   *   · 底部渐隐 + 「▼」角标挂在壳上 ⇒ 跟着列表的可视窗走，不跟内容滚走。
+   * 矮机上标题是 `display:none`（304px 里让不出那 20px），所以「· 可滚动」这行字
+   * 在那里根本不存在 —— 角标是唯一还活着的提示。
    */
-  const mkSide = (label: string): { col: HTMLDivElement; list: HTMLDivElement } => {
+  const mkSide = (
+    label: string,
+  ): { col: HTMLDivElement; list: HTMLDivElement; more: HTMLDivElement } => {
     const col = document.createElement('div');
     col.className = 'bt-side';
     const h = document.createElement('div');
     h.className = 'bt-side-h';
     h.textContent = label;
+    const wrap = document.createElement('div');
+    wrap.className = 'bt-side-body';
     const list = document.createElement('div');
     list.className = 'bt-side-list';
-    col.append(h, list);
-    return { col, list };
+    const more = document.createElement('div');
+    more.className = 'bt-side-more';
+    more.setAttribute('aria-hidden', 'true');
+    wrap.append(list, more);
+    col.append(h, wrap);
+    return { col, list, more };
   };
   const foeSide = mkSide('敌方');
   const ourSide = mkSide('我方');
@@ -375,58 +355,6 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     else if (rr.bottom > lr.bottom) list.scrollTop += rr.bottom - lr.bottom;
   }
 
-  /** 行动队列的两格（见 `nextEl` 上的注释）。签名去重：`idx` 不变就不重建 DOM。 */
-  let nextSig = '';
-  function renderNext(): void {
-    const nx = upcomingUnits(battle, 2);
-    nextEl.textContent = '';
-    if (!nx.length) {
-      // 本回合最后一支：这句比"空白"有用 —— 玩家据此决定要不要把移动力榨干
-      const end = document.createElement('span');
-      end.className = 'k';
-      end.textContent = '回合结束';
-      nextEl.appendChild(end);
-      chip.setAttribute('aria-label', '本回合最后一支部队；点开看战况');
-      return;
-    }
-    const names = nx.map((u) => getUnit(u.unitTypeId).name);
-    /**
-     * 两格名字合计超过 6 字就只放第一格，尾巴用「› …」示意"后面还有人"。
-     *
-     * 胶囊右边界必须停在棋盘左边界（≈148）之前：12px 一个汉字，
-     * 「下一 树人大叔 › 投斧蛮子」= 160px 会直接压到棋盘上；
-     * 「下一 树人大叔 › …」= 102px 则稳稳落在左边那条空带上。
-     */
-    const two = names.length > 1 && names[0].length + names[1].length <= 6;
-    const label = document.createElement('span');
-    label.className = 'k';
-    label.textContent = '下一';
-    nextEl.appendChild(label);
-    nx.slice(0, two ? 2 : 1).forEach((u, i) => {
-      if (i) {
-        const sep = document.createElement('span');
-        sep.className = 'sep';
-        sep.textContent = '›';
-        nextEl.appendChild(sep);
-      }
-      const n = document.createElement('span');
-      n.className = `u${u.side === 0 ? '' : ' foe'}`;
-      n.textContent = getUnit(u.unitTypeId).name;
-      nextEl.appendChild(n);
-    });
-    if (!two && names.length > 1) {
-      const sep = document.createElement('span');
-      sep.className = 'sep';
-      sep.textContent = '›';
-      nextEl.appendChild(sep);
-      const more = document.createElement('span');
-      more.className = 'k';
-      more.textContent = '…';
-      nextEl.appendChild(more);
-    }
-    chip.setAttribute('aria-label', `接下来 ${names.join('、')}；点开看战况`);
-  }
-
   /* ---------------- 两侧名单（C+A） ---------------- */
 
   /**
@@ -454,19 +382,36 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         row.className =
           `bt-side-row ${side === 0 ? 'ours' : 'theirs'}` +
           `${u.count <= 0 ? ' dead' : ''}${act && act.id === u.id ? ' act' : ''}`;
-        const n = document.createElement('span');
-        n.className = 'n';
-        n.textContent = def.name;
-        const q = document.createElement('span');
-        q.className = 'q';
-        q.textContent = `×${u.count}`;
+        /**
+         * 立绘盒 **43×37**（S2 2026-11-01 改版）。兵牌是**纯图形**：不写名字，
+         * 也不重复战场单位脚下已经有的数量。当前行动者靠这张卡的 `.act` 金框辨认。
+         * 帧来自 `pt_*`（atlas，1× art px，CSS 侧 `image-rendering: pixelated`）。
+         *
+         * 名字与数量没有从可访问性里丢：`row.title` + `aria-label` 仍带着它们，
+         * 点击战场单位弹出的详情卡与战报也保留完整信息。
+         */
+        const pt = document.createElement('span');
+        pt.className = 'pt';
+        pt.setAttribute('aria-hidden', 'true');
+        const pUrl = getAtlas().url(unitPortraitFrame(u.unitTypeId));
+        if (pUrl) {
+          pt.style.backgroundImage = `url(${pUrl})`;
+        } else {
+          // 缺帧降级：一个色块（与「会面面板」同一套兜底），并在控制台只警告一次
+          warnMissingFrame(unitPortraitFrame(u.unitTypeId), '战斗兵牌');
+          pt.classList.add('none');
+          pt.style.background = def.body ?? '#7a6a4a';
+        }
         const bar = document.createElement('span');
         bar.className = 'bt-side-bar';
         const fill = document.createElement('b');
         const max = def.hp * Math.max(1, u.count);
         fill.style.width = `${Math.max(0, Math.min(100, Math.round((poolOf(u) / max) * 100)))}%`;
         bar.appendChild(fill);
-        row.append(n, q, bar);
+        row.append(pt, bar);
+        // 牌面不写字，完整信息挂在元素上：hover 弹 tooltip、读屏念得出来。
+        row.title = `${def.name} ×${u.count}`;
+        row.setAttribute('aria-label', `${def.name} ×${u.count}`);
 
         /**
          * 预估伤害（2026-10-23）。
@@ -767,6 +712,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       return;
     }
     spellPanel.innerHTML = '';
+    // 法力只在玩家主动打开施法面板时出现；不再常驻左上 HUD。
+    manaEl.textContent = manaText();
+    spellPanel.appendChild(manaEl);
     for (const id of spells) {
       const sp = getSpell(id);
       const b = document.createElement('button');
@@ -1530,13 +1478,6 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       }
     }
 
-    roundEl.textContent = `第 ${battle.round} 回合`;
-    manaEl.textContent = manaText();
-    const nxSig = `${battle.round}|${battle.idx}|` + battle.order.slice(battle.idx + 1, battle.idx + 3).join(',');
-    if (nxSig !== nextSig) {
-      nextSig = nxSig;
-      renderNext();
-    }
     renderSides();
     btnAuto.disabled = auto || battle.over;
     btnFlee.disabled = battle.over;

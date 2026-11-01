@@ -197,10 +197,14 @@ try {
      *   · 左列标题 = 我方、右列 = 敌方；
      *   · 左列名单 = 场地左侧那批（side 0）的**名字多重集**，右列同理；
      *   · 几何自证：所有 side 0 的 fx 都小于所有 side 1 的 fx。
-     * 名单只在 body ≥620px 时出现（桌面窄窗会摘掉 has-sides）⇒ 先确认它在场。 */
+     * 名单只在 body ≥620px 时出现（桌面窄窗会摘掉 has-sides）⇒ 先确认它在场。
+     * ⚠️ 2026-11-01 S2：牌面上**不再写名字**（只放立绘 + 数量），名字移到
+     * `aria-label`（形如「弩手 ×28」）。这里按 aria 取名字，顺带把"名字真的挂上了"
+     * 也验了 —— 若哪天有人把 aria 一起删掉，这条跨侧比对会立刻红。 */
     const sides = await evaluate(`(() => [...document.querySelectorAll('.bt-side')].map((c) => ({
       head: ((c.querySelector('.bt-side-h') || {}).textContent || '').trim(),
-      rows: [...c.querySelectorAll('.bt-side-row .n')].map((n) => (n.textContent || '').trim()),
+      rows: [...c.querySelectorAll('.bt-side-row')].map((r) =>
+        (r.getAttribute('aria-label') || '').replace(/\\s*×\\d+$/, '').trim()),
     })))()`);
     const ours = units.filter((u) => u.side === 0);
     const foes = units.filter((u) => u.side !== 0);

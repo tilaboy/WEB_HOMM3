@@ -46,6 +46,17 @@ const server = http.createServer((req, res) => {
   createReadStream(file).pipe(res);
 });
 
+/* ★ 后台跑时（agent 的 background task / 日志管道被宿主接管）stdout 随时可能 EPIPE。
+ * Node 对 stream 的 'error' 是**未捕获即退出**，于是 dev server 会被"日志管道关了"
+ * 这种跟服务无关的理由杀掉 —— 探针随后全部报"dev server 没在 5199 上跑"。
+ * 服务本身与 stdout 无关，所以显式吞掉 EPIPE（其余错误照旧抛）。 */
+for (const s of [process.stdout, process.stderr]) {
+  s.on?.('error', (e) => {
+    if (e && e.code === 'EPIPE') return;
+    throw e;
+  });
+}
+
 server.listen(port, '127.0.0.1', () => {
   console.log(`英雄之歌 → http://localhost:${port}`);
 });
