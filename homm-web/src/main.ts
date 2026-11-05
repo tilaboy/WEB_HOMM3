@@ -20,10 +20,12 @@ import {
 } from './core/game/interaction.js';
 import { openBattleScreen, isBattleOpen } from './ui/BattleScreen.js';
 import { ExchangeDialog } from './ui/ExchangeDialog.js';
+import { ArtifactDialog } from './ui/ArtifactDialog.js';
 import { canMeet, friendlyHeroAt, totalCount } from './core/game/exchange.js';
+import { backpackOf, equippedOf } from './core/game/equip.js';
 import { castAdventure, canAdventureCast, type AdventureTarget } from './core/game/spells.js';
 import { getSpell } from './core/data/spells.js';
-import { manaMaxOf, maxMovePoints } from './core/game/hero.js';
+import { effectivePrimary, manaMaxOf, maxMovePoints } from './core/game/hero.js';
 import type { BattleOutcome } from './core/combat/battle.js';
 import { LAYOUTS } from './core/data/layouts.js';
 import type { ScenarioObjective } from './core/data/scenarios.js';
@@ -887,6 +889,7 @@ const panel = new HeroPanel(
   (id) => openSpellBook(id),
   () => goShowcase(),
   () => showObjBanner(),
+  (id) => openArts(id),
 );
 
 const hud = new HUD(topbar);
@@ -894,6 +897,20 @@ const hud = new HUD(topbar);
 /* ---------------- 会面交换（§9.2） ---------------- */
 
 const exchangeDialog = new ExchangeDialog(stage);
+
+/* ---------------- 装备页（§9.1，U2） ---------------- */
+
+const artsDialog = new ArtifactDialog(stage);
+
+/** 打开装备页。战斗中不弹（`stage` 被战斗屏整屏接管，弹在下面点不到也关不掉）。 */
+function openArts(heroId: string): void {
+  if (isBattleOpen()) return;
+  if (!state.heroes[heroId]) return;
+  artsDialog.open(state, heroId, () => {
+    refresh();
+    saveGame(state);
+  });
+}
 
 /**
  * 打开会面面板。**不消耗移动力**（会面本身不花 MP，只做物资转运）。
@@ -2915,6 +2932,121 @@ if (bootParams.has('devexchange')) {
     } catch (e) {
       (window as unknown as { __exchangeError?: string }).__exchangeError = String(e);
       console.error('[devexchange] 打开面板失败', e);
+    }
+  }
+}
+
+/* ---------------- 装备页的调试入口（`?devarts=1`） ---------------- */
+
+/**
+ * 为什么需要它：装备页只有在英雄**六个槽都拿到宝物**时才看得到全部状态，
+ * 而正常开局英雄身上是空的 —— 得先打三场守卫、再走回城，一条依赖随机地图的长路径，
+ * 做不了回归（与 `?devexchange` 同一理由）。
+ *
+ * 固定底数 `primary = 1/1/1/1`：探针读到的 `3/1/1/1` 才能**直接**对上「狂怒之刃 +2 攻」。
+ * 若沿用开局英雄的实际等级，断言就得先抄一份升级表，等于把尺子和被测对象钉在一起。
+ *
+ * `equipped` **只穿武器** ⇒ 其余五件都在背包里，这正好是
+ * 「背包里的宝物不加属性」那条断言的对照物（U2 之前它会加，因为 `hero.ts` 遍历的是整个数组）。
+ *
+ * `window.__arts()` 返回快照，供 `probe:arts` 读；生产路径不受影响
+ * （与 `__exchange` / `__mapShadow` 同一套惯例）。
+ */
+if (bootParams.has('devarts')) {
+  const owner = viewerOf(state);
+  let artsHero: Hero | undefined;
+  for (const id of state.heroOrder) {
+    const h = state.heroes[id];
+    if (h && h.owner === owner) {
+      artsHero = h;
+      break;
+    }
+  }
+  if (!artsHero) {
+    console.warn('[devarts] 没有可用英雄（需要先 ?devquick 开一局）');
+  } else {
+    const h = artsHero;
+    h.primary = { attack: 1, defense: 1, spellPower: 1, knowledge: 1 };
+    h.army = [
+      { unitTypeId: 'p1_child', count: 12 },
+      { unitTypeId: 'p1_crossbow', count: 8 },
+      { unitTypeId: 'p1_knight', count: 3 },
+    ];
+    /* 六槽各一件（每件都是不同的槽）：初始只穿武器，其余五件在背包。 */
+    h.artifacts = [
+      'blade_of_fury',
+      'aegis',
+      'helm_of_command',
+      'dragon_scale',
+      'boots_of_speed',
+      'ring_of_prosperity',
+    ];
+    h.equipped = { weapon: 'blade_of_fury' };
+
+    selected = h.id;
+    recomputeField();
+    refresh();
+
+    const snap = () => {
+      const box = document.querySelector('.modal.arts') as HTMLElement | null;
+      const body = document.querySelector('.arts-body') as HTMLElement | null;
+      const size = (el: HTMLElement | null) =>
+        el
+          ? {
+              w: Math.round(el.clientWidth),
+              h: Math.round(el.clientHeight),
+              scrollH: el.scrollHeight,
+              clientH: el.clientHeight,
+            }
+          : null;
+      return {
+        open: !!box,
+        reason: body?.getAttribute('data-reason') ?? '',
+        msg: body?.getAttribute('data-msg') ?? '',
+        sel: body?.getAttribute('data-sel') ?? '',
+        stats: effectivePrimary(h),
+        worn: { ...equippedOf(h) },
+        bag: backpackOf(h),
+        owned: h.artifacts.slice(),
+        box: size(box),
+        body: size(body),
+        /* ⚠️ 部队列表自己 `overflow:hidden`：它裁掉的行**不会**出现在三栏的
+         * `scrollHeight` 里（三栏是 218/218，看起来完美）⇒ 必须单量一层。 */
+        armyBox: size(document.querySelector('.arts-army') as HTMLElement | null),
+        cols: [...document.querySelectorAll('.arts-left, .arts-mid, .arts-right')].map((e) =>
+          size(e as HTMLElement),
+        ),
+        slots: [...document.querySelectorAll('.art-slot')].map((e) => {
+          const el = e as HTMLElement;
+          return {
+            slot: el.dataset.slot ?? '',
+            filled: el.dataset.filled === '1',
+            w: Math.round(el.getBoundingClientRect().width),
+            h: Math.round(el.getBoundingClientRect().height),
+          };
+        }),
+        cells: [...document.querySelectorAll('.bag-cell')].map((e) => {
+          const el = e as HTMLElement;
+          return {
+            id: el.dataset.art ?? '',
+            sel: el.classList.contains('sel'),
+            w: Math.round(el.getBoundingClientRect().width),
+            h: Math.round(el.getBoundingClientRect().height),
+          };
+        }),
+        rows: [...document.querySelectorAll('.arts-row')].map((e) =>
+          Math.round((e as HTMLElement).getBoundingClientRect().height),
+        ),
+        tip: !!document.querySelector('.arts-tip'),
+      };
+    };
+    // 先挂快照再开面板：面板若抛错，探针仍能读到 state（否则只剩"没打开"三个字）
+    (window as unknown as { __arts: () => unknown; __artsError?: string }).__arts = snap;
+    try {
+      openArts(h.id);
+    } catch (e) {
+      (window as unknown as { __artsError?: string }).__artsError = String(e);
+      console.error('[devarts] 打开面板失败', e);
     }
   }
 }

@@ -4,10 +4,17 @@ import { getUnit } from '../data/units.js';
 import { BASE_MOVE_POINTS } from '../map/generator.js';
 import { DIFFICULTIES } from '../data/factions.js';
 import { deriveSeed, mulberry32 } from '../rng.js';
+import { equippedOf } from './equip.js';
+
+/** 身上真正**穿着**的宝物（U2）：背包里的不加属性，否则"卸下"没有意义。 */
+function wornArtifacts(hero: Hero): string[] {
+  const eq = equippedOf(hero);
+  return Object.values(eq).filter((id): id is string => !!id);
+}
 
 export function effectivePrimary(hero: Hero): HeroPrimary {
   const p: HeroPrimary = { ...hero.primary };
-  for (const id of hero.artifacts) {
+  for (const id of wornArtifacts(hero)) {
     const m = ARTIFACTS[id]?.mods;
     if (!m) continue;
     p.attack += m.attack ?? 0;
@@ -28,7 +35,7 @@ export function effectivePrimary(hero: Hero): HeroPrimary {
  */
 export function maxMovePoints(hero: Hero, state?: GameState): number {
   let m = BASE_MOVE_POINTS;
-  for (const id of hero.artifacts) m += ARTIFACTS[id]?.moveBonus ?? 0;
+  for (const id of wornArtifacts(hero)) m += ARTIFACTS[id]?.moveBonus ?? 0;
   if (state && hero.owner === 'p1') {
     const diff = DIFFICULTIES[state.config?.difficulty ?? 'normal'];
     m = Math.round(m * (diff.playerMoveMul ?? 1));
@@ -43,7 +50,7 @@ export function manaMaxOf(hero: Hero): number {
 
 export function dailyGoldBonus(hero: Hero): number {
   let g = 0;
-  for (const id of hero.artifacts) g += ARTIFACTS[id]?.dailyGold ?? 0;
+  for (const id of wornArtifacts(hero)) g += ARTIFACTS[id]?.dailyGold ?? 0;
   return g;
 }
 

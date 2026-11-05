@@ -85,6 +85,8 @@ export class HeroPanel {
     /** §14.2「完成那一刻」：教学清单**由未全达成 → 全达成**的那一次回调（非阻断 banner）。
      *  **会话内一次性**；载入即 3/3 **不算**"转移" ⇒ 不触发（边缘情况 1）。 */
     private onObjectivesComplete?: () => void,
+    /** §9.1 U2：打开装备页（760×352 纸娃娃 + 背包）。侧栏放不下纸娃娃，只能开弹窗。 */
+    private onOpenArts?: (heroId: string) => void,
   ) {
     // 调试：?devarts=1 直接展开宝物格（与 devbattle 同一套调试约定）
     this.showArtifacts = new URLSearchParams(location.search).has('devarts');
@@ -302,6 +304,23 @@ export class HeroPanel {
 
   private artifactSection(hero: Hero): HTMLElement {
     const wrap = div('sec hp-arts');
+
+    /* U2：侧栏只放得下 6 个小槽，纸娃娃与背包在弹窗里（§9.1）。
+     * 入口放这一行而不是新开一个 tab —— `#156` 的分段上限是 4 段，且宝物
+     * 本来就是「部队」段之外的折叠区，再开一段会把默认段预算吃掉。 */
+    if (this.onOpenArts) {
+      const head = div('hp-arts-head');
+      const h3 = document.createElement('h3');
+      h3.textContent = '宝物';
+      head.appendChild(h3);
+      const btn = document.createElement('button');
+      btn.className = 'btn tiny';
+      btn.textContent = '装备页';
+      btn.addEventListener('click', () => this.onOpenArts?.(hero.id));
+      head.appendChild(btn);
+      wrap.appendChild(head);
+    }
+
     const grid = div('slot-row');
     for (const slot of ARTIFACT_SLOTS) {
       const owned = hero.artifacts.map((id) => ARTIFACTS[id]).find((a) => a && a.slot === slot.slot);

@@ -29,6 +29,7 @@
     "probe:d1": "node tools/probes/sidebias.mjs --gate=d1",
     "probe:d2": "node tools/probes/sidebias.mjs --gate=d2",
     "probe:exchange": "node tools/probes/exchange.mjs",
+    "probe:arts": "node tools/probes/arts.mjs",
     "probe:frames": "node tools/probes/frames.mjs",
     "probe:touchtap": "node tools/probes/touchtap.mjs",
     "audit:ai-diag": "node tools/aidiagnose.mjs",

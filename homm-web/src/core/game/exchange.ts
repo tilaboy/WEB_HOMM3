@@ -188,30 +188,10 @@ export function exchangeArmy(
 
 /* ---------------- 装备 ---------------- */
 
-/**
- * 英雄当前的"穿戴表"。**不写回**——它是旧档的读时兜底。
- *
- * `Hero.artifacts` 是扁平数组（§9.1 数据口径：零迁移），`equipped` 缺省时按
- * 「每个槽取数组里第一个匹配」回填，与 `HeroPanel` 现有显示完全一致；
- * 第二次落到同一槽的宝物**不算穿戴**，会出现在背包里。
- */
-export function equippedOf(hero: Hero): Partial<Record<ArtifactSlot, string>> {
-  if (hero.equipped) return hero.equipped;
-  const out: Partial<Record<ArtifactSlot, string>> = {};
-  for (const id of hero.artifacts) {
-    const def = ARTIFACTS[id];
-    if (!def) continue;
-    if (!out[def.slot]) out[def.slot] = id;
-  }
-  return out;
-}
-
-/** 未穿戴的宝物（背包），按获得顺序。 */
-export function backpackOf(hero: Hero): string[] {
-  const eq = equippedOf(hero);
-  const worn = new Set(Object.values(eq));
-  return hero.artifacts.filter((id) => !worn.has(id));
-}
+/* 「穿戴表 / 背包」的唯一实现在 `equip.ts`（U2 装备页与属性计算共用）。
+ * 这里**重导出**而不是各写一份：会面面板一直从本模块取，改了路径会漏掉调用方。 */
+export { equippedOf, backpackOf } from './equip.js';
+import { equippedOf } from './equip.js';
 
 export interface ArtifactResult extends ExchangeResult {
   /** 落地到哪个槽（成功且不是背包时）。 */
