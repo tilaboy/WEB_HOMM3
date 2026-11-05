@@ -46,6 +46,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { withHeadlessChrome } from './_chrome.mjs';
+import { READ_SAVE_EXPR } from './_dist.mjs';
 
 const arg = (k, d) => {
   const a = process.argv.find((x) => x.startsWith(`--${k}=`));
@@ -233,9 +234,9 @@ try {
               if (document.readyState !== 'complete') return false;
               if (document.querySelector('#start-screen')) return false;
               if (!document.querySelector('#map')) return false;
-              const raw = localStorage.getItem('homm-save-v1');
-              if (!raw) return false;
-              return JSON.parse(raw).config.scenario === ${JSON.stringify(id)};
+              const g = ${READ_SAVE_EXPR};
+              if (!g) return false;
+              return g.config.scenario === ${JSON.stringify(id)};
             })()`);
             if (ready) return;
           } catch { /* 导航中 */ }
@@ -253,7 +254,7 @@ try {
           el.click();
           return 'OK';
         })()`);
-      const readSave = () => evaluate(`(() => { const raw = localStorage.getItem('homm-save-v1'); return raw ? JSON.parse(raw) : null; })()`);
+      const readSave = () => evaluate(READ_SAVE_EXPR);
       const teachText = () => evaluate(`(() => { const e = document.querySelector('.hp-teach'); return e ? e.textContent : null; })()`);
 
       /* ---- item 1（2026-10-12 重写）：开始页只剩「一张地图卡 + 一个难度」 ----
@@ -371,9 +372,10 @@ try {
       const craftLoad = async (mode) => {
         await bootGame('tutorial');
         await sleep(800);
-        const raw = await evaluate(`localStorage.getItem('homm-save-v1')`);
-        if (!raw) return { c: { err: 'NO_SAVE' }, cont: null, teach: null, bv: { visible: null } };
-        const s = JSON.parse(raw);
+        /* U4 起读档值在 `homm-save-auto` 外壳里（`{shell, savedAt, state}`），
+           统一走 `READ_SAVE_EXPR` —— 不再认 `homm-save-v1`。 */
+        const s = await evaluate(READ_SAVE_EXPR);
+        if (!s) return { c: { err: 'NO_SAVE' }, cont: null, teach: null, bv: { visible: null } };
         const rev = s.players['p1'].revealed;
         const walkOn = mode === 'three';
         for (let i = 0; i < rev.length; i++) rev[i] = (walkOn && i < 140) ? 1 : 0;
@@ -381,13 +383,22 @@ try {
         let n = 0;
         for (const o of Object.values(s.map.objects)) { if (o.kind === 'mine' && n < 2) { o.payload.owner = 'p1'; n++; } }
         const c = { walkSum: rev.reduce((a, b) => a + b, 0), exp: s.heroes['hero1']?.exp ?? null, mines: n };
-        const B = JSON.stringify(s);
+        /* 直接写成 auto 档的**外壳格式**（与 `saveToSlot` 同构），不依赖旧 key 迁移。
+           ⚠️ `savedAt` **必须在注入脚本里取**：旧文档 `pagehide` 会写一份 resume，
+           它的时间戳比"构造字符串那一刻"晚十几毫秒 ⇒ 若在这里写死，`latestSlot()`
+           会选 resume，手造的档根本没被读（item15 首跑就是这么红的）。 */
+        const B = JSON.stringify({ shell: 1, savedAt: 0, state: s });
         const { identifier } = await send('Page.addScriptToEvaluateOnNewDocument', {
-          source: `try { localStorage.setItem('homm-save-v1', ${JSON.stringify(B)}); } catch (e) {}`,
+          source: `try {
+            const o = JSON.parse(${JSON.stringify(B)});
+            o.savedAt = Date.now();
+            localStorage.setItem('homm-save-auto', JSON.stringify(o));
+          } catch (e) {}`,
         });
         await boot(); // 新文档启动前先落盘 B（抢在 app 之前）
         await send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
-        const cont = await clickText('#start-screen button', '继续上次存档');
+        /* 2026-11-05：按钮文案从「继续上次存档」改为「继续」+ 第二行时间线（§30.6）。 */
+        const cont = await clickText('#start-screen button', '继续');
         await sleep(1300);
         await clickText('#thumb button', '英雄');
         await sleep(600);
@@ -412,9 +423,8 @@ try {
       await bootGame('tutorial');
       await sleep(800);
       const craftStep = await evaluate(`(() => {
-        const raw = localStorage.getItem('homm-save-v1');
-        if (!raw) return { err: 'NO_SAVE' };
-        const s = JSON.parse(raw);
+        const s = ${READ_SAVE_EXPR};
+        if (!s) return { err: 'NO_SAVE' };
         const W = s.map.width;
         const hero = s.heroes['hero1'];
         if (!hero) return { err: 'NO_HERO1' };
@@ -447,13 +457,19 @@ try {
           }
           return false;
         };
+        /* 同上：时间戳在注入脚本里取，才能压过 pagehide 写的那份 resume。 */
+        const shell = JSON.stringify({ shell: 1, savedAt: 0, state: JSON.parse(craftStep.B) });
         const { identifier } = await send('Page.addScriptToEvaluateOnNewDocument', {
-          source: `try { localStorage.setItem('homm-save-v1', ${JSON.stringify(craftStep.B)}); } catch (e) {}`,
+          source: `try {
+            const o = JSON.parse(${JSON.stringify(shell)});
+            o.savedAt = Date.now();
+            localStorage.setItem('homm-save-auto', JSON.stringify(o));
+          } catch (e) {}`,
         });
         await send('Page.navigate', { url: URL0 + '/?devprobe=1' });
         await sleep(1800);
         await send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
-        await clickText('#start-screen button', '继续上次存档');
+        await clickText('#start-screen button', '继续');
         await sleep(1200);
         await clickText('#thumb button', '英雄');
         await sleep(600);

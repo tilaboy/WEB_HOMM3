@@ -144,3 +144,38 @@ export async function serveInProcess(dir, port) {
   await import('./serve.mjs');
   return await waitForServer(port);
 }
+
+/* ------------------------------------------------------------------ *
+ * 存档 key（U4 多槽化，2026-11-05）
+ *
+ * 旧工具一律读 `localStorage['homm-save-v1']` —— 那是**单槽时代**的唯一 key。
+ * U4 起真值是 `homm-save-auto`（外壳 `{shell:1, savedAt, state}`）与 `homm-save-resume`；
+ * `homm-save-v1` 只在首启迁移时被读一次、随即删除。
+ *
+ * ⇒ 所有门控改用下面两个**页面内表达式**，不要再各写一份 `JSON.parse(...)`：
+ *   ① 读档：按 `savedAt` 取 auto / resume 里较新的那份，并把外壳拆掉；
+ *   ② 清档：**10 个 key 全清**（只删 v1 会留下 auto/resume，下一次 boot 就 `hasSave()=真`）。
+ * ------------------------------------------------------------------ */
+
+export const READ_SAVE_EXPR = `(() => {
+  const keys = ['homm-save-auto', 'homm-save-resume', 'homm-save-v1'];
+  let best = null;
+  for (const k of keys) {
+    const raw = localStorage.getItem(k);
+    if (!raw) continue;
+    let o;
+    try { o = JSON.parse(raw); } catch { continue; }
+    if (!o || typeof o !== 'object') continue;
+    const st = o.shell === 1 && o.state ? o.state : o;
+    const at = Number(o.savedAt) || 0;
+    if (!best || at > best.at) best = { at, st };
+  }
+  return best ? best.st : null;
+})()`;
+
+export const CLEAR_SAVES_EXPR = `(() => {
+  const keys = ['homm-save-v1', 'homm-save-auto', 'homm-save-resume'];
+  for (let i = 1; i <= 8; i++) keys.push('homm-save-slot' + i);
+  for (const k of keys) { try { localStorage.removeItem(k); } catch {} }
+  return true;
+})()`;

@@ -35,8 +35,15 @@ import { quality } from '../render/quality.js';
  */
 export interface StartScreenOptions {
   initial?: Partial<GameConfig>;
-  /** 本地是否已有存档 */
+  /** 本地是否已有可继续的档（auto / resume 之一） */
   hasSave: boolean;
+  /**
+   * 「继续」按钮的第二行：`第 2 周第 1 天 · 自动档`（§30.6）。
+   * 只写「继续」的话，玩家不知道会回到哪条时间线 —— 尤其读过旧档之后。
+   */
+  continueNote?: string;
+  /** 版本失效的档数（>0 时写明「旧存档已随版本更新失效」，§30.5）。 */
+  staleSaves?: number;
   onStart: (config: GameConfig) => void;
   onContinue: () => void;
 }
@@ -180,8 +187,17 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
 
   if (opts.hasSave) {
     const contBtn = document.createElement('button');
-    contBtn.className = 'btn big';
-    contBtn.textContent = '继续上次存档';
+    contBtn.className = 'btn big ss-continue';
+    contBtn.id = 'ss-continue';
+    contBtn.textContent = '继续';
+    /* 副标题（不是第二颗按钮）：告诉玩家会回到哪条时间线（§30.6）。 */
+    if (opts.continueNote) {
+      const sub2 = document.createElement('span');
+      sub2.className = 'ss-cont-sub';
+      sub2.textContent = opts.continueNote;
+      contBtn.appendChild(sub2);
+      contBtn.setAttribute('aria-label', `继续，${opts.continueNote}`);
+    }
     contBtn.addEventListener('click', () => {
       close();
       opts.onContinue();
@@ -191,7 +207,14 @@ export function openStartScreen(host: HTMLElement, opts: StartScreenOptions): St
 
   const note = document.createElement('div');
   note.className = 'ss-note';
-  note.textContent = opts.hasSave ? '开始会覆盖当前存档' : '进度会自动保存在本机浏览器里';
+  if (opts.staleSaves && opts.staleSaves > 0) {
+    note.textContent = `旧存档已随版本更新失效（${opts.staleSaves} 档）`;
+    note.dataset.stale = String(opts.staleSaves);
+  } else {
+    /* U4 起新局只覆盖 auto + resume，8 个手动档保留 ⇒ 文案必须跟着改，
+       否则玩家会以为"开新局 = 手动档全丢"（旧档其实还在读档列表里）。 */
+    note.textContent = opts.hasSave ? '开始会覆盖自动档（手动档保留）' : '进度会自动保存在本机浏览器里';
+  }
   actions.appendChild(note);
 
   /* ★ 按钮区挂**左栏**（`panel`），不挂右栏预览。

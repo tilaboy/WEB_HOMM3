@@ -40,6 +40,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CLEAR_SAVES_EXPR } from '../_dist.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT_DIR = process.argv[2] ?? '/tmp/tp3-audio';
@@ -161,7 +162,7 @@ try {
   // `?devstart=1` = 跳过首次自动教学，直接落到开始页（main.ts boot 段：门控专用入口）。
   // 开始页的 #ss-start 点击 = 用户手势 ⇒ AudioContext 合法解锁（§7 首屏不出声纪律）。
   await send('Page.addScriptToEvaluateOnNewDocument', {
-    source: `try { localStorage.removeItem('homm-save-v1'); } catch {}`,
+    source: `try { ${CLEAR_SAVES_EXPR} } catch {}`,
   });
   await send('Page.navigate', { url: `${BASE_URL}/?devstart=1&devprobe=1` });
   let clicked = false;

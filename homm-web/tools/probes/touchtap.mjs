@@ -33,7 +33,7 @@
  * 退出码：0 全过 · 1 有断言不过 · 2 前置不满足
  */
 import path from 'node:path';
-import { distDir, distUrl, printHeader, requireFile, freePort, serveInProcess } from '../_dist.mjs';
+import { distDir, distUrl, printHeader, requireFile, freePort, serveInProcess, READ_SAVE_EXPR } from '../_dist.mjs';
 import { withHeadlessChrome, chromeAvailable } from '../_chrome.mjs';
 
 const DIST = distDir();
@@ -108,7 +108,7 @@ try {
     for (let i = 0; i < 60; i++) {
       await sleep(200);
       try {
-        seeded = await evaluate(`(() => { const r = localStorage.getItem('homm-save-v1'); if (!r) return false; try { return JSON.parse(r).version === ${SAVE_VERSION}; } catch (e) { return false; } })()`);
+        seeded = await evaluate(`(() => { const g = ${READ_SAVE_EXPR}; return !!g && g.version === ${SAVE_VERSION}; })()`);
         if (seeded) break;
       } catch { /* 导航中 */ }
     }

@@ -63,7 +63,10 @@ import { closeModal, hideInfoPopup, isModalOpen, showInfoPopup, showModal } from
 import { isMuted, setMuted, sfx } from './ui/sfx.js';
 import { play as playMusic } from './audio/music.js';
 import { isMusicOn, setMusicOn } from './audio/bus.js';
-import { clearSave, hasSave, hydratePersistence, loadConfig, loadGame, saveConfig, saveGame } from './save/persistence.js';
+import { ALL_SLOTS, hasSave, hydratePersistence, listSlots, loadConfig, loadGame, loadSlot, saveConfig, saveToSlot, latestSlot, slotInfo } from './save/persistence.js';
+import type { SaveSlot } from './save/persistence.js';
+import { SaveDialog, slotTitle } from './ui/SaveDialog.js';
+import { dayOfWeek, weekOf } from './core/game/calendar.js';
 import { installLifecycle } from './app/lifecycle.js';
 import { installIcons, labelIcon, setLabel } from './ui/icons.js';
 import type { IconId } from './ui/icons.js';
@@ -522,6 +525,48 @@ function openLogPanel(): void {
   updateThumb();
 }
 
+/* ---------------- 存档点（§30.3 SA1–SA9） ----------------
+ *
+ * 纪律：**新增存档点先改规格那张表再写代码**，且只能落到这两条通道上——
+ *   `saveResume()`      救援档（SA1–SA4 / SA6–SA9）
+ *   `saveToSlot('auto')` 自动档（**只有 SA5 一个点**，在 `endDay()` 之前）
+ * 禁止在 UI 局部补 `save()`：那会让"哪个状态进了哪一档"变成十来处各说各话。
+ */
+function saveResume(): void {
+  const r = saveToSlot('resume', state);
+  if (!r.ok) hint(r.message ?? '存档失败');
+}
+
+/** 自动档的失败不该拦住「结束一天」（存储满也必须能继续玩），只提示一次。 */
+function saveAuto(): void {
+  const r = saveToSlot('auto', state);
+  if (!r.ok) hint(r.message ?? '存档失败');
+}
+
+/**
+ * 存档 / 读档面板（菜单 → 存档 / 读档）。
+ * 战斗中不提供入口：`openMenu()` 已有 `isBattleOpen()` 守卫，这里不另开一条路径。
+ */
+const saveDialog = new SaveDialog(stage, {
+  onLoad: (slot) => {
+    const g = loadSlot(slot);
+    if (!g) {
+      hint('这一档读不出来');
+      return;
+    }
+    const info = slotInfo(slot);
+    /* H3 保留的坑：读旧档之后第一次「结束一天」仍会覆盖自动档（自动档从此指向那条
+       旧时间线），手动档不受影响。不额外保护，但必须告诉玩家自己在哪条线上。 */
+    applyLoadedState(g, `已载入${dayName(info.day)}（${slotTitle(slot)}）`);
+  },
+  onSaved: (slot) => hint(`已存入${slotTitle(slot)}`),
+  onError: (message) => hint(message),
+});
+
+function dayName(day: number): string {
+  return `第 ${weekOf(day)} 周第 ${dayOfWeek(day)} 天`;
+}
+
 /**
  * 菜单（IA §7 / R6）：全部低频项的唯一入口，危险项入底并二次确认。
  *
@@ -562,8 +607,10 @@ function openMenu(): void {
   function renderSaveLoad(): void {
     panel.replaceChildren();
     heading('存档 / 读档');
-    button('', '立即存档', () => { saveGame(state); closer(); hint('已存档'); });
-    button('', '读取最近存档', () => { closer(); loadLatest(); });
+    /* §30.6：一级两项改成**打开面板**，不再"一点就存"。
+       「立即存档」那种一按就写的按钮，玩家不知道写去了哪里、覆盖了什么。 */
+    button('', '存档', () => { closer(); saveDialog.open('save', state); });
+    button('', '读档', () => { closer(); saveDialog.open('load', state); });
     button('', '返回', () => renderMain());
   }
 
@@ -607,13 +654,12 @@ function openMenu(): void {
   app.appendChild(root);
 }
 
-/** 读档：把最近存档灌回 state 并重建全部派生状态（R1：回到地图，镜头与选中英雄复位到存档值）。 */
-function loadLatest(): void {
-  const g = loadGame();
-  if (!g) {
-    hint('没有找到存档');
-    return;
-  }
+/**
+ * 把一份 `GameState` 灌回世界。**读档与新局共用这一段**（两者只差 g 从哪来），
+ * 否则"读档少复位一个变量"这类 bug 会在两次改动后悄悄出现（镜头卡住 / 上一局的
+ * 预览路径残留在新图上）。
+ */
+function applyLoadedState(g: GameState, note: string): void {
   state = g;
   selected = state.heroOrder.find((id) => state.heroes[id]?.owner === 'p1') ?? null;
   camera.mapW = state.map.width;
@@ -642,7 +688,8 @@ function loadLatest(): void {
   renderLog();
   seenLog = state.log.length;
   hideObjBanner(); // 换世界 ⇒ 3/3 banner 归零（新局里由 HeroPanel 重新判断）
-  hint('已读取最近存档');
+  saveResume(); // SA7：刚进来就有一份救援档
+  hint(note);
 }
 
 /** 新游戏：会话级操作，绝不能在日常 UI 里误触 → 二次确认（IA §3.1 #16 / §9 E）。 */
@@ -856,7 +903,7 @@ function openTownById(townId: string): void {
       recomputeField();
       refresh();
       renderLog();
-      saveGame(state);
+      saveResume();
     },
     onHire: (newHeroId) => {
       const nh = state.heroes[newHeroId];
@@ -908,7 +955,7 @@ function openArts(heroId: string): void {
   if (!state.heroes[heroId]) return;
   artsDialog.open(state, heroId, () => {
     refresh();
-    saveGame(state);
+    saveResume();
   });
 }
 
@@ -926,7 +973,7 @@ function openExchange(aId: string, bId: string): void {
   }
   exchangeDialog.open(state, aId, bId, () => {
     refresh();
-    saveGame(state);
+    saveResume();
   });
 }
 
@@ -1112,7 +1159,7 @@ function tickAnim(dt: number): void {
     pendingDest = null;
     recomputeField();
     refresh();
-    saveGame(state);
+    saveResume();
     /* §9.2 触发：**移动结束**时与友军同格 ⇒ 弹会面面板。
        `friendlyHeroAt` 只认同阵营同格 —— 敌方英雄在 `tickAnim` 上面那一支
        已经被拦成遭遇战了，不会走到这里。 */
@@ -1225,7 +1272,7 @@ function resolve(heroId: string, obj: MapObject, accept: boolean, outcome?: Batt
   recomputeField();
   refresh();
   renderLog();
-  saveGame(state);
+  saveResume();
   if (res.heroDefeated) {
     if (!afterWorldChange()) showGameOver();
     return;
@@ -1401,7 +1448,7 @@ function afterCast(heroId: string, res: { ok: boolean; message?: string; report?
   recomputeField();
   refresh();
   renderLog();
-  saveGame(state);
+  saveResume();
   showModal(stage, {
     title: '施法成功',
     body,
@@ -1429,7 +1476,7 @@ function startHeroEncounter(attackerId: string, defenderId: string): void {
       recomputeField();
       refresh();
       renderLog();
-      saveGame(state);
+      saveResume();
       if (state.status !== 'playing') return; // 终局面板会顶上
       const body: (Node | string)[] = [res.message];
       if (res.levelUps.length) body.push(`升级！${res.levelUps.join('、')}`);
@@ -1459,7 +1506,7 @@ function showOutcome(): void {
   recomputeField();
   refresh();
   renderLog();
-  saveGame(state);
+  saveResume();
   hideObjBanner(); // 终局 ⇒ 3/3 banner 归零
   showModal(stage, {
     title,
@@ -1497,12 +1544,32 @@ function openStart(): void {
   // （§7「首屏不出声」纪律，R1 守卫保证挂起期间零排程）。
   playMusic('menu');
 
+  /* 「继续」看的是 auto / resume 里较新的那份；手动档不参与（它们是回退用的）。 */
+  const contSlot = latestSlot();
+  const contInfo = contSlot ? slotInfo(contSlot) : null;
+  const staleSaves = listSlots(ALL_SLOTS).filter((s) => s.status === 'stale').length;
+
   openStartScreen(app, {
     initial,
-    hasSave: hasSave(),
+    hasSave: contSlot !== null,
+    /* §30.6：「继续」只在 auto 与 resume 里取较新的那份，并把**是哪一份**写出来。
+       两份都没有就不显示按钮（`hasSave === false`）。 */
+    continueNote: contSlot && contInfo
+      ? `${dayName(contInfo.day)} · ${contSlot === 'auto' ? '自动档' : '救援档'}`
+      : '',
+    /* §30.5：某档版本失效要明说，不许静默变新局。 */
+    staleSaves: staleSaves,
     onStart: (config) => startNewGame(config),
+    /* ★ 2026-11-05 修：这里原先只 `hint('继续当前对局')` —— 按钮**什么都没载入**，
+     * 只是一句提示（`iaaccept` 的 item15 用「造档 → 点继续 → 读教学面板」抓到：
+     * 载入的仍是新局 0/3）。继续 = 真正读档，且与读档列表共用 `applyLoadedState`。 */
     onContinue: () => {
-      hint('继续当前对局');
+      const g = loadGame();
+      if (!g) {
+        hint('没有可继续的存档');
+        return;
+      }
+      applyLoadedState(g, `已继续（${contInfo ? dayName(contInfo.day) : '上次进度'}）`);
     },
   });
 }
@@ -1593,7 +1660,9 @@ function startScenario(id: string): void {
 }
 
 function startNewGame(config: GameConfig): void {
-  clearSave();
+  /* §30.7：新局**不清手动档**（H3 新开一局也不删旧档）。
+     2026-11-05（U4）之前这里第一行是 `clearSave()` —— 改成多槽之后它会连
+     8 个手动档一起删掉，"开一局新的看看"就永久丢档。 */
   saveConfig(config);
   /* §M-02：地图尺寸按当前画质上限夹紧（低端 32 / 中端 40 / 高端 48），
    * 从源头掐掉超预算的地形烘焙面。原始偏好照常保存，切到高档后即可恢复。
@@ -1633,7 +1702,11 @@ function startNewGame(config: GameConfig): void {
   recomputeField();
   refresh();
   renderLog();
-  saveGame(state);
+  /* 新局同时覆盖 auto 与 resume（§30.7）：只写 resume 的话，「继续」下次可能
+     仍指向上一局的自动档（auto 的 savedAt 更旧，虽然会输给 resume，但一旦
+     resume 写失败就会把玩家送回旧局）。 */
+  saveAuto();
+  saveResume();
   hideObjBanner(); // 新局 ⇒ 3/3 banner 归零
   /* 教学模式：首句提示要告诉玩家"怎么出去"—— 它是自动进来的，没有人点过任何按钮，
    * 不说清楚"菜单 → 跳过教学"的话，玩家会以为这一局没有退出路径。 */
@@ -1659,7 +1732,8 @@ function goShowcase(): void {
   if (!def) return;
   showModal(stage, {
     title: '去破碎罗盘',
-    body: ['会开一局新的破碎罗盘，当前进度（含本机存档）会被覆盖。'],
+    /* U4：新局只覆盖自动档 / 救援档，8 个手动档保留 ⇒ 文案别再说"含本机存档"全没。 */
+    body: ['会开一局新的破碎罗盘，当前进度会被覆盖（手动存档保留）。'],
     actions: [
       { label: '取消', onClick: (c) => c() },
       {
@@ -1710,13 +1784,17 @@ function showGameOver(): void {
 function doEndDay(): void {
   if (isModalOpen() || anim || isBattleOpen()) return;
   if (state.status !== 'playing') return;
+  /* SA5：自动档的内容必须是**推进前**（§30.2）。推进后写等于把 AI 行动、周事件、
+     收入一起存进去 —— 那些已经发生且不可撤销，读回来就不再是"回到今天结束"。
+     所以是"先写档 → 再 endDay"，不是反过来。 */
+  saveAuto();
   endDay(state);
   sfx.day();
   lastStepFrom = null;
   recomputeField();
   refresh();
   renderLog();
-  saveGame(state);
+  saveResume(); // SA6：让救援档比自动档新（否则「继续」会退回今天）
   if (afterWorldChange()) return;
   showAiDayReport();
 }
@@ -2343,7 +2421,7 @@ raf = requestAnimationFrame(frame);
 installLifecycle({
   onPause: () => {
     cancelAnimationFrame(raf);
-    saveGame(state);
+    saveResume();
   },
   onResume: () => {
     last = performance.now();
@@ -2469,6 +2547,64 @@ if (bootParams.has('devclear')) {
     if (t.objectId && !state.map.objects[t.objectId]) t.objectId = null;
   }
 }
+// 调试：?devsave=1 暴露存档面板与"逐字段深比较"的把手（tools/probes/save.mjs 用）
+if (bootParams.has('devsave')) {
+  /* 深比较在**页面内**做：整份 `GameState` 序列化后 50–130KB，来回搬两趟只会让
+     probe 的输出不可读。`mark()` 记一份，`diff()` 返回顶层键的差异清单 —— 失败时
+     直接告诉你"是哪个字段没进档"，而不是一句"不相等"。 */
+  let marked = '';
+  const w = window as unknown as { __save?: Record<string, unknown> };
+  w.__save = {
+    open: (mode: 'save' | 'load') => saveDialog.open(mode, state),
+    day: () => state.day,
+    mp: () => {
+      const id = selected ?? state.heroOrder[0];
+      return state.heroes[id]?.movePoints ?? -1;
+    },
+    info: (slot: string) => slotInfo(slot as SaveSlot),
+    list: () => listSlots(ALL_SLOTS),
+    latest: () => latestSlot(),
+    mark: () => {
+      marked = JSON.stringify(state);
+      return marked.length;
+    },
+    diff: () => {
+      const now = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      const then = JSON.parse(marked) as Record<string, unknown>;
+      const keys = new Set([...Object.keys(then), ...Object.keys(now)]);
+      const diff: string[] = [];
+      for (const k of keys) {
+        if (JSON.stringify(then[k]) !== JSON.stringify(now[k])) diff.push(k);
+      }
+      return { equal: diff.length === 0, diff };
+    },
+    /** 负向对照：改一个**必须进档**的字段，用来证 diff() 真的能发现差异。 */
+    bump: () => {
+      state.log.push({ day: state.day, text: '[probe] 负向对照' });
+    },
+    /**
+     * 写两个**可选字段**（`towns[].growthRemainder` / `players[].noTownDays`）。
+     *
+     * 为什么要夹具：这两个字段在开局第一天往往**是 undefined** —— 而"白名单裁字段"
+     * 这类回归恰恰只会在"字段有值"时暴露（undefined 裁掉再读回来还是 undefined，
+     * 深比较看不出来）。所以先让它们有值，再存 / 读 / 逐值比对。
+     */
+    poke: () => {
+      const tid = Object.keys(state.towns)[0] ?? '';
+      const town = tid ? state.towns[tid] : null;
+      const uid = town ? Object.keys(town.growthPool)[0] ?? '' : '';
+      if (town && uid) {
+        town.growthRemainder = { ...(town.growthRemainder ?? {}), [uid]: 0.5 };
+      }
+      const target = Object.keys(state.players).find((p) => p !== viewerOf(state)) ?? '';
+      if (target && state.players[target]) state.players[target].noTownDays = 3;
+      return { tid, uid, pid: target };
+    },
+    rowText: (slot: string) =>
+      document.querySelector(`.slot-row[data-slot="${slot}"]`)?.textContent ?? '',
+  };
+}
+
 // 调试：?devprobe=1 暴露行程状态（tools/destaudit.mjs 端到端审计用）
 if (bootParams.has('devprobe')) {
   const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void; __mapTint: (on: boolean) => void; __mapShadow: (on: boolean) => void; __mapShadowProbe: () => unknown; __mapShadowOffset: (dy: number) => void; __mapFringe: (tone: string) => void; __mapReachProbe: () => unknown; __mapPathProbe: () => unknown; __mapPreviewTo: (tx: number, ty: number) => unknown; __mapPreviewDay: () => unknown };

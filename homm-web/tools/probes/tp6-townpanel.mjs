@@ -25,6 +25,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CLEAR_SAVES_EXPR } from '../_dist.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT_DIR = process.argv[2] ?? '/tmp/tp6-town';
@@ -239,7 +240,7 @@ try {
   // 教学局（?devprobe=1 自动进；无存档且没教过）。town_home 在 (5,15)、hero1 在 (4,14)。
   // ?devstart 别加——会落开始页；拇指带「城」直接开主城，不需要走路。
   await send('Page.addScriptToEvaluateOnNewDocument', {
-    source: `try { localStorage.removeItem('homm-save-v1'); localStorage.removeItem('homm-tutorial-done'); } catch {}`,
+    source: `try { ${CLEAR_SAVES_EXPR} localStorage.removeItem('homm-tutorial-done'); } catch {}`,
   });
   await send('Page.navigate', { url: `${BASE_URL}/?devprobe=1` });
   let inTutorial = false;

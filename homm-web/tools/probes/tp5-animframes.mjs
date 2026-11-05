@@ -90,6 +90,7 @@ import { spawn } from 'node:child_process';
 import { inflateSync } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { CLEAR_SAVES_EXPR } from '../_dist.mjs';
 
 const OUT_DIR = path.resolve(process.argv[2] ?? '/tmp/tp5-frames');
 const FRAME_GAP_MS = Number(process.env.FRAME_GAP_MS ?? 250);
@@ -619,7 +620,7 @@ try {
      —— TP-5 真踩过，症状极隐蔽）。用 addScriptToEvaluateOnNewDocument 在 main.js
      前删键（chromeshot --ls= 同款机制），boot 才走 startScenario('tutorial') 分支。 */
   await send('Page.addScriptToEvaluateOnNewDocument', {
-    source: `try { localStorage.removeItem('homm-save-v1'); localStorage.removeItem('homm-tutorial-done'); } catch {}`,
+    source: `try { ${CLEAR_SAVES_EXPR} localStorage.removeItem('homm-tutorial-done'); } catch {}`,
   });
   await send('Page.navigate', { url: `${BASE_URL}/?devbattle=t5&devauto=1&devprobe=1` });
   await waitFor(

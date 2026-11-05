@@ -23,6 +23,8 @@
  *   - macOS 无 `timeout`；BSD grep 不支持 `\|`（用 `-E`）
  *   - 退出码不可靠（SIGTERM 但活干完了）⇒ **只信产物**
  */
+import { READ_SAVE_EXPR } from '../_dist.mjs';
+
 const arg = (k, d) => {
   const a = process.argv.find((x) => x.startsWith(`--${k}=`));
   return a ? a.slice(k.length + 3) : d;
@@ -100,8 +102,9 @@ const probe = await evaluate(`(async () => {
   const q = (arr, p) => { if (!arr.length) return null; const s=[...arr].sort((a,b)=>a-b); return +s[Math.min(s.length-1, Math.floor(p*s.length))].toFixed(1); };
   const gaps = frames.map(f => f.gap).filter(g => g > 0);
 
+  /* U4：读当前该读的那一档（auto/resume 取新），外壳自动拆。 */
   let g = null;
-  try { const raw = localStorage.getItem('homm-save-v1'); g = raw ? JSON.parse(raw) : null; } catch {}
+  try { g = ${READ_SAVE_EXPR}; } catch {}
 
   return JSON.stringify({
     ua: navigator.userAgent,

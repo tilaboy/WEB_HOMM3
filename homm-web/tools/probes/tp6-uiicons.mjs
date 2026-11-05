@@ -28,6 +28,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, copyFileSync } from '
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CLEAR_SAVES_EXPR } from '../_dist.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT_DIR = process.argv[2] ?? '/tmp/tp6-uiicons';
@@ -208,7 +209,7 @@ try {
     // tutorial 场景 + devprobe；首次启动会自动进教学局（这正是我们要的画面）。
     // ⚠️ 不要加 ?devstart=1 —— 它会跳过自动教学落开始页，教学清单再也不出现。
     await send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `try { localStorage.removeItem('homm-save-v1'); localStorage.removeItem('homm-tutorial-done'); } catch {}`,
+      source: `try { ${CLEAR_SAVES_EXPR} localStorage.removeItem('homm-tutorial-done'); } catch {}`,
     });
     await send('Page.navigate', { url: `${BASE_URL}/?devprobe=1` });
     // 等教学局起来（hint 文案是场景标记；比 canvas 更稳）

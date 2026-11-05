@@ -2877,6 +2877,46 @@ body.in-battle #thumb {
   }
 }
 
+/* ---------- 极矮（真机 792×320）：两颗按钮并排，否则「继续」整颗在折叠线下 ----------
+ *
+ * 实测（2026-11-05，792×320，有存档）：「开始」底边 300（刚好卡在屏内），
+ * 「继续」底边 **362**、说明 385 ⇒ 多出 65px。U4 给「继续」加了第二行
+ * （第 N 周第 M 天 · 来源档），正是压垮它的最后一行。
+ *
+ * 处理：**不改竖轴密度**（再压字号就不可读了），改成 `row wrap` ——
+ * 两颗按钮各占一半宽、说明独占一行。52px 的高度差就从这里省出来。
+ * 只在 ≤340 生效：844×390 上仍是"上下堆叠、开始主按钮独占一行"的形态。
+ */
+@media (orientation: landscape) and (max-height: 340px) {
+  .ss-panel {
+    /* 实测：并排之后「说明」底边 319 / 屏高 320 —— 正好贴死。再收 4px 留出呼吸，
+       也是给真机的安全区留余量（`#start-screen` 自己避过一次，但只有 1px 时等于没有）。 */
+    padding: 4px 10px;
+    gap: 5px;
+  }
+
+  .ss-actions {
+    flex-flow: row wrap;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .ss-actions .btn.big {
+    width: auto;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .ss-note {
+    flex: 1 0 100%;
+  }
+
+  /* 半宽列里，第二行不再加字距（3 个字距 ≈ 6px，正好卡在换行边缘）。 */
+  .ss-cont-sub {
+    letter-spacing: 0;
+  }
+}
+
 /* ==========================================================================
  * P0 · 界面语法层（2026-10-22）
  *
@@ -4440,4 +4480,210 @@ body.side-open #thumb {
   .doll-sil::before {
     top: 6%;
   }
+}
+
+/* ==========================================================================
+ * 存档 / 读档（U4 · 规格 §30.6，2026-11-05）
+ *
+ * 8 行（存档）/ 9 行（读档），行高 44 —— 正好是 §5.2 的触达下限，
+ * 不再用 36/40 的"看起来能点"尺寸。
+ * 面板自己是 flex 列：**头部不滚、列表滚**（R3「出口不滚动」），
+ * 因此不能沿用 `.modal{overflow-y:auto}` 的默认行为。
+ * ========================================================================== */
+
+.modal.saves {
+  --sd-row: 44px;
+  width: min(420px, 92vw);
+  height: min(352px, 94%);
+  max-height: min(352px, 94%);
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal.saves .modal-head {
+  flex: 0 0 auto;
+  padding: 2px 10px;
+  min-height: 0;
+  /* 与装备页同一处修正：全局 `.modal-head` 的深木渐变会把 `#6b4415` 标题压成
+   * 深字压深底，实拍几乎不可读。这里改成纸面的一部分（透明 + 发丝线）。 */
+  background: none;
+  border-bottom: 1px solid rgba(58, 42, 18, 0.2);
+}
+
+.modal.saves .modal-head h2 {
+  font-size: var(--t-cap);
+  letter-spacing: 0.02em;
+}
+
+.sd-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 8px 8px;
+}
+
+.sd-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slot-row {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: var(--sd-row);
+  padding: 0 8px;
+  text-align: left;
+  font: inherit;
+  color: var(--parch-ink);
+  background: rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(58, 42, 18, 0.16);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.slot-row:not(:disabled):active {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+/* 空档 / 旧版本 / 损坏：都不许看起来"和可读的一模一样"。 */
+.slot-row:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.slot-row[data-status='empty'] {
+  /* 存档模式里的空档是**可写目标**：虚线边框表示"这里能放东西"。 */
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.sd-n {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 3px;
+  background: rgba(58, 42, 18, 0.12);
+  font-size: var(--t-cap);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sd-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.sd-main b {
+  font-size: var(--t-body);
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sd-main i {
+  font-size: var(--t-cap);
+  font-style: normal;
+  line-height: 1.2;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sd-main b.dim {
+  font-weight: 400;
+  opacity: 0.65;
+}
+
+.sd-time {
+  font-size: var(--t-cap);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.sd-note,
+.sd-msg {
+  flex: 0 0 auto;
+  margin-top: 4px;
+  font-size: var(--t-cap);
+  line-height: 1.3;
+}
+
+.sd-note {
+  opacity: 0.75;
+}
+
+/* 写档失败必须可见（§30.5）：红字留在列表下方，面板不关。 */
+.sd-msg {
+  color: #8a1f12;
+  font-weight: 600;
+}
+
+/* 覆盖 / 读档确认：**面板内的一层**，不是第二个 modal。
+ * `showModal()` 会 `innerHTML=''`，借它弹确认会把列表（连着刚点的那行）抹掉。 */
+.sd-ask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(244, 232, 207, 0.97);
+  border-radius: 2px;
+}
+
+.sd-ask p {
+  margin: 0;
+  font-size: var(--t-body);
+  color: var(--parch-ink);
+  text-align: center;
+}
+
+.sd-ask-btns {
+  display: flex;
+  gap: 10px;
+}
+
+/* 矮机：352 高按 94% 只有 269，列表能看到的行更少 —— 行高**不降**，
+ * 44px 是触达下限，宁可多滚一屏。只把上下内边距收紧。 */
+@media (max-height: 340px) {
+  .modal.saves {
+    height: min(352px, 100%);
+    max-height: min(352px, 100%);
+  }
+
+  .sd-body {
+    padding: 2px 6px 6px;
+  }
+}
+
+/* 「继续」的第二行（StartScreen）：写清会回到哪条时间线。 */
+.ss-cont-sub {
+  display: block;
+  font-size: var(--t-cap);
+  letter-spacing: 1px;
+  line-height: 1.25;
+  opacity: 0.72;
 }

@@ -65,12 +65,17 @@
 | （无 npm script，直接 `node tools/showcasegate.mjs`） | `showcasegate.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | 展示图可玩性门（点击数 / 开局页滚动比 / 常驻文字条）。**2026-10-12**：「试这张图」并入「开始」，A 组从"证明减法生效"改为"证明没倒退回 2 次点击" |
 | （无 npm script，直接 `node tools/iaaccept.mjs`） | `iaaccept.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | **独立验收探针**（不复用被验方的 `scenarioaudit`）。⚠️ **默认连外部 5173**，须先 `node tools/serve.mjs`；**且必须带 `NO_PROXY='*'`**（见 §六） |
 | （无 npm script，直接 `node tools/verify-static-map.mjs`） | `verify-static-map.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | 图三静态地形 24 项断言（地形逐格相等 / 城堡矿山英雄零冲突 / 36 条路径） |
+| `probe:card` | `probes/card.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | **S2 新增（2026-11-01）**。兵牌：立绘 43×37 / 行高 48 / **牌面零文字**（名字只在 `aria-label`）/ `.act` 金框随出手切换 / 预估行只在打得着的敌卡上；**20 条 + 负向对照**。它答的是「零文字之后还认得出是谁」——名字与数量都撤掉了，判据只能落在**几何 + 可访问名 + 状态标记**上 |
+| `probe:uip0` | `uip0probe.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | **S2 新增**。顶部 HUD 文字全撤之后的 P0 队列：17 ✅ + `?devnohud=1` 闸；`--selfcheck` 跑 **12 条负向对照**（判据必须能红）。⚠️ 它读的是**文本节点**（`textContent` 会吃掉子元素） |
+| `probe:touchtap` | `probes/touchtap.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | **S2 改口径**。战斗侧列的触摸命中，**两臂**（`hover:none` / `hover:hover`）；S2 把两侧名单改成零文字后，名单只能从 `aria-label` 读（**不许**再按可见文字取） |
+| `probe:arts` | `probes/arts.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | **U2 新增（2026-11-05）**。装备页 **29 条**：三栏几何（240/256/240、槽 40/矮机 32）/ 只穿装备的加属性 / 类型不符**零写入** / 选中不加属性 / 双击卸下 / 长按 400ms 浮层 / 两档尺寸都不裁。负向对照三条 |
+| `probe:save` | `probes/save.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | **U4 新增（2026-11-05）**。存档 **7 组 45 条**：P1 自动档时点（`endDay` **之前**）/ P2 逐字段深比较（含 `growthRemainder`、`noTownDays` 逐值）/ P3 槽位隔离（别的档**字节不变**）/ P4 覆盖取消零写入 / P5 单档版本失效 / P6 配额提示 / P7 档名只看 `weekOf·dayOfWeek`。⚠️ 点击前必须 `scrollIntoView` + `elementFromPoint` 命中检查 —— 列表第 6 行以后在 792×320 是折叠线下的，直接按 rect 中心点会点空（读成「存档没写」） |
 
 > ★ **表外**（不判过否）：`build`（`tsc` + `postbuild.mjs`）、`typecheck`、`start`/`serve.mjs`、`watch`、`dev`、`assets:mobile`、`mobile:sync`。
 
 ## 四、三条通用纪律
 
-1. **前置不满足一律 `2`** —— 走 `_dist.mjs` 的 **`requireFile()`**（缺文件即 `2` + 一句"先 `npm run build`"），**不要让它以模块解析栈崩在 `1`**。★ 现状（2026-10-13 重数）：**17 道门接 `_dist.mjs`**；其中 **10/17 走统一 `requireFile`**（`smoke` / `layoutaudit` / `minesaudit` / `b0audit` / `mapbadgeaudit` / `hpbudget` / `panelgate` / `haloflip` / `showcasegate` / `verify-static-map`），**7 道自带 `exit(2)` 分支**（`hoveraudit` / `tinytargetaudit` / `atlasaudit` / `contactaudit` / `grimscontact` / `scenarioaudit` / `tutorialgate`）⇒ **"自带分支是否覆盖全部前置"= 未核项**（不是已认定的缺陷）。另：**`iaaccept.mjs` 不接 `_dist.mjs`**（自带 `--dist=` + `exit(2)`，且默认连外部 5173 ⇒ 见 §五）。
+1. **前置不满足一律 `2`** —— 走 `_dist.mjs` 的 **`requireFile()`**（缺文件即 `2` + 一句"先 `npm run build`"），**不要让它以模块解析栈崩在 `1`**。★ 现状（2026-10-13 重数）：**17 道门接 `_dist.mjs`**；其中 **10/17 走统一 `requireFile`**（`smoke` / `layoutaudit` / `minesaudit` / `b0audit` / `mapbadgeaudit` / `hpbudget` / `panelgate` / `haloflip` / `showcasegate` / `verify-static-map`），**7 道自带 `exit(2)` 分支**（`hoveraudit` / `tinytargetaudit` / `atlasaudit` / `contactaudit` / `grimscontact` / `scenarioaudit` / `tutorialgate`）⇒ **"自带分支是否覆盖全部前置"= 未核项**（不是已认定的缺陷）。另：**`iaaccept.mjs` 不接 `_dist.mjs` 的服务/指纹胶水**（自带 `--dist=` + `exit(2)`，且默认连外部 5173 ⇒ 见 §五）；2026-11-05 起只为 `READ_SAVE_EXPR` 常量 import 了它。
 2. **`--dist=<dir>` 一律** —— **17/17 已接**（`#164`；`iaaccept` 用同名参数、语义一致）。**不要写死 `../dist`**；要跑隔离构建就让**服务**也指向它（`_dist.mjs` 的 `serveInProcess` ⇒ "断言对象 = 被测对象"）。
 3. **新增门时自查两句**：**「它会不会红？」「它会不会绿？」** —— 只能红的是**墙**，只能绿的是**假绿**。
    ★ 已被点过名的失效形态：`恒真计数` · `样本自带被测标记` · `空跑即绿` · **`算出失败却 exit 0`** · **`声明了纪律但没实现`** · **`grep 代理量`** · **`计数=0 未带阳性对照`** · **`0 == 0 静默空`** · **`正则被拒被读成无匹配`** · **`毫秒数当布尔用（0 = falsy）`**。

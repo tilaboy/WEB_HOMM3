@@ -43,7 +43,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withHeadlessChrome } from './_chrome.mjs';
-import { distDir, printHeader, freePort, serveInProcess } from './_dist.mjs';
+import { distDir, printHeader, freePort, serveInProcess, READ_SAVE_EXPR } from './_dist.mjs';
 
 const arg = (k, d) => {
   const a = process.argv.find((x) => x.startsWith(`--${k}=`));
@@ -152,7 +152,7 @@ try {
           el.click();
           return 'OK';
         })()`);
-      const readSave = () => evaluate(`(() => { const raw = localStorage.getItem('homm-save-v1'); return raw ? JSON.parse(raw) : null; })()`);
+      const readSave = () => evaluate(READ_SAVE_EXPR);
       const panelText = () => evaluate(`(() => { const e = document.querySelector('.hp-teach'); return e ? e.textContent : null; })()`);
       const readOns = () =>
         evaluate(`(() => [...document.querySelectorAll('#start-screen .ss-seg')]
@@ -185,9 +185,17 @@ try {
         await boot();
         await clickText('#start-screen button', '开始');
         await sleep(2500);
-        const cProbe = () => evaluate(`(() => { let s = null; try { s = JSON.parse(localStorage.getItem('homm-save-v1')); } catch { s = null; } return !!s && s.config.scenario === 'grims-showcase'; })()`);
+        /* U4：真值在 `homm-save-auto` 的**外壳**里 —— 改写必须保留 `{shell,savedAt}`，
+           否则下一次读档会把它当裸 `GameState`（拿不到 savedAt，排序会输给救援档）。 */
+        const cProbe = () => evaluate(`(() => { const s = ${READ_SAVE_EXPR}; return !!s && s.config.scenario === 'grims-showcase'; })()`);
         const cBefore = await cProbe();
-        await evaluate(`(() => { const s = JSON.parse(localStorage.getItem('homm-save-v1')); delete s.config.scenario; localStorage.setItem('homm-save-v1', JSON.stringify(s)); })()`);
+        await evaluate(`(() => {
+          const raw = localStorage.getItem('homm-save-auto');
+          const o = JSON.parse(raw);
+          const st = o.shell === 1 && o.state ? o.state : o;
+          delete st.config.scenario;
+          localStorage.setItem('homm-save-auto', JSON.stringify({ shell: 1, savedAt: Date.now(), state: st }));
+        })()`);
         const cAfter = await cProbe();
         NEGPASS(cBefore === true && cAfter === false, `C 数据判据可红：展示图存档 scenario=grims-showcase=true，删键后=false（before=${cBefore} after=${cAfter}）`);
         console.log(`\n${negBad ? `★ ${negBad} 项 NEG-FAIL —— 判据可能**恒绿**（门坏了，必须修）` : '负测全部通过：A/B/C 三类判据**都能红**（门不是恒绿）'}`);

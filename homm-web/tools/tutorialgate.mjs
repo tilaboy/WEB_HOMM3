@@ -27,7 +27,7 @@
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { distDir, printHeader, requireFile, freePort, serveInProcess } from './_dist.mjs';
+import { distDir, printHeader, requireFile, freePort, serveInProcess, READ_SAVE_EXPR } from './_dist.mjs';
 import { withHeadlessChrome } from './_chrome.mjs';
 
 const DIST = distDir();
@@ -107,7 +107,8 @@ try {
     await send('Page.navigate', { url: URL0 });
     const t1 = await waitInGame(evaluate);
     const ssGone = await evaluate(`!document.querySelector('#start-screen')`);
-    const tut = await evaluate(`(() => { try { return JSON.parse(localStorage.getItem('homm-save-v1')).config.scenario; } catch { return null; } })()`);
+    /* U4：真值在 `homm-save-auto` 的外壳里（`{shell, savedAt, state}`）。 */
+    const tut = await evaluate(`(() => { const g = ${READ_SAVE_EXPR}; return g ? g.config.scenario : null; })()`);
     console.log(`[读数] 首次启动：进图=${t1 === null ? '超时' : t1 + 'ms'} · 开始页已撤=${ssGone} · scenario=${tut}`);
     PASS(t1 !== null, '① 首次启动直接进入对局（没有停在开始页）');
     PASS(tut === 'tutorial', `① 进的确实是教学模式（scenario=${tut}）`);

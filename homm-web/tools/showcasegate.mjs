@@ -44,7 +44,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { distDir, distUrl, printHeader, requireFile, freePort, serveInProcess } from './_dist.mjs';
+import { distDir, distUrl, printHeader, requireFile, freePort, serveInProcess, READ_SAVE_EXPR } from './_dist.mjs';
 import { withHeadlessChrome, chromeAvailable } from './_chrome.mjs';
 
 const DIST = distDir();
@@ -154,8 +154,8 @@ const PROBE_OBJ = `(() => {
  * 只有存档里的 `config.difficulty` 与 `players.p1.resources.gold` 能证明它真的生效了。
  */
 const PROBE_SAVE = `(() => {
-  let s = null;
-  try { s = JSON.parse(localStorage.getItem('homm-save-v1')); } catch (e) { s = null; }
+  /* U4：多槽化后真值在 \`homm-save-auto\` 的外壳里 —— 统一走 READ_SAVE_EXPR。 */
+  const s = ${READ_SAVE_EXPR};
   if (!s) return null;
   const cfg = s.config || {};
   const res = ((s.players || {}).p1 || {}).resources || {};
