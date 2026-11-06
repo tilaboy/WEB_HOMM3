@@ -275,6 +275,22 @@ function h3Face(pb: PixBuf, lx: number, ey: number, gap: number, mouthW: number,
   R(pb, lx + 1, ey + mouthDy, mw, 1, P.ink);
 }
 
+/**
+ * 兵牌的脸：**只有两只眼，没有嘴**。
+ *
+ * 43×37 的头上，眼睛占两行、嘴占一行 —— 三行墨在 5~6px 的脸上就是"一整块黑"，
+ * 8× 实拍读成「张着嘴的方块」。而眉眼距在这个尺寸上根本不存在：
+ * 一只 6px 的头只能表达"这是正面"或"这是侧面"，表达不了表情。
+ * 所以兵牌一律省掉嘴线；`audit:expr` 判的是 `cu_*`（战斗帧），那条不受影响。
+ */
+function cardFace(pb: PixBuf, lx: number, ey: number, gap = 1): void {
+  const rx = lx + 2 + gap;
+  R(pb, lx, ey, 2, 2, P.ink);
+  R(pb, rx, ey, 2, 2, P.ink);
+  pb.set(lx + 1, ey, P.hi);
+  pb.set(rx + 1, ey, P.hi);
+}
+
 /** 侧脸（兽形）：一只 2×2 眼，**没有独立嘴线** —— `audit:expr` 的 profile 通道。 */
 function profileEye(pb: PixBuf, x: number, y: number): void {
   R(pb, x, y, 2, 2, P.ink);
@@ -287,8 +303,11 @@ function profileEye(pb: PixBuf, x: number, y: number): void {
  * ========================================================================== */
 
 /** 小孩 · 矮档 · 大头小身子。脚在 base，头顶在 base − h。 */
-function drawChild(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
-  const hr = h * 0.18; // 半径 0.18h ⇒ 头占身高 36%（全表最大）
+function drawChild(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+  // 兵牌（h≈12）：头必须**再大一点**才撑得住"大头"这条档位特征 —— 0.18h 在 12px 上
+  // 只剩 4.3px 宽的脑袋，2×2 的眼块会顶到脑壳外。0.22h ⇒ 5.3px，正好放下
+  // 「2 + 净空 1 + 2」。
+  const hr = card ? Math.max(2.6, h * 0.22) : h * 0.18; // 半径 0.18h ⇒ 头占身高 36%（全表最大）
   const headTop = base - h;
   const headCy = headTop + hr;
   // 腿：**两根之间留 2px 缝**（不留缝就与下摆连成一块蓝砖）
@@ -297,8 +316,11 @@ function drawChild(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
   R(pb, cx - legX - legW, base - h * 0.26, legW, h * 0.26, P.leather);
   R(pb, cx + legX, base - h * 0.26, legW, h * 0.26, P.leather);
   // 鞋
-  R(pb, cx - legX - legW - 1, base - Math.max(1, h * 0.05), legW + 2, Math.max(1, h * 0.05), P.ink);
-  R(pb, cx + legX - 1, base - Math.max(1, h * 0.05), legW + 2, Math.max(1, h * 0.05), P.ink);
+  // 兵牌上**不加宽**（`legW+2` 在 12px 的身高上等于给鞋加了两只脚掌：两只鞋
+  // 从 10px 涨到 14px，整个人因此胖一圈 —— R5 的 57% 漂移就是这么来的）。
+  const shoeGrow = card ? 0 : 1;
+  R(pb, cx - legX - legW - shoeGrow, base - Math.max(1, h * 0.05), legW + shoeGrow * 2, Math.max(1, h * 0.05), P.ink);
+  R(pb, cx + legX - shoeGrow, base - Math.max(1, h * 0.05), legW + shoeGrow * 2, Math.max(1, h * 0.05), P.ink);
   // 短袍（上宽下窄，下摆高于膝盖）
   pb.poly(
     [
@@ -310,32 +332,34 @@ function drawChild(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
     P.cloth,
   );
   R(pb, cx - h * 0.17, base - h * 0.6, Math.max(1, h * 0.03), h * 0.32, P.clothDark);
-  // 腰带
-  R(pb, cx - h * 0.17, base - h * 0.36, h * 0.34, Math.max(1, h * 0.04), P.ink);
+  // 腰带：兵牌上**不画** —— 12px 的身高里，那道 1px 墨线横跨 4px 宽的袍子，
+  // 读出来是「腰上有一道黑箍」，不是腰带（腰带要有上下两条边才成立）。
+  if (!card) R(pb, cx - h * 0.17, base - h * 0.36, h * 0.34, Math.max(1, h * 0.04), P.ink);
   // 手臂：垂手 / atk 举一只手
+  // 兵牌上手臂要**露在袍子外面**（±0.26h、2px）：0.24h 时只探出半个像素，
+  // 缩到 12px 就是「袍子两侧各多一格肤色」，读不出是手。
   const armW = Math.max(2, Math.round(h * 0.07));
-  R(pb, cx - h * 0.24, base - h * 0.6, armW, h * 0.3, P.skin);
+  const armX = card ? h * 0.27 : h * 0.24;
+  R(pb, cx - armX, base - h * 0.6, armW, h * 0.34, P.skin);
   if (atk) {
-    tl(pb, cx + h * 0.2, base - h * 0.58, cx + h * 0.34, base - h * 0.74, P.skin, armW);
+    tl(pb, cx + armX - armW, base - h * 0.58, cx + h * 0.38, base - h * 0.76, P.skin, armW);
   } else {
-    R(pb, cx + h * 0.21, base - h * 0.6, armW, h * 0.3, P.skin);
+    R(pb, cx + armX - armW, base - h * 0.6, armW, h * 0.34, P.skin);
   }
   // 脖子
   R(pb, cx - Math.max(1, Math.round(hr * 0.3)), base - h * 0.66, Math.max(2, Math.round(hr * 0.6)), h * 0.06, P.skin);
   // 大头
   pb.ellipse(cx, headCy, hr, hr, P.skin);
-  // 头发：只盖**颅顶**（0 ~ 0.76 头半径）。
-  // ⚠️ 第一版在 headTop+1.0hr 处又压了一条 0.25hr 的横带，正好盖住眼睛（眼在 1.15hr）
-  //    ⇒ 8× 下读成「一个棕球脑袋」，22px 下就是「戴帽子的蓝人」。眼睛必须在发际线下面。
-  // 现在收到 0.38hr（发际线 = headTop+0.76hr）：2×2 的眼块要占 2 行，原先 0.42hr 的
-  // 发际线离眼睛只剩 1 行，放大后发梢会被最近邻复制下来啃掉眼白。
-  pb.ellipse(cx, headTop + hr * 0.38, hr, hr * 0.38, P.hair);
+  // 头发：只盖**颅顶**（0 ~ 0.76 头半径）。兵牌上再压低 0.04hr —— 12px 的头只有
+  // 6 行，发际线多占一行就会把 2×2 的眼睛啃掉半格。
+  pb.ellipse(cx, headTop + hr * (card ? 0.32 : 0.38), hr, hr * (card ? 0.32 : 0.38), P.hair);
   // 呆毛
   R(pb, cx + hr * 0.1, headTop - 1, Math.max(1, hr * 0.22), Math.max(1, hr * 0.3), P.hair);
   // 眼睛 + 嘴：2+1+2 的净宽正好吃掉 8.5px 脑袋的一大半 —— 这就是「大头小孩」该有的比例
   if (face) {
     const ey = Math.round(headTop + hr * 0.95);
-    h3Face(pb, Math.round(cx) - 2, ey, 2, 3, 3);
+    if (card) cardFace(pb, Math.round(cx) - 2, ey);
+    else h3Face(pb, Math.round(cx) - 2, ey, 2, 3, 3);
   }
 }
 
@@ -379,8 +403,8 @@ function biped(
 }
 
 /** 弩手 · 中档 · 横弩。弩是唯一的横向元素 —— 与「高」的鹰、「宽」的骑士都不撞。 */
-function drawCrossbow(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
-  const b = biped(pb, cx, base, h, { w: 0.32, headR: 0.115 });
+function drawCrossbow(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+  const b = biped(pb, cx, base, h, { w: 0.32, headR: card ? 0.13 : 0.115 });
   const lean = atk ? -1 : 0;
   const hx = cx + lean;
   const hr = b.headR;
@@ -396,13 +420,17 @@ function drawCrossbow(pb: PixBuf, cx: number, base: number, h: number, atk: bool
   //    ⇒ **读成「举着一根白棍 / 一支步枪」**（S3a 第三版实拍，8× 下白矢比弓还显眼）。
   //    第四版：托**整体外移**到 `cx − 0.40h` 起（第二版横跨整个胸口 ⇒ 一眼是"棕色方块"），
   //    只有尾端压在身体上，弓因此完整地落在剪影**外面** —— 横线归弩、竖线归鹰、斜线归骑士。
-  const y = atk ? base - h * 0.66 : base - h * 0.58;
-  const len = h * 0.3;
+  const y = atk ? base - h * (card ? 0.62 : 0.66) : base - h * (card ? 0.52 : 0.58);
+  // 兵牌：托加粗到 **3px**（1.4px 的托在 18px 的身高上只剩一行，和身体同色 ⇒ 读成
+  // 「胸前有一小块棕」）。加粗后托的下缘那道暗线才有地方落，才像一根**木托**。
+  const len = h * (card ? 0.34 : 0.3);
   const x0 = cx - h * 0.4; // 托的前端 = 弓的落点（在躯干剪影之外）
-  R(pb, x0, y - 1, len, Math.max(2, Math.round(h * 0.08)), P.leather);
-  R(pb, x0, y + Math.max(1, Math.round(h * 0.08)) - 1, len, 1, P.leatherDark);
+  const stockH = card ? 3 : Math.max(2, Math.round(h * 0.08));
+  R(pb, x0, y - 1, len, stockH, P.leather);
+  R(pb, x0, y + stockH - 2, len, 1, P.leatherDark);
   // 竖弓：1px 竖线 + 两端**向前**折（向右折会与矢凑成一个十字架，5× 实拍整件读成"抱着十字架"）
-  const bowH = h * 0.15;
+  // 兵牌上弓臂加长到 0.17h（≈3px 半高）：18px 的身高上，2.7px 的弓只是个小钩子。
+  const bowH = h * (card ? 0.17 : 0.15);
   const yBolt = y - 1;
   R(pb, x0, yBolt - bowH, 1, bowH * 2 + 1, P.steelLite);
   R(pb, x0 - 1, yBolt - bowH, 2, 1, P.steelLite);
@@ -424,7 +452,11 @@ function drawCrossbow(pb: PixBuf, cx: number, base: number, h: number, atk: bool
   // 前手托弩（落在托的后段 = 身体边缘，不是悬空）
   R(pb, x0 + h * 0.26, y + h * 0.05, Math.max(2, h * 0.07), Math.max(2, h * 0.08), P.skin);
   // 脸：眼在护鼻之下、嘴在眼下 3 行
-  if (face) h3Face(pb, Math.round(hx) - 2, Math.round(b.headY - hr * 0.15), 2, 3, 3);
+  if (face) {
+    const fey = Math.round(b.headY - hr * 0.15);
+    if (card) cardFace(pb, Math.round(hx) - 2, fey);
+    else h3Face(pb, Math.round(hx) - 2, fey, 2, 3, 3);
+  }
 }
 
 /**
@@ -434,19 +466,22 @@ function drawCrossbow(pb: PixBuf, cx: number, base: number, h: number, atk: bool
  *    平展双翼会让鹰直接与天使落进同一档（§8.4 当场红）。而为了过闸把鹰画小，
  *    §15.4 要的「起跳就到」又没了。所以辨识靠**长度**：腿长、body 竖、翼贴体。
  */
-function drawEagle(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
+function drawEagle(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
   const lean = atk ? -h * 0.05 : 0;
   const lw = Math.max(2, Math.round(h * 0.05));
+  // 兵牌：两条腿的间距从 0.055h 拉到 0.075h。0.055h 在 26px 的身高上只有 1.4px，
+  // 两条 2px 的腿一画就**并成一根柱子** —— 而"长腿"正是这一档的招牌。
+  const legX = h * (card ? 0.075 : 0.055);
   // ── 长腿（这一档的招牌）：髋在 0.42h，脚在 base；中途一个后向的「膝」凸起 ──
   for (const dir of [-1, 1]) {
-    const x = Math.round(cx + dir * h * 0.055);
+    const x = Math.round(cx + dir * legX);
     R(pb, x, base - h * 0.42, lw, h * 0.4, P.goldDark);
     // 后膝：往外鼓 1~2px（直棍会读成两根竹竿）
     R(pb, x + dir * Math.max(1, Math.round(h * 0.03)), base - h * 0.24, lw, Math.max(2, Math.round(h * 0.06)), P.goldDark);
   }
   // 爪：三趾（不画会读成两根竹竿）
   for (const dir of [-1, 1]) {
-    const fx = Math.round(cx + dir * h * 0.055);
+    const fx = Math.round(cx + dir * legX);
     R(pb, fx - Math.max(1, Math.round(h * 0.05)), base - Math.max(1, Math.round(h * 0.03)), Math.max(2, Math.round(h * 0.12)), Math.max(1, Math.round(h * 0.03)), P.featherDark);
     R(pb, fx + Math.max(1, Math.round(h * 0.03)), base - Math.max(1, Math.round(h * 0.03)), Math.max(2, Math.round(h * 0.08)), Math.max(1, Math.round(h * 0.03)), P.featherDark);
   }
@@ -455,19 +490,42 @@ function drawEagle(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
   // 胸腹浅色（只占中间，不做整条白肚）
   pb.ellipse(cx + lean, base - h * 0.6, h * 0.1, h * 0.16, P.belly);
   // ── 收起的双翼：贴着身体两侧，向后下方收成尖 ──
+  //
+  // 兵牌（h≈26）上原样画会读成「两片披风」：翼尖只到 0.25h、且和身体同宽，
+  // 外缘没有一处"伸出去"的尖。所以翼尖拉到 **0.30h 并把高度压到 0.26h** ——
+  // 它在体外露出 3~4px，尖朝后下方，这是 43px 上唯一还能读出"收翼"的形状。
   for (const dir of [-1, 1]) {
+    const wing = card
+      ? ([
+          [cx + dir * h * 0.055, base - h * 0.82],
+          [cx + dir * h * 0.19, base - h * 0.7],
+          [cx + dir * h * 0.2, base - h * 0.48],
+          [cx + dir * h * 0.3, base - h * 0.26],
+          [cx + dir * h * 0.16, base - h * 0.4],
+          [cx + dir * h * 0.09, base - h * 0.5],
+        ] as [number, number][])
+      : ([
+          [cx + dir * h * 0.05, base - h * 0.8],
+          [cx + dir * h * 0.18, base - h * 0.68],
+          [cx + dir * h * 0.16, base - h * 0.44],
+          [cx + dir * h * 0.25, base - h * 0.32],
+          [cx + dir * h * 0.09, base - h * 0.46],
+        ] as [number, number][]);
     pb.poly(
-      [
-        [cx + dir * h * 0.05 + lean, base - h * 0.8],
-        [cx + dir * h * 0.18 + lean, base - h * 0.68],
-        [cx + dir * h * 0.16 + lean, base - h * 0.44],
-        [cx + dir * h * 0.25 + lean, base - h * 0.32],
-        [cx + dir * h * 0.09 + lean, base - h * 0.46],
-      ],
+      wing.map(([x, y]) => [x + lean, y] as [number, number]),
       dir < 0 ? P.featherLite : P.featherDark,
     );
     // 翼羽分缝：一道暗线让「收起的翼」不是一块披风
-    tl(pb, cx + dir * h * 0.1 + lean, base - h * 0.72, cx + dir * h * 0.17 + lean, base - h * 0.4, P.featherDark, 1);
+    // 兵牌上这根缝要**一直通到翼尖**，它同时也是"翼"与"身体"的分界
+    tl(
+      pb,
+      cx + dir * h * 0.1 + lean,
+      base - h * (card ? 0.75 : 0.72),
+      cx + dir * h * (card ? 0.27 : 0.17) + lean,
+      base - h * (card ? 0.3 : 0.4),
+      P.featherDark,
+      1,
+    );
   }
   // 尾羽：三根长短不一的尖（齐边会读成一把扇子）
   pb.poly([[cx + h * 0.02, base - h * 0.46], [cx + h * 0.1, base - h * 0.46], [cx + h * 0.22, base - h * 0.2]], P.featherDark);
@@ -483,14 +541,17 @@ function drawEagle(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
     P.feather,
   );
   const hy = base - h * 0.93;
-  pb.ellipse(cx - h * 0.01 + lean, hy, h * 0.09, h * 0.075, P.featherLite);
+  pb.ellipse(cx - h * 0.01 + lean, hy, h * (card ? 0.105 : 0.09), h * (card ? 0.088 : 0.075), P.featherLite);
   // 钩喙（朝左）：上喙带钩、下喙短
+  // 兵牌上喙要更**长而尖**（0.09h → 0.11h 的伸出量）：26px 的身高上，
+  // 2.8px 的短喙会被描边吃掉一半，"猛禽"就只剩一团棕色。
+  const bk = card ? 1.12 : 1;
   pb.poly(
     [
-      [cx - h * 0.09 + lean, hy - h * 0.03],
-      [cx - h * 0.2 + lean, hy + h * 0.01],
-      [cx - h * 0.17 + lean, hy + h * 0.05],
-      [cx - h * 0.09 + lean, hy + h * 0.04],
+      [cx - h * 0.09 * bk + lean, hy - h * 0.03 * bk],
+      [cx - h * 0.2 * bk + lean, hy + h * 0.01],
+      [cx - h * 0.17 * bk + lean, hy + h * 0.05 * bk],
+      [cx - h * 0.09 + lean, hy + h * 0.04 * bk],
     ],
     P.beak,
   );
@@ -525,7 +586,7 @@ function drawEagle(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
  *    `cx − 0.72h`、马尾甩到 `cx + 0.7h`。把它画成「一个骑在马上的人」而
  *    总宽只有 1.1h，R1 会当场判它既不是宽体也不是高 —— 档位就塌了。
  */
-function drawKnight(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
+function drawKnight(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
   // ── 马 ──
   const bodyTop = base - h * 0.62;
   const bodyBot = base - h * 0.3;
@@ -638,11 +699,17 @@ function drawKnight(pb: PixBuf, cx: number, base: number, h: number, atk: boolea
   // ⚠️ 头盔半径从 0.068h 放大到 0.105h：h3 脸要「2 + 净空 1 + 2」= 5px 的净宽，
   //    原来那颗 5px 宽的头盔连两只 2×2 的眼都放不下（放下就贴盔沿，归一化后粘成一条黑）。
   const rhy = base - h * 0.93;
-  const rhR = h * 0.105;
+  // 兵牌：头盔半径 0.105h → 0.12h（25px 身高上 2.6 → 3px）。h3 脸要 5px 净宽，
+  // 2.6px 的盔连两只 2×2 的眼都放不下（放下就贴盔沿，读成一条黑缝）。
+  const rhR = h * (card ? 0.12 : 0.105);
   pb.ellipse(cx, rhy, rhR, rhR * 0.9, P.steel);
   // 面甲缝 → 「眼睛 + 呼吸缝」：原来那道 0.14h 宽的墨横线正好压在眼睛的高度上，
   // 留着它就永远画不出脸（首版 8× 下这里是一整条黑缝，读成「无脸铁罐头」）。
-  if (face) h3Face(pb, Math.round(cx) - 2, Math.round(rhy - rhR * 0.2), 2, 3, 3);
+  if (face) {
+    const fey = Math.round(rhy - rhR * 0.2);
+    if (card) cardFace(pb, Math.round(cx) - 2, fey);
+    else h3Face(pb, Math.round(cx) - 2, fey, 2, 3, 3);
+  }
   // 盔冠（白缨）—— 剪影最高点。
   // 高度给到 1.04h（= BODY_PLAN 的声明高）：归一化会把「比目标高的部分从顶上删掉」，
   // 首版写到 1.06h ⇒ 多出来的 2 行正好被删光，白缨整根消失。
@@ -657,7 +724,7 @@ function drawKnight(pb: PixBuf, cx: number, base: number, h: number, atk: boolea
  * 翅膀朝向是全表唯一的两档（§16.1）：天使上掠、恶魔与龙下掠、鹰收翼。
  * 这一条不是画风 —— 它是「同族五个兵各占一档」之外的第二层区分。
  */
-function drawAngel(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
+function drawAngel(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
   // ── 自上而下的高度预算（这一版最要紧的结构改动）──
   //
   // 首版把 h 全给了「身体」、又拿 `bb = base − 0.04h` 当基准往上画，三处一起塌：
@@ -669,9 +736,14 @@ function drawAngel(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
   const topY = base - h; // 剪影最高点 = 光环上缘
   const feet = base - h * 0.035; // 悬浮 1~2px：脚不落地，但也不飘
   const headR = h * 0.095;
-  const haloRy = Math.max(2, Math.round(h * 0.036));
+  // 兵牌：光环压成 **1px 横杠 + 两端下折的角**（7~9px 宽）。
+  // 实心扁椭圆在 31px 的身高上是 7×4 的一坨，读出来是"头顶扣了个碗"；
+  // 而 1px 的**空心环**会被描边灌成一枚黑环（本文件头注释里记过这条）。
+  // 折中：一根亮金横杠，两端各下一格 —— 正视光环（edge-on）本来就是这个形状。
+  const haloRy = card ? 1 : Math.max(2, Math.round(h * 0.036));
   const haloCy = topY + haloRy;
-  const headTop = haloCy + haloRy + 3; // 留 3px：1~2px 的缝会被描边灌成一根「天线」
+  // 兵牌上光环与头发之间留 2px（描边会吃掉 1px），比原版近 4px —— 否则光环比头还远
+  const headTop = haloCy + haloRy + (card ? 2 : 3); // 留 3px：1~2px 的缝会被描边灌成一根「天线」
   const hy = headTop + headR;
   const shoulder = hy + headR * 1.35;
   const hem = feet - h * 0.02;
@@ -731,9 +803,20 @@ function drawAngel(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
   // 发：只盖颅顶（0.65 头半径），给 2×2 的眼睛留出发际线以下的位置
   ell(pb, cx - headR, hy - headR, cx + headR, hy - headR * 0.35, P.hair);
   // 脸
-  if (face) h3Face(pb, Math.round(cx) - 2, Math.round(hy - headR * 0.15), 2, 3, 3);
+  if (face) {
+    const fey = Math.round(hy - headR * 0.15);
+    if (card) cardFace(pb, Math.round(cx) - 2, fey);
+    else h3Face(pb, Math.round(cx) - 2, fey, 2, 3, 3);
+  }
   // 光环：**实心**扁椭圆（画布没有"擦除"，1px 的环会被描边灌成一枚黑环）
-  pb.ellipse(cx, haloCy, headR * 1.15, haloRy, P.goldDark);
+  if (card) {
+    const hw = Math.max(3, Math.round(headR * 1.35));
+    R(pb, cx - hw, haloCy, hw * 2 + 1, 1, P.goldDark);
+    pb.set(cx - hw, haloCy + 1, P.goldDark);
+    pb.set(cx + hw, haloCy + 1, P.goldDark);
+  } else {
+    pb.ellipse(cx, haloCy, headR * 1.15, haloRy, P.goldDark);
+  }
   // 剑：idle 垂在身侧（**在袍外、翼下** —— 首版从翼后面穿出来，43×37 下像一片蓝胶带），
   // atk 举过头顶。
   const swx = cx + h * 0.245;
@@ -758,11 +841,13 @@ function drawAngel(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
  * ========================================================================== */
 
 /** 火柴人 · 矮档 · 细棍四肢 + 大头 + 头顶火苗。 */
-function drawMatchman(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
+function drawMatchman(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
   const topY = base - h;
-  // 火苗占最上面 0.12h：剪影最高点必须是火苗尖，否则归一化会把头削平
-  const flameH = h * 0.12;
-  const headR = h * 0.2;
+  // 火苗占最上面 0.12h：剪影最高点必须是火苗尖，否则归一化会把头削平。
+  // 兵牌（h≈14）上给 **3px 下限**：1.4px 的火苗落到画布上就是头顶的一道红边，
+  // 8× 实拍读成「戴红帽子」。火苗要有 **尖** 才成立 —— 尖占 1px、底占 3px。
+  const flameH = card ? Math.max(3, h * 0.14) : h * 0.12;
+  const headR = h * (card ? 0.21 : 0.2);
   const headCy = topY + flameH + headR;
   const neck = headCy + headR * 0.92;
   const hip = base - h * 0.3;
@@ -784,12 +869,19 @@ function drawMatchman(pb: PixBuf, cx: number, base: number, h: number, atk: bool
   else tl(pb, cx, neck + h * 0.02, cx + h * 0.26, base - h * 0.36, P2.limb, limbW);
   // 大头
   pb.ellipse(cx, headCy, headR, headR, P.skin);
-  // 脸：头径 0.4h ≈ 9.3px，2+2+2 的两眼刚好放下
-  if (face) h3Face(pb, Math.round(cx) - 2, Math.round(headCy - headR * 0.28), 2, 3, 3);
+  // 脸：头径 0.4h ≈ 9.3px，2+2+2 的两眼刚好放下；兵牌上净空收到 1（头只有 6px）
+  if (face) {
+    const fey = Math.round(headCy - headR * 0.28);
+    if (card) cardFace(pb, Math.round(cx) - 2, fey);
+    else h3Face(pb, Math.round(cx) - 2, fey, 2, 3, 3);
+  }
   // 火苗：三尖，压在最上面（既是"火柴"的命名理由，也是剪影最高点）
-  pb.poly([[cx, topY], [cx - h * 0.075, topY + flameH * 0.92], [cx - h * 0.02, topY + flameH * 0.72]], P2.glow);
-  pb.poly([[cx, topY], [cx + h * 0.075, topY + flameH * 0.92], [cx + h * 0.02, topY + flameH * 0.72]], P2.red);
-  R(pb, cx - h * 0.03, topY + flameH * 0.58, Math.max(2, h * 0.06), Math.max(1, flameH * 0.42), P2.redDark);
+  // 兵牌上把火苗**整体收窄**（0.075h → 0.06h）并让尖占满 1px：
+  // 宽了就是一道红边（帽子），窄了才是一个尖（火）。
+  const fw = card ? Math.max(1.5, h * 0.06) : h * 0.075;
+  pb.poly([[cx, topY], [cx - fw, topY + flameH * 0.92], [cx - fw * 0.27, topY + flameH * 0.72]], P2.glow);
+  pb.poly([[cx, topY], [cx + fw, topY + flameH * 0.92], [cx + fw * 0.27, topY + flameH * 0.72]], P2.red);
+  R(pb, cx - fw * 0.4, topY + flameH * 0.58, Math.max(2, fw * 0.8), Math.max(1, flameH * 0.42), P2.redDark);
   // 手持的火柴：atk 举到脸侧（出口象限 = 右上），idle 垂在右手
   if (atk) {
     tl(pb, cx + h * 0.3, neck, cx + h * 0.44, topY + h * 0.24, P2.wood0, Math.max(1, Math.round(h * 0.035)));
@@ -808,7 +900,7 @@ function drawMatchman(pb: PixBuf, cx: number, base: number, h: number, atk: bool
  * glow 通道允许无嘴，但**不许**用 ink0 画一道 3px 以上的横线（那会被当成嘴，
  * 而嘴的上下行必须不是同样宽的墨，构装脸上没有那个结构）。
  */
-function drawBronze(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
+function drawBronze(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
   // ── 为什么这一版是**矮胖方盒**（h 0.90 → 0.88、躯干加宽到 0.5h）──
   //
   // `audit:bodyplan` 的 [4] 在 22×30 下量「同族两两剪影差 ≥15%」，铜人与熔岩巨人
@@ -817,8 +909,10 @@ function drawBronze(pb: PixBuf, cx: number, base: number, h: number, atk: boolea
   // 修法只能是让**形状**不同：铜人做成"横方块 + 外挑肩 + 身侧大锤"（缩到 22 宽后
   // 只有 25 高），巨人保持"窄高 + 沙漏腰"（20×30）。这样两者的 bbox 就不一样了。
   const topY = base - h;
-  const headW = h * 0.24;
-  const headH = h * 0.17;
+  // 兵牌：头加宽到 0.30h（4.3 → 5.4px）。glow 眼是 **2×2**，两只眼加净空要 5px，
+  // 原来的 4.3px 头宽放不下 —— 右眼会被挤到脸外，读出来是「方头上一个黄点」。
+  const headW = h * (card ? 0.3 : 0.24);
+  const headH = h * (card ? 0.19 : 0.17);
   const headTop = topY + h * 0.02;
   const shoulder = headTop + headH + h * 0.03;
   const hip = base - h * 0.26;
@@ -860,7 +954,7 @@ function drawBronze(pb: PixBuf, cx: number, base: number, h: number, atk: boolea
   R(pb, cx - headW * 0.5, headTop, headW, 1, P2.metal0);
   // 面甲缝（metal0，不是 ink0 —— 见函数头注释）
   R(pb, cx - headW * 0.3, headTop + headH * 0.76, headW * 0.6, 1, P2.metal0);
-  if (face) glowFace(pb, Math.round(cx) - 2, Math.round(headTop + headH * 0.34), 2, 0, 0, 0);
+  if (face) glowFace(pb, Math.round(cx) - 2, Math.round(headTop + headH * 0.34), card ? 1 : 2, 0, 0, 0);
   // 方锤：idle 垂在身侧外沿（把总宽撑到 0.88h），atk 举过肩
   const hx = cx + bw * 0.5 + h * 0.12;
   if (atk) {
@@ -880,7 +974,7 @@ function drawBronze(pb: PixBuf, cx: number, base: number, h: number, atk: boolea
  * ⚠️ 宽度必须 **< 1.35h**：宽体档归三头狼。§15.4 也明说「慢而硬」靠高度与肩厚，
  *    不靠横张 —— 横张是猿人/牛头怪的语法，不能借给巨人。
  */
-function drawLavaGiant(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
+function drawLavaGiant(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
   const topY = base - h;
   const headR = h * 0.085;
   const headCy = topY + headR + h * 0.015;
@@ -957,7 +1051,7 @@ function drawLavaGiant(pb: PixBuf, cx: number, base: number, h: number, atk: boo
   pb.poly([[cx - headR * 0.85, headCy - headR * 0.55], [cx - headR * 1.35, topY], [cx - headR * 0.35, topY + headR * 0.25]], P2.redDark);
   pb.poly([[cx + headR * 0.3, headCy - headR * 0.8], [cx + headR * 0.85, topY + h * 0.012], [cx + headR * 1.15, headCy - headR * 0.35]], P2.redDark);
   // 眼（glow）+ 嘴（stone0 横线，在下巴位置 —— 巨人的嘴就是一道裂口）
-  if (face) glowFace(pb, Math.round(cx) - 2, Math.round(headCy - headR * 0.1), 1, Math.round(cx) - h * 0.09, h * 0.18, 5);
+  if (face) glowFace(pb, Math.round(cx) - 2, Math.round(headCy - headR * 0.1), 1, Math.round(cx) - h * (card ? 0.055 : 0.09), card ? Math.max(3, h * 0.13) : h * 0.18, 5);
 }
 
 /**
@@ -986,7 +1080,7 @@ function drawLavaGiant(pb: PixBuf, cx: number, base: number, h: number, atk: boo
  *    2×2 窗口，所以不会被数成眼。这不是绕过判据：兽形侧脸的定义本来就是一只眼，
  *    三个头里的两只是侧影，画成高光眼反而会读成"三个正面脸"。
  */
-function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
+function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
   const bodyCy = base - h * 0.46;
   const halfLen = h * 0.3;
   const legW = Math.max(2, Math.round(h * 0.08));
@@ -1043,11 +1137,22 @@ function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boo
   // 吻各转 −0.55 / 0.02 / 0.58 rad ⇒ 剪影左缘伸出三个方向不同的吻尖。
   // 这一版不再靠"高度错落"制造凸起：错落会把脖子拉长，而 22px 下看的
   // 是**外缘有几个尖**，不是头顶有几个峰。
-  const heads: { x: number; r: number; dir: number; main: boolean }[] = [
-    { x: cx - h * 0.56, r: h * 0.078, dir: -0.55, main: false },
-    { x: cx - h * 0.34, r: h * 0.086, dir: 0.02, main: true },
-    { x: cx - h * 0.12, r: h * 0.075, dir: 0.58, main: false },
-  ];
+  // 三颗头的**尺寸与间距**在兵牌上是另一套数（见下）：
+  //   · 战斗帧：r = 0.078h（56 画布上 2.7px），间距 0.22h；
+  //   · 兵牌：  r = max(2.2, 0.12h)（19px 身高上 2.3px），间距 0.28h。
+  // 为什么兵牌的头**相对更大**：43×37 上 2.7px 的圆头只剩 3px 直径，
+  // 加上描边就是三个墨点；而"三个头"是这一档唯一的识别点，头必须撑到 4.5~5px。
+  const heads: { x: number; r: number; dir: number; main: boolean }[] = card
+    ? [
+        { x: cx - h * 0.62, r: Math.max(2.2, h * 0.12), dir: -0.45, main: false },
+        { x: cx - h * 0.34, r: Math.max(2.4, h * 0.13), dir: 0.02, main: true },
+        { x: cx - h * 0.06, r: Math.max(2.2, h * 0.12), dir: 0.45, main: false },
+      ]
+    : [
+        { x: cx - h * 0.56, r: h * 0.078, dir: -0.55, main: false },
+        { x: cx - h * 0.34, r: h * 0.086, dir: 0.02, main: true },
+        { x: cx - h * 0.12, r: h * 0.075, dir: 0.58, main: false },
+      ];
   for (const hd of heads) {
     const hy = base - h * 0.8;
     // 颈：短而粗（首版 0.19h 的细颈把整只狼拉成了长颈鹿）
@@ -1055,30 +1160,44 @@ function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boo
     // 头
     pb.ellipse(hd.x, hy, hd.r, hd.r * 0.85, P2.wall);
     // 吻：绕头心转 `dir`（三个吻尖是"三头"在 22px 下唯一还剩下的证据）
+    // 兵牌上吻**加长 25%**：头大了，吻不变长就会缩进头的轮廓里，三个尖全看不见。
     const ca = Math.cos(hd.dir), sa = Math.sin(hd.dir);
+    const k = card ? 1.25 : 1;
     const rot = (dx: number, dy: number): [number, number] => [
-      hd.x + (dx * ca - dy * sa) * hd.r,
+      hd.x + (dx * ca - dy * sa) * hd.r * (dx < 0 ? k : 1),
       hy + (dx * sa + dy * ca) * hd.r,
     ];
     pb.poly([rot(-0.78, -0.3), rot(-1.58, 0.02), rot(-1.46, 0.6), rot(-0.72, 0.54)], P2.wallDark);
     // 双耳：前耳亮、后耳暗（近远关系）
-    pb.poly([[hd.x - hd.r * 0.4, hy - hd.r * 0.65], [hd.x - hd.r * 0.5, hy - hd.r * 1.75], [hd.x - hd.r * 0.02, hy - hd.r * 0.7]], P2.wall);
-    pb.poly([[hd.x + hd.r * 0.15, hy - hd.r * 0.68], [hd.x + hd.r * 0.34, hy - hd.r * 1.5], [hd.x + hd.r * 0.5, hy - hd.r * 0.6]], P2.wallDark);
+    // 兵牌上耳收到 1.25r（原 1.75r）：2.3px 的头配 4px 的耳，读出来是"三只兔子"。
+    const earH = card ? 1.25 : 1.75;
+    pb.poly([[hd.x - hd.r * 0.4, hy - hd.r * 0.65], [hd.x - hd.r * 0.5, hy - hd.r * earH], [hd.x - hd.r * 0.02, hy - hd.r * 0.7]], P2.wall);
+    pb.poly([[hd.x + hd.r * 0.15, hy - hd.r * 0.68], [hd.x + hd.r * 0.34, hy - hd.r * (card ? 1.1 : 1.5)], [hd.x + hd.r * 0.5, hy - hd.r * 0.6]], P2.wallDark);
     // 眼：主头 ink（profile 的单眼），远侧两头是暗点
     if (hd.main) {
       // 眼必须落在头的**上半部**：首版放在 −0.2r（几乎贴着头底），
       // 头下方那道 1px 透明缝被描边灌成 ink0 段，`audit:expr` 的 [Contr]
       // 把它当成"嘴线"（ΔE 15.5 vs 透明）⇒ 红。−0.55r 时眼下全是头/颈/身体。
-      if (face) profileEye(pb, Math.round(hd.x - hd.r * 0.55), Math.round(hy - hd.r * 0.55));
-    } else {
+      // 兵牌上眼只留 1px（2×2 的眼块会占掉 4.6px 圆头的一半，读成墨镜）
+      if (face) {
+        if (card) pb.set(Math.round(hd.x - hd.r * 0.5), Math.round(hy - hd.r * 0.45), P2.ink);
+        else profileEye(pb, Math.round(hd.x - hd.r * 0.55), Math.round(hy - hd.r * 0.55));
+      }
+    } else if (!card) {
       pb.set(Math.round(hd.x - hd.r * 0.6), Math.round(hy - hd.r * 0.12), P2.wallDark);
     }
   }
   // 头与头之间的**一道暗缝**（1~2px），画在头**之后**才不会被颈盖掉。
   // 只占头部那一段（y −0.90h ~ −0.65h），**不下到肩**：背脊鬃在 −0.59h，
   // 离缝底还有 2px ⇒ 不会和 `redDark` 相邻（那对 ΔL 只有 8.1，差 12 一点点）。
-  for (const sx of [-0.45, -0.23]) {
-    R(pb, cx + h * sx, base - h * 0.9, Math.max(1, Math.round(h * 0.03)), Math.max(3, Math.round(h * 0.25)), P2.wallDark);
+  //
+  // 兵牌上**不画**这道缝：三颗头之间本来就留了 1px 透明缝（间距 0.28h >
+  // 头径），描边会把它灌成 ink0 —— 那道墨缝比自己填的棕缝更清楚，
+  // 而且不会把三个头粘回一块。
+  if (!card) {
+    for (const sx of [-0.45, -0.23]) {
+      R(pb, cx + h * sx, base - h * 0.9, Math.max(1, Math.round(h * 0.03)), Math.max(3, Math.round(h * 0.25)), P2.wallDark);
+    }
   }
   if (atk) {
     // 出手：前爪抬起前扑
@@ -1093,7 +1212,7 @@ function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boo
  * 下掠翼的宽度必须控制在 `1.12h` 以内 —— h=1.50 归一化到 55px 时要乘 1.06，
  * 再宽就顶破 64px 画布（`audit:b0` 断言 12）。
  */
-function drawDevil(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
+function drawDevil(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
   const topY = base - h;
   const headR = h * 0.1;
   const headCy = topY + h * 0.19;
@@ -1118,7 +1237,7 @@ function drawDevil(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
       P2.redDark,
     );
     // 翼骨：一根亮红，避免整片暗红在 22px 下是一块抹布
-    tl(pb, sx, wRootY, sx + dir * wW * 0.9, base - h * 0.12, P2.red, 1);
+    tl(pb, sx, wRootY, sx + dir * wW * 0.9, base - h * 0.12, P2.red, card ? 2 : 1);
   }
   // ── 角：从头顶向上外，角尖 = 剪影最高点 ──
   for (const dir of [-1, 1]) {
@@ -1152,7 +1271,11 @@ function drawDevil(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
   // 头
   pb.ellipse(cx, headCy, headR, headR * 0.92, P2.red);
   // 脸：恶魔是人形正脸（有角但不是侧脸）⇒ h3
-  if (face) h3Face(pb, Math.round(cx) - 2, Math.round(headCy - headR * 0.15), 2, 3, 3);
+  if (face) {
+    const fey = Math.round(headCy - headR * 0.15);
+    if (card) cardFace(pb, Math.round(cx) - 2, fey);
+    else h3Face(pb, Math.round(cx) - 2, fey, 2, 3, 3);
+  }
   // 尾：从臀部向右下，末端一个三角（"尾巴"是恶魔与天使的第三处不同）
   tl(pb, cx + h * 0.1, hip, cx + h * 0.42, base - h * 0.16, P2.redDark, Math.max(2, Math.round(h * 0.035)));
   pb.poly([[cx + h * 0.4, base - h * 0.2], [cx + h * 0.5, base - h * 0.08], [cx + h * 0.36, base - h * 0.1]], P2.red);
@@ -1167,62 +1290,81 @@ function drawDevil(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
  * 5. 入口
  * ========================================================================== */
 
+/** 绘制精度：`full` = 战斗帧（64×56 / 52×44）；`card` = 兵牌（43×37，直接从零画）。 */
+export type ArtDetail = 'full' | 'card';
+
+export interface BodyPlanDrawOpts {
+  detail?: ArtDetail;
+  /**
+   * 直接画到**成品高度**（px）。给了它，`u` 由 `fitHeight ÷ plan.h` 反解 ——
+   * 画出来的剪影就是最终像素高，**后面不再缩一次**。兵牌走这条（见
+   * `buildPortraitFrame`）；战斗帧不给，仍按画布高统一铺满再由 `normalizeTier` 归位。
+   */
+  fitHeight?: number;
+  /** 脚底到画布底的像素数。默认 3（战斗帧留描边 + 1px 底隙）。 */
+  bottomPad?: number;
+}
+
 /**
  * 把某个兵种画进 `pb`（**不含描边、不含归一化** —— 那两步在 `buildB0Frame`）。
  *
- * @param kind `map` 用同一套形状按更小的 `u` 画（地图图标只要认得出体形档；
- *             兵牌的辨识度由 `cu_*` 负责，见 §15.2 的分工）。
+ * @param kind `map` 用同一套形状按更小的 `u` 画（地图图标只要认得出体形档）。
  * @returns 是否画了（false = 这个 id 不归本模块管，调用方继续走旧树）。
  */
 export function drawBodyPlanUnit(
   pb: PixBuf,
   unit: string,
   kind: 'map' | 'idle' | 'atk',
+  opts: BodyPlanDrawOpts = {},
 ): boolean {
   const plan = BODY_PLAN[unit];
   if (!plan) return false;
-  // `u` = 1 个 H_REF 单位的像素数 = 画布高 ÷ 1.54（天使触顶），再按「最高的那个兵
-  // 也要留出 2px 描边余量」压一次 —— 只影响**归一化之前**的绘制尺寸，
-  // 两轴同倍 ⇒ 宽高比不变，归一化之后一律回到目标高。
-  const u = Math.min(pb.h / H_REF_HUGE, (pb.h - 4) / plan.h);
+  // `u` = 1 个 H_REF 单位的像素数。
+  //   战斗帧：画布高 ÷ 1.54（天使触顶），再按「最高的那个兵也要留 2px 描边余量」压一次；
+  //   兵牌：fitHeight ÷ plan.h ⇒ **每个兵一次性画到自己最终的像素高度**，不经过任何缩放。
+  const u =
+    opts.fitHeight !== undefined
+      ? opts.fitHeight / plan.h
+      : Math.min(pb.h / H_REF_HUGE, (pb.h - 4) / plan.h);
   const h = plan.h * u;
-  const base = pb.h - 3;
+  const base = opts.bottomPad !== undefined ? pb.h - opts.bottomPad : pb.h - 3;
   const cx = pb.w / 2;
   const atk = kind === 'atk';
+  const card = opts.detail === 'card';
   // 地图帧不画脸：那一步只负责**剪影**（§15.2 的分工），而 52×44 画布上归一化后
   // 只剩 20~24px 高，2×2 的眼块会占掉脑袋宽度的 2/3 —— 22px 下读成一条黑杠。
   // 兵牌（cu_* / cu_*_atk）必须画，`audit:expr` 认的就是它们。
   const face = kind !== 'map';
   switch (unit) {
     case 'p1_child':
-      drawChild(pb, cx, base, h, atk, face);
+      drawChild(pb, cx, base, h, atk, face, card);
       break;
     case 'p1_crossbow':
-      drawCrossbow(pb, cx, base, h, atk, face);
+      drawCrossbow(pb, cx, base, h, atk, face, card);
       break;
     case 'p1_eagle':
-      drawEagle(pb, cx, base, h, atk, face);
+      drawEagle(pb, cx, base, h, atk, face, card);
       break;
     case 'p1_knight':
-      drawKnight(pb, cx, base, h, atk, face);
+      drawKnight(pb, cx, base, h, atk, face, card);
       break;
     case 'p1_angel':
-      drawAngel(pb, cx, base, h, atk, face);
+      drawAngel(pb, cx, base, h, atk, face, card);
       break;
     case 'p2_matchman':
-      drawMatchman(pb, cx, base, h, atk, face);
+      drawMatchman(pb, cx, base, h, atk, face, card);
       break;
     case 'p2_bronze':
-      drawBronze(pb, cx, base, h, atk, face);
+      drawBronze(pb, cx, base, h, atk, face, card);
       break;
     case 'p2_lavagiant':
-      drawLavaGiant(pb, cx, base, h, atk, face);
+      drawLavaGiant(pb, cx, base, h, atk, face, card);
       break;
     case 'p2_threewolf':
-      drawThreeWolf(pb, cx, base, h, atk, face);
+      drawThreeWolf(pb, cx, base, h, atk, face, card);
       break;
     case 'p2_devil':
-      drawDevil(pb, cx, base, h, atk, face);
+      drawDevil(pb, cx, base, h, atk, face, card);
       break;
     default:
       return false;

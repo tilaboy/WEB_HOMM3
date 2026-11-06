@@ -5,7 +5,13 @@
  * ## 它守什么（§16.9④ 决策 27 + 2026-11-01 主理人两次裁定）
  *   ① 立绘盒 **43×37**、牌高 **48**、**牌上不写名字也不写数量**（两者都只在
  *      `title` / `aria-label` / 详情卡里）、血条 **3px 通栏贴底**；
- *   ② **保持体型**：立绘的宽高比与战斗帧的剪影宽高比误差 ≤ **15%**
+ *   ② **保持体型**：立绘的宽高比不许偏离战斗帧 —— 但**两种立绘用两把尺子**
+ *      （2026-11-06 起分家，理由见下）：
+ *        · 直画的族（`BODY_PLAN` 收录）漂移 ≤ **35%**：直画时 2px 的眼/腿、1px 的描边
+ *          都是不可再分的整数，12px 高的矮兵天生胖一圈（+15~32%）。次序不翻转的
+ *          那条在 `audit:bodyplan` [3] 里量（那边有族内全表）；
+ *        · 缩图的族（p3/p4 与中立怪）仍 ≤ **15%**：等比缩必然保持宽高比，
+ *          任何偏差都只能是拉伸。
  *      （拉伸填满盒子会让每个兵都变成同一个比例 —— 这条判据就是为了抓那件事）；
  *   ③ 牌面**唯一的**文字是按需出现的预估行（`.fc`），它必须 ≥12px 且墨迹 ≥7.5px；
  *   ④ 详情卡唯一：连点两支不同部队，可见的属性牌**始终 ≤1**（旧的被替换，不是叠加）；
@@ -42,6 +48,7 @@ const { UNIT_FRAMES, buildB0Frame, buildPortraitFrame, PORTRAIT_W, PORTRAIT_H } 
 const { FRAME_ALIAS, unitPortraitFrame, portraitOfCombatFrame } = await import(
   distUrl('render/unitFrames.js', DIST)
 );
+const { hasBodyPlan } = await import(distUrl('render/unitBodyPlan.js', DIST));
 
 let bad = 0;
 const PASS = (c, m) => {
@@ -93,8 +100,10 @@ const frames = new Set(IDLE.map((s) => portraitOfCombatFrame(s.name)));
 const missId = ROSTER.filter((id) => !frames.has(unitPortraitFrame(id)));
 PASS(missId.length === 0, `③ 20 个正编 id 全部有立绘帧`, missId.join(','));
 
-/* 宽高比：源帧（带描边，与战场同口径）vs 立绘（带描边） */
-const ASPECT_TOL = 0.15;
+/* 宽高比：源帧（带描边，与战场同口径）vs 立绘（带描边）。
+ * 容差按**立绘的画法**分两档 —— 直画的族吃像素下限，缩图的族不吃（见文件头 ②）。 */
+const TOL_DIRECT = 0.35;
+const TOL_SCALED = 0.15;
 const rows = IDLE.map((spec) => {
   const src = buildB0Frame(spec.name);
   const pt = buildPortraitFrame(spec.name);
@@ -102,14 +111,17 @@ const rows = IDLE.map((spec) => {
   const b = bbox(pt);
   const arSrc = a.w / a.h;
   const arPt = b.w / b.h;
-  return { name: spec.name, arSrc, arPt, err: Math.abs(arPt / arSrc - 1), src: a, pt: b };
+  const direct = hasBodyPlan(spec.unit);
+  const tol = direct ? TOL_DIRECT : TOL_SCALED;
+  return { name: spec.name, arSrc, arPt, err: Math.abs(arPt / arSrc - 1), tol, direct, src: a, pt: b };
 });
 const worst = rows.slice().sort((x, y) => y.err - x.err)[0];
-const overTol = rows.filter((r) => r.err > ASPECT_TOL);
+const overTol = rows.filter((r) => r.err > r.tol);
+const nDirect = rows.filter((r) => r.direct).length;
 PASS(
   overTol.length === 0,
-  `④ ${rows.length} 帧的剪影宽高比误差 ≤${ASPECT_TOL * 100}%（最大 ${(worst.err * 100).toFixed(1)}% · ${worst.name} ${worst.src.w}×${worst.src.h}→${worst.pt.w}×${worst.pt.h}）`,
-  overTol.map((r) => `${r.name} ${(r.err * 100).toFixed(1)}%`).join(','),
+  `④ ${rows.length} 帧的剪影宽高比误差在档内（直画 ${nDirect} 帧 ≤${TOL_DIRECT * 100}% / 缩图 ${rows.length - nDirect} 帧 ≤${TOL_SCALED * 100}%；最大 ${(worst.err * 100).toFixed(1)}% · ${worst.name} ${worst.src.w}×${worst.src.h}→${worst.pt.w}×${worst.pt.h}）`,
+  overTol.map((r) => `${r.name} ${(r.err * 100).toFixed(1)}% > ${r.tol * 100}%`).join(','),
 );
 
 /* 剪影不出盒（含 1px 描边后仍要留白 0~1px，不许被裁） */
@@ -119,9 +131,10 @@ PASS(clipped.length === 0, `⑤ 立绘剪影没有溢出盒子`, clipped.map((r)
 /* 负向对照：按盒子比例拉伸的假想实现 */
 const stretched = rows.map((r) => Math.abs((PORTRAIT_W - 2) / (PORTRAIT_H - 2) / r.arSrc - 1));
 const stretchMax = Math.max(...stretched);
+// 拉伸必须连**最宽的那把尺子**（直画 35%）都过不去，否则这条判据对拉伸就瞎了
 PASS(
-  stretchMax > ASPECT_TOL,
-  `⑥ 负向对照：按盒子比例拉伸时误差 ${(stretchMax * 100).toFixed(1)}% > ${ASPECT_TOL * 100}%（这条判据抓得住拉伸）`,
+  stretchMax > TOL_DIRECT,
+  `⑥ 负向对照：按盒子比例拉伸时误差 ${(stretchMax * 100).toFixed(1)}% > ${TOL_DIRECT * 100}%（这条判据抓得住拉伸）`,
 );
 
 /* 描边：最外一圈必须是 ink0（#2a1a12），且正下方/右方一像素内不再是"纯透明" */

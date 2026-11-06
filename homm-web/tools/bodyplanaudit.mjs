@@ -23,7 +23,8 @@
  *   [1] R1 五档独占 —— 同族 5 个兵（成品 cu 帧的剪影）落在 5 个**不同**档，
  *               且与 `BODY_PLAN` 声明的档一致。量的是成品帧，不是声明。
  *   [2] R2 两两 ≥18% —— 同族 10 对，外接框**至少一维**相对差 ≥18%。
- *   [3] R5 兵牌 —— 43×37 立绘的宽高比相对源帧误差 ≤15%（证明是等比缩，不是拉伸填满）。
+ *   [3] R5 兵牌 —— 43×37 立绘**不歪曲体型**：族内宽窄次序不翻转、单兵漂移 ≤35%。
+ *        （2026-11-06 立绘改成直画后换的尺子，理由写在 [3] 上方。）
  *   [4] 22×30 可辨 —— 盲测尺寸下两两剪影 XOR ≥15%（相对较小的一方面积）。
  *               这是「5 秒指认」里**能机检的那一半**；五人盲测仍是人工项。
  *   [5] 鹰不展翼 —— 鹰必须是高档（h ≥1.18）且 w/h <1.35（不许落进宽体/巨物）。
@@ -281,27 +282,83 @@ const measured = new Map(); // id → { w, h, cls, id }
   record('2', 'R2 同族两两外接框至少一维差 ≥18%', problems.length === 0 && details.length > 0, details.join(' · '));
 }
 
-/* ---------------------------------------------------------------- [3] R5 立绘 */
+/* ------------------------------------------------- [3] R5 立绘：不歪曲体型 */
+
+/**
+ * 立绘判据在 2026-11-06 **换了一次尺子**，理由必须写清楚，否则下一个人会以为是放宽：
+ *
+ *   旧判据：「立绘 w/h 与 cu w/h 相差 ≤15%」。那在**缩图**时代是对的 ——
+ *   立绘由 cu 等比缩出来，宽高比必然相同，任何偏差都只可能是"拉伸填满"。
+ *
+ *   2026-11-06 主理人拍板立绘**在 43×37 上直接画**（不从 cu 缩），这条前提消失了：
+ *   直画时 12px 高的矮兵身上，2×2 的眼、2px 的腿、1px 的描边都是**不可再分的整数**，
+ *   它们占身高的比例天然是 cu 的 2~3 倍 ⇒ 矮兵必然胖一点（实测 +15%~+32%）。
+ *   这时再量 15%，等于要求"直画但必须长得像缩图"，自相矛盾。
+ *
+ *   真正要守的是**没有把体型画反**：
+ *     (a) 族内宽窄**次序**不翻转（宽体不许变窄、瘦高不许变宽）；只对 cu 自己
+ *         分得开（相差 ≥10%）的两只要求 —— 孩童/鹰在 cu 上只差 2%，不该逼卡上分开；
+ *     (b) 单兵漂移 ≤35%（超过就是真画歪了，不是像素下限）。
+ *
+ *   [N3] 是这条尺子的双向对照：把五张卡横向拉 2 倍必须报红，原样必须不报红。
+ */
+const CARD_DRIFT_MAX = 0.35;
+const CARD_ORDER_MARGIN = 0.1;
+
+/** 一条判据、两处调用（[3] 与 [N3]）—— 不复制逻辑，否则 N3 证明的不是同一把尺子。 */
+function cardShapeProblems(rows) {
+  const problems = [];
+  for (const r of rows) {
+    const err = Math.abs(r.card - r.cu) / r.cu;
+    if (err > CARD_DRIFT_MAX) problems.push(`${r.id} 漂移 ${(err * 100).toFixed(0)}%`);
+  }
+  for (let i = 0; i < rows.length; i++) {
+    for (let j = i + 1; j < rows.length; j++) {
+      const A = rows[i];
+      const B = rows[j];
+      const gap = Math.abs(A.cu - B.cu) / Math.max(A.cu, B.cu);
+      if (gap < CARD_ORDER_MARGIN) continue;
+      if ((A.cu - B.cu) * (A.card - B.card) < 0) problems.push(`${A.id}/${B.id} 宽窄次序翻转`);
+    }
+  }
+  return problems;
+}
+
+/** 族内逐兵的 (cu w/h, card w/h)，[N3] 复用同一份读数。 */
+const shapeRows = new Map();
+for (const { fam, ids } of fams) {
+  shapeRows.set(
+    fam,
+    ids.map((id) => {
+      const src = bbox(buildB0Frame(unitCombatFrame(id), false));
+      const pt = bbox(buildPortraitFrame(unitCombatFrame(id)));
+      return { id, cu: src ? src.w / src.h : 0, card: pt ? pt.w / pt.h : 0 };
+    }),
+  );
+}
 
 {
   const problems = [];
   const details = [];
-  for (const { fam, ids } of fams) {
-    for (const id of ids) {
-      const src = bbox(buildB0Frame(unitCombatFrame(id), false));
-      const pt = bbox(buildPortraitFrame(unitCombatFrame(id)));
-      if (!src || !pt) {
-        problems.push(`${id} 立绘/源帧为空`);
-        continue;
-      }
-      const want = src.w / src.h;
-      const got = pt.w / pt.h;
-      const err = Math.abs(got - want) / want;
-      if (err > 0.15) problems.push(`${id} 宽高比 ${want.toFixed(2)}→${got.toFixed(2)}（偏 ${(err * 100).toFixed(0)}%）`);
-      details.push(`${id.replace(`${fam}_`, '')} ${(err * 100).toFixed(0)}%`);
+  for (const [fam, rows] of shapeRows) {
+    if (rows.some((r) => !r.cu || !r.card)) {
+      problems.push(`${fam} 立绘/源帧为空`);
+      continue;
     }
+    problems.push(...cardShapeProblems(rows));
+    details.push(
+      `${fam} ` +
+        rows
+          .map((r) => `${r.id.replace(`${fam}_`, '')} ${r.cu.toFixed(2)}→${r.card.toFixed(2)}(${(((r.card - r.cu) / r.cu) * 100).toFixed(0)}%)`)
+          .join(' / '),
+    );
   }
-  record('3', 'R5 43×37 兵牌宽高比误差 ≤15%（等比缩，非拉伸）', problems.length === 0 && details.length > 0, problems.length ? problems.join(' · ') : details.join(' / '));
+  record(
+    '3',
+    'R5 兵牌不歪曲体型：宽窄次序不翻转 + 单兵漂移 ≤35%（直画口径，见上）',
+    problems.length === 0 && details.length > 0,
+    problems.length ? problems.join(' · ') : details.join(' · '),
+  );
 }
 
 /* ---------------------------------------------------------------- [4] 22×30 可辨 */
@@ -390,6 +447,24 @@ const small = new Map();
     '[4] 的度量有分辨力：自比 0%，跨兵 >15%',
     same === 0 && cross > 0.15,
     `自比 ${(same * 100).toFixed(1)}% · 跨兵最大 ${(cross * 100).toFixed(0)}%`,
+  );
+}
+
+{
+  // N3：[3] 的尺子双向都有分辨力 —— 原样不报红、横向拉 2 倍必须报红
+  const okRows = [];
+  const badRows = [];
+  for (const rows of shapeRows.values()) {
+    okRows.push(...rows);
+    badRows.push(...rows.map((r) => ({ ...r, card: r.card * 2 })));
+  }
+  const ok = cardShapeProblems(okRows).length === 0;
+  const bad = cardShapeProblems(badRows).length > 0;
+  record(
+    'N3',
+    '[3] 有分辨力：原样 0 条、横向拉 2 倍必须报红',
+    ok && bad,
+    `原样 ${cardShapeProblems(okRows).length} 条 · 拉宽 ${cardShapeProblems(badRows).length} 条`,
   );
 }
 
