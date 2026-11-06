@@ -417,40 +417,15 @@ if (pngDir) {
       n += 3;
     }
   }
-  // 盲测条：五张 22×30 并排、**不带标签**（带标签的就不是盲测了），间距 = 一格的 1/2。
-  // 交给 5 个人各看 5 秒，问「哪张更强」，答对 ≥9/10 才算过（S3a 人工项）。
-  // **按族各出一张**：判据是"同族五人里指认哪张更强"，把两族混在一条里
-  // 会让题目变成"跨族比强弱"，那不是 §15.2 要验的东西。
-  const writeBlind = (ids, file) => {
-    if (!ids.length) return;
-    const Z = 8;
-    const GAPX = 12;
-    const cells = ids.map((id) => upscale(buildPortraitFrame(unitCombatFrame(id), 22, 30), Z));
-    const W = cells.reduce((s, c) => s + c.w, 0) + GAPX * (cells.length - 1);
-    const H = Math.max(...cells.map((c) => c.h));
-    const data = new Uint8ClampedArray(W * H * 4);
-    let ox = 0;
-    for (const c of cells) {
-      for (let y = 0; y < c.h; y++) {
-        for (let x = 0; x < c.w; x++) {
-          const s = (y * c.w + x) * 4;
-          const o = (y * W + ox + x) * 4;
-          data[o] = c.data[s];
-          data[o + 1] = c.data[s + 1];
-          data[o + 2] = c.data[s + 2];
-          data[o + 3] = c.data[s + 3];
-        }
-      }
-      ox += c.w + GAPX;
-    }
-    writeFileSync(join(pngDir, file), encodePng({ w: W, h: H, data }));
-    n += 1;
-  };
-  for (const f of pngFams) writeBlind(f.ids, `blind-22x30-${f.fam}.png`);
-  // "混排条"是**跨族**题（H3 对照），只在全量导出时出：`--fam=` 单族跑时它没有意义，
-  // 更不该用一个只有两族的混排条覆盖掉上一次三族的。
-  if (!famArg) writeBlind(fams.flatMap((f) => f.ids), 'blind-22x30-all.png');
-  console.log(`\nPNG 已导出 → ${pngDir}（${n} 张：cu ×8 / pt ×8 / 22×30 ×8 / 盲测条）`);
+  // ⚠️ 盲测条**已从本工具移除**（2026-11-06）。原来这里用 ×8 放大 + 固定顺序出
+  // `blind-22x30-*.png`，两个毛病都是致命的：
+  //   · ×8 把 22px 的图铺到 176px 高，**面积 64 倍** —— 拿它当"22px 可辨"的判据，
+  //     测的根本不是 22px（连"分得出来"这个结论都不可信）；
+  //   · 顺序就是对照表的顺序 ⇒ 看过表的人靠"第几张"就能答对。
+  // 现在盲测材料统一由 `tools/blindkit.mjs` 生成（每人独立乱序 / ×2 真机尺寸 /
+  // 答案钥单独落盘 / 附执行手册）。本工具的 `--png` 只负责**看细节**的放大图。
+  console.log(`\nPNG 已导出 → ${pngDir}（${n} 张：cu ×8 / pt ×8 / 22×30 ×8）`);
+  console.log('盲测材料请用：node tools/blindkit.mjs --out=<dir>（见 production/s3b/blind/PROTOCOL.md）');
 }
 
 /* ---------------------------------------------------------------- 汇总 */
@@ -458,7 +433,8 @@ if (pngDir) {
 console.log('\n' + '='.repeat(72));
 console.log(`汇总：${results.map((r) => `[${r.id}] ${r.pass ? 'PASS' : 'FAIL'}`).join('  ')}`);
 console.log(bad === 0 ? '结论：体形档自动部分全过（S3a p1 + S3b p2）' : `结论：${bad} 项不合格 —— 不要提交`);
-console.log('人工项：五人盲测（22×30 下 5 秒指认「哪张更强」≥9/10）；剪影外缘特征凸起 ≥4px 肉眼核（按族分批出题）');
+console.log('人工项：五人盲测（§8.4：同族 5 张并排、每人每张 3 秒、指认正确率 ≥80%）');
+console.log('        材料与计分表：node tools/blindkit.mjs --out=<dir>（手册 production/s3b/blind/PROTOCOL.md）');
 console.log('='.repeat(72));
 process.exit(bad === 0 ? 0 : 1);
 

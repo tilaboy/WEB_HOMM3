@@ -18,6 +18,7 @@
     "audit:touch": "node tools/tinytargetaudit.mjs",
     "audit:b0": "node tools/b0audit.mjs",
     "audit:bodyplan": "node tools/bodyplanaudit.mjs",
+    "kit:blind": "node tools/blindkit.mjs",
     "sheet:units": "node tools/unitsheet.mjs",
     "audit:atlas": "node tools/atlasaudit.mjs",
     "audit:townart": "node tools/townartaudit.mjs",

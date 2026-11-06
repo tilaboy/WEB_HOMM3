@@ -1,0 +1,755 @@
+{
+  "seed": 20261106,
+  "testers": 5,
+  "generatedFor": "§8.4 同族 5 张并排 / 每人独立乱序",
+  "fams": {
+    "p1": {
+      "study": {
+        "1": {
+          "id": "p1_child",
+          "cn": "小孩",
+          "cls": "矮"
+        },
+        "2": {
+          "id": "p1_crossbow",
+          "cn": "弩手",
+          "cls": "中"
+        },
+        "3": {
+          "id": "p1_eagle",
+          "cn": "鹰",
+          "cls": "高"
+        },
+        "4": {
+          "id": "p1_knight",
+          "cn": "骑士",
+          "cls": "宽体"
+        },
+        "5": {
+          "id": "p1_angel",
+          "cn": "天使",
+          "cls": "巨物·飞行"
+        }
+      },
+      "quizzes": {
+        "t1": [
+          {
+            "cell": "1",
+            "id": "p1_angel",
+            "cn": "天使",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "2",
+            "id": "p1_child",
+            "cn": "小孩",
+            "cls": "矮"
+          },
+          {
+            "cell": "3",
+            "id": "p1_crossbow",
+            "cn": "弩手",
+            "cls": "中"
+          },
+          {
+            "cell": "4",
+            "id": "p1_knight",
+            "cn": "骑士",
+            "cls": "宽体"
+          },
+          {
+            "cell": "5",
+            "id": "p1_eagle",
+            "cn": "鹰",
+            "cls": "高"
+          }
+        ],
+        "t2": [
+          {
+            "cell": "1",
+            "id": "p1_crossbow",
+            "cn": "弩手",
+            "cls": "中"
+          },
+          {
+            "cell": "2",
+            "id": "p1_child",
+            "cn": "小孩",
+            "cls": "矮"
+          },
+          {
+            "cell": "3",
+            "id": "p1_knight",
+            "cn": "骑士",
+            "cls": "宽体"
+          },
+          {
+            "cell": "4",
+            "id": "p1_angel",
+            "cn": "天使",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "5",
+            "id": "p1_eagle",
+            "cn": "鹰",
+            "cls": "高"
+          }
+        ],
+        "t3": [
+          {
+            "cell": "1",
+            "id": "p1_crossbow",
+            "cn": "弩手",
+            "cls": "中"
+          },
+          {
+            "cell": "2",
+            "id": "p1_child",
+            "cn": "小孩",
+            "cls": "矮"
+          },
+          {
+            "cell": "3",
+            "id": "p1_eagle",
+            "cn": "鹰",
+            "cls": "高"
+          },
+          {
+            "cell": "4",
+            "id": "p1_knight",
+            "cn": "骑士",
+            "cls": "宽体"
+          },
+          {
+            "cell": "5",
+            "id": "p1_angel",
+            "cn": "天使",
+            "cls": "巨物·飞行"
+          }
+        ],
+        "t4": [
+          {
+            "cell": "1",
+            "id": "p1_child",
+            "cn": "小孩",
+            "cls": "矮"
+          },
+          {
+            "cell": "2",
+            "id": "p1_eagle",
+            "cn": "鹰",
+            "cls": "高"
+          },
+          {
+            "cell": "3",
+            "id": "p1_knight",
+            "cn": "骑士",
+            "cls": "宽体"
+          },
+          {
+            "cell": "4",
+            "id": "p1_crossbow",
+            "cn": "弩手",
+            "cls": "中"
+          },
+          {
+            "cell": "5",
+            "id": "p1_angel",
+            "cn": "天使",
+            "cls": "巨物·飞行"
+          }
+        ],
+        "t5": [
+          {
+            "cell": "1",
+            "id": "p1_child",
+            "cn": "小孩",
+            "cls": "矮"
+          },
+          {
+            "cell": "2",
+            "id": "p1_eagle",
+            "cn": "鹰",
+            "cls": "高"
+          },
+          {
+            "cell": "3",
+            "id": "p1_crossbow",
+            "cn": "弩手",
+            "cls": "中"
+          },
+          {
+            "cell": "4",
+            "id": "p1_knight",
+            "cn": "骑士",
+            "cls": "宽体"
+          },
+          {
+            "cell": "5",
+            "id": "p1_angel",
+            "cn": "天使",
+            "cls": "巨物·飞行"
+          }
+        ]
+      },
+      "quizzes22": {
+        "t1": [
+          {
+            "cell": "1",
+            "id": "p1_knight",
+            "cn": "骑士",
+            "cls": "宽体"
+          },
+          {
+            "cell": "2",
+            "id": "p1_crossbow",
+            "cn": "弩手",
+            "cls": "中"
+          },
+          {
+            "cell": "3",
+            "id": "p1_child",
+            "cn": "小孩",
+            "cls": "矮"
+          },
+          {
+            "cell": "4",
+            "id": "p1_eagle",
+            "cn": "鹰",
+            "cls": "高"
+          },
+          {
+            "cell": "5",
+            "id": "p1_angel",
+            "cn": "天使",
+            "cls": "巨物·飞行"
+          }
+        ],
+        "t2": [
+          {
+            "cell": "1",
+            "id": "p1_child",
+            "cn": "小孩",
+            "cls": "矮"
+          },
+          {
+            "cell": "2",
+            "id": "p1_angel",
+            "cn": "天使",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "3",
+            "id": "p1_crossbow",
+            "cn": "弩手",
+            "cls": "中"
+          },
+          {
+            "cell": "4",
+            "id": "p1_eagle",
+            "cn": "鹰",
+            "cls": "高"
+          },
+          {
+            "cell": "5",
+            "id": "p1_knight",
+            "cn": "骑士",
+            "cls": "宽体"
+          }
+        ],
+        "t3": [
+          {
+            "cell": "1",
+            "id": "p1_child",
+            "cn": "小孩",
+            "cls": "矮"
+          },
+          {
+            "cell": "2",
+            "id": "p1_angel",
+            "cn": "天使",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "3",
+            "id": "p1_knight",
+            "cn": "骑士",
+            "cls": "宽体"
+          },
+          {
+            "cell": "4",
+            "id": "p1_crossbow",
+            "cn": "弩手",
+            "cls": "中"
+          },
+          {
+            "cell": "5",
+            "id": "p1_eagle",
+            "cn": "鹰",
+            "cls": "高"
+          }
+        ],
+        "t4": [
+          {
+            "cell": "1",
+            "id": "p1_child",
+            "cn": "小孩",
+            "cls": "矮"
+          },
+          {
+            "cell": "2",
+            "id": "p1_knight",
+            "cn": "骑士",
+            "cls": "宽体"
+          },
+          {
+            "cell": "3",
+            "id": "p1_crossbow",
+            "cn": "弩手",
+            "cls": "中"
+          },
+          {
+            "cell": "4",
+            "id": "p1_angel",
+            "cn": "天使",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "5",
+            "id": "p1_eagle",
+            "cn": "鹰",
+            "cls": "高"
+          }
+        ],
+        "t5": [
+          {
+            "cell": "1",
+            "id": "p1_crossbow",
+            "cn": "弩手",
+            "cls": "中"
+          },
+          {
+            "cell": "2",
+            "id": "p1_angel",
+            "cn": "天使",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "3",
+            "id": "p1_knight",
+            "cn": "骑士",
+            "cls": "宽体"
+          },
+          {
+            "cell": "4",
+            "id": "p1_child",
+            "cn": "小孩",
+            "cls": "矮"
+          },
+          {
+            "cell": "5",
+            "id": "p1_eagle",
+            "cn": "鹰",
+            "cls": "高"
+          }
+        ]
+      }
+    },
+    "p2": {
+      "study": {
+        "1": {
+          "id": "p2_matchman",
+          "cn": "火柴人",
+          "cls": "矮"
+        },
+        "2": {
+          "id": "p2_bronze",
+          "cn": "铜人",
+          "cls": "中"
+        },
+        "3": {
+          "id": "p2_lavagiant",
+          "cn": "熔岩巨人",
+          "cls": "高"
+        },
+        "4": {
+          "id": "p2_threewolf",
+          "cn": "三头狼",
+          "cls": "宽体"
+        },
+        "5": {
+          "id": "p2_devil",
+          "cn": "恶魔",
+          "cls": "巨物·飞行"
+        }
+      },
+      "quizzes": {
+        "t1": [
+          {
+            "cell": "1",
+            "id": "p2_matchman",
+            "cn": "火柴人",
+            "cls": "矮"
+          },
+          {
+            "cell": "2",
+            "id": "p2_lavagiant",
+            "cn": "熔岩巨人",
+            "cls": "高"
+          },
+          {
+            "cell": "3",
+            "id": "p2_threewolf",
+            "cn": "三头狼",
+            "cls": "宽体"
+          },
+          {
+            "cell": "4",
+            "id": "p2_devil",
+            "cn": "恶魔",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "5",
+            "id": "p2_bronze",
+            "cn": "铜人",
+            "cls": "中"
+          }
+        ],
+        "t2": [
+          {
+            "cell": "1",
+            "id": "p2_lavagiant",
+            "cn": "熔岩巨人",
+            "cls": "高"
+          },
+          {
+            "cell": "2",
+            "id": "p2_devil",
+            "cn": "恶魔",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "3",
+            "id": "p2_bronze",
+            "cn": "铜人",
+            "cls": "中"
+          },
+          {
+            "cell": "4",
+            "id": "p2_matchman",
+            "cn": "火柴人",
+            "cls": "矮"
+          },
+          {
+            "cell": "5",
+            "id": "p2_threewolf",
+            "cn": "三头狼",
+            "cls": "宽体"
+          }
+        ],
+        "t3": [
+          {
+            "cell": "1",
+            "id": "p2_lavagiant",
+            "cn": "熔岩巨人",
+            "cls": "高"
+          },
+          {
+            "cell": "2",
+            "id": "p2_threewolf",
+            "cn": "三头狼",
+            "cls": "宽体"
+          },
+          {
+            "cell": "3",
+            "id": "p2_matchman",
+            "cn": "火柴人",
+            "cls": "矮"
+          },
+          {
+            "cell": "4",
+            "id": "p2_devil",
+            "cn": "恶魔",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "5",
+            "id": "p2_bronze",
+            "cn": "铜人",
+            "cls": "中"
+          }
+        ],
+        "t4": [
+          {
+            "cell": "1",
+            "id": "p2_threewolf",
+            "cn": "三头狼",
+            "cls": "宽体"
+          },
+          {
+            "cell": "2",
+            "id": "p2_lavagiant",
+            "cn": "熔岩巨人",
+            "cls": "高"
+          },
+          {
+            "cell": "3",
+            "id": "p2_matchman",
+            "cn": "火柴人",
+            "cls": "矮"
+          },
+          {
+            "cell": "4",
+            "id": "p2_devil",
+            "cn": "恶魔",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "5",
+            "id": "p2_bronze",
+            "cn": "铜人",
+            "cls": "中"
+          }
+        ],
+        "t5": [
+          {
+            "cell": "1",
+            "id": "p2_bronze",
+            "cn": "铜人",
+            "cls": "中"
+          },
+          {
+            "cell": "2",
+            "id": "p2_threewolf",
+            "cn": "三头狼",
+            "cls": "宽体"
+          },
+          {
+            "cell": "3",
+            "id": "p2_devil",
+            "cn": "恶魔",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "4",
+            "id": "p2_lavagiant",
+            "cn": "熔岩巨人",
+            "cls": "高"
+          },
+          {
+            "cell": "5",
+            "id": "p2_matchman",
+            "cn": "火柴人",
+            "cls": "矮"
+          }
+        ]
+      },
+      "quizzes22": {
+        "t1": [
+          {
+            "cell": "1",
+            "id": "p2_bronze",
+            "cn": "铜人",
+            "cls": "中"
+          },
+          {
+            "cell": "2",
+            "id": "p2_devil",
+            "cn": "恶魔",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "3",
+            "id": "p2_matchman",
+            "cn": "火柴人",
+            "cls": "矮"
+          },
+          {
+            "cell": "4",
+            "id": "p2_threewolf",
+            "cn": "三头狼",
+            "cls": "宽体"
+          },
+          {
+            "cell": "5",
+            "id": "p2_lavagiant",
+            "cn": "熔岩巨人",
+            "cls": "高"
+          }
+        ],
+        "t2": [
+          {
+            "cell": "1",
+            "id": "p2_threewolf",
+            "cn": "三头狼",
+            "cls": "宽体"
+          },
+          {
+            "cell": "2",
+            "id": "p2_bronze",
+            "cn": "铜人",
+            "cls": "中"
+          },
+          {
+            "cell": "3",
+            "id": "p2_devil",
+            "cn": "恶魔",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "4",
+            "id": "p2_matchman",
+            "cn": "火柴人",
+            "cls": "矮"
+          },
+          {
+            "cell": "5",
+            "id": "p2_lavagiant",
+            "cn": "熔岩巨人",
+            "cls": "高"
+          }
+        ],
+        "t3": [
+          {
+            "cell": "1",
+            "id": "p2_bronze",
+            "cn": "铜人",
+            "cls": "中"
+          },
+          {
+            "cell": "2",
+            "id": "p2_lavagiant",
+            "cn": "熔岩巨人",
+            "cls": "高"
+          },
+          {
+            "cell": "3",
+            "id": "p2_threewolf",
+            "cn": "三头狼",
+            "cls": "宽体"
+          },
+          {
+            "cell": "4",
+            "id": "p2_matchman",
+            "cn": "火柴人",
+            "cls": "矮"
+          },
+          {
+            "cell": "5",
+            "id": "p2_devil",
+            "cn": "恶魔",
+            "cls": "巨物·飞行"
+          }
+        ],
+        "t4": [
+          {
+            "cell": "1",
+            "id": "p2_matchman",
+            "cn": "火柴人",
+            "cls": "矮"
+          },
+          {
+            "cell": "2",
+            "id": "p2_devil",
+            "cn": "恶魔",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "3",
+            "id": "p2_lavagiant",
+            "cn": "熔岩巨人",
+            "cls": "高"
+          },
+          {
+            "cell": "4",
+            "id": "p2_threewolf",
+            "cn": "三头狼",
+            "cls": "宽体"
+          },
+          {
+            "cell": "5",
+            "id": "p2_bronze",
+            "cn": "铜人",
+            "cls": "中"
+          }
+        ],
+        "t5": [
+          {
+            "cell": "1",
+            "id": "p2_lavagiant",
+            "cn": "熔岩巨人",
+            "cls": "高"
+          },
+          {
+            "cell": "2",
+            "id": "p2_devil",
+            "cn": "恶魔",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "3",
+            "id": "p2_bronze",
+            "cn": "铜人",
+            "cls": "中"
+          },
+          {
+            "cell": "4",
+            "id": "p2_matchman",
+            "cn": "火柴人",
+            "cls": "矮"
+          },
+          {
+            "cell": "5",
+            "id": "p2_threewolf",
+            "cn": "三头狼",
+            "cls": "宽体"
+          }
+        ]
+      }
+    }
+  },
+  "pairs": [
+    {
+      "pair": "1",
+      "cls": "矮",
+      "a": "p1_child",
+      "b": "p2_matchman",
+      "aCn": "小孩",
+      "bCn": "火柴人"
+    },
+    {
+      "pair": "2",
+      "cls": "中",
+      "a": "p1_crossbow",
+      "b": "p2_bronze",
+      "aCn": "弩手",
+      "bCn": "铜人"
+    },
+    {
+      "pair": "3",
+      "cls": "高",
+      "a": "p1_eagle",
+      "b": "p2_lavagiant",
+      "aCn": "鹰",
+      "bCn": "熔岩巨人"
+    },
+    {
+      "pair": "4",
+      "cls": "宽体",
+      "a": "p1_knight",
+      "b": "p2_threewolf",
+      "aCn": "骑士",
+      "bCn": "三头狼"
+    },
+    {
+      "pair": "5",
+      "cls": "巨物·飞行",
+      "a": "p1_angel",
+      "b": "p2_devil",
+      "aCn": "天使",
+      "bCn": "恶魔"
+    }
+  ]
+}

@@ -2,8 +2,9 @@
 
 > 目的：在铺开 20 张之前，先用一族验证「§15.2 的体形五档在 22×30 下真的分得开」。
 > 结论：**机检全绿**（`audit:bodyplan` 9 条 + `audit:b0` 13 条 + `audit:expr` 7 条）；
-> **人工盲测做了 1 次**（2026-11-06，主理人：黑白条上「分得出来骑士和天使」），
-> 但正式的「5 人 × 5 秒 ≥9/10」仍是未做的验收（§6）。
+> **人工盲测做了 1 次，但那一次不算数**（2026-11-06 更正）：题面 `blind-22x30-p1.png` 是 **×8** 的，
+> 22px 的图被铺到 176px 高（面积 64 倍），测的不是 22px；且顺序等于对照表顺序。
+> 正式的「5 人 × 每张 3 秒 ≥80%」仍未做，材料已重做为 `production/s3b/blind/`（见 §6）。
 
 ---
 
@@ -97,12 +98,12 @@
 
 ## 6. 仍欠（人工项）
 
-- [~] **五人盲测**：22×30 下 5 秒内指认「哪张更强」≥9/10（§15.2 的原判据）。
-      **进度 1/5 人**：2026-11-06 主理人看题面后回复「可以的，分得出来骑士和天使」——
-      这一条直接否掉了本批最大的担忧（骑士的白马身与天使的白袍在 22px 下混成一张）。
-      但 1 人 1 次 ≠ 5 人 × 各 5 秒，**不能记成通过**。
-      题面（按族）：`production/s3a/blind-22x30-p1.png` 或 `production/s3b/blind-22x30-p1.png`
-      （五张 22×30 并排、**无标签**、每格 ×8；顺序是 child→angel 由弱到强，出题时要打乱）。
+- [ ] **五人盲测**：§8.4 的判据 —— 同族 5 张并排、每人每张 3 秒、指认正确率 ≥80%（25 题 ≥20）。
+      **进度 0/5 人**。2026-11-06 主理人曾对 `blind-22x30-p1.png` 回「分得出来骑士和天使」，
+      但那张是 ×8 的（22px 铺到 176px 高，面积 64 倍），且顺序就是对照表顺序 ⇒ **不能记成通过**。
+      新材料：`production/s3b/blind/`（`study-p1.png` + `quiz-p1-t{1..5}.png`，每人独立乱序，
+      ×2 = 2× DPR 真机尺寸），手册 `production/s3b/blind/PROTOCOL.md`。
+      重新生成：`npm run kit:blind`。
 - [ ] 剪影外缘特征凸起 ≥4px 的肉眼核 —— 素材见 `production/s3a/p1v3-sheet.png`
       （**map / idle / atk 三行 × p1 五列**，6×）与单帧 `cu_*.png` / `pt_*.png` / `s22_*.png`（8×）。
 
@@ -110,8 +111,9 @@
 
 ```
 cd homm-web
-node tools/bodyplanaudit.mjs --png ../production/s3a     # cu×8 / pt×8 / 22×30×8 / 盲测条
+node tools/bodyplanaudit.mjs --png ../production/s3a     # cu×8 / pt×8 / 22×30×8（盲测条已移除）
 node tools/unitsheet.mjs ../production/s3a/p1v3-sheet.png p1v3 6   # 三行对照表
+node tools/blindkit.mjs --out=../production/s3b/blind --fam=p1       # 盲测材料（或 npm run kit:blind）
 ```
 
 ## 7. S3b 的起手清单
