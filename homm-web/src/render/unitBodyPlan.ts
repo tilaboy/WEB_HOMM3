@@ -961,16 +961,25 @@ function drawLavaGiant(pb: PixBuf, cx: number, base: number, h: number, atk: boo
 }
 
 /**
- * 三头狼 · 宽体档 · 四足长身 + **三个分开的头**。
+ * 三头狼 · 宽体档 · 四足长身 + **三个头**。
  *
  * ⚠️ 宽高比是这一档的唯一判据（`w ≥ 1.35h`），但**成品要留余量**：
  *    R1 量的是加完 1px 描边的 bbox，描边会让高多 2px、宽也多 2px，
  *    而比值对"矮而宽"的剪影是**变小**的（分母涨得比分子快）。
- *    所以这里画到 1.42h，成品落在 1.40~1.45，不会贴着 1.35 的线。
+ *    所以这里画到 1.5h 以上，成品落在 1.55~1.60，不会贴着 1.35 的线。
  *
- * ⚠️ 首版在 8× 下读成**长颈鹿**（S3b 第一轮实拍）：脖子 8px、身体只有 4px 厚、
- *    三个头叠成一团。这一版把三处一起收紧：身体加厚到 0.16h、脖子压到 0.04~0.08h、
- *    三个头在 x 上拉开 0.18h 且高度错落 0.08h —— 22px 下能数出三个凸起。
+ * ⚠️ 画了**五轮**才读得出来，前四轮的失败模式各记一句（换下一个人别再走一遍）：
+ *    ① 脖子 0.19h、身体 0.115h ⇒ 长颈鹿；
+ *    ② 头挨太近 ⇒ 一圈鬃毛（狮子）；
+ *    ③ 头拉开 + 高度错落 ⇒ 三根触手（脖子被拉长）；
+ *    ④ 把颈间空隙填满 ⇒ 洞没了，三头也并成一块。
+ *    最终判据换了：**不看"头顶几个峰"，看"左缘三张朝向不同的吻"** ——
+ *    22px 下数的是**外缘的尖**，内部的分缝会被缩放和描边一起抹掉。
+ *    所以三颗头**同一高度**、间距 0.22h，吻各转 −0.8 / 0.03 / 0.82 rad、长 1.85r。
+ *
+ * ⚠️ 三颗头在 **64×56** 才数得出；43×37 兵牌是从这一帧**多数票缩**出来的，
+ *    1~2px 的暗缝会被投掉（见 `production/s3b-p2-bodyplan-2026-11-06.md` §5c）。
+ *    这是管线问题，不是这张画的问题 —— 别再用改画法去救兵牌。
  *
  * ⚠️ 三个头只有**主头**画 ink 眼：`audit:expr` 的 profile 通道要求「恰好 1 只眼」。
  *    另两颗头是"远侧的头"，用 `p2wall0` 的暗点 —— 它们凑不出 `ink0 + hi0` 的
@@ -1009,53 +1018,67 @@ function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boo
   );
   // 腹：暗一档
   pb.ellipse(cx, bodyCy + h * 0.07, halfLen * 0.82, h * 0.06, P2.wallDark);
-  // ── 颈部横梁：把三个头连成**一片** ──
+  // ── 肩丘：只把「颈根」连成一片，**不填头与头之间的缝** ──
   //
-  // 不是为了省事：头与头之间留 1px 透明缝时，`buildB0Frame` 的描边会把那道缝
-  // 灌成一段 3px 宽的 ink0 —— 而它正好落在左眼的找嘴窗口里（x ∈ [l.x−3, l.x+7]），
-  // `audit:expr` 的 [Contr] 于是把它当成"一条贴着透明的嘴线"（ΔE 15.5）判红。
-  // 连成一片之后，眼下 8 行内只有连续的皮毛色，三个头靠**吻 + 耳 + 高度差**区分
-  // （H3 的刻耳柏洛斯也是连着画的）。
-  R(pb, cx - h * 0.54, base - h * 0.8, h * 0.56, Math.max(3, h * 0.12), P2.wall);
-  // 三个头：x 上拉开 0.21h、高度错落 **0.16h**、头半径 0.068h。
+  // 上一版这里是一条 0.56h × 0.12h 的横梁，顶边在 `base−0.80h` —— 比两颗低头的
+  // 头顶（−0.75h）还高。结果三个头在剪影上连成一条**平顶的带子**，8× 下读成一团
+  // 「鬃毛」，三头一个也数不出来（S3b 第四轮实拍）。
+  // 肩丘只需要堵住"头底到肩"这一段，让描边不至于把颈间缝隙灌成 ink0
+  // （那是 `audit:expr` 的 [Contr] 误判的根源）；它的**顶边必须压到头下面**，
+  // 颈间那道缝才能一路通到剪影外，成为真正的 V 形缺口。
+  R(pb, cx - h * 0.62, base - h * 0.6, h * 0.64, Math.max(3, h * 0.1), P2.wall);
+  // 颈间空隙先**填满毛色**：留空会在剪影里留下两个白洞（8× 下像脖子中间开了窗）。
+  // 只填 `wall`：这个位置同时贴着鬃毛（accent）和三张吻（wall 暗档），
+  // `wallDark` 与 `redDark` 只差 ΔL 8.1（断言 8 要 12）、`redDark` 又与吻撞同一对数
+  // ⇒ 只有"和吻同族"的 `wall` 能同时过两关。分离改由下面那道暗缝负责。
+  R(pb, cx - h * 0.64, base - h * 0.78, h * 0.68, Math.max(3, h * 0.2), P2.wall);
+  // 三头 = **三张吻**，不是三根脖子。
   //
-  // 第三轮：头与头之间用 `wallDark` **暗线**分隔，而不是留透明缝。
-  // 透明缝会被描边灌成 ink0（见上），暗线不会 —— 3px 的暗线在 22×30 下正好
-  // 是"两个头之间的那道影子"，比"三个球并排"更像多头兽。
-  const heads: { x: number; y: number; r: number; main: boolean }[] = [
-    { x: cx - h * 0.47, y: base - h * 0.68, r: h * 0.068, main: false },
-    { x: cx - h * 0.26, y: base - h * 0.86, r: h * 0.075, main: true },
-    { x: cx - h * 0.05, y: base - h * 0.74, r: h * 0.068, main: false },
+  // 前四轮的教训：把头拉开、垫高 ⇒ 脖子变长，8× 下读成"长颈鹿/触手"；
+  // 把头放大到能看清 ⇒ 它们又互相粘成一块。真正让"三头"读出来的**不是
+  // 头的位置，是三个朝不同方向的吻尖** —— H3 的刻耳柏洛斯也是三颗头几乎
+  // 并排、靠三张嘴的指向分开的。
+  //
+  // 所以：三颗头**同一高度**、x 上只隔 0.21h（缝由描边压成一道暗痕），
+  // 吻各转 −0.55 / 0.02 / 0.58 rad ⇒ 剪影左缘伸出三个方向不同的吻尖。
+  // 这一版不再靠"高度错落"制造凸起：错落会把脖子拉长，而 22px 下看的
+  // 是**外缘有几个尖**，不是头顶有几个峰。
+  const heads: { x: number; r: number; dir: number; main: boolean }[] = [
+    { x: cx - h * 0.56, r: h * 0.078, dir: -0.55, main: false },
+    { x: cx - h * 0.34, r: h * 0.086, dir: 0.02, main: true },
+    { x: cx - h * 0.12, r: h * 0.075, dir: 0.58, main: false },
   ];
-  // 两头之间的暗缝（画在头**之前**，头再压上去 ⇒ 只有中间那一条露出来）
-  for (const sx of [-0.365, -0.155]) R(pb, cx + h * sx, base - h * 0.86, Math.max(2, h * 0.03), Math.max(3, h * 0.2), P2.wallDark);
   for (const hd of heads) {
-    // 颈：短（首版 0.19h 的颈把整只狼拉成了长颈鹿）
-    tl(pb, hd.x + hd.r * 0.4, hd.y + hd.r * 0.8, hd.x + h * 0.09, bodyCy - h * 0.1, P2.wall, Math.max(2, Math.round(h * 0.07)));
+    const hy = base - h * 0.8;
+    // 颈：短而粗（首版 0.19h 的细颈把整只狼拉成了长颈鹿）
+    tl(pb, hd.x + hd.r * 0.4, hy + hd.r * 0.8, hd.x + h * 0.05, bodyCy - h * 0.04, P2.wall, Math.max(3, Math.round(h * 0.085)));
     // 头
-    pb.ellipse(hd.x, hd.y, hd.r, hd.r * 0.85, P2.wall);
-    // 吻（朝左）
-    pb.poly(
-      [
-        [hd.x - hd.r * 0.8, hd.y - hd.r * 0.25],
-        [hd.x - hd.r * 1.5, hd.y + hd.r * 0.05],
-        [hd.x - hd.r * 1.42, hd.y + hd.r * 0.55],
-        [hd.x - hd.r * 0.75, hd.y + hd.r * 0.5],
-      ],
-      P2.wallDark,
-    );
+    pb.ellipse(hd.x, hy, hd.r, hd.r * 0.85, P2.wall);
+    // 吻：绕头心转 `dir`（三个吻尖是"三头"在 22px 下唯一还剩下的证据）
+    const ca = Math.cos(hd.dir), sa = Math.sin(hd.dir);
+    const rot = (dx: number, dy: number): [number, number] => [
+      hd.x + (dx * ca - dy * sa) * hd.r,
+      hy + (dx * sa + dy * ca) * hd.r,
+    ];
+    pb.poly([rot(-0.78, -0.3), rot(-1.58, 0.02), rot(-1.46, 0.6), rot(-0.72, 0.54)], P2.wallDark);
     // 双耳：前耳亮、后耳暗（近远关系）
-    pb.poly([[hd.x - hd.r * 0.4, hd.y - hd.r * 0.65], [hd.x - hd.r * 0.5, hd.y - hd.r * 1.75], [hd.x - hd.r * 0.02, hd.y - hd.r * 0.7]], P2.wall);
-    pb.poly([[hd.x + hd.r * 0.15, hd.y - hd.r * 0.68], [hd.x + hd.r * 0.34, hd.y - hd.r * 1.5], [hd.x + hd.r * 0.5, hd.y - hd.r * 0.6]], P2.wallDark);
+    pb.poly([[hd.x - hd.r * 0.4, hy - hd.r * 0.65], [hd.x - hd.r * 0.5, hy - hd.r * 1.75], [hd.x - hd.r * 0.02, hy - hd.r * 0.7]], P2.wall);
+    pb.poly([[hd.x + hd.r * 0.15, hy - hd.r * 0.68], [hd.x + hd.r * 0.34, hy - hd.r * 1.5], [hd.x + hd.r * 0.5, hy - hd.r * 0.6]], P2.wallDark);
     // 眼：主头 ink（profile 的单眼），远侧两头是暗点
     if (hd.main) {
       // 眼必须落在头的**上半部**：首版放在 −0.2r（几乎贴着头底），
       // 头下方那道 1px 透明缝被描边灌成 ink0 段，`audit:expr` 的 [Contr]
       // 把它当成"嘴线"（ΔE 15.5 vs 透明）⇒ 红。−0.55r 时眼下全是头/颈/身体。
-      if (face) profileEye(pb, Math.round(hd.x - hd.r * 0.55), Math.round(hd.y - hd.r * 0.55));
+      if (face) profileEye(pb, Math.round(hd.x - hd.r * 0.55), Math.round(hy - hd.r * 0.55));
     } else {
-      pb.set(Math.round(hd.x - hd.r * 0.6), Math.round(hd.y - hd.r * 0.12), P2.wallDark);
+      pb.set(Math.round(hd.x - hd.r * 0.6), Math.round(hy - hd.r * 0.12), P2.wallDark);
     }
+  }
+  // 头与头之间的**一道暗缝**（1~2px），画在头**之后**才不会被颈盖掉。
+  // 只占头部那一段（y −0.90h ~ −0.65h），**不下到肩**：背脊鬃在 −0.59h，
+  // 离缝底还有 2px ⇒ 不会和 `redDark` 相邻（那对 ΔL 只有 8.1，差 12 一点点）。
+  for (const sx of [-0.45, -0.23]) {
+    R(pb, cx + h * sx, base - h * 0.9, Math.max(1, Math.round(h * 0.03)), Math.max(3, Math.round(h * 0.25)), P2.wallDark);
   }
   if (atk) {
     // 出手：前爪抬起前扑
