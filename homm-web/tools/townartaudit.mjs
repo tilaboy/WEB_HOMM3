@@ -48,10 +48,17 @@ const {
   SPRITE_OWNERS,
   TOWN_FRAME_SIZE,
   CASTLE_FRAME_SIZE,
+  CASTLE_WALL_SPEC,
   buildTownFrame,
   buildCastleFrame,
   setTownArtOptions,
 } = await import(u('render/atlas.js'));
+
+/* S6（§14.3 G5）：外形档位的**选择器**与战斗侧的塔数，都是纯模块，node 里直接跑。 */
+requireFile(DIST, 'render/townSprite.js');
+const { townSpriteKey, townTierOf } = await import(u('render/townSprite.js'));
+const { createSiege } = await import(u('core/combat/siege.js'));
+const { PixBuf } = await import(u('render/pixel.js'));
 
 /** 图集墨色（atlas.ts 的 OUTLINE，全精灵共用；与 B0 色板的 ink0 #2a1a12 的迁移是另一条欠账）。 */
 const OUTLINE_RGB = [0x24, 0x1a, 0x10];
@@ -61,6 +68,14 @@ const OUTLINE_RGB = [0x24, 0x1a, 0x10];
 const argv = process.argv.slice(2);
 const pngIdx = argv.indexOf('--png');
 const pngDir = pngIdx >= 0 ? argv[pngIdx + 1] : null;
+
+/**
+ * CRC 表的缓存槽。**声明必须在本文件顶部**：`--png` 的导出块在文件中部就调用
+ * `encodePng()`，若把 `let CRC_TABLE` 写在底部的函数旁边，那时它还处于 TDZ
+ * （`let` 不初始化），`--png` 一跑就是 `Cannot access 'CRC_TABLE' before initialization`。
+ * 这个开关此前一直是坏的，2026-11-06 修。
+ */
+let CRC_TABLE = null;
 
 /* ---------------------------------------------------------------- 断言框架 */
 
@@ -433,6 +448,161 @@ const T2 = (kind, expected) => {
   for (const l of lines) console.log(`    ${l}`);
 }
 
+/* ==========================================================================
+ * [4]–[7] S6 / G5：地图城堡按**城防**分四档（2026-11-06）
+ *
+ * 旧判据的洞：四档外形是按**兵营数量**选的，所以"木栅"与"堡垒"长得一模一样，
+ * 而闸门只管描边/直角/尺寸，没有任何一条判"升级之后看得出来吗"。
+ * 这四条的对应关系是：
+ *   [4] 声明（`CASTLE_WALL_SPEC`）↔ 战斗结构（`createSiege`）—— 语义不能各说各话
+ *   [5] 画出来的塔数 ↔ 声明 —— 画不能落后于表
+ *   [6] 四档两两不同 —— "看得出来吗"的可执行化
+ *   [7] 选择器只看城防、**不看兵营** —— 这才是 G5 的要害
+ * ========================================================================== */
+
+/**
+ * 「塔带」上沿。判的是"有没有东西从屋顶线上明显突起"：
+ * 0/1 档（无墙/木栅）最高点只到 y=46（屋脊），2 档主楼尖在 y=10、3 档角塔在 y=22。
+ * 取 26 = 非塔最高点再往上 20px ⇒ 两侧都留足余量（描边 2px、屋顶像素级抖动）。
+ *
+ * ⚠️ 这是个**与画面几何绑定的常数**，不是美学阈值：改屋顶高度就要重新量。
+ * 这条线之所以敢写死，是因为同一份判据还会被 [5] 的负向对照 N4 验一遍
+ * （人造 0/1/3 个突起 ⇒ 必须读回 0/1/3）。
+ */
+const TOWER_BAND_Y = 26;
+
+/** 统计 `y < bandY` 这段里**互不相连的列簇**数 —— 一个列簇 = 一座立起来的东西。 */
+function towerClusters(pb, bandY) {
+  const cols = [];
+  for (let x = 0; x < pb.w; x++) {
+    let hit = false;
+    for (let y = 0; y < bandY; y++) {
+      if (pb.alphaAt(x, y) > 8) {
+        hit = true;
+        break;
+      }
+    }
+    cols.push(hit);
+  }
+  const out = [];
+  let run = null;
+  for (let x = 0; x <= cols.length; x++) {
+    const on = x < cols.length && cols[x];
+    if (on && !run) run = { x0: x, x1: x };
+    else if (on && run) run.x1 = x;
+    else if (!on && run) {
+      // 细过 3px 的当作屋顶尖/旗杆的碎屑，不算"一座"
+      if (run.x1 - run.x0 + 1 >= 3) out.push(run);
+      run = null;
+    }
+  }
+  return out;
+}
+
+/* [4] 声明 ↔ 战斗结构 */
+{
+  const rows = [];
+  let ok = true;
+  for (const lv of TIERS) {
+    const siege = createSiege(lv);
+    const real = siege ? siege.structures.filter((s) => s.kind === 'tower' || s.kind === 'keep').length : 0;
+    const decl = CASTLE_WALL_SPEC[lv].towers;
+    if (decl !== real) ok = false;
+    rows.push(`${lv}: 声明 ${decl} / 战斗 ${real}`);
+  }
+  record(
+    '4',
+    '城防档位的塔数与 `createSiege` 一致（0 / 0 / 1 / 3）',
+    ok,
+    `${rows.join(' · ')}${ok ? '' : ' ← 地图与战斗各说各话'}`,
+  );
+}
+
+/* [5] 画出来的塔数 ↔ 声明 */
+let towersByTier = {};
+{
+  const per = [];
+  let ok = true;
+  for (const owner of OWNERS) {
+    for (const t of TIERS) {
+      const clusters = towerClusters(finals.get(`castle_${owner}_${t}`), TOWER_BAND_Y);
+      if (owner === OWNERS[0]) towersByTier[t] = clusters.length;
+      if (clusters.length !== CASTLE_WALL_SPEC[t].towers) {
+        ok = false;
+        per.push(`castle_${owner}_${t}: 画了 ${clusters.length} 座 / 应为 ${CASTLE_WALL_SPEC[t].towers}`);
+      }
+    }
+  }
+  record(
+    '5',
+    `城堡剪影的塔数 = 城防档位（塔带 y<${TOWER_BAND_Y}）`,
+    ok,
+    ok ? `0/1/2/3 档实测 ${TIERS.map((t) => towersByTier[t]).join(' / ')} 座` : per.slice(0, 6).join('; '),
+  );
+}
+
+/* [6] 四档两两不同 */
+{
+  const per = [];
+  let ok = true;
+  let minDiff = Infinity;
+  for (const owner of OWNERS) {
+    for (let i = 0; i < TIERS.length; i++) {
+      for (let j = i + 1; j < TIERS.length; j++) {
+        const a = finals.get(`castle_${owner}_${TIERS[i]}`);
+        const b = finals.get(`castle_${owner}_${TIERS[j]}`);
+        let diff = 0;
+        for (let y = 0; y < a.h; y++) {
+          for (let x = 0; x < a.w; x++) {
+            const pa = a.px(x, y);
+            const pb2 = b.px(x, y);
+            if (pa[0] !== pb2[0] || pa[1] !== pb2[1] || pa[2] !== pb2[2] || pa[3] !== pb2[3]) diff++;
+          }
+        }
+        minDiff = Math.min(minDiff, diff);
+        if (diff < 60) {
+          ok = false;
+          per.push(`castle_${owner} ${TIERS[i]}vs${TIERS[j]}: 仅 ${diff} px 不同`);
+        }
+      }
+    }
+  }
+  record(
+    '6',
+    '四档外形两两不同（≥60px 差异，按成品帧逐像素比）',
+    ok,
+    ok ? `最接近的一对仍有 ${minDiff} px 不同` : per.slice(0, 6).join('; '),
+  );
+}
+
+/* [7] 选择器：只看城防，不看兵营 */
+{
+  const fake = (buildings) => ({ buildings });
+  const cases = [
+    { b: [], want: 'castle_p1_0' },
+    // 五个兵营全建、但没有墙 ⇒ 仍然是**村落**外形（G5 的要害：兵营不该决定外形）
+    { b: ['dwell1', 'dwell2', 'dwell3', 'dwell4', 'dwell5'], want: 'castle_p1_0' },
+    { b: ['wall1'], want: 'castle_p1_1' },
+    { b: ['wall1', 'wall2'], want: 'castle_p1_2' },
+    { b: ['wall1', 'wall2', 'wall3'], want: 'castle_p1_3' },
+  ];
+  const per = [];
+  for (const c of cases) {
+    const got = townSpriteKey(fake(c.b), 'p1', true);
+    if (got !== c.want) per.push(`[${c.b.join(',') || '空'}] → ${got}（应 ${c.want}）`);
+  }
+  // 1×1 帧同一套档位；中立城也按自己的墙算
+  const small = townSpriteKey(fake(['wall1', 'wall2']), 'neutral', false);
+  if (small !== 'town_neutral_2') per.push(`1×1 中立 2 档 → ${small}（应 town_neutral_2）`);
+  if (townTierOf(undefined) !== 0) per.push('没有城对象时应为 0 档');
+  record(
+    '7',
+    '外形档位只由 `wallLevelOf` 决定（兵营数不再影响外形）',
+    per.length === 0,
+    per.length === 0 ? '5 组城防 + 1 组 1×1 + 空城 全对' : per.join('; '),
+  );
+}
+
 /* ---------------------------------------------------------------- 负向对照 */
 
 console.log('\n── 负向对照（插桩造失败必须红，恢复后必须复绿） ──');
@@ -536,6 +706,27 @@ console.log('\n── 负向对照（插桩造失败必须红，恢复后必须�
   record('N3r', '恢复默认后 [2a] 复绿', town.ok, town.ok ? '全帧 1px' : town.per.slice(0, 2).join('; '));
 }
 
+/* N4：塔数判据本身的分辨力 —— 人造 0 / 1 / 3 个突起，必须读回 0 / 1 / 3。
+ * 没有这条，[5] 全绿也可能只是"这条线下面永远什么都没有"。 */
+{
+  const build = (n) => {
+    const pb = new PixBuf(72, 96);
+    pb.rect(6, 40, 60, 50, '#808080'); // 一堵"墙"（顶在 40，落在塔带之外）
+    for (let i = 0; i < n; i++) {
+      const x = 6 + i * 22;
+      pb.rect(x, 6, 12, 40, '#a0a0a0'); // 突起：顶在 6
+    }
+    return pb;
+  };
+  const got = [0, 1, 3].map((n) => towerClusters(build(n), TOWER_BAND_Y).length);
+  record(
+    'N4',
+    '塔数判据有分辨力：人造 0/1/3 个突起 ⇒ 读回 0/1/3',
+    got[0] === 0 && got[1] === 1 && got[2] === 3,
+    `实测 ${got.join(' / ')}`,
+  );
+}
+
 /* ---------------------------------------------------------------- PNG 导出 */
 
 if (pngDir) {
@@ -570,19 +761,30 @@ process.exit(bad === 0 ? 0 : 1);
 
 /* ---------------------------------------------------------------- PNG（零依赖，抄 b0audit 口径） */
 
-const CRC_TABLE = (() => {
+/**
+ * CRC 表**懒初始化**（缓存槽 `CRC_TABLE` 在文件顶部声明）。
+ *
+ * 原来写成模块级 `const CRC_TABLE = (() => …)()` —— 而 `--png` 的导出代码在文件
+ * **中部**就调用了 `encodePng()`，那时这句 `const` 还没求值 ⇒ `--png` 一跑就是
+ * `ReferenceError: Cannot access 'CRC_TABLE' before initialization`。
+ * 改懒初始化后，无论从哪一行先调都成立（这个开关此前一直是坏的）。
+ */
+function crcTable() {
+  if (CRC_TABLE) return CRC_TABLE;
   const t = new Int32Array(256);
   for (let n = 0; n < 256; n++) {
     let c = n;
     for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
     t[n] = c;
   }
+  CRC_TABLE = t;
   return t;
-})();
+}
 
 function crc32(buf) {
+  const T = crcTable();
   let c = -1;
-  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  for (let i = 0; i < buf.length; i++) c = T[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
   return (c ^ -1) >>> 0;
 }
 

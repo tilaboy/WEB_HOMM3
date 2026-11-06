@@ -417,6 +417,57 @@ export const TOWN_FRAME_SIZE = { w: 40, h: 52 } as const;
 export const CASTLE_FRAME_SIZE = { w: 72, h: 96 } as const;
 
 /**
+ * 四档外形 = **城防等级**（§14.3 G5，2026-11-06）。
+ *
+ * 这 4 档原来按**兵营数量**选（`DWELLING_IDS` 的个数 / 1.5），所以木栅与堡垒
+ * 长得一模一样 —— "升级了却看不出来"。现在选择依据换成 `wallLevelOf(town)`，
+ * 每一档画成不同的轮廓：
+ *
+ * | 等级 | 墙 | 塔 | 战斗里的依据（`createSiege`） |
+ * |---|---|---|---|
+ * | 0 | 无 | 0 | `null`（没有攻城战） |
+ * | 1 | 木栅 | 0 | 只有墙段 + 城门（**L1 无箭塔**，2026-10-28 定的 0/1/3） |
+ * | 2 | 石墙 | 1 | `keep` 一座（主楼开火） |
+ * | 3 | 石墙 | 3 | `keep` + 两座 `tower` 角塔 |
+ *
+ * `towers` 这一列是**地图轮廓与战斗结构的唯一对齐点**：`audit:townart` 直接拿
+ * 它和 `createSiege(lv)` 的 `tower`/`keep` 数量对账，防止两边各自漂移。
+ */
+export const CASTLE_WALL_SPEC = {
+  0: { wall: 'none', towers: 0 },
+  1: { wall: 'palisade', towers: 0 },
+  2: { wall: 'stone', towers: 1 },
+  3: { wall: 'stone', towers: 3 },
+} as const;
+
+/**
+ * 尖顶屋面：**顶点朝上**的正三角，右半边压暗做体积。
+ *
+ * ★ 2026-11-06 修：原来 `tri([cx, eave], [cx-w, eave-h], [cx+w, eave-h])` 三个点
+ *   写成了「底边在上、顶点朝下」——渲出来是一只**倒扣的漏斗**（`--png` 导出后
+ *   肉眼一看就露）。之所以一直没被机检抓到，是因为闸门只管描边/直角/尺寸，
+ *   没有任何一条判"屋顶朝哪"。
+ *
+ * 出挑只给 2~3px：§1.2 的直角判据 MIN_RUN=6，出挑 <6 的檐口不读成"矩形"，
+ * 所以不用为了躲直角再把屋顶倒过来画（那正是旧写法的由来）。
+ */
+function roofTri(
+  pb: PixBuf,
+  cx: number,
+  eave: number,
+  halfW: number,
+  h: number,
+  roof: string,
+  roofDark: string,
+): void {
+  pb.tri([cx, eave - h], [cx - halfW, eave], [cx + halfW, eave], roof);
+  pb.tri([cx, eave - h], [cx, eave], [cx + halfW, eave], roofDark);
+  // 檐口一线（1px）：把屋顶与墙身分开，不然同色相接会糊成一片
+  pb.hline(cx - halfW, cx + halfW - 1, eave, shade(roof, -0.45));
+}
+
+
+/**
  * 离线验收入口：直接建 1×1 城镇帧的**像素**（不走图集画布，也不需要 DOM）。
  * tools/townartaudit.mjs 消费；`Atlas.build()` 也复用它，尺寸只有这一份真源。
  */
@@ -449,48 +500,90 @@ function town(pb: PixBuf, roof: string, wall: string, tier: number): void {
   const H = TOWN_FRAME_SIZE.h;
   const wallDark = shade(wall, -0.35);
   const wallLite = shade(wall, 0.2);
+  const roofDark = shade(roof, -0.28);
+  const wood = '#7d5a34';
+  const woodDark = shade(wood, -0.32);
   /** 人造块统一入口：切角开 = chamferRect（四角各切 c px），关 = 纯 rect（负向对照）。 */
   const block = (x: number, y: number, w: number, h: number, c: number, color: string): void => {
     if (townArt.chamfer) chamferRect(pb, x, y, w, h, c, color);
     else pb.rect(x, y, w, h, color);
   };
+  /** 挂在墙上的族旗：横杆 + **下垂的三角幡**。
+   *  第一版是「竖矩形 + 底带」，1× 尺度实拍读成**窗户 / 蓝木盒**（1×1 城与木栅城都中招）——
+   *  矩形的"旗"只有在有风有布纹的大尺寸下才成立；三角才是小尺寸里唯一读得出"旗"的形状。
+   *  整块必须落在不透明区内 ⇒ 不制造新外轮廓（0/1 档的最高点仍压在屋顶以下）。 */
+  const banner = (x: number, y: number, w = 8, h = 11): void => {
+    pb.rect(x, y, w, 1, '#4a3524');
+    pb.tri([x, y + 1], [x + w - 1, y + 1], [x + Math.floor((w - 1) / 2), y + h], roof);
+    pb.vline(x + Math.floor((w - 1) / 2), y + 2, y + h - 1, roofDark);
+  };
 
-  const wallY = 34;
-  block(4, wallY, W - 8, 14, 1, wall);
-  block(4, wallY, 12, 14, 1, wallLite);
-  block(W - 16, wallY, 12, 14, 1, wallDark);
-  for (let x = 4; x < W - 4; x += 4) pb.rect(x, wallY - 3, 2, 3, wall);
-  // 墙脚暗带：左右各让 1px，避开墙体已切掉的底角（2px 高的带子切角会退化成直角）
-  pb.rect(5, wallY + 12, W - 10, 2, wallDark);
+  if (tier === 0 || tier === 1) {
+    /* 无墙 / 木栅：主屋 + 一间偏屋，**没有塔**（对应战斗里的 0 塔）。 */
+    block(11, 26, 21, 20, 1, wall);
+    block(11, 26, 6, 20, 1, wallLite);
+    block(26, 26, 6, 20, 1, wallDark);
+    roofTri(pb, 21, 26, 13, 12, roof, roofDark);
+    pb.rect(24, 34, 5, 11, '#3a2a18');
 
-  const towers: number[] = tier >= 1 ? [2, W - 12] : [W - 14];
-  for (const tx of towers) {
-    block(tx, 18, 12, 30, 1, wall);
-    block(tx, 18, 4, 30, 1, wallLite);
-    block(tx + 8, 18, 4, 30, 1, wallDark);
-    for (let x = tx; x < tx + 12; x += 4) pb.rect(x, 15, 2, 3, wall);
-    pb.tri([tx + 6, 15], [tx, 4], [tx + 12, 4], roof);
-    pb.tri([tx + 6, 15], [tx + 6, 4], [tx + 12, 4], shade(roof, -0.28));
-    pb.rect(tx + 4, 24, 4, 5, '#3a2a18');
+    if (tier === 1) {
+      // 木栅：竖桩 3px + 1px 缝，两道横梁；门洞留空
+      for (let x = 1; x < 39; x += 4) {
+        if (x >= 15 && x <= 24) continue;
+        const top = 32 + (((x >> 2) & 1) as number);
+        block(x, top, 3, 46 - top, 0, wood);
+        pb.rect(x + 2, top, 1, 46 - top, woodDark);
+      }
+      pb.rect(1, 39, 13, 2, woodDark);
+      pb.rect(25, 39, 14, 2, woodDark);
+      pb.rect(1, 43, 13, 1, woodDark);
+      pb.rect(25, 43, 14, 1, woodDark);
+      block(13, 28, 3, 18, 0, wood);
+      block(25, 28, 3, 18, 0, wood);
+      block(12, 26, 15, 3, 0, woodDark);
+      block(15, 34, 10, 12, 0, '#8a7550');
+    } else {
+      // 无墙：偏屋与土路，让"这里没设防"看得出来
+      block(1, 34, 10, 12, 1, wall);
+      roofTri(pb, 6, 34, 6, 6, roof, roofDark);
+      block(2, 46, 36, 4, 1, '#8a7550');
+    }
+    // 族旗：挂低一点贴在墙上（贴着屋檐会读成烟囱）；整块落在不透明区内 ⇒ 不制造新轮廓
+    banner(tier === 1 ? 28 : 14, 33, 8, 9);
+  } else {
+    /* 石墙档：正面城墙 + 垛口；2 = 一座主楼，3 = 主楼 + 两座小角塔。 */
+    block(4, 34, W - 8, 12, 1, wall);
+    block(4, 34, 12, 12, 1, wallLite);
+    block(W - 16, 34, 12, 12, 1, wallDark);
+    for (let x = 4; x < W - 4; x += 4) pb.rect(x, 31, 2, 3, wall);
+    // 墙脚暗带：左右各让 1px，避开墙体已切掉的底角（2px 高的带子切角会退化成直角）
+    pb.rect(5, 44, W - 10, 2, wallDark);
+
+    if (tier >= 3) {
+      for (const tx of [2, W - 10]) {
+        block(tx, 22, 8, 24, 1, wall);
+        block(tx, 22, 3, 24, 1, wallLite);
+        roofTri(pb, tx + 4, 22, 4, 12, roof, roofDark);
+      }
+    }
+
+    const ky = tier >= 3 ? 16 : 18;
+    block(13, ky, 14, 46 - ky, 1, wall);
+    block(13, ky, 5, 46 - ky, 1, wallLite);
+    block(22, ky, 5, 46 - ky, 1, wallDark);
+    roofTri(pb, 20, ky, 9, tier >= 3 ? 12 : 10, roof, roofDark);
+    pb.rect(18, ky + 6, 4, 6, '#3a2a18');
+    // 旗：插在主楼尖上
+    pb.vline(20, ky - 14, (tier >= 3 ? 12 : 10) + ky - 2, '#5a4326');
+    pb.tri([20, ky - 14], [31, ky - 11], [20, ky - 8], roof);
+    /* 城门：只在墙体内挖一个拱，**不许垂到墙脚以下** ——
+     * 城门若比墙多露 5px，墙脚会在门洞两侧各留一个 90° 台阶（下沿 10px、竖边 39px，
+     * 两条都过 MIN_RUN=6），[1] 去直角当场红。 */
+    pb.poly([[16, 45], [16, 42], [19, 38], [23, 38], [26, 42], [26, 45]], '#3a2a18');
+    pb.rect(7, 40, 3, 4, '#3a2a18');
+    pb.rect(30, 40, 3, 4, '#3a2a18');
   }
 
-  if (tier >= 2) {
-    const kx = 13;
-    const ky = tier >= 3 ? 8 : 14;
-    block(kx, ky, 14, H - ky - 4, 1, wall);
-    block(kx, ky, 5, H - ky - 4, 1, wallLite);
-    block(kx + 9, ky, 5, H - ky - 4, 1, wallDark);
-    for (let x = kx; x < kx + 14; x += 4) pb.rect(x, ky - 3, 2, 3, wall);
-    pb.tri([kx + 7, ky - 3], [kx - 2, ky - 14], [kx + 16, ky - 14], roof);
-    pb.tri([kx + 7, ky - 3], [kx + 7, ky - 14], [kx + 16, ky - 14], shade(roof, -0.28));
-    pb.rect(kx + 5, ky + 6, 4, 5, '#3a2a18');
-    pb.vline(kx + 7, ky - 26, ky - 14, '#5a4326');
-    pb.tri([kx + 7, ky - 26], [kx + 18, ky - 23], [kx + 7, ky - 19], roof);
-  }
-
-  pb.poly([[16, H - 4], [16, 42], [20, 38], [24, 42], [24, H - 4]], '#3a2a18');
-  pb.rect(7, 40, 3, 4, '#3a2a18');
-  pb.rect(30, 40, 3, 4, '#3a2a18');
   // §1.1：帧高 52 ≤ 64 ⇒ 1px 描边（2px 是 72×96 城堡的专属例外）
   for (let i = 0; i < townArt.townOutline; i++) pb.outline(OUTLINE);
   if (townArt.shadow) shadow(pb, W / 2, H - 3, 17, 3);
@@ -518,58 +611,161 @@ function castle(pb: PixBuf, roof: string, wall: string, tier: number): void {
   const wallLite = shade(wall, 0.2);
   const roofDark = shade(roof, -0.28);
   const hollow = '#1a1208';
+  const wood = '#7d5a34';
+  const woodDark = shade(wood, -0.32);
+  const woodLite = shade(wood, 0.2);
+  const earth = '#8a7550';
   /** 同 town() 的 block：切角开 = chamferRect，关 = 纯 rect（负向对照 N1）。 */
   const block = (x: number, y: number, w: number, h: number, c: number, color: string): void => {
     if (townArt.chamfer) chamferRect(pb, x, y, w, h, c, color);
     else pb.rect(x, y, w, h, color);
   };
 
-  const keepTop = tier >= 1 ? 30 : 36;
-  const towerTop = tier >= 2 ? 36 : 40;
-  /** 主体下沿：城墙从这里开始往下铺 */
+  /** 主体下沿：城墙从这里开始往下铺。 */
   const bodyBase = 74;
+  /** 族旗：插在最高那处屋顶的尖上（2/3 档用）。旗面与屋顶同色，杆要留够 —— 太短会糊成一坨。 */
+  const flag = (cx: number, apex: number): void => {
+    const top = Math.max(2, apex - 10);
+    pb.vline(cx, top, apex, '#5a4326');
+    pb.tri([cx, top], [cx + 14, top + 3], [cx, top + 6], roof);
+  };
+  /**
+   * 挂在墙上的族旗（0/1 档用）。**必须整个落在不透明的墙/栅栏之内**：
+   * 那样它不制造新的外轮廓，也就不会把"塔带"里多出一个色块
+   * （无墙档的最高点只能到 y=46，旗杆再往上就与"0 塔"的判据打架了）。
+   * 形状是横杆 + 下垂三角幡 —— 见 `town()` 里同名函数的说明（矩形读成窗户）。
+   */
+  const banner = (x: number, y: number, w = 8, h = 12): void => {
+    pb.rect(x, y, w, 1, '#4a3524');
+    pb.tri([x, y + 1], [x + w - 1, y + 1], [x + Math.floor((w - 1) / 2), y + h], roof);
+    pb.vline(x + Math.floor((w - 1) / 2), y + 2, y + h - 1, roofDark);
+  };
 
-  /* 屋顶上的旗：先画，屋脊会把旗杆下半段盖住，看着才像插在塔尖上 */
-  pb.vline(36, 5, keepTop - 4, '#5a4326');
-  pb.tri([36, 5], [50, 10], [36, 15], roof);
+  /* ---------------- 石墙档（2 / 3）：正面城墙 + 城门，唯一敞开的一面 ---------------- */
+  const stoneFront = (): void => {
+    block(4, 68, W - 8, 20, 2, wall);
+    block(4, 68, 16, 20, 2, wallLite);
+    block(52, 68, 16, 20, 2, wallDark);
+    for (let x = 4; x < W - 6; x += 5) pb.rect(x, 64, 3, 4, wall);
+    block(2, 88, W - 4, 8, 2, wallDark);
+    // 墙脚线：左右各让 2px，避开城墙/基座已切掉的底角（2px 高的线切角会退化成直角）
+    pb.rect(6, 87, W - 12, 2, shade(wall, -0.5));
 
-  /* 中央主楼：比角塔更高更宽，撑住整个剪影 */
-  block(22, keepTop, 28, bodyBase - keepTop, 2, wall);
-  block(22, keepTop, 7, bodyBase - keepTop, 2, wallLite);
-  block(43, keepTop, 7, bodyBase - keepTop, 2, wallDark);
-  for (let x = 22; x < 50; x += 5) pb.rect(x, keepTop - 4, 3, 4, wall);
-  pb.tri([36, keepTop - 4], [18, keepTop - 22], [54, keepTop - 22], roof);
-  pb.tri([36, keepTop - 4], [36, keepTop - 22], [54, keepTop - 22], roofDark);
-  // 主楼大窗（8×14，两边都 ≥6 ⇒ 按同一把尺子切 1px；塔楼小窗 5×9 不切）
-  block(32, keepTop + 14, 8, 14, 1, hollow);
+    /* 城门：左下角那格的正中，正面唯一能站人的位置 */
+    pb.poly([[14, H], [14, 85], [17, 77], [23, 77], [26, 85], [26, H]], hollow);
+    pb.rect(15, 91, 10, 5, '#4a3524');
+    pb.rect(11, 76, 4, 20, wallDark);
+    pb.rect(25, 76, 4, 20, wallDark);
+    block(12, 72, 17, 3, 1, roof); // 城门上的小檐
+    pb.rect(13, 75, 15, 1, roofDark); // 檐影（1px 高：左端让 1px 避开檐口切角）
+  };
 
-  /* 两座角塔 */
-  for (const tx of [2, 52]) {
-    block(tx, towerTop, 18, bodyBase - towerTop, 2, wall);
-    block(tx, towerTop, 5, bodyBase - towerTop, 2, wallLite);
-    block(tx + 13, towerTop, 5, bodyBase - towerTop, 2, wallDark);
-    for (let x = tx; x < tx + 18; x += 5) pb.rect(x, towerTop - 4, 3, 4, wall);
-    pb.tri([tx + 9, towerTop - 4], [tx - 2, towerTop - 18], [tx + 20, towerTop - 18], roof);
-    pb.tri([tx + 9, towerTop - 4], [tx + 9, towerTop - 18], [tx + 20, towerTop - 18], roofDark);
-    pb.rect(tx + 7, towerTop + 12, 5, 9, hollow);
+  if (tier === 0) {
+    /* ---------------- 无墙：**村落**。没有城墙/城门，也就不该有任何塔 ----------------
+     * 剪影口径：最高的只有屋脊（y=46），y<36 的"塔带"里空无一物 —— 这是玩家
+     * 一眼读出"这里没设防"的依据，也是 `audit:townart` 数塔的那条线。
+     */
+    // 主屋：村子的主体，仍要能撑住 2×2 的剪影
+    block(20, 62, 32, 24, 2, wall);
+    block(20, 62, 8, 24, 2, wallLite);
+    block(44, 62, 8, 24, 2, wallDark);
+    roofTri(pb, 36, 62, 18, 16, roof, roofDark);
+    block(32, 68, 8, 11, 1, hollow);
+    // 左右两间小屋（没有围墙把它们连成一体，缝隙要留着）
+    block(3, 70, 15, 16, 2, wall);
+    roofTri(pb, 10, 70, 9, 10, roof, roofDark);
+    pb.rect(8, 74, 5, 6, '#3a2a18');
+    block(56, 72, 14, 14, 2, wall);
+    roofTri(pb, 63, 72, 8, 9, roof, roofDark);
+    pb.rect(59, 76, 5, 5, '#3a2a18');
+    /* 前庭：两个重叠的**土丘椭圆**，不是一条直边色块 ——
+     * 直边色块实拍读成"木台子"（三栋房子架在一块板子上），
+     * 弧顶才读成"地面"。也顺带避开了 §1.2 的 90° 判据。 */
+    pb.ellipse(24, 90, 22, 6, earth);
+    pb.ellipse(48, 90, 20, 6, earth);
+    banner(22, 66, 8, 12);
+  } else if (tier === 1) {
+    /* ---------------- 木栅：**挡路不挡箭**（战斗里 L1 零箭塔，呼应 0/1/3 曲线） ----------------
+     * 木桩 3px 宽 + 1px 缝，顶上参差 1px；两道横梁。没有石垛口、没有塔。
+     * 门洞必须在**竖桩和横梁上都留空** —— 只摆两根高桩、栅栏照样横着铺，
+     * 看着就不像能进去（实拍第一版正是这样）。
+     */
+    // 栅栏后的主屋：屋顶露在栅栏之上，身体被挡住 —— 这是"里面有人"的读法
+    block(18, 58, 34, 28, 2, wall);
+    block(18, 58, 8, 28, 2, wallLite);
+    block(44, 58, 8, 28, 2, wallDark);
+    roofTri(pb, 35, 58, 19, 12, roof, roofDark);
+    // 门洞里的土路 + 栅栏脚下的地面带：先铺地，再让栅栏压上来
+    // （地面带用 c=2 切角：一整条 64×9 的直角色块会被 [1] 抓成 90°）
+    pb.ellipse(36, 90, 32, 6, earth);
+    /* 门洞：**宽而低**的缺口，不是一根高而窄的暗柱。
+     * 第一版做的是"两根高桩 + 门楣挑在栅栏之上、下面整个挖空"——
+     * 8×36 的暗色竖条实拍就是一根柱子，完全读不出"能走进去"。
+     * 现在：缺口 14 宽 × 16 高（x14..27 / y71..86），上面压一道门梁，
+     * 两侧各一根门柱；门洞底边压在土丘里（土丘先画）⇒ 门下不会挖出洞。 */
+    pb.rect(14, 64, 14, 23, '#1a1208');
+    // 竖桩（门洞 x14..27 留空）
+    for (let x = 2; x < 70; x += 4) {
+      if (x >= 13 && x <= 26) continue;
+      const top = 58 + (((x >> 2) & 1) as number);
+      block(x, top, 3, 86 - top, 1, wood);
+      pb.rect(x + 2, top, 1, 86 - top, woodDark);
+      pb.rect(x, top, 1, 86 - top, woodLite);
+    }
+    // 横梁断在门洞两侧
+    pb.rect(2, 70, 12, 2, woodDark);
+    pb.rect(28, 70, 42, 2, woodDark);
+    pb.rect(2, 78, 12, 2, woodDark);
+    pb.rect(28, 78, 42, 2, woodDark);
+    // 门柱 + 门梁（梁比横梁厚 1px，把入口框出来）
+    block(11, 58, 4, 28, 1, wood);
+    pb.rect(14, 58, 1, 28, woodDark);
+    block(27, 58, 4, 28, 1, wood);
+    pb.rect(30, 58, 1, 28, woodDark);
+    block(11, 58, 20, 6, 1, woodDark);
+    pb.rect(12, 59, 18, 1, woodLite);
+    // 族旗：挂在栅栏上（整块落在栅栏轮廓之内，不参与"塔带"）
+    banner(56, 60, 8, 11);
+  } else if (tier === 2) {
+    /* ---------------- 石墙 + **1 塔**：只有中央主楼（`createSiege` 的 keep） ----------------
+     * 两侧不放塔，只放低矮的附属屋子：它们的屋脊在 y=46，落在塔带之外，
+     * 所以"数塔"只会数到主楼这一座。
+     */
+    block(24, 34, 24, bodyBase - 34, 2, wall);
+    block(24, 34, 6, bodyBase - 34, 2, wallLite);
+    block(42, 34, 6, bodyBase - 34, 2, wallDark);
+    roofTri(pb, 36, 34, 15, 24, roof, roofDark);
+    block(32, 46, 8, 14, 1, hollow);
+    // 左右附属屋：**必须是"屋"，不能是"矮一号的塔"** ——
+    // 第一版给了它们和 3 档角塔同宽（18）同款的**蓝尖顶**，实拍 2 档也读成"三座塔"，
+    // 于是 1 塔 / 3 塔这条 S6 的全部意义当场作废（机检只数 y<26，眼睛数的是尖顶）。
+    // 现在：宽而低的**茅草顶**（木色）+ 方窗，蓝尖顶只属于塔。
+    for (const hx of [2, 52]) {
+      block(hx, 60, 20, bodyBase - 60, 1, wall);
+      block(hx, 60, 5, bodyBase - 60, 1, wallLite);
+      roofTri(pb, hx + 9, 60, 11, 7, wood, woodDark);
+      pb.rect(hx + 7, 66, 5, 6, '#3a2a18');
+    }
+    stoneFront();
+    flag(36, 10);
+  } else {
+    /* ---------------- 堡垒 + **3 塔**：主楼 + 两座角塔（= createSiege 的 keep + 2 tower） ---------------- */
+    block(22, 32, 28, bodyBase - 32, 2, wall);
+    block(22, 32, 7, bodyBase - 32, 2, wallLite);
+    block(43, 32, 7, bodyBase - 32, 2, wallDark);
+    roofTri(pb, 36, 32, 17, 20, roof, roofDark);
+    // 主楼大窗（8×14，两边都 ≥6 ⇒ 按同一把尺子切 1px；塔楼小窗 5×9 不切）
+    block(32, 46, 8, 14, 1, hollow);
+    for (const tx of [2, 52]) {
+      block(tx, 40, 18, bodyBase - 40, 2, wall);
+      block(tx, 40, 5, bodyBase - 40, 2, wallLite);
+      block(tx + 13, 40, 5, bodyBase - 40, 2, wallDark);
+      roofTri(pb, tx + 9, 40, 11, 18, roof, roofDark);
+      pb.rect(tx + 7, 52, 5, 9, hollow);
+    }
+    stoneFront();
+    flag(36, 12);
   }
-
-  /* 正面城墙：横跨整整两格，也是唯一敞开的一面 */
-  block(4, 68, W - 8, 20, 2, wall);
-  block(4, 68, 16, 20, 2, wallLite);
-  block(52, 68, 16, 20, 2, wallDark);
-  for (let x = 4; x < W - 6; x += 5) pb.rect(x, 64, 3, 4, wall);
-  block(2, 88, W - 4, 8, 2, wallDark);
-  // 墙脚线：左右各让 2px，避开城墙/基座已切掉的底角（2px 高的线切角会退化成直角）
-  pb.rect(6, 87, W - 12, 2, shade(wall, -0.5));
-
-  /* 城门：左下角那格的正中，正面唯一能站人的位置 */
-  pb.poly([[14, H], [14, 85], [17, 77], [23, 77], [26, 85], [26, H]], hollow);
-  pb.rect(15, 91, 10, 5, '#4a3524');
-  pb.rect(11, 76, 4, 20, wallDark);
-  pb.rect(25, 76, 4, 20, wallDark);
-  block(12, 72, 17, 3, 1, roof); // 城门上的小檐
-  pb.rect(13, 75, 15, 1, roofDark); // 檐影（1px 高：左端让 1px 避开檐口切角）
 
   // §1.1 例外：只有 72×96 城堡用 2px 描边（outline 一次 = 1px 圈，迭代两次 = 2px）
   for (let i = 0; i < townArt.castleOutline; i++) pb.outline(OUTLINE);

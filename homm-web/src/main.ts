@@ -2970,6 +2970,48 @@ if (bootParams.has('devtown')) {
   if (home) openTownById(home.id);
 }
 
+/* ---------------- 地图城堡外形的调试入口（`?devcastle=1`，S6 / §14.3 G5） ----------------
+ *
+ * 要量的是三件只有"真画到地图上"才会暴露的事：
+ *   ① 城防 0/1/2/3 各自用了哪张帧（选择器接线对不对）；
+ *   ② 四档是不是画在**同一个位置**（升级不该让城堡跳一下）；
+ *   ③ 四档在屏幕上是不是真的两两不同（帧变了但被别的图层盖住 / 没重绘）。
+ * 帧名与矩形由渲染器在 `draw()` 里登记（`devTownDrawn`），不是这里再算一遍 ——
+ * 否则就成了"拿选择器验证选择器"。
+ */
+if (bootParams.has('devcastle')) {
+  renderer.devTownDrawn = new Map();
+  const pickTown = () =>
+    Object.values(state.towns).find((t) => t.owner === viewerOf(state)) ?? Object.values(state.towns)[0] ?? null;
+  const w = window as unknown as { __castle?: Record<string, unknown> };
+  w.__castle = {
+    towns: () =>
+      Object.values(state.towns).map((t) => ({
+        id: t.id,
+        owner: t.owner,
+        walls: t.buildings.filter((b) => b.startsWith('wall')).sort(),
+      })),
+    /** 把镜头对到某座城（缺省 = 我方首城），并返回它所在格。 */
+    focus: (id?: string) => {
+      const t = (id ? state.towns[id] : null) ?? pickTown();
+      if (!t) return null;
+      camera.centerOn(t.pos.x, t.pos.y);
+      camera.clamp();
+      return { id: t.id, x: t.pos.x, y: t.pos.y };
+    },
+    /** 把城防设成第 lv 级（0 = 全拆）。返回改完之后的墙清单。 */
+    set: (id: string, lv: number) => {
+      const t = state.towns[id];
+      if (!t) return null;
+      t.buildings = t.buildings.filter((b) => !b.startsWith('wall'));
+      for (let i = 1; i <= lv; i++) t.buildings.push(`wall${i}`);
+      return t.buildings.filter((b) => b.startsWith('wall')).sort();
+    },
+    /** 渲染器**本帧实际画出去**的帧名与屏幕矩形（CSS px）。 */
+    drawn: (id: string) => renderer.devTownDrawn?.get(id) ?? null,
+  };
+}
+
 /* ---------------- 会面交换的调试入口（`?devexchange=1` / `?devexchange=full`） ---------------- */
 
 /**

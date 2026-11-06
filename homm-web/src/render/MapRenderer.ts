@@ -1,5 +1,4 @@
 import type { GameState, GridPos, MapObject, PlayerId } from '../core/types.js';
-import { DWELLING_IDS } from '../core/data/buildings.js';
 import { factionColor } from '../core/data/factions.js';
 import { computeVisible, isRevealed } from '../core/map/fog.js';
 import { drawAnchor, footprintOf, idx } from '../core/map/grid.js';
@@ -10,6 +9,7 @@ import { hash2 } from './pixel.js';
 import { TerrainLayer } from './terrainLayer.js';
 import { SetDressingLayer } from './setDressing.js';
 import { currentLightTint, lightingOn } from './lightLayer.js';
+import { townSpriteKey } from './townSprite.js';
 import type { LightTint } from './lightLayer.js';
 import { quality, syncAmbientBaseline } from './quality.js';
 import {
@@ -86,11 +86,10 @@ function objSprite(state: GameState, obj: MapObject, hash: number): string | nul
     }
     case 'town': {
       const t = state.towns[(obj.payload as { townId: string }).townId];
-      const tier = t ? Math.min(3, Math.floor(t.buildings.filter((b) => DWELLING_IDS.includes(b)).length / 1.5)) : 0;
       const own = t && t.owner !== 'neutral' ? t.owner : 'neutral';
-      // 2×2 城堡用另一套精灵（城门固定在左下角）
-      if (obj.footprint) return `castle_${own}_${tier}`;
-      return `town_${own}_${tier}`;
+      // 档位 = **城防等级**（wall1/2/3），不再是兵营数量（§14.3 G5，2026-11-06）。
+      // 2×2 城堡用 `castle_*`（城门固定在左下角），1×1 用 `town_*`。
+      return townSpriteKey(t, own, !!obj.footprint);
     }
     case 'wanderingMonster': {
       const army = (obj.payload as { army: { unitTypeId: string }[] }).army;
@@ -939,7 +938,17 @@ export class MapRenderer {
   /** 本帧接地影落笔量（`?devshadowstats=1` 时写进 `window.__shadowStats`）。 */
   private shadowCount = 0;
   private shadowPx = 0;
-  /** 本帧落点（仅 `?devshadowprobe=1` 时登记），供 `probeShadow()` 取色。 */
+  /**
+   * 本帧每个城镇**实际用了哪张帧、落在屏幕哪个矩形**（仅 `?devcastle=1` 时登记）。
+   *
+   * 为什么要在渲染器里记、而不是让探针自己调 `townSpriteKey()`：那等于拿选择器
+   * 验选择器。这里记的是 `draw()` 真正 blit 出去的那一张 —— 探针问"画了什么"，
+   * 而不是"本该画什么"。矩形用 CSS px（× `devicePixelRatio` 才是画布像素）。
+   */
+  devTownDrawn: Map<string, { sprite: string; x: number; y: number; w: number; h: number }> | null = null;
+  /**
+   * 本帧落点（仅 `?devshadowprobe=1` 时登记），供 `probeShadow()` 取色。
+   */
   private shadowSpots: Array<{ cx: number; yb: number; w: number }> = [];
   /** 本帧格心点（仅 `?devreachprobe=1` 时登记），供 `probeReach()` 取色。 */
   private reachSpots: Array<{ x: number; y: number; terrain: string }> = [];
@@ -1780,6 +1789,8 @@ export class MapRenderer {
   draw(vm: ViewModel): void {
     const ctx = this.ctx;
     const cam = this.camera;
+    // 城镇帧登记同样在开画前清空（否则滚出屏幕的城会留下上一帧的记录）
+    if (this.devTownDrawn) this.devTownDrawn.clear();
     // 格心点登记必须**在本帧开画前**清空：它填在可达染色那一趟（早于实体、早于光照），
     // 而 `shadowSpots` 的清空点在实体循环前 —— 若照抄那一行，会在登记完之后立刻清掉。
     if (REACH_PROBE) {
@@ -2381,6 +2392,20 @@ export class MapRenderer {
           const bb = this.silBBoxAt(sprite, d.x, d.y);
           if (bb) this.drawContactShadow(bb);
           this.blit(sprite, d.x, d.y);
+          // §14.3 G5 的验收把手：记下真正画出去的帧名与屏幕矩形（仅 ?devcastle=1）
+          if (this.devTownDrawn && d.obj.kind === 'town') {
+            const f = this.atlas.get(sprite);
+            if (f) {
+              const p = this.camera.worldToScreen(d.x * TILE + f.ax, d.y * TILE + f.ay);
+              this.devTownDrawn.set((d.obj.payload as { townId: string }).townId, {
+                sprite,
+                x: p.sx,
+                y: p.sy,
+                w: f.w * this.camera.zoom,
+                h: f.h * this.camera.zoom,
+              });
+            }
+          }
         }
         const mk = guardMarker(d.obj);
         if (mk) this.blitAt(mk, d.x * TILE + 17, d.y * TILE + 17);
