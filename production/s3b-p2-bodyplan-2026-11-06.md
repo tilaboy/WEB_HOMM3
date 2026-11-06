@@ -169,10 +169,13 @@ S3a 记的两条经验（每族 5~6 色、浅档只给孤立部位）直接用�
 
 ```
 cd homm-web
-node tools/bodyplanaudit.mjs --png ../production/s3b            # cu×8 / pt×8 / 22×30×8 / 按族盲测条
+node tools/bodyplanaudit.mjs --png ../production/s3b --fam=p2   # cu×8 / pt×8 / 22×30×8 / p2 盲测条
 node tools/unitsheet.mjs ../production/s3b/p2v3-sheet.png p2v3 6 # 三行对照表
-node tools/tp8exprtest.mjs                                      # 重生成表情盲测素材 + 答案钥
+node tools/tp8exprtest.mjs                                       # 重生成表情盲测素材 + 答案钥
 ```
+
+> `--fam=` 只裁**落盘**范围（判词永远覆盖 `BODY_PLAN_FAMILIES` 全族）。不加它，
+> p1 的 15 张会被再复制一份到 s3b 里，改一次图要同步两个目录。
 
 ## 7. S3c 的起手清单（p3 翠林五兵）
 

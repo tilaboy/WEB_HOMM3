@@ -65,6 +65,12 @@ let CRC_TABLE = null;
 const argv = process.argv.slice(2);
 const pngIdx = argv.indexOf('--png');
 const pngDir = pngIdx >= 0 ? argv[pngIdx + 1] : null;
+/**
+ * `--fam=p2` 只导出这一族的图（落盘用；**判词永远覆盖全族**）。
+ * 每落一族就 `--png production/s3b --fam=p2`，否则 p1 的 15 张会被重复
+ * 复制进新族目录（两个目录各一份，改一次要同步两处）。
+ */
+const famArg = argv.find((a) => a.startsWith('--fam='))?.slice('--fam='.length) ?? null;
 
 /* ---------------------------------------------------------------- 账本 */
 
@@ -392,7 +398,13 @@ const small = new Map();
 if (pngDir) {
   mkdirSync(pngDir, { recursive: true });
   let n = 0;
-  for (const { ids } of fams) {
+  // `--fam=` 只裁**落盘**范围，不影响上面任何判词（判词始终覆盖 `BODY_PLAN_FAMILIES`）。
+  const pngFams = famArg ? fams.filter((f) => f.fam === famArg) : fams;
+  if (famArg && !pngFams.length) {
+    console.error(`--fam=${famArg} 不在 BODY_PLAN_FAMILIES 里（${[...BODY_PLAN_FAMILIES].join(',')}）`);
+    process.exit(2);
+  }
+  for (const { ids } of pngFams) {
     for (const id of ids) {
       const pb = buildB0Frame(unitCombatFrame(id));
       writeFileSync(join(pngDir, `cu_${id}.png`), encodePng(upscale(pb, 8)));
@@ -434,8 +446,10 @@ if (pngDir) {
     writeFileSync(join(pngDir, file), encodePng({ w: W, h: H, data }));
     n += 1;
   };
-  for (const f of fams) writeBlind(f.ids, `blind-22x30-${f.fam}.png`);
-  writeBlind(fams.flatMap((f) => f.ids), 'blind-22x30-all.png');
+  for (const f of pngFams) writeBlind(f.ids, `blind-22x30-${f.fam}.png`);
+  // "混排条"是**跨族**题（H3 对照），只在全量导出时出：`--fam=` 单族跑时它没有意义，
+  // 更不该用一个只有两族的混排条覆盖掉上一次三族的。
+  if (!famArg) writeBlind(fams.flatMap((f) => f.ids), 'blind-22x30-all.png');
   console.log(`\nPNG 已导出 → ${pngDir}（${n} 张：cu ×8 / pt ×8 / 22×30 ×8 / 盲测条）`);
 }
 
