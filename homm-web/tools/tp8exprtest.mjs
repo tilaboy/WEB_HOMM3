@@ -31,11 +31,11 @@
  * 认像素第一眼就红了。
  *
  * ## 三条表情通道（**声明式**例外）
- *   h3      人形（默认，12 帧）：2×2 ink0 眼 + **右上角** 1px hi0 + 1px ink 嘴线。
- *   glow    构装/火人/亡灵（6 帧）：2×2 **同色 emissive** 眼，无 hi0（§1.4「唯一高光」不适用），
- *           嘴线可有可无（实测只有熔岩巨魔有，且是 stone0 而非 ink0）。
- *   profile 侧脸（2 帧，独角兽 + 鹰）：只画**一只**眼，无独立嘴线。
- * 例外必须在 `FACE_LAW` 里逐条写明理由，并断言三档帧数（12/6/2）。没声明的帧一律按 h3 判
+ *   h3      人形（默认，10 帧）：2×2 ink0 眼 + **右上角** 1px hi0 + 1px ink 嘴线。
+ *   glow    构装/火人/亡灵/熔岩（7 帧）：2×2 **同色 emissive** 眼，无 hi0（§1.4「唯一高光」不适用），
+ *           嘴线可有可无（实测只有熔岩巨人有，且是 stone0 而非 ink0）。
+ *   profile 侧脸（3 帧，独角兽 + 鹰 + 三头狼）：只画**一只**眼，无独立嘴线。
+ * 例外必须在 `FACE_LAW` 里逐条写明理由，并断言三档帧数（10/7/3）。没声明的帧一律按 h3 判
  * ⇒ 新兵种画歪会立刻红，而不是被悄悄当成"例外"放过。这条也是为了堵「把尺子改成能过」：
  * 想让一帧走 glow/profile，必须在这里落一行字，review 时看得见。
  *
@@ -96,11 +96,11 @@ const K = S * DPR; // 每个美术像素占多少**设备像素**
 
 const FACTION_CN = { p1: '晨曦', p2: '赤焰', p3: '翠林', p4: '紫晶' };
 const UNIT_CN = {
-  p1_child: '小孩', p2_scavenger: '捡破烂小鬼', p3_dwarf: '浇水矮人', p4_stoneimp: '石雕小怪',
-  p1_crossbow: '弩手', p2_axethrower: '投斧蛮子', p3_thornarcher: '荆棘射手', p4_fireapprentice: '喷火学徒',
-  p1_eagle: '鹰', p2_wolfrider: '暴走狼骑', p3_vineguard: '藤蔓卫士', p4_hopgolem: '蹦跳魔偶',
-  p1_knight: '骑士', p2_firebrand: '火油狂徒', p3_treant: '树人大叔', p4_librarian: '亡灵图书管理员',
-  p1_angel: '天使', p2_lavatroll: '熔岩巨魔', p3_unicorn: '独角兽园丁', p4_colossus: '失控大魔像',
+  p1_child: '小孩', p2_matchman: '火柴人', p3_dwarf: '浇水矮人', p4_stoneimp: '石雕小怪',
+  p1_crossbow: '弩手', p2_bronze: '铜人', p3_thornarcher: '荆棘射手', p4_fireapprentice: '喷火学徒',
+  p1_eagle: '鹰', p2_threewolf: '三头狼', p3_vineguard: '藤蔓卫士', p4_hopgolem: '蹦跳魔偶',
+  p1_knight: '骑士', p2_lavagiant: '熔岩巨人', p3_treant: '树人大叔', p4_librarian: '亡灵图书管理员',
+  p1_angel: '天使', p2_devil: '恶魔', p3_unicorn: '独角兽园丁', p4_colossus: '失控大魔像',
 };
 /** 中立怪不是"人类单位"，H3 对兽类的要求是 2px 眼白 + 1px 瞳孔，本批**不进人类闸**。 */
 const NEUTRAL = new Set(['cu_wolf', 'cu_boar', 'cu_ogre']);
@@ -115,19 +115,25 @@ const FACE_LAW = {
   cu_p4_hopgolem: ['glow', '魔偶：2×2 p4emissive 眼，无嘴'],
   cu_p4_librarian: ['glow', '亡灵：眼窝是发光点（无 hi0），无嘴'],
   cu_p4_colossus: ['glow', '大魔像：2×2 p4emissive 眼，无嘴'],
-  cu_p2_lavatroll: ['glow', '熔岩巨魔：2×2 p2emissive 眼 + 1px×9 stone0 嘴线（大地精体量，嘴在眼下 6 行）'],
+  cu_p2_bronze: ['glow', '铜人（构装）：2×2 p2emissive 眼，无 hi0（§1.4 唯一高光不适用于构装）；"嘴"是 metal0 面甲缝，不是 ink0 嘴线'],
+  cu_p2_lavagiant: ['glow', '熔岩巨人：2×2 p2emissive 眼 + 1px stone0 嘴线（下巴裂纹，嘴在眼下 5 行）'],
+  cu_p2_threewolf: ['profile', '三头狼（兽形侧脸，§5.6.4）：三个头里只有主头画 ink 眼；另两颗是远侧的头，只点 p2wall0 暗点（凑不出 ink0+hi0 的 2×2 窗口）'],
   cu_p3_unicorn: ['profile', '侧脸母题（§5.6.4 兽形）：只画一只眼，无独立嘴线'],
   cu_p1_eagle: ['profile', '猛禽侧脸：头是侧向钩喙（喙朝左），只有单眼；喙缝不是 ink0 的"嘴线"，按 h3 判会逼出一张假人脸'],
 };
 /**
  * 三档帧数（写死 ⇒ 谁想偷偷把一个单位挪进例外，得同时改这三个数并在 review 里解释）。
  *
- * 13 → 12 的来历（2026-11-06，S3a 换阵容）：p1 的五个旧 id 退场、五个新 id 上台，
- * 帧数不变（20），但**鹰是唯一的侧脸**（侧向钩喙 + 单眼），按 profile 记 ⇒
- * 20 − 6 glow − 2 profile = **12 h3**。这不是放宽：h3 的账要逐帧数，
- * 12 + 6 + 2 = 20 = `UNIT_FRAMES` 里 cu_ idle 的帧数，对不上就红。
+ * 账要逐帧数，且三档之和必须 = `UNIT_FRAMES` 里 cu_ idle 的帧数（20），对不上就红。
+ *
+ * 12/6/2 → **10/7/3** 的来历（2026-11-06，S3b 换 p2 阵容）：
+ *   · glow  +2：铜人（构装）、熔岩巨人（熔岩）—— 与 p4 的五个构装/火人/亡灵同一条理由；
+ *   · profile +1：三头狼（兽形侧脸，只主头画 ink 眼）；
+ *   · h3    −2：p2 的火柴人 / 恶魔顶替了旧的火油狂徒 / 熔岩巨魔。
+ * 20 − 7 glow − 3 profile = **10 h3**。这不是放宽：p2 的五个兵里三个本来就没有
+ * "人类的 2×2 ink 眼 + 嘴线"结构（构装两只 + 兽形一只）。
  */
-const CH_COUNT = { h3: 12, glow: 6, profile: 2 };
+const CH_COUNT = { h3: 10, glow: 7, profile: 3 };
 
 const BG = [208, 208, 208, 255]; // 与 ① 同底景（L=208），便于两批素材并排看
 const CELL_W = 52;
@@ -142,7 +148,7 @@ const MOUTH_MIN_W = 3;
 const MOUTH_MAX_W = 12; // 嘴是"短横线"；长横线是甲片/衣褶，不是嘴
 const MOUTH_MAX_DY = 8; // 眼下多少行内算嘴：人形实测 2~4，T5 巨人 7（熔岩巨魔）
 /** 声明"有嘴"的 glow 帧。h3 恒有嘴、profile 恒无嘴；glow 里只有熔岩巨魔画了嘴线。 */
-const GLOW_MOUTH = new Set(['cu_p2_lavatroll']);
+const GLOW_MOUTH = new Set(['cu_p2_lavagiant']);
 const GAP_MAX = 8; // 两眼间距上限（归一化放大后 firebrand 实测 7）
 /**
  * ΔE76 门槛。为什么是 20：

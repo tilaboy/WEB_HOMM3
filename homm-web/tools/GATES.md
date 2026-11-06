@@ -39,7 +39,7 @@
 | `audit:hover` | `hoveraudit.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | **未走统一 `requireFile`** |
 | `audit:touch` | `tinytargetaudit.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | **未走统一 `requireFile`** |
 | `audit:b0` | `b0audit.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | |
-| `audit:bodyplan` | `bodyplanaudit.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | **S3a 新增（2026-11-06）**。§15.2 体形档：R1 五档独占（量**成品帧**的剪影，不读声明）/ R2 两两外接框 ≥18% / R5 兵牌等比 / 22×30 剪影差 ≥15% / 鹰不展翼 / 「两套 regime 不重不漏」+ N1/N2 负向对照。**与 `audit:b0` 分家**：`BODY_PLAN` 收录的兵不进 H1/H2/S1（体形档与 tier 阶梯不同构：鹰 T3 比骑士 T4 高） |
+| `audit:bodyplan` | `bodyplanaudit.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | **S3a 新增（2026-11-06）**，**S3b 扩到 p2**。§15.2 体形档：R1 五档独占（量**成品帧**的剪影，不读声明）/ R2 两两外接框 ≥18% / R5 兵牌等比 / 22×30 剪影差 ≥15% / 鹰不展翼 / 「两套 regime 不重不漏」+ N1/N2 负向对照。覆盖 `BODY_PLAN_FAMILIES` 里的每一族（当前 p1+p2 = 10 个兵 / 30 帧）。**与 `audit:b0` 分家**：`BODY_PLAN` 收录的兵不进 H1/H2/S1（体形档与 tier 阶梯不同构：鹰 T3 比骑士 T4 高） |
 | `audit:atlas` | `atlasaudit.mjs` | 门 | ✓ | ✓ | ✓ 自带 | — | **未走统一 `requireFile`** |
 | `audit:ai-diag` | `aidiagnose.mjs` | **报表** | **恒 0** | ✗ | ✓ `requireFile` | — | **不判过否**；落盘 `_aidiagnose.json/.log` |
 | `audit:badge` | `mapbadgeaudit.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | |

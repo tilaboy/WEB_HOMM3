@@ -407,8 +407,10 @@ if (pngDir) {
   }
   // 盲测条：五张 22×30 并排、**不带标签**（带标签的就不是盲测了），间距 = 一格的 1/2。
   // 交给 5 个人各看 5 秒，问「哪张更强」，答对 ≥9/10 才算过（S3a 人工项）。
-  const ids = fams.flatMap((f) => f.ids);
-  if (ids.length) {
+  // **按族各出一张**：判据是"同族五人里指认哪张更强"，把两族混在一条里
+  // 会让题目变成"跨族比强弱"，那不是 §15.2 要验的东西。
+  const writeBlind = (ids, file) => {
+    if (!ids.length) return;
     const Z = 8;
     const GAPX = 12;
     const cells = ids.map((id) => upscale(buildPortraitFrame(unitCombatFrame(id), 22, 30), Z));
@@ -429,9 +431,11 @@ if (pngDir) {
       }
       ox += c.w + GAPX;
     }
-    writeFileSync(join(pngDir, 'blind-22x30.png'), encodePng({ w: W, h: H, data }));
+    writeFileSync(join(pngDir, file), encodePng({ w: W, h: H, data }));
     n += 1;
-  }
+  };
+  for (const f of fams) writeBlind(f.ids, `blind-22x30-${f.fam}.png`);
+  writeBlind(fams.flatMap((f) => f.ids), 'blind-22x30-all.png');
   console.log(`\nPNG 已导出 → ${pngDir}（${n} 张：cu ×8 / pt ×8 / 22×30 ×8 / 盲测条）`);
 }
 
@@ -439,8 +443,8 @@ if (pngDir) {
 
 console.log('\n' + '='.repeat(72));
 console.log(`汇总：${results.map((r) => `[${r.id}] ${r.pass ? 'PASS' : 'FAIL'}`).join('  ')}`);
-console.log(bad === 0 ? '结论：S3a 体形档自动部分全过' : `结论：${bad} 项不合格 —— 不要提交`);
-console.log('人工项：五人盲测（22×30 下 5 秒指认「哪张更强」≥9/10）；剪影外缘特征凸起 ≥4px 肉眼核');
+console.log(bad === 0 ? '结论：体形档自动部分全过（S3a p1 + S3b p2）' : `结论：${bad} 项不合格 —— 不要提交`);
+console.log('人工项：五人盲测（22×30 下 5 秒指认「哪张更强」≥9/10）；剪影外缘特征凸起 ≥4px 肉眼核（按族分批出题）');
 console.log('='.repeat(72));
 process.exit(bad === 0 ? 0 : 1);
 

@@ -41,6 +41,7 @@ const {
   B3_FRAMES,
   B4_FRAMES,
   P1V3_FRAMES,
+  P2V3_FRAMES,
   B0_PALETTE,
   B0_SHADE_STEPS,
   B0_PENDING_AI_FRAME,
@@ -68,6 +69,7 @@ const BATCHES = [
   ['B3', B3_FRAMES],
   ['B4', B4_FRAMES], // TP-4② 中立野怪（cu_wolf / cu_boar / cu_ogre）
   ['P1v3', P1V3_FRAMES], // S3a 体形档重画的 p1 五兵（15 帧）
+  ['P2v3', P2V3_FRAMES], // S3b 体形档重画的 p2 五兵（15 帧）
 ];
 const batchLabel = BATCHES.map(([n, a]) => `${n} ${a.length}`).join(' + ');
 const batchTotal = BATCHES.reduce((s, [, a]) => s + a.length, 0);
@@ -723,15 +725,16 @@ for (const f of frames) {
 
 // 断言 5：两族 map 帧脚底基线
 // ⚠️ 样本从 `u_p1_lampbearer_map` 换成 `u_p1_child_map`：前者随 S3a 退役（见 unitArt.ts
-//    里 B0_FRAMES 的注释）。**换样本不是放宽** —— 判据仍是「两族脚底行相等」，
+//    里 B0_FRAMES 的注释）；S3b 又把 p2 侧样本从 `u_p2_scavenger_map` 换成
+//    `u_p2_matchman_map`（同理，旧 id 已不在 UNITS 里）。**换样本不是放宽** —— 判据仍是「两族脚底行相等」，
 //    而 p1 的 map 帧现在全部由体形档重画，底锚逻辑与旧图不同，正是要盯的地方。
 const mapA = frames.find((f) => f.spec.name === 'u_p1_child_map');
-const mapB = frames.find((f) => f.spec.name === 'u_p2_scavenger_map');
+const mapB = frames.find((f) => f.spec.name === 'u_p2_matchman_map');
 const bA = baselineOf(mapA.d);
 const bB = baselineOf(mapB.d);
 record(5, '基线对齐（两族 map 帧）', bA === bB && bA >= 0, {
   'u_p1_child_map': bA,
-  'u_p2_scavenger_map': bB,
+  'u_p2_matchman_map': bB,
   delta: Math.abs(bA - bB),
 });
 
@@ -1001,7 +1004,7 @@ for (const id of [1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 'C', 'M']) {
   console.log(`\n[${id}] ${title}  →  ${pass ? 'PASS' : 'FAIL'}`);
   if (id === 5) {
     console.log(`    u_p1_lampbearer_map 脚底行 = ${bA}`);
-    console.log(`    u_p2_scavenger_map  脚底行 = ${bB}`);
+    console.log(`    u_p2_matchman_map   脚底行 = ${bB}`);
     console.log(`    偏差 = ${Math.abs(bA - bB)} px`);
     continue;
   }

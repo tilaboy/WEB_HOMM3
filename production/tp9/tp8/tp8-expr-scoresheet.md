@@ -1,6 +1,6 @@
 # TP-8② 手机表情可读 · 盲测记录表
 
-- 日期：____-__-__ · 主持人：______ · 材料版本：`{"dir":"/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist","md5":"4880e6dbb88b9c2132b12bd7baad331c","sha256":"d87d983b1709fede","mtime":"2026-11-06T11:04:59.566Z","files":["main.js","style.css","index.html"]}`
+- 日期：____-__-__ · 主持人：______ · 材料版本：`{"dir":"/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist","md5":"4880e6dbb88b9c2132b12bd7baad331c","sha256":"d87d983b1709fede","mtime":"2026-11-06T11:25:41.425Z","files":["main.js","style.css","index.html"]}`
 - 素材：`tp8-expr-E-r{N}.png`（**设备像素**，= 手机上真实占的物理像素）
 - ⚠️ **必须在手机上按 1:1 看**（或桌面用 `tp8-expr-viewer.html` 的 1× 档，pixelated）。
   普通看图器会插值糊化，等于把题目改简单了。

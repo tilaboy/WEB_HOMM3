@@ -60,10 +60,22 @@ export const BODY_PLAN: Record<string, BodyPlan> = {
   p1_knight: { cls: 'wide', h: 1.04, tip: '四腿+长枪' },
   // 巨物·飞行：h ≥ 1.45 —— 光环 + 上掠翼，占满画布
   p1_angel: { cls: 'huge', h: 1.54, tip: '光环+上掠翼' },
+
+  // ── p2 赤焰（S3b，2026-11-06）─────────────────────────────────────
+  // 矮：h ≤ 0.68 —— 细棍四肢 + 大头 + 头顶火苗（同档与 p1 小孩靠"细 vs 短袍"分开）
+  p2_matchman: { cls: 'short', h: 0.64, tip: '火柴+火苗' },
+  // 中：0.84 ~ 1.00 —— 方头方肩的铜制构装，glow 眼
+  p2_bronze: { cls: 'mid', h: 0.88, tip: '方肩+铆钉' },
+  // 高：h ≥ 1.18 —— 厚肩长臂、宽度 < 1.35h（宽体档归三头狼）
+  p2_lavagiant: { cls: 'tall', h: 1.22, tip: '厚肩+熔岩缝' },
+  // 宽体：w ≥ 1.35h —— 四足长身 + 三个错落的头
+  p2_threewolf: { cls: 'wide', h: 0.95, tip: '四足+三头' },
+  // 巨物·飞行：h ≥ 1.45 —— **下掠**翼 + 双角 + 尾（与天使上掠成镜像）
+  p2_devil: { cls: 'huge', h: 1.5, tip: '下掠翼+双角' },
 };
 
 /** 已重画的族前缀。S3b/S3c 每落一族就往里加一个（不要按兵种逐个加）。 */
-export const BODY_PLAN_FAMILIES = new Set(['p1']);
+export const BODY_PLAN_FAMILIES = new Set(['p1', 'p2']);
 
 /** 该 unit 是否走新体形档 regime。 */
 export function hasBodyPlan(unit: string): boolean {
@@ -154,6 +166,51 @@ const P = {
   ink: '#2a1a12', // ink0
   hi: '#ffffff', // hi0 —— **只给眼睛右上角那一格**（§1.4 唯一高光）
 } as const;
+
+/**
+ * p2 赤焰（S3b）：红布 + 棕皮 + 铜 + 熔岩。
+ *
+ * 同样**只用 `B0_PALETTE` 的字面值**（理由见上面 P 的注释）；族的主题色是
+ * `p2accent`（红三档）、`p2wall`（棕两档）、`p2emissive`（发光黄）、`p2clash`（青绿）。
+ * 铜人不借 p2accent 而借 `canvas` 族：p2 的红是"兽皮"，铜人必须是"金属"，
+ * 否则它与熔岩巨人、恶魔在 22px 下是同一团红。
+ */
+const P2 = {
+  red: '#e04a34', // p2accent 2
+  redDark: '#9a2519', // p2accent 0
+  redLite: '#f79a7a', // p2accent 4
+  wall: '#c98a4e', // p2wall 2 —— 毛皮 / 皮革
+  wallDark: '#8a5a30', // p2wall 0
+  glow: '#ffd06a', // p2emissive —— 铜人的眼、熔岩裂缝
+  clash: '#2fbfa0', // p2clash —— 只给恶魔的舌尖 / 三头狼的颈环（小面积高饱和）
+  bronze: '#b9a06a', // canvas 2 —— 铜人主体
+  bronzeLite: '#e8d9a8', // canvas 4 —— 铜人的高光面
+  stoneDark: '#6f6858', // stone 0 —— 熔岩巨人的嘴线 / 岩缝
+  metal0: '#6b7686',
+  metal2: '#aab6c2',
+  metal4: '#dfe6f0',
+  wood0: '#5f4022',
+  // 火柴人的细肢 / 铜人的暗面：必须比 `wallDark(#8a5a30)` 再暗一档。
+  // 断言 8 实测：wallDark ↔ p2accent2 只差 ΔL 10.3（ΔH 20° 需 ≥12），
+  // 而 wood0 与红差 18.7 —— 同样是"暗"，但跨过了门槛。
+  limb: '#5f4022',
+  skin: '#d8a878',
+  ink: '#2a1a12',
+  hi: '#ffffff',
+} as const;
+
+/**
+ * 熔岩巨人的发光眼 + 石色嘴线。
+ *
+ * 它走 `audit:expr` 的 **glow** 通道（构装/巨人类可以没有 hi0）：眼是 2×2 **同色**
+ * `#ffd06a`，嘴是 1px 高的 `stone0` 短横线。这与旧 `cu_p2_lavatroll` 同一条理由，
+ * 只是体量从"巨魔"变成"巨人"。
+ */
+function glowFace(pb: PixBuf, lx: number, ey: number, gap: number, x0: number, mouthW: number, mouthDy: number): void {
+  R(pb, lx, ey, 2, 2, P2.glow);
+  R(pb, lx + 2 + gap, ey, 2, 2, P2.glow);
+  if (mouthW > 0) R(pb, x0, ey + mouthDy, Math.max(3, Math.round(mouthW)), 1, P2.stoneDark);
+}
 
 /* ==========================================================================
  * 3. 绘制基元（PixBuf 只有 1px 线，粗线在这里补齐）
@@ -693,6 +750,397 @@ function drawAngel(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
 }
 
 /* ==========================================================================
+ * 4b. p2 赤焰五兵（S3b，2026-11-06）
+ *
+ * 这一族是**身高跨度最大**的一组（矮 0.64 → 巨物 1.50，差 2.3 倍），
+ * 也是验证「五档真的分得开」最有力的一组：四足、构装、巨人、翼魔四种骨架
+ * 同时出现，没有两个兵可以靠"换顶帽子"糊过去。
+ * ========================================================================== */
+
+/** 火柴人 · 矮档 · 细棍四肢 + 大头 + 头顶火苗。 */
+function drawMatchman(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
+  const topY = base - h;
+  // 火苗占最上面 0.12h：剪影最高点必须是火苗尖，否则归一化会把头削平
+  const flameH = h * 0.12;
+  const headR = h * 0.2;
+  const headCy = topY + flameH + headR;
+  const neck = headCy + headR * 0.92;
+  const hip = base - h * 0.3;
+  // 1px 的四肢在 22px 下整根消失（S3b 首轮实拍：只剩一个圆头 + 一点红）
+  const limbW = Math.max(2, Math.round(h * 0.065));
+  // 腿：两根细斜线。**不许加粗** —— "细"就是这一档的辨识（p1 小孩同档但穿短袍）
+  tl(pb, cx - h * 0.02, hip, cx - h * 0.16, base - 1, P2.limb, limbW);
+  tl(pb, cx + h * 0.02, hip, cx + h * 0.16, base - 1, P2.limb, limbW);
+  // 脚：两个墨点（少了它们，22px 下是两根悬空的线）
+  R(pb, cx - h * 0.21, base - 1, Math.max(2, Math.round(h * 0.08)), 1, P2.ink);
+  R(pb, cx + h * 0.13, base - 1, Math.max(2, Math.round(h * 0.08)), 1, P2.ink);
+  // 躯干：一根竖线
+  tl(pb, cx, neck, cx, hip, P2.limb, Math.max(1, Math.round(h * 0.05)));
+  // 短裤：胯部一小块红 —— 没有它整个人是个"十"字，读不出朝向
+  R(pb, cx - h * 0.07, hip - h * 0.04, h * 0.14, Math.max(2, h * 0.09), P2.red);
+  // 手臂：X 形张开（火柴人的签名）
+  tl(pb, cx, neck + h * 0.02, cx - h * 0.26, base - h * 0.36, P2.limb, limbW);
+  if (atk) tl(pb, cx, neck + h * 0.02, cx + h * 0.3, neck - h * 0.02, P2.limb, limbW);
+  else tl(pb, cx, neck + h * 0.02, cx + h * 0.26, base - h * 0.36, P2.limb, limbW);
+  // 大头
+  pb.ellipse(cx, headCy, headR, headR, P.skin);
+  // 脸：头径 0.4h ≈ 9.3px，2+2+2 的两眼刚好放下
+  if (face) h3Face(pb, Math.round(cx) - 2, Math.round(headCy - headR * 0.28), 2, 3, 3);
+  // 火苗：三尖，压在最上面（既是"火柴"的命名理由，也是剪影最高点）
+  pb.poly([[cx, topY], [cx - h * 0.075, topY + flameH * 0.92], [cx - h * 0.02, topY + flameH * 0.72]], P2.glow);
+  pb.poly([[cx, topY], [cx + h * 0.075, topY + flameH * 0.92], [cx + h * 0.02, topY + flameH * 0.72]], P2.red);
+  R(pb, cx - h * 0.03, topY + flameH * 0.58, Math.max(2, h * 0.06), Math.max(1, flameH * 0.42), P2.redDark);
+  // 手持的火柴：atk 举到脸侧（出口象限 = 右上），idle 垂在右手
+  if (atk) {
+    tl(pb, cx + h * 0.3, neck, cx + h * 0.44, topY + h * 0.24, P2.wood0, Math.max(1, Math.round(h * 0.035)));
+    R(pb, cx + h * 0.41, topY + h * 0.2, Math.max(2, h * 0.06), Math.max(2, h * 0.06), P2.red);
+  } else {
+    tl(pb, cx + h * 0.24, base - h * 0.38, cx + h * 0.3, base - h * 0.22, P2.wood0, Math.max(1, Math.round(h * 0.035)));
+    R(pb, cx + h * 0.28, base - h * 0.24, Math.max(2, h * 0.05), Math.max(2, h * 0.05), P2.red);
+  }
+}
+
+/**
+ * 铜人 · 中档 · 方头方肩的铜制构装。
+ *
+ * 走 `audit:expr` 的 glow 通道：眼是 2×2 同色 `#ffd06a`，**没有 hi0**（§1.4 的
+ * 「唯一高光」不适用于构装）。脸上那道横缝是 `metal0` 的面甲缝，不是嘴线 ——
+ * glow 通道允许无嘴，但**不许**用 ink0 画一道 3px 以上的横线（那会被当成嘴，
+ * 而嘴的上下行必须不是同样宽的墨，构装脸上没有那个结构）。
+ */
+function drawBronze(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
+  // ── 为什么这一版是**矮胖方盒**（h 0.90 → 0.88、躯干加宽到 0.5h）──
+  //
+  // `audit:bodyplan` 的 [4] 在 22×30 下量「同族两两剪影差 ≥15%」，铜人与熔岩巨人
+  // 只差 **10%** 被红。原因不是画错，是**兵牌把宽高比归一化掉了**：两张都按高缩到
+  // 30px 后，铜人 21×30、巨人 20×30 —— 轮廓几乎重合（都是"头-宽肩-窄腿"）。
+  // 修法只能是让**形状**不同：铜人做成"横方块 + 外挑肩 + 身侧大锤"（缩到 22 宽后
+  // 只有 25 高），巨人保持"窄高 + 沙漏腰"（20×30）。这样两者的 bbox 就不一样了。
+  const topY = base - h;
+  const headW = h * 0.24;
+  const headH = h * 0.17;
+  const headTop = topY + h * 0.02;
+  const shoulder = headTop + headH + h * 0.03;
+  const hip = base - h * 0.26;
+  const bw = h * 0.5;
+  // 腿：两根粗短方柱，中间留 0.11h 的缝（缩略图上还剩 1px，正是"两条腿"的证据）
+  const legW = Math.max(2, Math.round(h * 0.15));
+  R(pb, cx - h * 0.19, hip, legW, base - hip, P2.bronze);
+  R(pb, cx + h * 0.04, hip, legW, base - hip, P2.bronze);
+  R(pb, cx - h * 0.2, base - Math.max(1, h * 0.05), legW + 2, h * 0.05, P2.metal0);
+  R(pb, cx + h * 0.03, base - Math.max(1, h * 0.05), legW + 2, h * 0.05, P2.metal0);
+  // 躯干（倒梯形，比旧版宽 0.06h）
+  pb.poly(
+    [
+      [cx - bw * 0.5, shoulder],
+      [cx + bw * 0.5, shoulder],
+      [cx + bw * 0.4, hip],
+      [cx - bw * 0.4, hip],
+    ],
+    P2.bronze,
+  );
+  // 右侧暗面：没有它整块铜是一个平面（铜人 22px 下就是这个"平面"最容易糊成一块砖）
+  R(pb, cx + bw * 0.3, shoulder + 1, Math.max(2, bw * 0.14), hip - shoulder - 1, P2.limb);
+  // 铆钉三颗（构装的签名）
+  for (const dx of [-0.12, -0.02, 0.08]) {
+    R(pb, cx + h * dx, shoulder + h * 0.05, 2, 2, P2.metal0);
+  }
+  // 肩甲：两块**外挑到 ±0.40h** 的方块（总宽的一半靠它们）
+  R(pb, cx - bw * 0.5 - h * 0.15, shoulder - h * 0.03, Math.max(3, h * 0.15), Math.max(2, h * 0.08), P2.bronzeLite);
+  R(pb, cx + bw * 0.5, shoulder - h * 0.03, Math.max(3, h * 0.15), Math.max(2, h * 0.08), P2.bronzeLite);
+  // 手臂：**贴在肩甲外沿**，与躯干之间留 1px 缝（构装的手臂是挂上去的，不是长出来的）
+  const armW = Math.max(2, Math.round(h * 0.1));
+  R(pb, cx - bw * 0.5 - h * 0.14, shoulder + h * 0.04, armW, h * 0.26, P2.bronze);
+  R(pb, cx + bw * 0.5 + h * 0.04, shoulder + h * 0.04, armW, h * 0.26, P2.bronze);
+  // 头：方块 + 顶面高光
+  // ⚠️ 顶面那一条**不能用 bronzeLite**：它与 glow 眼（#ffd06a）ΔL 只 1.1，
+  //    而这一行正好压在眼的上方 1px（h=32 时头高只有 5px）⇒ 断言 8 红。
+  //    换 metal0：与铜差 24、与发光眼差 30，仍然读得出"顶面受光"。
+  R(pb, cx - headW * 0.5, headTop, headW, headH, P2.bronze);
+  R(pb, cx - headW * 0.5, headTop, headW, 1, P2.metal0);
+  // 面甲缝（metal0，不是 ink0 —— 见函数头注释）
+  R(pb, cx - headW * 0.3, headTop + headH * 0.76, headW * 0.6, 1, P2.metal0);
+  if (face) glowFace(pb, Math.round(cx) - 2, Math.round(headTop + headH * 0.34), 2, 0, 0, 0);
+  // 方锤：idle 垂在身侧外沿（把总宽撑到 0.88h），atk 举过肩
+  const hx = cx + bw * 0.5 + h * 0.12;
+  if (atk) {
+    tl(pb, hx, shoulder + h * 0.24, hx + h * 0.12, shoulder - h * 0.1, P2.wood0, Math.max(2, Math.round(h * 0.045)));
+    R(pb, hx + h * 0.06, shoulder - h * 0.2, Math.max(3, h * 0.2), Math.max(3, h * 0.11), P2.bronzeLite);
+  } else {
+    tl(pb, hx, shoulder + h * 0.22, hx, hip + h * 0.02, P2.wood0, Math.max(2, Math.round(h * 0.045)));
+    R(pb, hx - h * 0.08, hip, Math.max(3, h * 0.2), Math.max(3, h * 0.11), P2.bronzeLite);
+  }
+  // 执锤的手（最后画，压在柄上 ⇒ 读"握着"）
+  R(pb, hx - Math.max(1, h * 0.03), shoulder + h * 0.22, Math.max(3, h * 0.08), Math.max(3, h * 0.07), P2.bronzeLite);
+}
+
+/**
+ * 熔岩巨人 · 高档 · 厚肩 + 长臂 + 岩缝发光。
+ *
+ * ⚠️ 宽度必须 **< 1.35h**：宽体档归三头狼。§15.4 也明说「慢而硬」靠高度与肩厚，
+ *    不靠横张 —— 横张是猿人/牛头怪的语法，不能借给巨人。
+ */
+function drawLavaGiant(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
+  const topY = base - h;
+  const headR = h * 0.085;
+  const headCy = topY + headR + h * 0.015;
+  const shoulder = headCy + headR + h * 0.04;
+  const hip = base - h * 0.26;
+  const bw = h * 0.46;
+  const legW = Math.max(2, Math.round(h * 0.14));
+  // 腿：短粗 + **中间留 0.13h 的缝**（22×30 下这是"两条腿"的唯一证据）
+  R(pb, cx - h * 0.21, hip, legW, base - hip, P2.redDark);
+  R(pb, cx + h * 0.07, hip, legW, base - hip, P2.redDark);
+  R(pb, cx - h * 0.22, base - Math.max(1, h * 0.04), legW + 2, h * 0.04, P2.ink);
+  R(pb, cx + h * 0.06, base - Math.max(1, h * 0.04), legW + 2, h * 0.04, P2.ink);
+  // 躯干：肩宽**腰极窄**（沙漏）—— 这是与铜人"方盒"最省的区分：
+  // 两者在 22×30 下都被压成实心块，只有"块的两侧是否内收"还看得出来。
+  pb.poly(
+    [
+      [cx - bw * 0.5, shoulder],
+      [cx + bw * 0.5, shoulder],
+      [cx + bw * 0.24, hip],
+      [cx - bw * 0.24, hip],
+    ],
+    P2.redDark,
+  );
+  // 胸口熔岩块：亮红压在暗红上（ΔL 够，且是**大面积**，22px 下读"滚烫的胸")
+  pb.poly(
+    [
+      [cx - bw * 0.18, shoulder + h * 0.07],
+      [cx + bw * 0.15, shoulder + h * 0.09],
+      [cx + bw * 0.09, hip - h * 0.03],
+      [cx - bw * 0.15, hip - h * 0.01],
+    ],
+    P2.red,
+  );
+  // 裂缝：三段发光细线（这是"熔岩"的唯一证据；没有它就是一块红石头）
+  tl(pb, cx - bw * 0.16, shoulder + h * 0.12, cx - bw * 0.04, hip - h * 0.08, P2.glow, 2);
+  tl(pb, cx + bw * 0.02, shoulder + h * 0.16, cx + bw * 0.1, hip - h * 0.06, P2.glow, 2);
+  // 肩：两块厚岩（横向只到 bw*0.56 ⇒ 总宽仍远小于 1.35h）
+  R(pb, cx - bw * 0.56, shoulder - h * 0.04, Math.max(3, bw * 0.3), Math.max(2, h * 0.1), P2.red);
+  R(pb, cx + bw * 0.26, shoulder - h * 0.04, Math.max(3, bw * 0.3), Math.max(2, h * 0.1), P2.red);
+  // 肩刺：两根向上外的岩尖（高度压在 headTop 之下 —— 剪影最高点仍是头顶的角）
+  pb.poly(
+    [
+      [cx - bw * 0.56, shoulder + h * 0.01],
+      [cx - bw * 0.7, shoulder - h * 0.15],
+      [cx - bw * 0.3, shoulder - h * 0.03],
+    ],
+    P2.redDark,
+  );
+  pb.poly(
+    [
+      [cx + bw * 0.56, shoulder + h * 0.01],
+      [cx + bw * 0.7, shoulder - h * 0.15],
+      [cx + bw * 0.3, shoulder - h * 0.03],
+    ],
+    P2.redDark,
+  );
+  // 长臂：垂到膝下（"慢而硬"的体量感）
+  const armW = Math.max(2, Math.round(h * 0.12));
+  // 手臂用**亮红**：暗红贴暗红在缩略图上完全融合（S3b 首轮实拍是一只"没有手臂的红方块"）。
+  // 与躯干同族（p2accent），断言 8 跳过，但 ΔL 14 足够读出两条手臂。
+  R(pb, cx - bw * 0.58, shoulder, armW, h * 0.44, P2.red);
+  R(pb, cx + bw * 0.46, shoulder, armW, h * 0.44, P2.red);
+  // 拳头
+  R(pb, cx - bw * 0.6, shoulder + h * 0.44, Math.max(3, armW + 2), h * 0.1, P2.red);
+  R(pb, cx + bw * 0.44, shoulder + h * 0.44, Math.max(3, armW + 2), h * 0.1, P2.red);
+  if (atk) {
+    // 出手：右拳砸向前下方（不改变高度档）
+    tl(pb, cx + bw * 0.5, shoulder + h * 0.1, cx + bw * 0.72, shoulder + h * 0.34, P2.red, armW);
+    R(pb, cx + bw * 0.66, shoulder + h * 0.32, Math.max(3, h * 0.12), Math.max(3, h * 0.1), P2.red);
+  }
+  // 头：小、嵌在肩里
+  pb.ellipse(cx, headCy, headR, headR * 0.95, P2.red);
+  // 头顶岩角两簇（剪影最高点 = topY）
+  pb.poly([[cx - headR * 0.85, headCy - headR * 0.55], [cx - headR * 1.35, topY], [cx - headR * 0.35, topY + headR * 0.25]], P2.redDark);
+  pb.poly([[cx + headR * 0.3, headCy - headR * 0.8], [cx + headR * 0.85, topY + h * 0.012], [cx + headR * 1.15, headCy - headR * 0.35]], P2.redDark);
+  // 眼（glow）+ 嘴（stone0 横线，在下巴位置 —— 巨人的嘴就是一道裂口）
+  if (face) glowFace(pb, Math.round(cx) - 2, Math.round(headCy - headR * 0.1), 1, Math.round(cx) - h * 0.09, h * 0.18, 5);
+}
+
+/**
+ * 三头狼 · 宽体档 · 四足长身 + **三个分开的头**。
+ *
+ * ⚠️ 宽高比是这一档的唯一判据（`w ≥ 1.35h`），但**成品要留余量**：
+ *    R1 量的是加完 1px 描边的 bbox，描边会让高多 2px、宽也多 2px，
+ *    而比值对"矮而宽"的剪影是**变小**的（分母涨得比分子快）。
+ *    所以这里画到 1.42h，成品落在 1.40~1.45，不会贴着 1.35 的线。
+ *
+ * ⚠️ 首版在 8× 下读成**长颈鹿**（S3b 第一轮实拍）：脖子 8px、身体只有 4px 厚、
+ *    三个头叠成一团。这一版把三处一起收紧：身体加厚到 0.16h、脖子压到 0.04~0.08h、
+ *    三个头在 x 上拉开 0.18h 且高度错落 0.08h —— 22px 下能数出三个凸起。
+ *
+ * ⚠️ 三个头只有**主头**画 ink 眼：`audit:expr` 的 profile 通道要求「恰好 1 只眼」。
+ *    另两颗头是"远侧的头"，用 `p2wall0` 的暗点 —— 它们凑不出 `ink0 + hi0` 的
+ *    2×2 窗口，所以不会被数成眼。这不是绕过判据：兽形侧脸的定义本来就是一只眼，
+ *    三个头里的两只是侧影，画成高光眼反而会读成"三个正面脸"。
+ */
+function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
+  const bodyCy = base - h * 0.46;
+  const halfLen = h * 0.3;
+  const legW = Math.max(2, Math.round(h * 0.08));
+  // 尾：粗短、末端蓬松（首版是一根细天线 + 一个球）
+  tl(pb, cx + halfLen * 0.8, bodyCy + h * 0.02, cx + h * 0.8, base - h * 0.6, P2.wall, Math.max(3, Math.round(h * 0.09)));
+  pb.poly([[cx + h * 0.74, base - h * 0.68], [cx + h * 0.88, base - h * 0.58], [cx + h * 0.72, base - h * 0.5]], P2.wallDark);
+  // 四腿：短粗，前后各两条（远侧暗一档 ⇒ 读"四足"而不是"两块板"）
+  for (const [dx, near] of [
+    [-halfLen * 0.78, false],
+    [-halfLen * 0.5, true],
+    [halfLen * 0.44, true],
+    [halfLen * 0.72, false],
+  ] as [number, boolean][]) {
+    const x = Math.round(cx + dx);
+    R(pb, x, bodyCy + h * 0.1, legW, base - (bodyCy + h * 0.1) - h * 0.02, near ? P2.wall : P2.wallDark);
+    R(pb, x - 1, base - Math.max(1, h * 0.03), legW + 2, h * 0.03, P2.ink);
+  }
+  // 躯干：加厚到 0.16h（首版 0.115h 是一条腊肠）
+  pb.ellipse(cx, bodyCy, halfLen, h * 0.16, P2.wall);
+  // 背脊鬃（暗红）—— 没有它，这团棕色读成"猪"
+  pb.poly(
+    [
+      [cx - halfLen * 0.7, bodyCy - h * 0.13],
+      [cx + halfLen * 0.55, bodyCy - h * 0.13],
+      [cx + halfLen * 0.4, bodyCy - h * 0.18],
+      [cx - halfLen * 0.56, bodyCy - h * 0.18],
+    ],
+    P2.redDark,
+  );
+  // 腹：暗一档
+  pb.ellipse(cx, bodyCy + h * 0.07, halfLen * 0.82, h * 0.06, P2.wallDark);
+  // ── 颈部横梁：把三个头连成**一片** ──
+  //
+  // 不是为了省事：头与头之间留 1px 透明缝时，`buildB0Frame` 的描边会把那道缝
+  // 灌成一段 3px 宽的 ink0 —— 而它正好落在左眼的找嘴窗口里（x ∈ [l.x−3, l.x+7]），
+  // `audit:expr` 的 [Contr] 于是把它当成"一条贴着透明的嘴线"（ΔE 15.5）判红。
+  // 连成一片之后，眼下 8 行内只有连续的皮毛色，三个头靠**吻 + 耳 + 高度差**区分
+  // （H3 的刻耳柏洛斯也是连着画的）。
+  R(pb, cx - h * 0.54, base - h * 0.8, h * 0.56, Math.max(3, h * 0.12), P2.wall);
+  // 三个头：x 上拉开 0.21h、高度错落 **0.16h**、头半径 0.068h。
+  //
+  // 第三轮：头与头之间用 `wallDark` **暗线**分隔，而不是留透明缝。
+  // 透明缝会被描边灌成 ink0（见上），暗线不会 —— 3px 的暗线在 22×30 下正好
+  // 是"两个头之间的那道影子"，比"三个球并排"更像多头兽。
+  const heads: { x: number; y: number; r: number; main: boolean }[] = [
+    { x: cx - h * 0.47, y: base - h * 0.68, r: h * 0.068, main: false },
+    { x: cx - h * 0.26, y: base - h * 0.86, r: h * 0.075, main: true },
+    { x: cx - h * 0.05, y: base - h * 0.74, r: h * 0.068, main: false },
+  ];
+  // 两头之间的暗缝（画在头**之前**，头再压上去 ⇒ 只有中间那一条露出来）
+  for (const sx of [-0.365, -0.155]) R(pb, cx + h * sx, base - h * 0.86, Math.max(2, h * 0.03), Math.max(3, h * 0.2), P2.wallDark);
+  for (const hd of heads) {
+    // 颈：短（首版 0.19h 的颈把整只狼拉成了长颈鹿）
+    tl(pb, hd.x + hd.r * 0.4, hd.y + hd.r * 0.8, hd.x + h * 0.09, bodyCy - h * 0.1, P2.wall, Math.max(2, Math.round(h * 0.07)));
+    // 头
+    pb.ellipse(hd.x, hd.y, hd.r, hd.r * 0.85, P2.wall);
+    // 吻（朝左）
+    pb.poly(
+      [
+        [hd.x - hd.r * 0.8, hd.y - hd.r * 0.25],
+        [hd.x - hd.r * 1.5, hd.y + hd.r * 0.05],
+        [hd.x - hd.r * 1.42, hd.y + hd.r * 0.55],
+        [hd.x - hd.r * 0.75, hd.y + hd.r * 0.5],
+      ],
+      P2.wallDark,
+    );
+    // 双耳：前耳亮、后耳暗（近远关系）
+    pb.poly([[hd.x - hd.r * 0.4, hd.y - hd.r * 0.65], [hd.x - hd.r * 0.5, hd.y - hd.r * 1.75], [hd.x - hd.r * 0.02, hd.y - hd.r * 0.7]], P2.wall);
+    pb.poly([[hd.x + hd.r * 0.15, hd.y - hd.r * 0.68], [hd.x + hd.r * 0.34, hd.y - hd.r * 1.5], [hd.x + hd.r * 0.5, hd.y - hd.r * 0.6]], P2.wallDark);
+    // 眼：主头 ink（profile 的单眼），远侧两头是暗点
+    if (hd.main) {
+      // 眼必须落在头的**上半部**：首版放在 −0.2r（几乎贴着头底），
+      // 头下方那道 1px 透明缝被描边灌成 ink0 段，`audit:expr` 的 [Contr]
+      // 把它当成"嘴线"（ΔE 15.5 vs 透明）⇒ 红。−0.55r 时眼下全是头/颈/身体。
+      if (face) profileEye(pb, Math.round(hd.x - hd.r * 0.55), Math.round(hd.y - hd.r * 0.55));
+    } else {
+      pb.set(Math.round(hd.x - hd.r * 0.6), Math.round(hd.y - hd.r * 0.12), P2.wallDark);
+    }
+  }
+  if (atk) {
+    // 出手：前爪抬起前扑
+    tl(pb, cx - halfLen * 0.62, bodyCy + h * 0.06, cx - h * 0.48, base - h * 0.28, P2.wall, Math.max(2, Math.round(h * 0.1)));
+    R(pb, cx - h * 0.52, base - h * 0.3, Math.max(2, h * 0.09), Math.max(1, h * 0.04), P2.ink);
+  }
+}
+/**
+ * 恶魔 · 巨物·飞行档 · **下掠翼** + 双角 + 尾。
+ *
+ * 翅膀朝向是全表第二层区分（§16.1）：天使上掠、恶魔与绿龙下掠、鹰收翼。
+ * 下掠翼的宽度必须控制在 `1.12h` 以内 —— h=1.50 归一化到 55px 时要乘 1.06，
+ * 再宽就顶破 64px 画布（`audit:b0` 断言 12）。
+ */
+function drawDevil(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean): void {
+  const topY = base - h;
+  const headR = h * 0.1;
+  const headCy = topY + h * 0.19;
+  const shoulder = headCy + headR * 1.35;
+  const hip = base - h * 0.34;
+  // ── 下掠双翼（先画，在身体后面）──
+  const wRootY = shoulder + h * 0.02;
+  const wW = h * 0.44;
+  for (const dir of [-1, 1]) {
+    const sx = cx + dir * h * 0.12;
+    pb.poly(
+      [
+        [sx, wRootY],
+        [sx + dir * wW * 0.55, wRootY + h * 0.06],
+        [sx + dir * wW * 1.0, base - h * 0.1], // 翼尖低垂（与天使的上掠镜像）
+        [sx + dir * wW * 0.76, base - h * 0.16],
+        [sx + dir * wW * 0.88, base - h * 0.28],
+        [sx + dir * wW * 0.52, base - h * 0.3],
+        [sx + dir * wW * 0.58, base - h * 0.42],
+        [sx + dir * wW * 0.18, base - h * 0.3],
+      ],
+      P2.redDark,
+    );
+    // 翼骨：一根亮红，避免整片暗红在 22px 下是一块抹布
+    tl(pb, sx, wRootY, sx + dir * wW * 0.9, base - h * 0.12, P2.red, 1);
+  }
+  // ── 角：从头顶向上外，角尖 = 剪影最高点 ──
+  for (const dir of [-1, 1]) {
+    pb.poly(
+      [
+        [cx + dir * headR * 0.82, headCy - headR * 0.5],
+        [cx + dir * headR * 1.55, topY],
+        [cx + dir * headR * 0.35, headCy - headR * 0.62],
+      ],
+      P2.bronze,
+    );
+  }
+  // ── 躯干 ──
+  pb.poly(
+    [
+      [cx - h * 0.16, shoulder],
+      [cx + h * 0.16, shoulder],
+      [cx + h * 0.12, hip],
+      [cx - h * 0.12, hip],
+    ],
+    P2.red,
+  );
+  // 胸腹暗面（红上压暗红：ΔL 够，且是窄条）
+  R(pb, cx - h * 0.12, shoulder + h * 0.02, Math.max(2, h * 0.1), hip - shoulder - h * 0.02, P2.redDark);
+  // 腿 + 蹄
+  const legW = Math.max(2, Math.round(h * 0.08));
+  R(pb, cx - h * 0.11, hip, legW, base - hip - h * 0.04, P2.red);
+  R(pb, cx + h * 0.03, hip, legW, base - hip - h * 0.04, P2.red);
+  R(pb, cx - h * 0.12, base - h * 0.04, legW + 2, h * 0.04, P2.ink);
+  R(pb, cx + h * 0.02, base - h * 0.04, legW + 2, h * 0.04, P2.ink);
+  // 头
+  pb.ellipse(cx, headCy, headR, headR * 0.92, P2.red);
+  // 脸：恶魔是人形正脸（有角但不是侧脸）⇒ h3
+  if (face) h3Face(pb, Math.round(cx) - 2, Math.round(headCy - headR * 0.15), 2, 3, 3);
+  // 尾：从臀部向右下，末端一个三角（"尾巴"是恶魔与天使的第三处不同）
+  tl(pb, cx + h * 0.1, hip, cx + h * 0.42, base - h * 0.16, P2.redDark, Math.max(2, Math.round(h * 0.035)));
+  pb.poly([[cx + h * 0.4, base - h * 0.2], [cx + h * 0.5, base - h * 0.08], [cx + h * 0.36, base - h * 0.1]], P2.red);
+  if (atk) {
+    // 出手：前爪横扫（右臂抬起），不改变高度档
+    tl(pb, cx + h * 0.14, shoulder + h * 0.08, cx + h * 0.42, shoulder + h * 0.02, P2.red, Math.max(2, Math.round(h * 0.06)));
+    R(pb, cx + h * 0.4, shoulder - h * 0.02, Math.max(3, h * 0.07), Math.max(3, h * 0.06), P2.redDark);
+  }
+}
+
+/* ==========================================================================
  * 5. 入口
  * ========================================================================== */
 
@@ -737,6 +1185,21 @@ export function drawBodyPlanUnit(
       break;
     case 'p1_angel':
       drawAngel(pb, cx, base, h, atk, face);
+      break;
+    case 'p2_matchman':
+      drawMatchman(pb, cx, base, h, atk, face);
+      break;
+    case 'p2_bronze':
+      drawBronze(pb, cx, base, h, atk, face);
+      break;
+    case 'p2_lavagiant':
+      drawLavaGiant(pb, cx, base, h, atk, face);
+      break;
+    case 'p2_threewolf':
+      drawThreeWolf(pb, cx, base, h, atk, face);
+      break;
+    case 'p2_devil':
+      drawDevil(pb, cx, base, h, atk, face);
       break;
     default:
       return false;

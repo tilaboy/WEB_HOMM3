@@ -33,6 +33,7 @@ const BATCHES = {
   B3: art.B3_FRAMES,
   // S3a 起 p1 走**体形档**（`unitBodyPlan.ts`），不再是 T1→T5 阶梯，帧单独成批。
   P1V3: art.P1V3_FRAMES,
+  P2V3: art.P2V3_FRAMES,
 };
 
 const OUT = process.argv[2] ?? '/tmp/unitsheet.png';

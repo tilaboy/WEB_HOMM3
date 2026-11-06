@@ -205,6 +205,12 @@ export interface B0FrameSpec {
     | 'p1_eagle'
     | 'p1_knight'
     | 'p1_angel'
+    // S3b：p2 按新体形档重画的五个兵
+    | 'p2_matchman'
+    | 'p2_bronze'
+    | 'p2_threewolf'
+    | 'p2_lavagiant'
+    | 'p2_devil'
     // TP-4② 中立野怪（D-58 §6.4.4：不迁名，id 即帧名中缀）
     | 'wolf'
     | 'boar'
@@ -219,9 +225,9 @@ export const B0_FRAMES: B0FrameSpec[] = [
   //    S3a 把 p1 五兵按体形档重画并撤掉别名 ⇒ 旧图没有任何调用方，留在 UNIT_FRAMES 里
   //    只会让 H1/H2/S1 的阶梯读到「同一个 tier 两份体量」。旧绘制函数（drawLampbearer 等）
   //    仍留在本文件，但**没有登记成帧**，用途只剩对照。
-  { name: 'u_p2_scavenger_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_scavenger', kind: 'map' },
-  { name: 'cu_p2_scavenger', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_scavenger', kind: 'idle' },
-  { name: 'cu_p2_scavenger_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_scavenger', kind: 'atk' },
+  //
+  //    S3b（2026-11-06）同理：本批原有的 `*_p2_scavenger_*` 3 帧已退役 ——
+  //    p2 T1 现在是 `p2_matchman`（火柴人），画在 `P2V3_FRAMES` 里。
 ];
 
 /**
@@ -233,10 +239,7 @@ export const B0_FRAMES: B0FrameSpec[] = [
  */
 export const B1_FRAMES: B0FrameSpec[] = [
   // ⚠️ 本批原有的 `*_p1_hornxbow_*` 3 帧已随 S3a 退役（同 B0 注释）。
-  // 赤焰 T2 投斧蛮子（p2 楔形母题：横持斧，斧刃带缺口）
-  { name: 'u_p2_axethrower_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_axethrower', kind: 'map' },
-  { name: 'cu_p2_axethrower', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_axethrower', kind: 'idle' },
-  { name: 'cu_p2_axethrower_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_axethrower', kind: 'atk' },
+  // ⚠️ `*_p2_axethrower_*` 3 帧已随 S3b 退役：p2 T2 现在是 `p2_bronze`（铜人）。
   // 翠林 T1 浇水矮人（p3 圆形母题：圆滚滚一坨，头顶一丛叶）
   { name: 'u_p3_dwarf_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_dwarf', kind: 'map' },
   { name: 'cu_p3_dwarf', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_dwarf', kind: 'idle' },
@@ -266,14 +269,8 @@ export const B1_FRAMES: B0FrameSpec[] = [
  */
 export const B2_FRAMES: B0FrameSpec[] = [
   // ⚠️ 本批原有的 `*_p1_oathpike_*` / `*_p1_templar_*` 6 帧已随 S3a 退役（同 B0 注释）。
-  // 赤焰 T3 暴走狼骑（p2 楔形母题：人+狼双头剪影，狼头前伸，人后仰）
-  { name: 'u_p2_wolfrider_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_wolfrider', kind: 'map' },
-  { name: 'cu_p2_wolfrider', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_wolfrider', kind: 'idle' },
-  { name: 'cu_p2_wolfrider_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_wolfrider', kind: 'atk' },
-  // 赤焰 T4 火油狂徒（p2 楔形母题：横抱火油桶，桶盖锯齿，身后拖火舌）
-  { name: 'u_p2_firebrand_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_firebrand', kind: 'map' },
-  { name: 'cu_p2_firebrand', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_firebrand', kind: 'idle' },
-  { name: 'cu_p2_firebrand_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_firebrand', kind: 'atk' },
+  // ⚠️ `*_p2_wolfrider_*` / `*_p2_firebrand_*` 6 帧已随 S3b 退役：
+  //    p2 T3 现在是 `p2_threewolf`（三头狼）、T4 是 `p2_lavagiant`（熔岩巨人）。
   // 翠林 T3 藤蔓卫士（p3 圆形母题：圆形藤甲覆盖躯干，无可见直角）
   { name: 'u_p3_vineguard_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_vineguard', kind: 'map' },
   { name: 'cu_p3_vineguard', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_vineguard', kind: 'idle' },
@@ -308,10 +305,9 @@ export const B2_FRAMES: B0FrameSpec[] = [
 export const B3_FRAMES: B0FrameSpec[] = [
   // ⚠️ 本批原有的 `*_p1_overangel_*` 3 帧已随 S3a 退役（同 B0 注释）；
   //    p1 T5 现在画在 `P1V3_FRAMES` 里，id 也从 p1_overangel 改成了 p1_angel。
-  // 赤焰 T5 熔岩巨魔（p2 楔形母题：最宽的楔形，双肩长刺，锤比身体宽）
-  { name: 'u_p2_lavatroll_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_lavatroll', kind: 'map' },
-  { name: 'cu_p2_lavatroll', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_lavatroll', kind: 'idle' },
-  { name: 'cu_p2_lavatroll_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_lavatroll', kind: 'atk' },
+  // ⚠️ `*_p2_lavatroll_*` 3 帧已随 S3b 退役：p2 T5 现在是 `p2_devil`（恶魔），
+  //    "熔岩"母题下放成 T4 的 `p2_lavagiant`。旧图与新阵容的 tier 对不上，
+  //    留着会让 b0audit 的 H1 在同一 tier 上读到两份体量。
   // 翠林 T5 独角兽园丁（p3 圆形母题：圆身 + 长角指天，鬃毛圆波浪）
   { name: 'u_p3_unicorn_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_unicorn', kind: 'map' },
   { name: 'cu_p3_unicorn', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_unicorn', kind: 'idle' },
@@ -383,9 +379,50 @@ export const P1V3_FRAMES: B0FrameSpec[] = [
   { name: 'cu_p1_angel_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_angel', kind: 'atk' },
 ];
 
-/** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 + B2 24 + B3 12 + B4 3 + P1V3 15 = 78），供 `tools/b0audit.mjs` 全扫描，
+/**
+ * P2V3 批（§15.2 / §16.1 · S3b，2026-11-06）：p2 赤焰五个兵**按新体形档重画**。
+ *
+ * 与 P1V3 同一条分叉（`BODY_PLAN` 决定体量，不读 `TIER_TARGET_PCT`）。
+ * 这一族的价值在于**骨架跨度**：火柴人（细棍）、铜人（构装）、三头狼（四足）、
+ * 熔岩巨人（高个厚肩）、恶魔（下掠翼）—— 五种骨架，没有两个能靠换帽子混过去。
+ *
+ * ⚠️ 翅膀朝向：恶魔与绿龙**下掠**、天使**上掠**、鹰**收翼**（§16.1）。
+ *    这是同族五档之外的第二层区分，S3c 的绿龙必须照这条画。
+ */
+export const P2V3_FRAMES: B0FrameSpec[] = [
+  // 矮档：火柴人（细棍四肢 + 火苗）
+  { name: 'u_p2_matchman_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_matchman', kind: 'map' },
+  { name: 'cu_p2_matchman', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_matchman', kind: 'idle' },
+  { name: 'cu_p2_matchman_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_matchman', kind: 'atk' },
+  // 中档：铜人（方头方肩 + 铆钉，glow 眼）
+  { name: 'u_p2_bronze_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_bronze', kind: 'map' },
+  { name: 'cu_p2_bronze', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_bronze', kind: 'idle' },
+  { name: 'cu_p2_bronze_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_bronze', kind: 'atk' },
+  // 宽体档：三头狼（四足长身 + 三头；宽度靠尾巴与前吻撑到 1.4h）
+  { name: 'u_p2_threewolf_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_threewolf', kind: 'map' },
+  { name: 'cu_p2_threewolf', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_threewolf', kind: 'idle' },
+  { name: 'cu_p2_threewolf_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_threewolf', kind: 'atk' },
+  // 高档：熔岩巨人（厚肩长臂，宽度必须 < 1.35h）
+  { name: 'u_p2_lavagiant_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_lavagiant', kind: 'map' },
+  { name: 'cu_p2_lavagiant', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_lavagiant', kind: 'idle' },
+  { name: 'cu_p2_lavagiant_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_lavagiant', kind: 'atk' },
+  // 巨物·飞行档：恶魔（**下掠**翼 + 双角 + 尾）
+  { name: 'u_p2_devil_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_devil', kind: 'map' },
+  { name: 'cu_p2_devil', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_devil', kind: 'idle' },
+  { name: 'cu_p2_devil_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_devil', kind: 'atk' },
+];
+
+/** unitArt.ts 内**全部**程序化兵种帧（B0 3 + B1 15 + B2 18 + B3 9 + B4 3 + P1V3 15 + P2V3 15 = 78），供 `tools/b0audit.mjs` 全扫描，
  *  `atlas.ts` / `combatAtlas.ts` 也遍历本数组烘焙（#24 已接好，无需改那两个文件）。 */
-export const UNIT_FRAMES: B0FrameSpec[] = [...B0_FRAMES, ...B1_FRAMES, ...B2_FRAMES, ...B3_FRAMES, ...B4_FRAMES, ...P1V3_FRAMES];
+export const UNIT_FRAMES: B0FrameSpec[] = [
+  ...B0_FRAMES,
+  ...B1_FRAMES,
+  ...B2_FRAMES,
+  ...B3_FRAMES,
+  ...B4_FRAMES,
+  ...P1V3_FRAMES,
+  ...P2V3_FRAMES,
+];
 
 /** 第 7 个资产：AI 生成的 `crestL_p1`（256×384），本轮不做，只在验收脚本里留人工项。 */
 export const B0_PENDING_AI_FRAME = 'crestL_p1';
@@ -409,15 +446,17 @@ export function b0FrameSpec(name: string): B0FrameSpec {
  * 与归一化机制共用同一份 tier→目标 的真值源。
  */
 export const TIER_OF: Record<string, number> = {
-  p2_scavenger: 1, p3_dwarf: 1, p4_stoneimp: 1,
-  p2_axethrower: 2, p3_thornarcher: 2, p4_fireapprentice: 2,
-  p2_wolfrider: 3, p3_vineguard: 3, p4_hopgolem: 3,
-  p2_firebrand: 4, p3_treant: 4, p4_librarian: 4,
-  p2_lavatroll: 5, p3_unicorn: 5, p4_colossus: 5,
+  p3_dwarf: 1, p4_stoneimp: 1,
+  p3_thornarcher: 2, p4_fireapprentice: 2,
+  p3_vineguard: 3, p4_hopgolem: 3,
+  p3_treant: 4, p4_librarian: 4,
+  p3_unicorn: 5, p4_colossus: 5,
   // S3a 新体形档的五个 p1 兵：tier 仍要登记（[C]/[M] 覆盖率、BattleRenderer 的
   // 高亮与排序、audit:power 都按 tier 读），但**体量不再由 tier 决定** ——
   // 见 normalizeTier 里 `BODY_PLAN` 那一段。
   p1_child: 1, p1_crossbow: 2, p1_eagle: 3, p1_knight: 4, p1_angel: 5,
+  // S3b：p2 五兵（同理，体量走 `BODY_PLAN`，tier 只给渲染/平衡侧的调用方读）
+  p2_matchman: 1, p2_bronze: 2, p2_threewolf: 3, p2_lavagiant: 4, p2_devil: 5,
   // TP-4② 中立野怪（tier 取自 units.ts：wolf T1 / boar T3 / ogre T4）。
   // 入表 ⇒ cu 帧过 normalizeTier 归一化 + b0audit 的 S1（落靶 ±3pt）/ H2（跨档倒挂）
   // 覆盖；H1（每族 T1→T4 阶梯）不适用——中立怪不是族，见 b0audit 的分组注释。

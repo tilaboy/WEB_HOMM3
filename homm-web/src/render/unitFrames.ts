@@ -27,13 +27,11 @@ export const FRAME_ALIAS: Readonly<Record<string, string>> = {
    *   · 两张表都是 1:1 双射，只是那两行对调 —— 改动时**必须一起看**。 */
   /* S3a（2026-11-06）：p1 五条已删除 —— `cu_p1_child` / `cu_p1_crossbow` / `cu_p1_eagle`
    * / `cu_p1_knight` / `cu_p1_angel` 现在是**真帧**（`unitBodyPlan.ts` 按新体形档画的），
-   * 不再借旧 id 的图。这张表剩下 p2–p4 的 14 条 + 1 条同 id。 */
-
-  p2_matchman: 'p2_scavenger',
-  p2_bronze: 'p2_axethrower',
-  p2_threewolf: 'p2_wolfrider',
-  p2_lavagiant: 'p2_firebrand',
-  p2_devil: 'p2_lavatroll',
+   * 不再借旧 id 的图。这张表剩下 p3–p4 的 9 条 + 2 条同 id。
+   *
+   * S3b（2026-11-06）：p2 五条也已删除 —— `cu_p2_matchman` / `cu_p2_bronze` /
+   * `cu_p2_threewolf` / `cu_p2_lavagiant` / `cu_p2_devil` 同样是真帧。
+   * 删到这一层只剩 p3/p4 时，"别名层可以退休"的那一天还没到（S3c 才清完）。 */
 
   p3_dwarf: 'p3_dwarf', // 同 id：留着这一行是为了「20 个兵一个不少」能数得出来
   p3_junglearcher: 'p3_thornarcher',
