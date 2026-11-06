@@ -1085,8 +1085,23 @@ function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boo
   const halfLen = h * 0.3;
   const legW = Math.max(2, Math.round(h * 0.08));
   // 尾：粗短、末端蓬松（首版是一根细天线 + 一个球）
-  tl(pb, cx + halfLen * 0.8, bodyCy + h * 0.02, cx + h * 0.8, base - h * 0.6, P2.wall, Math.max(3, Math.round(h * 0.09)));
-  pb.poly([[cx + h * 0.74, base - h * 0.68], [cx + h * 0.88, base - h * 0.58], [cx + h * 0.72, base - h * 0.5]], P2.wallDark);
+  //
+  // 兵牌上尾要**收细到 2px 并去掉末端那道叉**：43×37 里尾长 0.8h ≈ 16px，
+  // 比整簇头（约 12px）还长，而末端那个 wallDark 三角在 1× 下正好读成
+  // "张开的上下颚 + 一只暗眼" ⇒ 三头狼变成"两头狼，右边那颗头更大"。
+  // 兵牌的识别点是**左端三颗头**，右端只许当尾巴看，不许跟头抢。
+  tl(
+    pb,
+    cx + halfLen * 0.8,
+    bodyCy + h * 0.02,
+    cx + h * 0.8,
+    base - h * (card ? 0.64 : 0.6),
+    P2.wall,
+    card ? 2 : Math.max(3, Math.round(h * 0.09)),
+  );
+  if (!card) {
+    pb.poly([[cx + h * 0.74, base - h * 0.68], [cx + h * 0.88, base - h * 0.58], [cx + h * 0.72, base - h * 0.5]], P2.wallDark);
+  }
   // 四腿：短粗，前后各两条（远侧暗一档 ⇒ 读"四足"而不是"两块板"）
   for (const [dx, near] of [
     [-halfLen * 0.78, false],
@@ -1125,7 +1140,12 @@ function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boo
   // 只填 `wall`：这个位置同时贴着鬃毛（accent）和三张吻（wall 暗档），
   // `wallDark` 与 `redDark` 只差 ΔL 8.1（断言 8 要 12）、`redDark` 又与吻撞同一对数
   // ⇒ 只有"和吻同族"的 `wall` 能同时过两关。分离改由下面那道暗缝负责。
-  R(pb, cx - h * 0.64, base - h * 0.78, h * 0.68, Math.max(3, h * 0.2), P2.wall);
+  //
+  // ⚠️ 这块 **0.68h × 0.2h 的矩形是"三头读不出来"的一半原因**（2026-11-06 复核）：
+  // 它从 −0.78h 铺到 −0.58h，正好横穿三颗头之间，把上面所有 V 形缺口在**根部**堵死，
+  // 于是三颗头虽然在顶上各自凸出，底下却是一条连续带子 —— 8×/14× 实拍（cu 与兵牌
+  // 都一样）读成"一颗头 + 一排鬃毛尖"。兵牌改用下面的"细颈汇一点"，不再铺矩形。
+  if (!card) R(pb, cx - h * 0.64, base - h * 0.78, h * 0.68, Math.max(3, h * 0.2), P2.wall);
   // 三头 = **三张吻**，不是三根脖子。
   //
   // 前四轮的教训：把头拉开、垫高 ⇒ 脖子变长，8× 下读成"长颈鹿/触手"；
@@ -1142,21 +1162,40 @@ function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boo
   //   · 兵牌：  r = max(2.2, 0.12h)（19px 身高上 2.3px），间距 0.28h。
   // 为什么兵牌的头**相对更大**：43×37 上 2.7px 的圆头只剩 3px 直径，
   // 加上描边就是三个墨点；而"三个头"是这一档唯一的识别点，头必须撑到 4.5~5px。
-  const heads: { x: number; r: number; dir: number; main: boolean }[] = card
+  const heads: { x: number; y: number; r: number; dir: number; main: boolean }[] = card
     ? [
-        { x: cx - h * 0.62, r: Math.max(2.2, h * 0.12), dir: -0.45, main: false },
-        { x: cx - h * 0.34, r: Math.max(2.4, h * 0.13), dir: 0.02, main: true },
-        { x: cx - h * 0.06, r: Math.max(2.2, h * 0.12), dir: 0.45, main: false },
+        // 兵牌：**三颗头各自成一个圆**，靠 1px 透空缝分开（描边会把缝压成墨线），
+        // 吻各朝上左 / 正左 / 下左 ⇒ 左缘出现三个高度不同的尖（阶梯向右上）。
+        //
+        // 两版都失败的复盘（2026-11-06）：
+        //   · 第一版"同高、全朝左"：三颗头中心只隔 0.24h，而头径 0.28h ⇒ 互相重叠，
+        //     剪影是一块；三根吻也全挤在同一段左缘 ⇒ 读成"一颗头 + 两只耳"。
+        //   · 第二版"对角但头更小"：头与头仍相交，靠 wallDark 暗缝分——而 wallDark
+        //     与 wall 只差一档明度，1× 下是一条软褶，不是边界。
+        // 结论：这个尺寸上**只有透空缝**能把两颗头分开（描边灌墨 = 硬边界），
+        // 暗色缝不行；所以头必须小到 r≈0.11h（直径 4.4px）、间距拉到 0.24h+。
+        { x: cx - h * 0.6, y: -0.75, r: Math.max(2.1, h * 0.11), dir: 0.75, main: false },
+        { x: cx - h * 0.36, y: -0.85, r: Math.max(2.2, h * 0.115), dir: 0.0, main: true },
+        { x: cx - h * 0.12, y: -0.95, r: Math.max(2.1, h * 0.11), dir: -0.75, main: false },
       ]
     : [
-        { x: cx - h * 0.56, r: h * 0.078, dir: -0.55, main: false },
-        { x: cx - h * 0.34, r: h * 0.086, dir: 0.02, main: true },
-        { x: cx - h * 0.12, r: h * 0.075, dir: 0.58, main: false },
+        { x: cx - h * 0.56, y: -0.8, r: h * 0.078, dir: -0.55, main: false },
+        { x: cx - h * 0.34, y: -0.8, r: h * 0.086, dir: 0.02, main: true },
+        { x: cx - h * 0.12, y: -0.8, r: h * 0.075, dir: 0.58, main: false },
       ];
+  // 兵牌：三根 2px 短颈汇到肩丘。颈只负责"连住"，一长就成天鹅颈；
+  // 头必须**离开身体独立成圆**，否则头和躯干同色，头就不见了。
+  if (card) {
+    for (const hd of heads) {
+      tl(pb, hd.x + hd.r * 0.15, base + h * hd.y + hd.r * 0.5, cx - h * 0.2, bodyCy - h * 0.08, P2.wall, 2);
+    }
+  }
   for (const hd of heads) {
-    const hy = base - h * 0.8;
-    // 颈：短而粗（首版 0.19h 的细颈把整只狼拉成了长颈鹿）
-    tl(pb, hd.x + hd.r * 0.4, hy + hd.r * 0.8, hd.x + h * 0.05, bodyCy - h * 0.04, P2.wall, Math.max(3, Math.round(h * 0.085)));
+    const hy = base + h * hd.y;
+    // 颈：短而粗（首版 0.19h 的细颈把整只狼拉成了长颈鹿）；兵牌不画，见上。
+    if (!card) {
+      tl(pb, hd.x + hd.r * 0.4, hy + hd.r * 0.8, hd.x + h * 0.05, bodyCy - h * 0.04, P2.wall, Math.max(3, Math.round(h * 0.085)));
+    }
     // 头
     pb.ellipse(hd.x, hy, hd.r, hd.r * 0.85, P2.wall);
     // 吻：绕头心转 `dir`（三个吻尖是"三头"在 22px 下唯一还剩下的证据）
@@ -1168,24 +1207,37 @@ function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boo
       hy + (dx * sa + dy * ca) * hd.r,
     ];
     pb.poly([rot(-0.78, -0.3), rot(-1.58, 0.02), rot(-1.46, 0.6), rot(-0.72, 0.54)], P2.wallDark);
+    // 兵牌：吻尖点 1px 墨鼻。兵牌上吻是一根 4px 长的深色横条，
+    // 没有鼻尖就只是一道色块；三个墨鼻分别落在三个高度上，"三张嘴"才数得出来。
+    if (card) {
+      const tip = rot(-1.58, 0.02);
+      pb.set(Math.round(tip[0]), Math.round(tip[1]), P2.ink);
+    }
     // 双耳：前耳亮、后耳暗（近远关系）
     // 兵牌上耳收到 1.25r（原 1.75r）：2.3px 的头配 4px 的耳，读出来是"三只兔子"。
-    const earH = card ? 1.25 : 1.75;
+    // 兵牌：三颗头**各留一只耳**（耳是"这算一颗头"的第二信号，和墨鼻配对）。
+    // 只留前耳、不留后耳：两只耳 × 三颗头会在顶边连成一排尖齿。
+    const earH = card ? 1.1 : 1.75;
     pb.poly([[hd.x - hd.r * 0.4, hy - hd.r * 0.65], [hd.x - hd.r * 0.5, hy - hd.r * earH], [hd.x - hd.r * 0.02, hy - hd.r * 0.7]], P2.wall);
-    pb.poly([[hd.x + hd.r * 0.15, hy - hd.r * 0.68], [hd.x + hd.r * 0.34, hy - hd.r * (card ? 1.1 : 1.5)], [hd.x + hd.r * 0.5, hy - hd.r * 0.6]], P2.wallDark);
-    // 眼：主头 ink（profile 的单眼），远侧两头是暗点
-    if (hd.main) {
-      // 眼必须落在头的**上半部**：首版放在 −0.2r（几乎贴着头底），
-      // 头下方那道 1px 透明缝被描边灌成 ink0 段，`audit:expr` 的 [Contr]
-      // 把它当成"嘴线"（ΔE 15.5 vs 透明）⇒ 红。−0.55r 时眼下全是头/颈/身体。
-      // 兵牌上眼只留 1px（2×2 的眼块会占掉 4.6px 圆头的一半，读成墨镜）
-      if (face) {
-        if (card) pb.set(Math.round(hd.x - hd.r * 0.5), Math.round(hy - hd.r * 0.45), P2.ink);
-        else profileEye(pb, Math.round(hd.x - hd.r * 0.55), Math.round(hy - hd.r * 0.55));
-      }
-    } else if (!card) {
-      pb.set(Math.round(hd.x - hd.r * 0.6), Math.round(hy - hd.r * 0.12), P2.wallDark);
+    if (!card) {
+      pb.poly([[hd.x + hd.r * 0.15, hy - hd.r * 0.68], [hd.x + hd.r * 0.34, hy - hd.r * 1.5], [hd.x + hd.r * 0.5, hy - hd.r * 0.6]], P2.wallDark);
     }
+    // 眼：主头 ink（profile 的单眼），远侧两头是暗点
+    if (face) {
+      if (card) {
+        // 兵牌：**三颗头各给 1px 眼**。"这是张脸"最强的信号是眼，不是耳朵；
+        // 只画主头的眼，另外两颗就退化成"头顶的疙瘩"。
+        // 眼必须落在头的**浅色中央**：放在左半边会和吻/描边同色（都是 ink），
+        // 三个眼全部消失。中央 1px 是唯一还露着 wall 的位置。
+        pb.set(Math.round(hd.x), Math.round(hy - hd.r * 0.2), P2.ink);
+      } else if (hd.main) {
+        // 眼必须落在头的**上半部**：首版放在 −0.2r（几乎贴着头底），
+        // 头下方那道 1px 透明缝被描边灌成 ink0 段，`audit:expr` 的 [Contr]
+        // 把它当成"嘴线"（ΔE 15.5 vs 透明）⇒ 红。−0.55r 时眼下全是头/颈/身体。
+        profileEye(pb, Math.round(hd.x - hd.r * 0.55), Math.round(hy - hd.r * 0.55));
+      }
+    }
+    if (!hd.main && !card) pb.set(Math.round(hd.x - hd.r * 0.6), Math.round(hy - hd.r * 0.12), P2.wallDark);
   }
   // 头与头之间的**一道暗缝**（1~2px），画在头**之后**才不会被颈盖掉。
   // 只占头部那一段（y −0.90h ~ −0.65h），**不下到肩**：背脊鬃在 −0.59h，
@@ -1194,9 +1246,24 @@ function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boo
   // 兵牌上**不画**这道缝：三颗头之间本来就留了 1px 透明缝（间距 0.28h >
   // 头径），描边会把它灌成 ink0 —— 那道墨缝比自己填的棕缝更清楚，
   // 而且不会把三个头粘回一块。
+  //
+  // ⚠️ 上面那句在兵牌上**站不住**（2026-11-06 复核）：头径 2r = 0.26~0.28h，
+  // 间距 0.28h ⇒ 缝只有 **0~1px**，还是斜的，"间距 > 头径"不成立。
+  // 对角扇形这一版头更大（r 0.13~0.14h），相邻两颗必然重叠 1px 左右，
+  // 所以兵牌**反过来必须自己画缝**：在每个接缝中点落一道 1px wallDark，
+  // 从较高那颗头的顶一路压到肩丘，让"两颗头"有一条读得出来的分界。
   if (!card) {
     for (const sx of [-0.45, -0.23]) {
       R(pb, cx + h * sx, base - h * 0.9, Math.max(1, Math.round(h * 0.03)), Math.max(3, Math.round(h * 0.25)), P2.wallDark);
+    }
+  } else {
+    for (let i = 0; i + 1 < heads.length; i++) {
+      const a = heads[i];
+      const b = heads[i + 1];
+      const xm = Math.round((a.x + b.x) / 2);
+      const top = Math.round(Math.min(base + h * a.y - a.r, base + h * b.y - b.r));
+      const bot = Math.round(Math.max(base + h * a.y + a.r, base + h * b.y + b.r));
+      R(pb, xm, top, 1, Math.max(2, bot - top), P2.ink);
     }
   }
   if (atk) {
