@@ -25,11 +25,9 @@ export const FRAME_ALIAS: Readonly<Record<string, string>> = {
    *     新猿人借旧藤蔓卫士。若照抄存档表，会在中期最常见的 T3 树人身上
    *     贴一张藤蔓卫士，反而把最常看到的那个兵画错。
    *   · 两张表都是 1:1 双射，只是那两行对调 —— 改动时**必须一起看**。 */
-  p1_child: 'p1_lampbearer',
-  p1_crossbow: 'p1_hornxbow',
-  p1_eagle: 'p1_oathpike',
-  p1_knight: 'p1_templar',
-  p1_angel: 'p1_overangel',
+  /* S3a（2026-11-06）：p1 五条已删除 —— `cu_p1_child` / `cu_p1_crossbow` / `cu_p1_eagle`
+   * / `cu_p1_knight` / `cu_p1_angel` 现在是**真帧**（`unitBodyPlan.ts` 按新体形档画的），
+   * 不再借旧 id 的图。这张表剩下 p2–p4 的 14 条 + 1 条同 id。 */
 
   p2_matchman: 'p2_scavenger',
   p2_bronze: 'p2_axethrower',

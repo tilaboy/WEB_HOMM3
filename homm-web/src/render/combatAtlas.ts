@@ -14,27 +14,21 @@ import { UNIT_FRAMES, buildB0Frame } from './unitArt.js';
 import { shelfAdvance, packMetrics, warnOverflow, type PackItem, type PackMetrics, type ShelfCursor } from './atlas.js';
 
 /**
- * 退役 p1 别名帧（44×56，`drawCombatUnit` 手绘 switch）。
+ * 退役 p1 别名帧（44×56，`drawCombatUnit` 手绘 switch）—— **S3a 起为空**。
  *
- * ⚠️ 这份清单是**战斗精灵覆盖率的真值源之一**，与 `UNIT_FRAMES` 的 `cu_*` 合并成
- * 「运行时可能被 `BattleRenderer` 请求的全部 `cu_<id>`」。`tools/b0audit.mjs` 的
- * `[C]` 覆盖断言直接 import 它 —— **往这里加/删 id 前先跑那把尺**。
+ * 历史：2026-10-14 四族 T5 曾因帧表没有 `cu_*`、`BattleRenderer` 静默 `return`，
+ * 战斗中只剩队伍色底盘圈且无人察觉（`tools/b0audit.mjs` 的 `[C]` 就是为此加的）。
+ * 2026-11-06 S3a 把 p1 五个兵按新体形档重画成真帧（`unitBodyPlan.ts`）并删掉
+ * `FRAME_ALIAS` 的五条别名 ⇒ `cu_peasant` / `cu_archer` / `cu_pikeman` / `cu_knight`
+ * / `cu_angel` 再无消费者，整批退出烘焙（省下 5×44×56 的图集空间，正好给新增的
+ * 10 个 64×56 帧腾位置）。`drawCombatUnit()` 函数本身保留 —— 它只服务这条过渡路径，
+ * 当前清单为空 ⇒ 实际不会执行，删掉它反而会让「将来再出现过渡帧」时无路可走。
  *
- * 背景（2026-10-14）：四族 T5 曾因帧表没有 `cu_*`、`BattleRenderer` 静默 `return`，
- * 在战斗中只剩队伍色底盘圈且无人察觉。覆盖率必须由断言兜住，不能靠人记得。
- *
- * TP-4②（2026-10-20）：狼 / 野猪 / 食人魔已迁出 —— 改走 `unitArt.ts` 的 B4 批
- * 新卡通帧（`cu_wolf` / `cu_boar` / `cu_ogre`，64×56 与四族同规格）。本清单只剩
- * 5 个退役 p1 别名（peasant/archer/pikeman/knight/angel），待段 2 全量切 canonical
- * id 后整表删除（units.ts:173 的迁移计划）。
+ * 保留这个空数组而不是删掉导出：`b0audit` 的 `[C]` 按「`UNIT_FRAMES` ∪ 本清单」
+ * 算供给，删掉导出会让那条断言直接 import 失败。将来若再出现"图集里有、请求侧没有"
+ * 的过渡帧，往这里加仍然是正确做法。
  */
-export const LEGACY_COMBAT_SPRITE_IDS = [
-  'peasant',
-  'archer',
-  'pikeman',
-  'knight',
-  'angel',
-] as const;
+export const LEGACY_COMBAT_SPRITE_IDS: readonly string[] = [];
 
 export interface CFrame {
   x: number;
@@ -146,6 +140,9 @@ export class CombatAtlas {
       pb.outline('#1b1410', 0.9);
       put(`cu_${id}`, pb, -22, -48);
     }
+
+    // 说明：S3a 后 `LEGACY_COMBAT_SPRITE_IDS` 为空，上面这个循环当前不产生任何帧。
+    // 保留循环体是为了将来过渡期的帧仍走同一条路径（别改成 if / 特例）。
 
     // B0 + B1 批（asset-spec §9.1 / §9.2）：战斗兵种槽位 `cu_<faction>_<unit>` 与
     // 预烘焙攻击帧 `cu_<faction>_<unit>_atk`，64×56，锚点 ax=-32 / ay=-48

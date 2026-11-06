@@ -33,6 +33,7 @@ requireFile(DIST, 'render/unitArt.js');
 const { FRAME_ALIAS, unitFrameAlias, unitMapFrame, unitCombatFrame, warnMissingFrame, resetFrameWarnings, frameWarnCount } =
   await import(distUrl('render/unitFrames.js', DIST));
 const { UNIT_FRAMES } = await import(distUrl('render/unitArt.js', DIST));
+const { FACTION_UNITS } = await import(distUrl('core/data/units.js', DIST));
 
 const names = new Set(UNIT_FRAMES.map((f) => f.name));
 const has = (n) => names.has(n);
@@ -43,20 +44,29 @@ const PASS = (c, m) => {
   console.log(`[${c ? 'PASS' : 'FAIL'}] ${m}`);
 };
 
-/* ---------------- ① 表的形状 ---------------- */
+/* ---------------- ① 表的形状 ----------------
+ * ⚠️ 行数**不写死 20**（S3a 起 p1 五兵已重画、不再需要别名，表从 20 行降到 15 行）。
+ * 直接写 20 的后果是「重画完一批美术」反而让这条闸变红 —— 它量的是历史，不是契约。
+ * 真正的契约是下面两条：① 表里不许有幽灵 id；③④⑤ 20 个兵种 id **都能取到帧**
+ * （有别名走别名、没别名走直拼）。覆盖率把两套都算进来，所以撤别名不会让闸松。 */
+const ALL_IDS = [...new Set(Object.values(FACTION_UNITS).flat())];
 const NEW_IDS = Object.keys(FRAME_ALIAS);
 const BASES = Object.values(FRAME_ALIAS);
 const uniqBases = new Set(BASES);
-PASS(NEW_IDS.length === 20, `① 别名表 20 行（实读 ${NEW_IDS.length}）`);
-PASS(uniqBases.size === 20, `② 20 个旧帧各用一次、没有贴重（不同基名 ${uniqBases.size}）`);
+const ghost = NEW_IDS.filter((id) => !ALL_IDS.includes(id));
+PASS(
+  ghost.length === 0,
+  `① 别名表无幽灵行（${NEW_IDS.length} 行全部是真实兵种 id）${ghost.length ? `：多出 ${ghost.join(',')}` : ''}`,
+);
+PASS(uniqBases.size === BASES.length, `② 旧帧基名两两不同、没有贴重（${BASES.length} 行 → ${uniqBases.size} 个基名）`);
 
-/* ---------------- ② 每条都指向真实帧 ---------------- */
-const missMap = NEW_IDS.filter((id) => !has(unitMapFrame(id)));
-const missIdle = NEW_IDS.filter((id) => !has(unitCombatFrame(id)));
-const missAtk = NEW_IDS.filter((id) => !has(`${unitCombatFrame(id)}_atk`));
-PASS(missMap.length === 0, `③ 20 个新 id 的地图帧全部存在${missMap.length ? `（缺 ${missMap.join(',')}）` : ''}`);
-PASS(missIdle.length === 0, `④ 20 个新 id 的战斗 idle 帧全部存在${missIdle.length ? `（缺 ${missIdle.join(',')}）` : ''}`);
-PASS(missAtk.length === 0, `⑤ 20 个新 id 的战斗 atk 帧全部存在${missAtk.length ? `（缺 ${missAtk.join(',')}）` : ''}`);
+/* ---------------- ② 全部兵种 id 都指向真实帧 ---------------- */
+const missMap = ALL_IDS.filter((id) => !has(unitMapFrame(id)));
+const missIdle = ALL_IDS.filter((id) => !has(unitCombatFrame(id)));
+const missAtk = ALL_IDS.filter((id) => !has(`${unitCombatFrame(id)}_atk`));
+PASS(missMap.length === 0, `③ ${ALL_IDS.length} 个兵种 id 的地图帧全部存在${missMap.length ? `（缺 ${missMap.join(',')}）` : ''}`);
+PASS(missIdle.length === 0, `④ ${ALL_IDS.length} 个兵种 id 的战斗 idle 帧全部存在${missIdle.length ? `（缺 ${missIdle.join(',')}）` : ''}`);
+PASS(missAtk.length === 0, `⑤ ${ALL_IDS.length} 个兵种 id 的战斗 atk 帧全部存在${missAtk.length ? `（缺 ${missAtk.join(',')}）` : ''}`);
 
 /* ---------------- ③ 负向对照：直拼必须取不到 ---------------- */
 /** 恒等别名（`p3_dwarf` 同 id、`p3_treant` 新旧帧基名恰好相同）直拼当然取得到 ——
@@ -65,8 +75,8 @@ const RENAMED = NEW_IDS.filter((id) => FRAME_ALIAS[id] !== id);
 const IDENTICAL = NEW_IDS.filter((id) => FRAME_ALIAS[id] === id);
 const rawHits = RENAMED.filter((id) => has(`u_${id}_map`) || has(`cu_${id}`));
 PASS(
-  RENAMED.length + IDENTICAL.length === 20 && IDENTICAL.length === 2,
-  `⑥ 18 个真改名 + 2 个恒等（恒等 ${IDENTICAL.join('/')}）`,
+  RENAMED.length + IDENTICAL.length === NEW_IDS.length && IDENTICAL.length === 2,
+  `⑥ ${RENAMED.length} 个真改名 + ${IDENTICAL.length} 个恒等（恒等 ${IDENTICAL.join('/')}）`,
 );
 PASS(
   rawHits.length === 0,

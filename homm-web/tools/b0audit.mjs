@@ -40,6 +40,7 @@ const {
   B2_FRAMES,
   B3_FRAMES,
   B4_FRAMES,
+  P1V3_FRAMES,
   B0_PALETTE,
   B0_SHADE_STEPS,
   B0_PENDING_AI_FRAME,
@@ -47,9 +48,12 @@ const {
   TIER_OF,
   TIER_TARGET_PCT,
   TIER_TARGET_PCT_MAP,
+  frameTargetFinalHeight,
   setTierNormalizeEnabled,
   isTierNormalizeEnabled,
 } = await import(u('render/unitArt.js'));
+/** 体形档（§15.2）的兵种 id —— 它们不进 tier 阶梯，另有 `audit:bodyplan` 专管。 */
+const { hasBodyPlan } = await import(u('render/unitBodyPlan.js'));
 
 /**
  * 扫描范围**派生**自 unitArt.ts 的批数组，不写死。
@@ -63,6 +67,7 @@ const BATCHES = [
   ['B2', B2_FRAMES],
   ['B3', B3_FRAMES],
   ['B4', B4_FRAMES], // TP-4② 中立野怪（cu_wolf / cu_boar / cu_ogre）
+  ['P1v3', P1V3_FRAMES], // S3a 体形档重画的 p1 五兵（15 帧）
 ];
 const batchLabel = BATCHES.map(([n, a]) => `${n} ${a.length}`).join(' + ');
 const batchTotal = BATCHES.reduce((s, [, a]) => s + a.length, 0);
@@ -717,12 +722,15 @@ for (const f of frames) {
 }
 
 // 断言 5：两族 map 帧脚底基线
-const mapA = frames.find((f) => f.spec.name === 'u_p1_lampbearer_map');
+// ⚠️ 样本从 `u_p1_lampbearer_map` 换成 `u_p1_child_map`：前者随 S3a 退役（见 unitArt.ts
+//    里 B0_FRAMES 的注释）。**换样本不是放宽** —— 判据仍是「两族脚底行相等」，
+//    而 p1 的 map 帧现在全部由体形档重画，底锚逻辑与旧图不同，正是要盯的地方。
+const mapA = frames.find((f) => f.spec.name === 'u_p1_child_map');
 const mapB = frames.find((f) => f.spec.name === 'u_p2_scavenger_map');
 const bA = baselineOf(mapA.d);
 const bB = baselineOf(mapB.d);
 record(5, '基线对齐（两族 map 帧）', bA === bB && bA >= 0, {
-  'u_p1_lampbearer_map': bA,
+  'u_p1_child_map': bA,
   'u_p2_scavenger_map': bB,
   delta: Math.abs(bA - bB),
 });
@@ -745,9 +753,13 @@ record(5, '基线对齐（两族 map 帧）', bA === bB && bA >= 0, {
   if (wasOn) {
     for (const f of frames) {
       const b = raw.get(f.spec.name);
-      const t = TIER_OF[f.spec.unit];
-      const pct = f.spec.kind === 'map' ? TIER_TARGET_PCT_MAP[t] : TIER_TARGET_PCT[t];
-      const targetBody = Math.floor((pct / 100) * f.spec.h) - 1;
+      // ⚠️ 目标高必须走 `frameTargetFinalHeight`（唯一入口），**不要在这里再算一遍 tier 阶梯**：
+      //    体形档的兵（p1 五兵）目标高来自 §15.2，不是 TIER_TARGET_PCT。第一版这里自己
+      //    按 tier 复算，p1_knight(T4 → 88%) 被判 destW=70 > 64，报的是**尺子过期**，
+      //    而不是画错（铁律 22：探针里写死引擎常量 = 尺子会静默过期）。
+      const targetFinal = frameTargetFinalHeight(f.spec);
+      if (targetFinal === null) continue;
+      const targetBody = targetFinal - 1;
       const destW = Math.max(1, Math.round(b.w * (targetBody / b.h)));
       if (destW > f.spec.w) {
         bad.push(`${f.spec.name} destW=${destW} > 画布宽 ${f.spec.w}（两侧共溢出 ${destW - f.spec.w}px）`);
@@ -826,7 +838,14 @@ function checkTierMatrix({ label, kind, targets }) {
     return ((m ? +m[2] : 0) / canvasH) * 100;
   };
   const byFaction = new Map();
-  for (const f of list) {
+  // ⚠️ **两套 regime 分家**（S3a）：`BODY_PLAN` 收录的兵不服从 tier 阶梯 ——
+  //    p1 的鹰（T3）必须比骑士（T4）高，因为骑士占的是「宽体」档。把它们留在
+  //    H1/H2/S1 里只会让三条断言互相判红，而且那种红**说明不了画错**。
+  //    它们的体量由 `npm run audit:bodyplan` 的 R1/R2/R5 判，那条门量的是成品帧。
+  //    「不重不漏」的覆盖断言在 audit:bodyplan 的 [0]（那边有 BODY_PLAN 与族表两侧）。
+  const ladder = list.filter((f) => !hasBodyPlan(f.spec.unit));
+  const bodyCount = list.length - ladder.length;
+  for (const f of ladder) {
     const fac = f.spec.unit.slice(0, 2);
     // H1 的分组只认四族前缀（p1–p4）：圣经 §5.6.1 的阶梯是**族内** T1→T4 属性。
     // TP-4② 起 TIER_OF 含中立怪（wolf T1 / boar T3 / ogre T4）——它们不是族、
@@ -852,12 +871,12 @@ function checkTierMatrix({ label, kind, targets }) {
       if (!ok) allOk = false;
       detail[`${fac} T1→T4`] = vals.map((v) => (isFinite(v) ? v.toFixed(1) : '—')).join(' / ');
     }
-    record(9, `H1 体量阶梯严格递增(步长≥6pt) · ${label}`, allOk && nonEmpty, { 画布: label, 帧数: list.length, ...detail, name: `H1·${label}` });
+    record(9, `H1 体量阶梯严格递增(步长≥6pt) · ${label}`, allOk && nonEmpty, { 画布: label, 帧数: ladder.length, 体形档另门: bodyCount, ...detail, name: `H1·${label}` });
   }
 
   // H2：跨族 tier 倒挂对 = 0（tier 低却比 tier 高的大，即矩阵纵轴塌掉）
   {
-    const l = list.map((f) => ({ unit: f.spec.unit, tier: TIER_OF[f.spec.unit], v: volOf(f) }));
+    const l = ladder.map((f) => ({ unit: f.spec.unit, tier: TIER_OF[f.spec.unit], v: volOf(f) }));
     let inv = 0;
     const samples = [];
     for (let i = 0; i < l.length; i++) {
@@ -871,14 +890,14 @@ function checkTierMatrix({ label, kind, targets }) {
         }
       }
     }
-    record(10, `H2 跨族 tier 倒挂对 = 0 · ${label}`, inv === 0 && nonEmpty, { 画布: label, 帧数: list.length, 倒挂对: inv, 示例: samples.join('  '), name: `H2·${label}` });
+    record(10, `H2 跨族 tier 倒挂对 = 0 · ${label}`, inv === 0 && nonEmpty, { 画布: label, 帧数: ladder.length, 体形档另门: bodyCount, 倒挂对: inv, 示例: samples.join('  '), name: `H2·${label}` });
   }
 
   // S1：每族每 tier 落在该画布目标 ±3pt（软带；值见常量 S1_TOL，裁定见 silhouette-audit §7①）
   {
     let bad = 0;
     const detail = {};
-    for (const f of list) {
+    for (const f of ladder) {
       const t = TIER_OF[f.spec.unit];
       const v = volOf(f);
       const off = v - targets[t];
@@ -887,7 +906,7 @@ function checkTierMatrix({ label, kind, targets }) {
         detail[f.spec.unit] = `${v.toFixed(1)}%(靶${targets[t].toFixed(1)},偏${off >= 0 ? '+' : ''}${off.toFixed(1)})`;
       }
     }
-    record(11, `S1 每族每 tier 落在目标 ±${S1_TOL}pt(非规格容差) · ${label}`, bad === 0 && nonEmpty, { 画布: label, 帧数: list.length, 越界帧数: bad, ...detail, name: `S1·${label}` });
+    record(11, `S1 每族每 tier 落在目标 ±${S1_TOL}pt(非规格容差) · ${label}`, bad === 0 && nonEmpty, { 画布: label, 帧数: ladder.length, 体形档另门: bodyCount, 越界帧数: bad, ...detail, name: `S1·${label}` });
   }
 }
 

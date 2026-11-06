@@ -1,0 +1,514 @@
+#!/usr/bin/env node
+/**
+ * 兵种**体形档**验收门（§15.2 R1/R2/R5 · S3a）
+ * ==========================================================================
+ * 用法：
+ *   npm run build && npm run audit:bodyplan
+ *   node tools/bodyplanaudit.mjs --png <dir>   额外导出 ×8 放大 PNG（肉眼复核用）
+ *   node tools/bodyplanaudit.mjs --dist=<dir>  指向隔离构建
+ *
+ * 为什么要有这道门（而不是继续用 `b0audit` 的 H1/H2/S1）：
+ *   那三条量的是 asset-spec §5.6.2 的 **T1→T5 体量阶梯**（62/70/78/88/100%），
+ *   它假设「T3 一定比 T4 高」。§15.2 的新体形档**明确推翻**了这条：
+ *   p1 的 T3 鹰（h=1.22）必须比 T4 骑士（h=1.04）高，因为骑士占的是**宽体**
+ *   档（宽度换高度）。两套尺子量同一批帧只会互相判红，所以分 regime：
+ *     · `BODY_PLAN` 收录的兵 ⇒ 本门（R1/R2/R5）；
+ *     · 未收录的兵 ⇒ `b0audit` 的 H1/H2/S1 原样不动。
+ *   `b0audit` 有一条覆盖断言，保证两套 regime **恰好**覆盖全部兵种、不重不漏。
+ *
+ * 判什么：
+ *   [0] 覆盖 —— 已重画的族 × 5 个兵，`cu_*` / `cu_*_atk` / `u_*_map` 三帧都建得出、
+ *               非空、尺寸符合槽位；且 `FRAME_ALIAS` 里**没有**该族残留别名
+ *               （别名还在就说明「看的还是旧图」，本轮等于没做）。
+ *   [1] R1 五档独占 —— 同族 5 个兵（成品 cu 帧的剪影）落在 5 个**不同**档，
+ *               且与 `BODY_PLAN` 声明的档一致。量的是成品帧，不是声明。
+ *   [2] R2 两两 ≥18% —— 同族 10 对，外接框**至少一维**相对差 ≥18%。
+ *   [3] R5 兵牌 —— 43×37 立绘的宽高比相对源帧误差 ≤15%（证明是等比缩，不是拉伸填满）。
+ *   [4] 22×30 可辨 —— 盲测尺寸下两两剪影 XOR ≥15%（相对较小的一方面积）。
+ *               这是「5 秒指认」里**能机检的那一半**；五人盲测仍是人工项。
+ *   [5] 鹰不展翼 —— 鹰必须是高档（h ≥1.18）且 w/h <1.35（不许落进宽体/巨物）。
+ *               §16.1：平展双翼会让鹰与天使同档，§8.4 的档位独占当场红。
+ *
+ * 负向对照（判据必须有分辨力，否则绿是假的）：
+ *   N1 `classify()` 喂 5 组合成比例 ⇒ 必须原样读回 5 个档；喂档与档之间的空隙 ⇒ 必须 null。
+ *   N2 [4] 的度量：同一个兵自比必须 0%，且换一个兵必须 > 门槛（否则是尺子瞎了）。
+ */
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { deflateSync } from 'node:zlib';
+import { distDir, distUrl, printHeader, requireFile } from './_dist.mjs';
+
+const DIST = distDir();
+printHeader(DIST, 'gate=bodyplanaudit');
+const u = (rel) => distUrl(rel, DIST);
+requireFile(DIST, 'render/unitBodyPlan.js');
+requireFile(DIST, 'render/unitArt.js');
+
+const {
+  BODY_PLAN,
+  BODY_PLAN_FAMILIES,
+  BODY_CLASS_LABEL,
+  H_REF_HUGE,
+  classify,
+} = await import(u('render/unitBodyPlan.js'));
+const { UNIT_FRAMES, buildB0Frame, buildPortraitFrame } = await import(u('render/unitArt.js'));
+const { PixBuf } = await import(u('render/pixel.js'));
+const { FRAME_ALIAS, unitCombatFrame, unitMapFrame } = await import(u('render/unitFrames.js'));
+const { FACTION_UNITS } = await import(u('core/data/units.js'));
+/** [r,g,b,a] → `#rrggbb`（拼盲测条时把每格贴到一张大图上用）。 */
+const rgbHexOf = (p) => '#' + [p[0], p[1], p[2]].map((v) => v.toString(16).padStart(2, '0')).join('');
+
+/* PNG 编码器的缓存表：`--png` 段在本文件**前面**执行，而编码函数声明在末尾
+ * （函数声明会提升，`let` 不会）⇒ 声明必须放在使用点之前，否则 TDZ。 */
+let CRC_TABLE = null;
+
+const argv = process.argv.slice(2);
+const pngIdx = argv.indexOf('--png');
+const pngDir = pngIdx >= 0 ? argv[pngIdx + 1] : null;
+
+/* ---------------------------------------------------------------- 账本 */
+
+const results = [];
+let bad = 0;
+function record(id, title, pass, detail) {
+  results.push({ id, title, pass, detail });
+  if (!pass) bad++;
+  console.log(`${pass ? '[PASS]' : '[FAIL]'} [${id}] ${title} — ${detail}`);
+}
+
+/* ---------------------------------------------------------------- 工具 */
+
+/** 剪影外接框（alpha > 8）。 */
+function bbox(pb) {
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (let y = 0; y < pb.h; y++) {
+    for (let x = 0; x < pb.w; x++) {
+      if (pb.px(x, y)[3] <= 8) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  return x1 < x0 ? null : { w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+/** 剪影掩码（按 [4] 的口径：只判「有没有墨」，不判颜色）。 */
+function mask(pb) {
+  const m = new Uint8Array(pb.w * pb.h);
+  let ink = 0;
+  for (let y = 0; y < pb.h; y++) {
+    for (let x = 0; x < pb.w; x++) {
+      if (pb.px(x, y)[3] <= 8) continue;
+      m[y * pb.w + x] = 1;
+      ink++;
+    }
+  }
+  return { m, w: pb.w, h: pb.h, ink };
+}
+
+/** 两张同尺寸掩码的「不相交比例」= XOR ÷ 较小一方面积。 */
+function maskDiff(a, b) {
+  if (a.w !== b.w || a.h !== b.h) return 1;
+  let xor = 0;
+  for (let i = 0; i < a.m.length; i++) if (a.m[i] !== b.m[i]) xor++;
+  return xor / Math.max(1, Math.min(a.ink, b.ink));
+}
+
+/* ---------------------------------------------------------------- 装配 */
+
+/** 已重画的族 → 该族 5 个兵（顺序 = tier 1..5，从 FACTION_UNITS 取，不许手写）。 */
+const fams = [...BODY_PLAN_FAMILIES].map((fam) => ({ fam, ids: [...new Set(FACTION_UNITS[fam] ?? [])] }));
+// `canFly` 是单位数据里的字段，不是剪影的属性 —— 从 units 表读（见 classify 的注释）。
+const { UNITS } = await import(u('core/data/units.js'));
+const canFlyOf = (id) => !!(UNITS?.[id]?.canFly ?? UNITS?.[id]?.type?.canFly);
+
+/* ---------------------------------------------------------------- [0] 覆盖 */
+
+{
+  const problems = [];
+  let n = 0;
+  const specs = new Map(UNIT_FRAMES.map((s) => [s.name, s]));
+  for (const { fam, ids } of fams) {
+    if (ids.length !== 5) problems.push(`${fam} 只有 ${ids.length} 个兵（应 5）`);
+    for (const id of ids) {
+      const plan = BODY_PLAN[id];
+      if (!plan) {
+        problems.push(`${id} 没有体形档声明`);
+        continue;
+      }
+      if (FRAME_ALIAS[id]) problems.push(`${id} 还挂着别名 → ${FRAME_ALIAS[id]}（看的是旧图）`);
+      // 三张**注册帧**：cu 待机 / cu 攻击 / map。兵牌 `pt_*` 不是注册帧 ——
+      // 它是烘焙期从 `cu_*` 缩出来的派生帧（`buildPortraitFrame`），所以不能拿
+      // UNIT_FRAMES 查它，只能现建一张、查尺寸与非空。
+      const combat = unitCombatFrame(id);
+      for (const name of [combat, `${combat}_atk`, unitMapFrame(id)]) {
+        const spec = specs.get(name);
+        if (!spec) {
+          problems.push(`${fam}/${id} 缺帧 ${name}`);
+          continue;
+        }
+        const pb = buildB0Frame(name);
+        if (!bbox(pb)) problems.push(`${fam}/${id} 帧 ${name} 是空的`);
+        else n++;
+      }
+      const pt = buildPortraitFrame(combat);
+      if (pt.w !== 43 || pt.h !== 37) problems.push(`${fam}/${id} 兵牌尺寸 ${pt.w}×${pt.h} ≠ 43×37`);
+      if (!bbox(pt)) problems.push(`${fam}/${id} 兵牌是空的`);
+    }
+  }
+  record(
+    '0',
+    '覆盖：已重画族的 5 兵 × 3 注册帧 + 兵牌都建得出、非空、别名已撤',
+    problems.length === 0 && n > 0,
+    problems.length ? problems.join(' · ') : `${fams.length} 族 · ${n} 帧有墨 · 兵牌 43×37`,
+  );
+}
+
+/* ------------------------------------------------ [0b] 两套 regime 不重不漏 */
+
+{
+  // 这是 `b0audit` 的 H1/H2/S1 把 `BODY_PLAN` 兵种排除之后的**另一半**：
+  // 那道门只管「除了体形档以外的兵还守不守 tier 阶梯」，它无法判断
+  // 「有没有哪个兵被两边同时漏掉」。覆盖关系在这里闭合：
+  //   · `BODY_PLAN` 里每个 id 都必须属于某族的兵种表（不能是幽灵 id）；
+  //   · 它所在的那一族必须登记在 `BODY_PLAN_FAMILIES`；
+  //   · 该族**全部 5 个兵**都必须在 `BODY_PLAN` 里（不许半族切换）；
+  //   · 反过来，未登记的族一个兵也不许混进 `BODY_PLAN`。
+  const problems = [];
+  const famOf = new Map();
+  for (const [fam, ids] of Object.entries(FACTION_UNITS)) {
+    for (const id of ids) famOf.set(id, fam);
+  }
+  for (const id of Object.keys(BODY_PLAN)) {
+    const fam = famOf.get(id);
+    if (!fam) {
+      problems.push(`${id} 不在任何族的兵种表里`);
+      continue;
+    }
+    if (!BODY_PLAN_FAMILIES.has(fam)) problems.push(`${id} 属于未登记的族 ${fam}`);
+  }
+  for (const fam of BODY_PLAN_FAMILIES) {
+    const ids = [...new Set(FACTION_UNITS[fam] ?? [])];
+    const missing = ids.filter((id) => !BODY_PLAN[id]);
+    if (missing.length) problems.push(`${fam} 只切换了 ${ids.length - missing.length}/${ids.length}：缺 ${missing.join(', ')}`);
+  }
+  for (const [fam, ids] of Object.entries(FACTION_UNITS)) {
+    if (BODY_PLAN_FAMILIES.has(fam)) continue;
+    const stray = [...new Set(ids)].filter((id) => BODY_PLAN[id]);
+    if (stray.length) problems.push(`${fam} 未登记却混进了体形档：${stray.join(', ')}`);
+  }
+  record(
+    '0b',
+    '两套体量 regime 不重不漏（体形档 ⊆ 已登记族，且族内 5/5 全切）',
+    problems.length === 0,
+    problems.length ? problems.join(' · ') : `体形档 ${Object.keys(BODY_PLAN).length} 个兵 · 族 ${[...BODY_PLAN_FAMILIES].join(',')}`,
+  );
+}
+
+/* ---------------------------------------------------------------- [1] R1 */
+
+const measured = new Map(); // id → { w, h, cls, id }
+{
+  const problems = [];
+  const tables = [];
+  for (const { fam, ids } of fams) {
+    const rows = [];
+    const seen = new Map();
+    for (const id of ids) {
+      const pb = buildB0Frame(unitCombatFrame(id));
+      const bb = bbox(pb);
+      if (!bb) {
+        problems.push(`${id} 空帧`);
+        continue;
+      }
+      const href = pb.h / H_REF_HUGE;
+      const wPerH = +(bb.w / href).toFixed(2);
+      const hPerH = +(bb.h / href).toFixed(2);
+      const cls = classify(wPerH, hPerH, canFlyOf(id));
+      const want = BODY_PLAN[id].cls;
+      measured.set(id, { w: bb.w, h: bb.h, wPerH, hPerH, cls });
+      if (cls === null) {
+        problems.push(`${id} 落进档位空隙（w/h=${wPerH}, h=${hPerH}）`);
+        continue;
+      }
+      if (cls !== want) problems.push(`${id} 实测 ${BODY_CLASS_LABEL[cls]} ≠ 声明 ${BODY_CLASS_LABEL[want]}`);
+      if (seen.has(cls)) problems.push(`${id} 与 ${seen.get(cls)} 同档（${BODY_CLASS_LABEL[cls]}）`);
+      seen.set(cls, id);
+      rows.push(`${id.replace(`${fam}_`, '')} ${bb.w}×${bb.h} w/h=${wPerH} h=${hPerH} → ${BODY_CLASS_LABEL[cls]}`);
+    }
+    if (seen.size !== ids.length) problems.push(`${fam} 只占了 ${seen.size}/5 档`);
+    tables.push(`${fam}: ${rows.join(' · ')}`);
+  }
+  record(
+    '1',
+    'R1 同族五兵落在五个不同体形档（量成品帧，不读声明）',
+    problems.length === 0 && measured.size > 0,
+    problems.length ? problems.join(' · ') : tables.join('\n      '),
+  );
+}
+
+/* ---------------------------------------------------------------- [2] R2 */
+
+{
+  const problems = [];
+  const details = [];
+  for (const { fam, ids } of fams) {
+    let worst = { d: 2, a: '', b: '' };
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = measured.get(ids[i]);
+        const b = measured.get(ids[j]);
+        if (!a || !b) continue;
+        const dw = Math.abs(a.wPerH - b.wPerH) / Math.max(a.wPerH, b.wPerH);
+        const dh = Math.abs(a.hPerH - b.hPerH) / Math.max(a.hPerH, b.hPerH);
+        const d = Math.max(dw, dh);
+        if (d < worst.d) worst = { d, a: ids[i], b: ids[j] };
+        if (d < 0.18) problems.push(`${ids[i]}/${ids[j]} 仅差 ${(d * 100).toFixed(0)}%`);
+      }
+    }
+    details.push(`${fam} 最差一对 ${worst.a?.replace(`${fam}_`, '')}/${worst.b?.replace(`${fam}_`, '')} = ${(worst.d * 100).toFixed(0)}%`);
+  }
+  record('2', 'R2 同族两两外接框至少一维差 ≥18%', problems.length === 0 && details.length > 0, details.join(' · '));
+}
+
+/* ---------------------------------------------------------------- [3] R5 立绘 */
+
+{
+  const problems = [];
+  const details = [];
+  for (const { fam, ids } of fams) {
+    for (const id of ids) {
+      const src = bbox(buildB0Frame(unitCombatFrame(id), false));
+      const pt = bbox(buildPortraitFrame(unitCombatFrame(id)));
+      if (!src || !pt) {
+        problems.push(`${id} 立绘/源帧为空`);
+        continue;
+      }
+      const want = src.w / src.h;
+      const got = pt.w / pt.h;
+      const err = Math.abs(got - want) / want;
+      if (err > 0.15) problems.push(`${id} 宽高比 ${want.toFixed(2)}→${got.toFixed(2)}（偏 ${(err * 100).toFixed(0)}%）`);
+      details.push(`${id.replace(`${fam}_`, '')} ${(err * 100).toFixed(0)}%`);
+    }
+  }
+  record('3', 'R5 43×37 兵牌宽高比误差 ≤15%（等比缩，非拉伸）', problems.length === 0 && details.length > 0, problems.length ? problems.join(' · ') : details.join(' / '));
+}
+
+/* ---------------------------------------------------------------- [4] 22×30 可辨 */
+
+const small = new Map();
+{
+  for (const { ids } of fams) {
+    for (const id of ids) small.set(id, mask(buildPortraitFrame(unitCombatFrame(id), 22, 30)));
+  }
+  const problems = [];
+  const details = [];
+  let minPair = { d: 2, a: '', b: '' };
+  for (const { fam, ids } of fams) {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const d = maskDiff(small.get(ids[i]), small.get(ids[j]));
+        if (d < minPair.d) minPair = { d, a: ids[i], b: ids[j] };
+        if (d < 0.15) problems.push(`${ids[i]}/${ids[j]} 只差 ${(d * 100).toFixed(0)}%`);
+      }
+    }
+    details.push(`${fam} 最接近一对 ${(minPair.d * 100).toFixed(0)}%`);
+  }
+  record(
+    '4',
+    '22×30 盲测尺寸下同族两两剪影差 ≥15%',
+    problems.length === 0 && small.size > 0,
+    problems.length ? problems.join(' · ') : `${details.join(' · ')}（门槛 15%）`,
+  );
+}
+
+/* ---------------------------------------------------------------- [5] 鹰不展翼 */
+
+{
+  const problems = [];
+  const details = [];
+  for (const { ids } of fams) {
+    const eagle = ids.find((id) => /eagle/.test(id));
+    if (!eagle) continue;
+    const m = measured.get(eagle);
+    if (!m) {
+      problems.push(`${eagle} 无读数`);
+      continue;
+    }
+    const wh = m.wPerH / m.hPerH;
+    if (m.cls !== 'tall') problems.push(`${eagle} 档位=${m.cls}（应 tall）`);
+    if (wh >= 1.35) problems.push(`${eagle} w/h=${wh.toFixed(2)} ≥1.35（展翼了）`);
+    details.push(`${eagle} ${m.wPerH}×${m.hPerH} → w/h=${wh.toFixed(2)}，档=${BODY_CLASS_LABEL[m.cls]}`);
+  }
+  record('5', '鹰不展翼：必须是高档且 w/h <1.35（§16.1 的硬约束）', problems.length === 0 && details.length > 0, problems.length ? problems.join(' · ') : details.join(' · '));
+}
+
+/* ---------------------------------------------------------------- 负向对照 */
+
+{
+  // N1：阶判据本身有分辨力 —— 五组合成比例必须原样读回五个档
+  const cases = [
+    [[0.4, 0.6], 'short'],
+    [[0.7, 0.9], 'mid'],
+    [[0.6, 1.2], 'tall'],
+    [[1.4, 1.05], 'wide'],
+    [[1.0, 1.5], 'huge'],
+  ];
+  const got = cases.map(([[w, h], want]) => {
+    const c = classify(w, h, false);
+    return c === want ? want : `✗${c}(want ${want})`;
+  });
+  const gap = classify(0.9, 1.1, false); // 1.00~1.18 的空隙 + 不够宽 ⇒ 必须 null
+  record(
+    'N1',
+    '档位判据有分辨力：5 组合成比例读回 5 档、空隙读回 null',
+    got.every((g) => !String(g).startsWith('✗')) && gap === null,
+    `${got.join(' / ')}；空隙 → ${gap === null ? 'null' : gap}`,
+  );
+}
+
+{
+  // N2：[4] 的度量必须能分开「同一个兵」与「不同兵」
+  const some = [...small.keys()];
+  const same = maskDiff(small.get(some[0]), small.get(some[0]));
+  let cross = 0;
+  for (const [a, b] of some.map((id) => [id, some[(some.indexOf(id) + 1) % some.length]])) {
+    if (a !== b) cross = Math.max(cross, maskDiff(small.get(a), small.get(b)));
+  }
+  record(
+    'N2',
+    '[4] 的度量有分辨力：自比 0%，跨兵 >15%',
+    same === 0 && cross > 0.15,
+    `自比 ${(same * 100).toFixed(1)}% · 跨兵最大 ${(cross * 100).toFixed(0)}%`,
+  );
+}
+
+/* ---------------------------------------------------------------- PNG */
+
+if (pngDir) {
+  mkdirSync(pngDir, { recursive: true });
+  let n = 0;
+  for (const { ids } of fams) {
+    for (const id of ids) {
+      const pb = buildB0Frame(unitCombatFrame(id));
+      writeFileSync(join(pngDir, `cu_${id}.png`), encodePng(upscale(pb, 8)));
+      const pt = buildPortraitFrame(unitCombatFrame(id));
+      writeFileSync(join(pngDir, `pt_${id}.png`), encodePng(upscale(pt, 8)));
+      // 22×30 = 兵牌上真正的显示尺寸（§7.1 盲测口径）。单独导出 ×8，
+      // 因为「22px 下指认哪张更强」只能在**这个尺寸**上做 —— 拿 cu 或 43×37 做盲测是另一种题。
+      const s22 = buildPortraitFrame(unitCombatFrame(id), 22, 30);
+      writeFileSync(join(pngDir, `s22_${id}.png`), encodePng(upscale(s22, 8)));
+      n += 3;
+    }
+  }
+  // 盲测条：五张 22×30 并排、**不带标签**（带标签的就不是盲测了），间距 = 一格的 1/2。
+  // 交给 5 个人各看 5 秒，问「哪张更强」，答对 ≥9/10 才算过（S3a 人工项）。
+  const ids = fams.flatMap((f) => f.ids);
+  if (ids.length) {
+    const Z = 8;
+    const GAPX = 12;
+    const cells = ids.map((id) => upscale(buildPortraitFrame(unitCombatFrame(id), 22, 30), Z));
+    const W = cells.reduce((s, c) => s + c.w, 0) + GAPX * (cells.length - 1);
+    const H = Math.max(...cells.map((c) => c.h));
+    const data = new Uint8ClampedArray(W * H * 4);
+    let ox = 0;
+    for (const c of cells) {
+      for (let y = 0; y < c.h; y++) {
+        for (let x = 0; x < c.w; x++) {
+          const s = (y * c.w + x) * 4;
+          const o = (y * W + ox + x) * 4;
+          data[o] = c.data[s];
+          data[o + 1] = c.data[s + 1];
+          data[o + 2] = c.data[s + 2];
+          data[o + 3] = c.data[s + 3];
+        }
+      }
+      ox += c.w + GAPX;
+    }
+    writeFileSync(join(pngDir, 'blind-22x30.png'), encodePng({ w: W, h: H, data }));
+    n += 1;
+  }
+  console.log(`\nPNG 已导出 → ${pngDir}（${n} 张：cu ×8 / pt ×8 / 22×30 ×8 / 盲测条）`);
+}
+
+/* ---------------------------------------------------------------- 汇总 */
+
+console.log('\n' + '='.repeat(72));
+console.log(`汇总：${results.map((r) => `[${r.id}] ${r.pass ? 'PASS' : 'FAIL'}`).join('  ')}`);
+console.log(bad === 0 ? '结论：S3a 体形档自动部分全过' : `结论：${bad} 项不合格 —— 不要提交`);
+console.log('人工项：五人盲测（22×30 下 5 秒指认「哪张更强」≥9/10）；剪影外缘特征凸起 ≥4px 肉眼核');
+console.log('='.repeat(72));
+process.exit(bad === 0 ? 0 : 1);
+
+/* ---------------------------------------------------------------- PNG 编码 */
+
+function crcTable() {
+  if (CRC_TABLE) return CRC_TABLE;
+  const t = new Int32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c;
+  }
+  CRC_TABLE = t;
+  return t;
+}
+function crc32(buf) {
+  const T = crcTable();
+  let c = -1;
+  for (let i = 0; i < buf.length; i++) c = T[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ -1) >>> 0;
+}
+function chunk(type, data) {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length, 0);
+  const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+  const c = Buffer.alloc(4);
+  c.writeUInt32BE(crc32(body), 0);
+  return Buffer.concat([len, body, c]);
+}
+function encodePng({ w, h, data }) {
+  const raw = Buffer.alloc((w * 4 + 1) * h);
+  let o = 0;
+  for (let y = 0; y < h; y++) {
+    raw[o++] = 0;
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      raw[o++] = data[i];
+      raw[o++] = data[i + 1];
+      raw[o++] = data[i + 2];
+      raw[o++] = data[i + 3];
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+function upscale(pb, k) {
+  const w = pb.w * k;
+  const h = pb.h * k;
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const s = pb.px(Math.floor(x / k), Math.floor(y / k));
+      const i = (y * w + x) * 4;
+      data[i] = s[0];
+      data[i + 1] = s[1];
+      data[i + 2] = s[2];
+      data[i + 3] = s[3];
+    }
+  }
+  return { w, h, data };
+}

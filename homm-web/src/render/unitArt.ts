@@ -35,6 +35,7 @@
 
 import { PixBuf, chamferRect } from './pixel.js';
 import { makeAdjacencyRules } from './materialRules.js';
+import { bodyPlanTargetHeight, drawBodyPlanUnit } from './unitBodyPlan.js';
 
 /* ==========================================================================
  * 1. 色板（cartoon-style §3.2 基底 + §3.3 每族）
@@ -198,6 +199,12 @@ export interface B0FrameSpec {
     | 'p2_lavatroll'
     | 'p3_unicorn'
     | 'p4_colossus'
+    // S3a：p1 按新体形档重画的五个兵（id 即 §16.1 的新阵容，不是别名）
+    | 'p1_child'
+    | 'p1_crossbow'
+    | 'p1_eagle'
+    | 'p1_knight'
+    | 'p1_angel'
     // TP-4② 中立野怪（D-58 §6.4.4：不迁名，id 即帧名中缀）
     | 'wolf'
     | 'boar'
@@ -206,9 +213,12 @@ export interface B0FrameSpec {
 }
 
 export const B0_FRAMES: B0FrameSpec[] = [
-  { name: 'u_p1_lampbearer_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_lampbearer', kind: 'map' },
-  { name: 'cu_p1_lampbearer', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_lampbearer', kind: 'idle' },
-  { name: 'cu_p1_lampbearer_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_lampbearer', kind: 'atk' },
+  // ⚠️ S3a（2026-11-06）：本批原有的 3 帧 `*_p1_lampbearer_*` **已退役**。
+  //    那三张是 p1 T1 改名前的旧图（p1_lampbearer 这个 id 现在连 UNITS 里都没有），
+  //    靠 `unitFrames.FRAME_ALIAS` 的 `p1_child → p1_lampbearer` 才被看见。
+  //    S3a 把 p1 五兵按体形档重画并撤掉别名 ⇒ 旧图没有任何调用方，留在 UNIT_FRAMES 里
+  //    只会让 H1/H2/S1 的阶梯读到「同一个 tier 两份体量」。旧绘制函数（drawLampbearer 等）
+  //    仍留在本文件，但**没有登记成帧**，用途只剩对照。
   { name: 'u_p2_scavenger_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_scavenger', kind: 'map' },
   { name: 'cu_p2_scavenger', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_scavenger', kind: 'idle' },
   { name: 'cu_p2_scavenger_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_scavenger', kind: 'atk' },
@@ -222,10 +232,7 @@ export const B0_FRAMES: B0FrameSpec[] = [
  *   stoneimp / fireapprentice 是 asset-spec §3.2 + §2.2 的建议值，等 races.ts 定稿后对齐。
  */
 export const B1_FRAMES: B0FrameSpec[] = [
-  // 晨曦 T2 号角弩手（p1 垂直母题：弩竖直举起）
-  { name: 'u_p1_hornxbow_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_hornxbow', kind: 'map' },
-  { name: 'cu_p1_hornxbow', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_hornxbow', kind: 'idle' },
-  { name: 'cu_p1_hornxbow_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_hornxbow', kind: 'atk' },
+  // ⚠️ 本批原有的 `*_p1_hornxbow_*` 3 帧已随 S3a 退役（同 B0 注释）。
   // 赤焰 T2 投斧蛮子（p2 楔形母题：横持斧，斧刃带缺口）
   { name: 'u_p2_axethrower_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_axethrower', kind: 'map' },
   { name: 'cu_p2_axethrower', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_axethrower', kind: 'idle' },
@@ -258,14 +265,7 @@ export const B1_FRAMES: B0FrameSpec[] = [
  * 按族提交：本数组随每个族的 6 帧逐步追加（未实现的族不登记，避免烘焙出空白帧）。
  */
 export const B2_FRAMES: B0FrameSpec[] = [
-  // 晨曦 T3 铁誓枪兵（p1 垂直母题：矩形大盾正对镜头，枪竖直）
-  { name: 'u_p1_oathpike_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_oathpike', kind: 'map' },
-  { name: 'cu_p1_oathpike', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_oathpike', kind: 'idle' },
-  { name: 'cu_p1_oathpike_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_oathpike', kind: 'atk' },
-  // 晨曦 T4 圣殿骑士（p1 垂直母题：高坐骑人+马，竖直甲片，顶上冠羽）
-  { name: 'u_p1_templar_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_templar', kind: 'map' },
-  { name: 'cu_p1_templar', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_templar', kind: 'idle' },
-  { name: 'cu_p1_templar_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_templar', kind: 'atk' },
+  // ⚠️ 本批原有的 `*_p1_oathpike_*` / `*_p1_templar_*` 6 帧已随 S3a 退役（同 B0 注释）。
   // 赤焰 T3 暴走狼骑（p2 楔形母题：人+狼双头剪影，狼头前伸，人后仰）
   { name: 'u_p2_wolfrider_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_wolfrider', kind: 'map' },
   { name: 'cu_p2_wolfrider', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_wolfrider', kind: 'idle' },
@@ -306,10 +306,8 @@ export const B2_FRAMES: B0FrameSpec[] = [
  *   `p3_unicorn` / `p4_colossus`。
  */
 export const B3_FRAMES: B0FrameSpec[] = [
-  // 晨曦 T5 加班天使（p1 垂直母题：对称双翼 + 光环，垂直上升感）
-  { name: 'u_p1_overangel_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_overangel', kind: 'map' },
-  { name: 'cu_p1_overangel', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_overangel', kind: 'idle' },
-  { name: 'cu_p1_overangel_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_overangel', kind: 'atk' },
+  // ⚠️ 本批原有的 `*_p1_overangel_*` 3 帧已随 S3a 退役（同 B0 注释）；
+  //    p1 T5 现在画在 `P1V3_FRAMES` 里，id 也从 p1_overangel 改成了 p1_angel。
   // 赤焰 T5 熔岩巨魔（p2 楔形母题：最宽的楔形，双肩长刺，锤比身体宽）
   { name: 'u_p2_lavatroll_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_lavatroll', kind: 'map' },
   { name: 'cu_p2_lavatroll', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_lavatroll', kind: 'idle' },
@@ -350,9 +348,44 @@ export const B4_FRAMES: B0FrameSpec[] = [
   { name: 'cu_ogre', w: 64, h: 56, ax: -32, ay: -48, unit: 'ogre', kind: 'idle' },
 ];
 
-/** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 + B2 24 + B3 12 + B4 3 = 63），供 `tools/b0audit.mjs` 全扫描，
+/**
+ * P1V3 批（§15.2 / §16.1 · S3a，2026-11-06）：p1 晨曦五个兵**按新体形档重画**。
+ *
+ * 与 B0–B4 的根本区别：那五批的「体量」由 asset-spec §5.6.2 的 **T1→T5 阶梯**
+ * （62/70/78/88/100% 画布高）决定；这一批由 §15.2 的**体形五档**决定，
+ * 而五档与 tier **不是同一条曲线**：
+ *   · 鹰（T3，高 ≥1.18）比骑士（T4，宽体 w ≥1.35h）**更高** —— 阶梯在第 3 档就会倒挂。
+ * 所以这 5 个兵不走 `TIER_TARGET_PCT`，走 `unitBodyPlan.ts` 的 `BODY_PLAN`。
+ * 两套 regime 的边界由 `BODY_PLAN` 是否收录该 id 决定，门控按同一条边界分区。
+ *
+ * 帧名 / 槽位 / 锚点与其它批一致：map 52×44（ax=-10, ay=-12）/ cu 64×56（ax=-32, ay=-48）。
+ */
+export const P1V3_FRAMES: B0FrameSpec[] = [
+  // 矮档：小孩（大头小身子）
+  { name: 'u_p1_child_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_child', kind: 'map' },
+  { name: 'cu_p1_child', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_child', kind: 'idle' },
+  { name: 'cu_p1_child_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_child', kind: 'atk' },
+  // 中档：弩手（横弩）
+  { name: 'u_p1_crossbow_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_crossbow', kind: 'map' },
+  { name: 'cu_p1_crossbow', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_crossbow', kind: 'idle' },
+  { name: 'cu_p1_crossbow_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_crossbow', kind: 'atk' },
+  // 高档：鹰（**收翼**立姿 + 长距后腿；平展翼会与天使同档）
+  { name: 'u_p1_eagle_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_eagle', kind: 'map' },
+  { name: 'cu_p1_eagle', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_eagle', kind: 'idle' },
+  { name: 'cu_p1_eagle_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_eagle', kind: 'atk' },
+  // 宽体档：骑士（四腿 + 长枪，宽度换高度）
+  { name: 'u_p1_knight_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_knight', kind: 'map' },
+  { name: 'cu_p1_knight', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_knight', kind: 'idle' },
+  { name: 'cu_p1_knight_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_knight', kind: 'atk' },
+  // 巨物·飞行档：天使（光环 + 上掠翼）
+  { name: 'u_p1_angel_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_angel', kind: 'map' },
+  { name: 'cu_p1_angel', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_angel', kind: 'idle' },
+  { name: 'cu_p1_angel_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_angel', kind: 'atk' },
+];
+
+/** unitArt.ts 内**全部**程序化兵种帧（B0 6 + B1 18 + B2 24 + B3 12 + B4 3 + P1V3 15 = 78），供 `tools/b0audit.mjs` 全扫描，
  *  `atlas.ts` / `combatAtlas.ts` 也遍历本数组烘焙（#24 已接好，无需改那两个文件）。 */
-export const UNIT_FRAMES: B0FrameSpec[] = [...B0_FRAMES, ...B1_FRAMES, ...B2_FRAMES, ...B3_FRAMES, ...B4_FRAMES];
+export const UNIT_FRAMES: B0FrameSpec[] = [...B0_FRAMES, ...B1_FRAMES, ...B2_FRAMES, ...B3_FRAMES, ...B4_FRAMES, ...P1V3_FRAMES];
 
 /** 第 7 个资产：AI 生成的 `crestL_p1`（256×384），本轮不做，只在验收脚本里留人工项。 */
 export const B0_PENDING_AI_FRAME = 'crestL_p1';
@@ -376,11 +409,15 @@ export function b0FrameSpec(name: string): B0FrameSpec {
  * 与归一化机制共用同一份 tier→目标 的真值源。
  */
 export const TIER_OF: Record<string, number> = {
-  p1_lampbearer: 1, p2_scavenger: 1, p3_dwarf: 1, p4_stoneimp: 1,
-  p1_hornxbow: 2, p2_axethrower: 2, p3_thornarcher: 2, p4_fireapprentice: 2,
-  p1_oathpike: 3, p2_wolfrider: 3, p3_vineguard: 3, p4_hopgolem: 3,
-  p1_templar: 4, p2_firebrand: 4, p3_treant: 4, p4_librarian: 4,
-  p1_overangel: 5, p2_lavatroll: 5, p3_unicorn: 5, p4_colossus: 5,
+  p2_scavenger: 1, p3_dwarf: 1, p4_stoneimp: 1,
+  p2_axethrower: 2, p3_thornarcher: 2, p4_fireapprentice: 2,
+  p2_wolfrider: 3, p3_vineguard: 3, p4_hopgolem: 3,
+  p2_firebrand: 4, p3_treant: 4, p4_librarian: 4,
+  p2_lavatroll: 5, p3_unicorn: 5, p4_colossus: 5,
+  // S3a 新体形档的五个 p1 兵：tier 仍要登记（[C]/[M] 覆盖率、BattleRenderer 的
+  // 高亮与排序、audit:power 都按 tier 读），但**体量不再由 tier 决定** ——
+  // 见 normalizeTier 里 `BODY_PLAN` 那一段。
+  p1_child: 1, p1_crossbow: 2, p1_eagle: 3, p1_knight: 4, p1_angel: 5,
   // TP-4② 中立野怪（tier 取自 units.ts：wolf T1 / boar T3 / ogre T4）。
   // 入表 ⇒ cu 帧过 normalizeTier 归一化 + b0audit 的 S1（落靶 ±3pt）/ H2（跨档倒挂）
   // 覆盖；H1（每族 T1→T4 阶梯）不适用——中立怪不是族，见 b0audit 的分组注释。
@@ -432,6 +469,11 @@ export const TIER_TARGET_PCT_MAP: Record<number, number> = { 1: 62, 2: 70, 3: 78
  * cu（h=56）用 §5.6.2 的 TIER_TARGET_PCT；map（h=44）用主理人代裁的 TIER_TARGET_PCT_MAP
  * （选项 a）。画布高一律取 spec.h，百分比对各自的包含画布解析 ⇒ 两个画布共用同一套机制。
  *
+ * ⚠️ S3a（2026-11-06）起多了**第二套 regime**：`BODY_PLAN` 收录的兵种不用上面的
+ *    tier 阶梯，改用 §15.2 的体形档（1 H_REF = 画布高 ÷ 1.54）。原因是新体形档
+ *    与 tier 不同构 —— 鹰（T3）比骑士（T4）高。两套的**唯一分叉点**在
+ *    `frameTargetFinalHeight()`，下面的缩放/居中/底锚代码两套共用，没有第二份实现。
+ *
  * 插入位置：buildB0Frame 内 switch 之后、pb.outline() 之前。描边是最后一步的 1px 膨胀，
  * 放它之后会把 1px 描边插值成灰边 / 断点 ⇒ 断言 4 红。
  */
@@ -445,15 +487,30 @@ export function isTierNormalizeEnabled(): boolean {
   return tierNormalizeEnabled;
 }
 
+/**
+ * 成品帧的目标剪影高（**含** 1px 描边）—— 体量目标的**唯一入口**。
+ *
+ * 两套 regime，边界就是 `BODY_PLAN` 收没收这个 id：
+ *   · 收了 ⇒ §15.2 的**体形档**（矮 0.65 / 中 0.88 / 高 1.22 / 宽体 1.04 / 巨物 1.54，
+ *            按「1 H_REF = 画布高 ÷ 1.54」换算）；
+ *   · 没收 ⇒ asset-spec §5.6.2 的 **T1→T5 阶梯**（62/70/78/88/100%）。
+ *
+ * `tools/b0audit.mjs` 的断言 12（等比缩放横向溢出复算）import 本函数，
+ * 不自己再算一遍 —— 两处各写一份 = 迟早有一处静默过期（铁律 22）。
+ */
+export function frameTargetFinalHeight(spec: B0FrameSpec): number | null {
+  const bp = bodyPlanTargetHeight(spec.unit, spec.h);
+  if (bp !== null) return bp;
+  const tier = TIER_OF[spec.unit];
+  if (tier === undefined) return null; // 安全网：既不在体形表也不在 tier 表
+  const pct = spec.kind === 'map' ? TIER_TARGET_PCT_MAP[tier] : TIER_TARGET_PCT[tier];
+  return Math.floor((pct / 100) * spec.h);
+}
+
 function normalizeTier(pb: PixBuf, spec: B0FrameSpec): PixBuf {
   if (!tierNormalizeEnabled) return pb;
-  const tier = TIER_OF[spec.unit];
-  if (tier === undefined) return pb; // 不在 16 单位 tier 表（安全网）
-  // 画布高 + 目标表都按 spec 自适应：cu（64×56）用 §5.6.2 的 TIER_TARGET_PCT，
-  // map（52×44）用主理人代裁的 TIER_TARGET_PCT_MAP。两个画布共用同一套机制。
-  const canvasH = spec.h;
-  const targetPct = spec.kind === 'map' ? TIER_TARGET_PCT_MAP[tier] : TIER_TARGET_PCT[tier];
-
+  const targetFinal = frameTargetFinalHeight(spec);
+  if (targetFinal === null) return pb;
 
   // 1) 本体剪影 bbox（描边前）
   let x0 = Infinity;
@@ -475,10 +532,8 @@ function normalizeTier(pb: PixBuf, spec: B0FrameSpec): PixBuf {
   const srcH = y1 - y0 + 1;
 
   // 2) 目标剪影高（与 audit:b0 同口径：最终含 1px 描边的 bbox 高 ÷ 画布高 × 100）。
-  //    floor 让 T1/T2 稳稳落在 "≤" 上界以下；T3/T4 的 ±8pt 容差也吃得住。
   //    后置描边在"底部锚定 + 本体未触顶"时恒 +1px（顶上加一圈、底贴画布边无圈），
   //    所以本体目标高 = 目标最终高 − 1。
-  const targetFinal = Math.floor((targetPct / 100) * canvasH);
   const targetBody = targetFinal - 1;
   if (targetBody <= 0) return pb;
   // ⚠️ **不要再在 `targetBody === srcH` 时提前返回** —— 那会绕过下面的**帧内居中**，
@@ -670,16 +725,13 @@ function decimateCols(
 }
 
 /**
- * @param name    帧名（见 B0_FRAMES）
- * @param outline 是否跑「描边重建」这一步（asset-spec §5.4 步骤 [5]）。
- *                默认 true = 成品帧。传 false 得到**描边前**的本体，供
- *                `tools/b0audit.mjs` 断言「轮廓 1px 单线、无断点」时还原
- *                outline() 的膨胀圈；AI 资产接进管线时也需要这个开关
- *                （先丢掉 AI 自带的边，再用本函数重跑一次描边）。
+ * 旧绘制树（B0–B4 的 20 个 `drawXxx` + 3 只中立怪）。
+ *
+ * S3a 起**新体形档的兵种不走这里**（见 `unitBodyPlan.ts`）：本函数只是把原来的
+ * `switch (spec.unit)` 原样搬出来，让 `buildB0Frame` 的头部保持「先试新树、再落旧树」
+ * 两条路一目了然。搬动时**一个 case 都没改** —— 旧族的画面必须逐像素不变。
  */
-export function buildB0Frame(name: string, outline = true): PixBuf {
-  const spec = b0FrameSpec(name);
-  let pb = new PixBuf(spec.w, spec.h);
+function drawLegacyUnit(pb: PixBuf, spec: B0FrameSpec): void {
   switch (spec.unit) {
     case 'p1_lampbearer':
       drawLampbearer(pb, spec.kind);
@@ -752,9 +804,26 @@ export function buildB0Frame(name: string, outline = true): PixBuf {
       drawOgre(pb, spec.kind);
       break;
   }
-  // P0 收口：Tier 体量归一化（§5.6.1 / §5.6.2 的纵轴通道）—— 全量 16 单位的 cu 帧。
-  // 必须在描边之前跑——描边是最后一步的 1px 膨胀，放它之后会把描边插值成灰边 / 断点 ⇒ 断言 4 红。
-  // cu（h=56）走 §5.6.2 目标；map 帧暂缓（见 normalizeTier 内的说明 + D-72）。
+}
+
+/**
+ * @param name    帧名（见 B0_FRAMES）
+ * @param outline 是否跑「描边重建」这一步（asset-spec §5.4 步骤 [5]）。
+ *                默认 true = 成品帧。传 false 得到**描边前**的本体，供
+ *                `tools/b0audit.mjs` 断言「轮廓 1px 单线、无断点」时还原
+ *                outline() 的膨胀圈；AI 资产接进管线时也需要这个开关
+ *                （先丢掉 AI 自带的边，再用本函数重跑一次描边）。
+ */
+export function buildB0Frame(name: string, outline = true): PixBuf {
+  const spec = b0FrameSpec(name);
+  let pb = new PixBuf(spec.w, spec.h);
+  // S3a：新体形档的兵种走独立绘制树（`unitBodyPlan.ts`）。放在 switch 之前，
+  // 因为那棵树一个函数管 idle/atk/map 三种 kind，不需要在三处各写一遍分支。
+  if (!drawBodyPlanUnit(pb, spec.unit, spec.kind)) drawLegacyUnit(pb, spec);
+
+  // 体量归一化（§5.6.1 / §5.6.2 的纵轴通道）：两套 regime 共用下面这一段，
+  // 目标值只由 `frameTargetFinalHeight()` 决定（体形档优先，其余走 tier 阶梯）。
+  // 必须在描边之前跑 —— 描边是最后一步的 1px 膨胀，放它之后会把描边插值成灰边 / 断点 ⇒ 断言 4 红。
   pb = normalizeTier(pb, spec);
   // 描边重建（asset-spec §5.4）：最后一步、只跑一次、1px、满不透明。
   if (outline) pb.outline(C.ink0, 1);

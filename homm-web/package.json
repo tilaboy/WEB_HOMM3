@@ -17,6 +17,7 @@
     "audit:hover": "node tools/hoveraudit.mjs",
     "audit:touch": "node tools/tinytargetaudit.mjs",
     "audit:b0": "node tools/b0audit.mjs",
+    "audit:bodyplan": "node tools/bodyplanaudit.mjs",
     "sheet:units": "node tools/unitsheet.mjs",
     "audit:atlas": "node tools/atlasaudit.mjs",
     "audit:townart": "node tools/townartaudit.mjs",
