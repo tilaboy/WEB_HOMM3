@@ -82,6 +82,14 @@ const FAMS = {
     { id: 'p2_threewolf', cn: '三头狼', cls: '宽体' },
     { id: 'p2_devil', cn: '恶魔', cls: '巨物·飞行' },
   ],
+  // S3c（2026-11-06）：p3 翠林五兵，顺序 = §16.1 的 T1→T5，档位按 §15.2 分配表
+  p3: [
+    { id: 'p3_dwarf', cn: '矮人', cls: '矮' },
+    { id: 'p3_junglearcher', cn: '丛林射手', cls: '中' },
+    { id: 'p3_treant', cn: '树人', cls: '高' },
+    { id: 'p3_ape', cn: '猿人', cls: '宽体' },
+    { id: 'p3_greendragon', cn: '绿龙', cls: '巨物·飞行' },
+  ],
 };
 const FAM_KEYS = FAM_ARG ? FAM_ARG.split(',').map((s) => s.trim()) : Object.keys(FAMS);
 for (const f of FAM_KEYS) {

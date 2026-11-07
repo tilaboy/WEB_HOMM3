@@ -13,17 +13,18 @@ import { getAtlas } from './atlas.js';
  *   ② 表里没有的 id **原样透传**（旧 id 在新阵容落地后仍然是合法输入）；
  *   ③ 取不到帧由调用方兜底（色块 + 只警告一次），这里**不抛错**。
  *
- * 当前状态（2026-10-31）：**20 条已全部填好**，B1 改名落地即生效；美术重画后逐条删掉
- * （删到最后表为空 = 帧名与 id 重新一一对应，这一层就可以退休）。
+ * 当前状态（2026-11-06 S3c 后）：只剩 **p4 的 5 条**。p1/p2/p3 已按体形档重画，
+ * 别名逐族删空；S3d 把 p4 换完，这张表就可以整个退休。
  */
 export const FRAME_ALIAS: Readonly<Record<string, string>> = {
-  /* 新 id（B1 之后）→ 图集里现存的帧基名。19 条改名 + 1 条同 id（p3_dwarf）。
+  /* 新 id（B1 之后）→ 图集里现存的帧基名。原 19 条改名 + 1 条同 id（p3_dwarf），
+   * 现在只剩 p4 的 5 条改名（p3 的同 id/恒等各一条已随 S3c 删除）。
    *
    * ⚠️ **这张表不是 §16.6 的存档迁移表**，两者方向相反、p3 那两行还不一样：
    *   · 存档表（旧→新）按**语义**：旧 T3 藤蔓卫士 → 新 T3 树人。
-   *   · 帧表（新→旧）按**像不像**：新树人直接借旧树人的帧（`p3_treant`），
-   *     新猿人借旧藤蔓卫士。若照抄存档表，会在中期最常见的 T3 树人身上
-   *     贴一张藤蔓卫士，反而把最常看到的那个兵画错。
+   *   · 帧表（新→旧）按**像不像**：S3c 之前新树人借旧树人的帧（`p3_treant`），
+   *     新猿人借旧藤蔓卫士；与存档表的那两行对调。S3c 之后 p3 五兵都有真帧，
+   *     这段历史只解释**为什么存档迁移表不能拿来当帧表用**（两者方向相反）。
    *   · 两张表都是 1:1 双射，只是那两行对调 —— 改动时**必须一起看**。 */
   /* S3a（2026-11-06）：p1 五条已删除 —— `cu_p1_child` / `cu_p1_crossbow` / `cu_p1_eagle`
    * / `cu_p1_knight` / `cu_p1_angel` 现在是**真帧**（`unitBodyPlan.ts` 按新体形档画的），
@@ -31,13 +32,12 @@ export const FRAME_ALIAS: Readonly<Record<string, string>> = {
    *
    * S3b（2026-11-06）：p2 五条也已删除 —— `cu_p2_matchman` / `cu_p2_bronze` /
    * `cu_p2_threewolf` / `cu_p2_lavagiant` / `cu_p2_devil` 同样是真帧。
-   * 删到这一层只剩 p3/p4 时，"别名层可以退休"的那一天还没到（S3c 才清完）。 */
+   * S3c（2026-11-06）：p3 五条也已删除。现在只剩 p4，S3d 清完即可退休。 */
 
-  p3_dwarf: 'p3_dwarf', // 同 id：留着这一行是为了「20 个兵一个不少」能数得出来
-  p3_junglearcher: 'p3_thornarcher',
-  p3_treant: 'p3_treant', // 见上面的 ⚠️：借旧树人的帧，不借藤蔓卫士
-  p3_ape: 'p3_vineguard',
-  p3_greendragon: 'p3_unicorn',
+  // S3c（2026-11-06）：p3 五条已删除 —— `cu_p3_dwarf` / `cu_p3_junglearcher` /
+  // `cu_p3_treant` / `cu_p3_ape` / `cu_p3_greendragon` 都是 `P3V3_FRAMES` 里的真帧。
+  // ⚠️ 其中 `p3_dwarf` / `p3_treant` 是**恒等别名**（新旧帧基名恰好相同），
+  //    删掉它们之后 `probe:frames` ⑥ 的恒等样本从 2 变 0 —— 那不是闸坏了，是这一层快退休了。
 
   p4_skeleton: 'p4_stoneimp',
   p4_zombie: 'p4_fireapprentice',

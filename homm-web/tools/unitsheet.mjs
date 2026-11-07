@@ -9,7 +9,7 @@
  *
  * 用法：
  *   node tools/unitsheet.mjs <out.png> [batch] [zoom] [unitFilter]
- *     batch = B0 | B1 | B2 | B3 | all   （默认 B3，即最新一批 T5）
+ *     batch = B0 | B1 | B2 | B3 | P1V3 | P2V3 | P3V3 | all   （默认 B3）
  *     unitFilter = 逗号分隔的兵种 id 子串，如 lavatroll,colossus；省略 = 整批
  *
  * 例：node tools/unitsheet.mjs /tmp/t5.png B3 6
@@ -34,6 +34,7 @@ const BATCHES = {
   // S3a 起 p1 走**体形档**（`unitBodyPlan.ts`），不再是 T1→T5 阶梯，帧单独成批。
   P1V3: art.P1V3_FRAMES,
   P2V3: art.P2V3_FRAMES,
+  P3V3: art.P3V3_FRAMES,
 };
 
 const OUT = process.argv[2] ?? '/tmp/unitsheet.png';

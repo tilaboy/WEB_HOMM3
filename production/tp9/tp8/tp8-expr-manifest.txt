@@ -1,6 +1,6 @@
 # TP-8② 手机表情可读 · 素材清单
 dist: /Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist
-指纹: {"dir":"/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist","md5":"4880e6dbb88b9c2132b12bd7baad331c","sha256":"d87d983b1709fede","mtime":"2026-11-06T14:41:27.587Z","files":["main.js","style.css","index.html"]}
+指纹: {"dir":"/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist","md5":"4880e6dbb88b9c2132b12bd7baad331c","sha256":"d87d983b1709fede","mtime":"2026-11-07T01:16:54.215Z","files":["main.js","style.css","index.html"]}
 seed: 20261020   rounds: 3
 口径: 792×320 CSS @ dpr3 · 战场 BASE 482×310（BattleRenderer.ts:18-19）
       s = 1.0000（缩放）· k = 3.0000 设备像素/美术像素
@@ -16,9 +16,9 @@ files:
   tp8-expr-E-r3.png
   tp8-expr-Ecss-r3.png
 轮次排列（Round 1 即答案钥）:
-  R1: cu_p2_lavagiant cu_p1_angel cu_p3_treant cu_p2_devil cu_p4_fireapprentice cu_p1_eagle cu_p4_librarian cu_p4_hopgolem cu_p4_colossus cu_p1_knight cu_p2_matchman cu_p3_dwarf cu_p1_child cu_p2_threewolf cu_p2_bronze cu_p1_crossbow cu_p3_unicorn cu_p4_stoneimp cu_p3_vineguard cu_p3_thornarcher
-  R2: cu_p1_crossbow cu_p1_angel cu_p2_devil cu_p3_vineguard cu_p2_lavagiant cu_p1_child cu_p3_unicorn cu_p3_dwarf cu_p4_fireapprentice cu_p1_knight cu_p2_threewolf cu_p4_hopgolem cu_p3_thornarcher cu_p1_eagle cu_p3_treant cu_p2_bronze cu_p2_matchman cu_p4_librarian cu_p4_stoneimp cu_p4_colossus
-  R3: cu_p2_matchman cu_p1_knight cu_p4_stoneimp cu_p4_colossus cu_p2_bronze cu_p4_librarian cu_p4_fireapprentice cu_p1_crossbow cu_p2_devil cu_p2_lavagiant cu_p3_dwarf cu_p3_vineguard cu_p1_eagle cu_p1_child cu_p3_treant cu_p1_angel cu_p3_unicorn cu_p4_hopgolem cu_p2_threewolf cu_p3_thornarcher
+  R1: cu_p3_ape cu_p2_devil cu_p1_child cu_p3_greendragon cu_p4_librarian cu_p2_threewolf cu_p1_eagle cu_p1_crossbow cu_p1_angel cu_p2_lavagiant cu_p3_dwarf cu_p4_stoneimp cu_p2_matchman cu_p3_treant cu_p3_junglearcher cu_p2_bronze cu_p1_knight cu_p4_hopgolem cu_p4_colossus cu_p4_fireapprentice
+  R2: cu_p2_bronze cu_p2_devil cu_p3_greendragon cu_p4_colossus cu_p3_ape cu_p2_matchman cu_p1_knight cu_p4_stoneimp cu_p4_librarian cu_p2_lavagiant cu_p3_treant cu_p1_crossbow cu_p4_fireapprentice cu_p2_threewolf cu_p1_child cu_p3_junglearcher cu_p3_dwarf cu_p1_eagle cu_p4_hopgolem cu_p1_angel
+  R3: cu_p3_dwarf cu_p2_lavagiant cu_p4_hopgolem cu_p1_angel cu_p3_junglearcher cu_p1_eagle cu_p4_librarian cu_p2_bronze cu_p3_greendragon cu_p3_ape cu_p4_stoneimp cu_p4_colossus cu_p2_threewolf cu_p2_matchman cu_p1_child cu_p2_devil cu_p1_knight cu_p1_crossbow cu_p3_treant cu_p4_fireapprentice
 
 声明式例外（FACE_LAW）:
   cu_p4_stoneimp → glow：构装：glowEye 画 2×2 p4emissive（§1.4「唯一高光」不适用），石像兽无嘴
@@ -29,7 +29,7 @@ files:
   cu_p2_bronze → glow：铜人（构装）：2×2 p2emissive 眼，无 hi0（§1.4 唯一高光不适用于构装）；"嘴"是 metal0 面甲缝，不是 ink0 嘴线
   cu_p2_lavagiant → glow：熔岩巨人：2×2 p2emissive 眼 + 1px stone0 嘴线（下巴裂纹，嘴在眼下 5 行）
   cu_p2_threewolf → profile：三头狼（兽形侧脸，§5.6.4）：三个头里只有主头画 ink 眼；另两颗是远侧的头，只点 p2wall0 暗点（凑不出 ink0+hi0 的 2×2 窗口）
-  cu_p3_unicorn → profile：侧脸母题（§5.6.4 兽形）：只画一只眼，无独立嘴线
+  cu_p3_greendragon → profile：绿龙（兽形侧脸，§5.6.4）：头是朝左的长吻，只有单眼；吻缝不是 ink0 的"嘴线"，按 h3 判会逼出一张假人脸
   cu_p1_eagle → profile：猛禽侧脸：头是侧向钩喙（喙朝左），只有单眼；喙缝不是 ink0 的"嘴线"，按 h3 判会逼出一张假人脸
 
 机器预检（本次）:
@@ -37,7 +37,7 @@ files:
   [PASS] Law 20 个 cu_ idle 帧都认出 1 张脸 20/20
   [PASS] Eye 每只眼都是 2×2（间距 ≥1，不粘成一条） 20/20
   [PASS] Mouth 嘴线：1~2 行高、3~14 宽、在眼下 1~8 行（h3 恒有 / glow 仅声明帧 / profile 无） 10 个 h3 帧 · 0 红
-  [PASS] Contr 最小 ΔE76 ≥ 20 最低 28.2 · 次低 28.2 · 中位 65.5
+  [PASS] Contr 最小 ΔE76 ≥ 20 最低 31.1 · 次低 51.2 · 中位 65.5
   [PASS] Phone 眼块在设备像素里仍 ≥2×2（没被采样掉一行/一列） 最小 6×6 设备px（≈2.00 CSS px）
   [PASS] Mat 3 轮素材都生成了（设备像素 + CSS 像素两版） tp8-expr-E-r1.png / tp8-expr-Ecss-r1.png / tp8-expr-E-r2.png / tp8-expr-Ecss-r2.png / tp8-expr-E-r3.png / tp8-expr-Ecss-r3.png
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 兵种**体形档**验收门（§15.2 R1/R2/R5 · S3a）
+ * 兵种**体形档**验收门（§15.2 R1/R2/R5 · S3a/S3b/S3c）
  * ==========================================================================
  * 用法：
  *   npm run build && npm run audit:bodyplan
@@ -500,16 +500,26 @@ if (pngDir) {
   // 现在盲测材料统一由 `tools/blindkit.mjs` 生成（每人独立乱序 / ×2 真机尺寸 /
   // 答案钥单独落盘 / 附执行手册）。本工具的 `--png` 只负责**看细节**的放大图。
   console.log(`\nPNG 已导出 → ${pngDir}（${n} 张：cu ×8 / pt ×8 / 22×30 ×8）`);
-  console.log('盲测材料请用：node tools/blindkit.mjs --out=<dir>（见 production/s3b/blind/PROTOCOL.md）');
+  console.log(`盲测材料请用：node tools/blindkit.mjs --out=<dir> --fam=${famArg ?? 'p1'}（手册 PROTOCOL.md）`);
 }
 
 /* ---------------------------------------------------------------- 汇总 */
 
+/* 结论里的族名**从 `BODY_PLAN_FAMILIES` 现算**，不写死 —— 否则每落一族
+ * 这句就会像 S3c 之前那样停在上一轮（S3c 时代码已经覆盖 p3，判词还写
+ * 「S3a p1 + S3b p2」，读者无法从输出判断 p3 到底有没有被量）。 */
+const STAGE_OF = { p1: 'S3a', p2: 'S3b', p3: 'S3c', p4: 'S3d' };
+const famNames = fams.map((f) => f.fam);
+const famText = famNames.map((f) => `${STAGE_OF[f] ?? f} ${f}`).join(' + ');
+const lastFam = famNames[famNames.length - 1];
+const lastStage = (STAGE_OF[lastFam] ?? '').toLowerCase();
 console.log('\n' + '='.repeat(72));
 console.log(`汇总：${results.map((r) => `[${r.id}] ${r.pass ? 'PASS' : 'FAIL'}`).join('  ')}`);
-console.log(bad === 0 ? '结论：体形档自动部分全过（S3a p1 + S3b p2）' : `结论：${bad} 项不合格 —— 不要提交`);
+console.log(bad === 0 ? `结论：体形档自动部分全过（${famText}）` : `结论：${bad} 项不合格 —— 不要提交`);
 console.log('人工项：五人盲测（§8.4：同族 5 张并排、每人每张 3 秒、指认正确率 ≥80%）');
-console.log('        材料与计分表：node tools/blindkit.mjs --out=<dir>（手册 production/s3b/blind/PROTOCOL.md）');
+console.log(
+  `        材料与计分表：node tools/blindkit.mjs --out=<dir> --fam=${lastFam}（手册 production/${lastStage}/blind/PROTOCOL.md）`,
+);
 console.log('='.repeat(72));
 process.exit(bad === 0 ? 0 : 1);
 

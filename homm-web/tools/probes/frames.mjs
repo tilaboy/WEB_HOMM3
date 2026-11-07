@@ -69,14 +69,15 @@ PASS(missIdle.length === 0, `④ ${ALL_IDS.length} 个兵种 id 的战斗 idle �
 PASS(missAtk.length === 0, `⑤ ${ALL_IDS.length} 个兵种 id 的战斗 atk 帧全部存在${missAtk.length ? `（缺 ${missAtk.join(',')}）` : ''}`);
 
 /* ---------------- ③ 负向对照：直拼必须取不到 ---------------- */
-/** 恒等别名（`p3_dwarf` 同 id、`p3_treant` 新旧帧基名恰好相同）直拼当然取得到 ——
- *  它们不是"别名在起作用"的样本，必须排除。数出不写死，改表时不会变成"照着旧表数数"。 */
+/** 恒等别名（FRAME_ALIAS[id] === id）直拼当然取得到 —— 它不是"别名在起作用"的样本，
+ *  必须排除。S3c 删掉 `p3_dwarf` / `p3_treant` 两条恒等行后，这类样本归零；
+ *  ⑥ 的期望值随之从 2 改成 0 —— 这是**契约变了**（p3 已有真帧），不是放宽判据。 */
 const RENAMED = NEW_IDS.filter((id) => FRAME_ALIAS[id] !== id);
 const IDENTICAL = NEW_IDS.filter((id) => FRAME_ALIAS[id] === id);
 const rawHits = RENAMED.filter((id) => has(`u_${id}_map`) || has(`cu_${id}`));
 PASS(
-  RENAMED.length + IDENTICAL.length === NEW_IDS.length && IDENTICAL.length === 2,
-  `⑥ ${RENAMED.length} 个真改名 + ${IDENTICAL.length} 个恒等（恒等 ${IDENTICAL.join('/')}）`,
+  RENAMED.length + IDENTICAL.length === NEW_IDS.length && IDENTICAL.length === 0,
+  `⑥ ${RENAMED.length} 个真改名 + ${IDENTICAL.length} 个恒等（S3c 后 p3 恒等行已清）`,
 );
 PASS(
   rawHits.length === 0,

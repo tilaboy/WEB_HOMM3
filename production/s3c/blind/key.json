@@ -1,0 +1,360 @@
+{
+  "seed": 20261106,
+  "testers": 5,
+  "generatedFor": "§8.4 同族 5 张并排 / 每人独立乱序",
+  "fams": {
+    "p3": {
+      "study": {
+        "1": {
+          "id": "p3_dwarf",
+          "cn": "矮人",
+          "cls": "矮"
+        },
+        "2": {
+          "id": "p3_junglearcher",
+          "cn": "丛林射手",
+          "cls": "中"
+        },
+        "3": {
+          "id": "p3_treant",
+          "cn": "树人",
+          "cls": "高"
+        },
+        "4": {
+          "id": "p3_ape",
+          "cn": "猿人",
+          "cls": "宽体"
+        },
+        "5": {
+          "id": "p3_greendragon",
+          "cn": "绿龙",
+          "cls": "巨物·飞行"
+        }
+      },
+      "quizzes": {
+        "t1": [
+          {
+            "cell": "1",
+            "id": "p3_junglearcher",
+            "cn": "丛林射手",
+            "cls": "中"
+          },
+          {
+            "cell": "2",
+            "id": "p3_dwarf",
+            "cn": "矮人",
+            "cls": "矮"
+          },
+          {
+            "cell": "3",
+            "id": "p3_ape",
+            "cn": "猿人",
+            "cls": "宽体"
+          },
+          {
+            "cell": "4",
+            "id": "p3_treant",
+            "cn": "树人",
+            "cls": "高"
+          },
+          {
+            "cell": "5",
+            "id": "p3_greendragon",
+            "cn": "绿龙",
+            "cls": "巨物·飞行"
+          }
+        ],
+        "t2": [
+          {
+            "cell": "1",
+            "id": "p3_junglearcher",
+            "cn": "丛林射手",
+            "cls": "中"
+          },
+          {
+            "cell": "2",
+            "id": "p3_dwarf",
+            "cn": "矮人",
+            "cls": "矮"
+          },
+          {
+            "cell": "3",
+            "id": "p3_treant",
+            "cn": "树人",
+            "cls": "高"
+          },
+          {
+            "cell": "4",
+            "id": "p3_greendragon",
+            "cn": "绿龙",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "5",
+            "id": "p3_ape",
+            "cn": "猿人",
+            "cls": "宽体"
+          }
+        ],
+        "t3": [
+          {
+            "cell": "1",
+            "id": "p3_treant",
+            "cn": "树人",
+            "cls": "高"
+          },
+          {
+            "cell": "2",
+            "id": "p3_junglearcher",
+            "cn": "丛林射手",
+            "cls": "中"
+          },
+          {
+            "cell": "3",
+            "id": "p3_greendragon",
+            "cn": "绿龙",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "4",
+            "id": "p3_ape",
+            "cn": "猿人",
+            "cls": "宽体"
+          },
+          {
+            "cell": "5",
+            "id": "p3_dwarf",
+            "cn": "矮人",
+            "cls": "矮"
+          }
+        ],
+        "t4": [
+          {
+            "cell": "1",
+            "id": "p3_ape",
+            "cn": "猿人",
+            "cls": "宽体"
+          },
+          {
+            "cell": "2",
+            "id": "p3_treant",
+            "cn": "树人",
+            "cls": "高"
+          },
+          {
+            "cell": "3",
+            "id": "p3_dwarf",
+            "cn": "矮人",
+            "cls": "矮"
+          },
+          {
+            "cell": "4",
+            "id": "p3_junglearcher",
+            "cn": "丛林射手",
+            "cls": "中"
+          },
+          {
+            "cell": "5",
+            "id": "p3_greendragon",
+            "cn": "绿龙",
+            "cls": "巨物·飞行"
+          }
+        ],
+        "t5": [
+          {
+            "cell": "1",
+            "id": "p3_treant",
+            "cn": "树人",
+            "cls": "高"
+          },
+          {
+            "cell": "2",
+            "id": "p3_ape",
+            "cn": "猿人",
+            "cls": "宽体"
+          },
+          {
+            "cell": "3",
+            "id": "p3_dwarf",
+            "cn": "矮人",
+            "cls": "矮"
+          },
+          {
+            "cell": "4",
+            "id": "p3_junglearcher",
+            "cn": "丛林射手",
+            "cls": "中"
+          },
+          {
+            "cell": "5",
+            "id": "p3_greendragon",
+            "cn": "绿龙",
+            "cls": "巨物·飞行"
+          }
+        ]
+      },
+      "quizzes22": {
+        "t1": [
+          {
+            "cell": "1",
+            "id": "p3_treant",
+            "cn": "树人",
+            "cls": "高"
+          },
+          {
+            "cell": "2",
+            "id": "p3_ape",
+            "cn": "猿人",
+            "cls": "宽体"
+          },
+          {
+            "cell": "3",
+            "id": "p3_greendragon",
+            "cn": "绿龙",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "4",
+            "id": "p3_dwarf",
+            "cn": "矮人",
+            "cls": "矮"
+          },
+          {
+            "cell": "5",
+            "id": "p3_junglearcher",
+            "cn": "丛林射手",
+            "cls": "中"
+          }
+        ],
+        "t2": [
+          {
+            "cell": "1",
+            "id": "p3_dwarf",
+            "cn": "矮人",
+            "cls": "矮"
+          },
+          {
+            "cell": "2",
+            "id": "p3_junglearcher",
+            "cn": "丛林射手",
+            "cls": "中"
+          },
+          {
+            "cell": "3",
+            "id": "p3_ape",
+            "cn": "猿人",
+            "cls": "宽体"
+          },
+          {
+            "cell": "4",
+            "id": "p3_greendragon",
+            "cn": "绿龙",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "5",
+            "id": "p3_treant",
+            "cn": "树人",
+            "cls": "高"
+          }
+        ],
+        "t3": [
+          {
+            "cell": "1",
+            "id": "p3_junglearcher",
+            "cn": "丛林射手",
+            "cls": "中"
+          },
+          {
+            "cell": "2",
+            "id": "p3_ape",
+            "cn": "猿人",
+            "cls": "宽体"
+          },
+          {
+            "cell": "3",
+            "id": "p3_treant",
+            "cn": "树人",
+            "cls": "高"
+          },
+          {
+            "cell": "4",
+            "id": "p3_dwarf",
+            "cn": "矮人",
+            "cls": "矮"
+          },
+          {
+            "cell": "5",
+            "id": "p3_greendragon",
+            "cn": "绿龙",
+            "cls": "巨物·飞行"
+          }
+        ],
+        "t4": [
+          {
+            "cell": "1",
+            "id": "p3_treant",
+            "cn": "树人",
+            "cls": "高"
+          },
+          {
+            "cell": "2",
+            "id": "p3_dwarf",
+            "cn": "矮人",
+            "cls": "矮"
+          },
+          {
+            "cell": "3",
+            "id": "p3_greendragon",
+            "cn": "绿龙",
+            "cls": "巨物·飞行"
+          },
+          {
+            "cell": "4",
+            "id": "p3_ape",
+            "cn": "猿人",
+            "cls": "宽体"
+          },
+          {
+            "cell": "5",
+            "id": "p3_junglearcher",
+            "cn": "丛林射手",
+            "cls": "中"
+          }
+        ],
+        "t5": [
+          {
+            "cell": "1",
+            "id": "p3_treant",
+            "cn": "树人",
+            "cls": "高"
+          },
+          {
+            "cell": "2",
+            "id": "p3_dwarf",
+            "cn": "矮人",
+            "cls": "矮"
+          },
+          {
+            "cell": "3",
+            "id": "p3_junglearcher",
+            "cn": "丛林射手",
+            "cls": "中"
+          },
+          {
+            "cell": "4",
+            "id": "p3_ape",
+            "cn": "猿人",
+            "cls": "宽体"
+          },
+          {
+            "cell": "5",
+            "id": "p3_greendragon",
+            "cn": "绿龙",
+            "cls": "巨物·飞行"
+          }
+        ]
+      }
+    }
+  }
+}

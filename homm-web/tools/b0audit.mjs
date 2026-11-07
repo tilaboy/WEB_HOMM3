@@ -42,6 +42,7 @@ const {
   B4_FRAMES,
   P1V3_FRAMES,
   P2V3_FRAMES,
+  P3V3_FRAMES,
   B0_PALETTE,
   B0_SHADE_STEPS,
   B0_PENDING_AI_FRAME,
@@ -70,6 +71,7 @@ const BATCHES = [
   ['B4', B4_FRAMES], // TP-4② 中立野怪（cu_wolf / cu_boar / cu_ogre）
   ['P1v3', P1V3_FRAMES], // S3a 体形档重画的 p1 五兵（15 帧）
   ['P2v3', P2V3_FRAMES], // S3b 体形档重画的 p2 五兵（15 帧）
+  ['P3v3', P3V3_FRAMES], // S3c 体形档重画的 p3 五兵（15 帧）——漏登记会让结论文案少算 15 帧
 ];
 const batchLabel = BATCHES.map(([n, a]) => `${n} ${a.length}`).join(' + ');
 const batchTotal = BATCHES.reduce((s, [, a]) => s + a.length, 0);

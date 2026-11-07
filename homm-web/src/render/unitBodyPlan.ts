@@ -72,10 +72,23 @@ export const BODY_PLAN: Record<string, BodyPlan> = {
   p2_threewolf: { cls: 'wide', h: 0.95, tip: '四足+三头' },
   // 巨物·飞行：h ≥ 1.45 —— **下掠**翼 + 双角 + 尾（与天使上掠成镜像）
   p2_devil: { cls: 'huge', h: 1.5, tip: '下掠翼+双角' },
+
+  // ── p3 翠林（S3c，2026-11-06）─────────────────────────────────────
+  // 档位分配逐格照抄 spec §15.2 的「p3 行」，不许按 tier 顺排。
+  // 矮：h ≤ 0.68 —— 大头 + 宽胡子 + 宽刃斧（与 p1 小孩靠胡子/斧、p2 火柴人靠体宽分开）
+  p3_dwarf: { cls: 'short', h: 0.65, tip: '大头+宽胡子+斧' },
+  // 中：0.84~1.00 —— **竖**长弓 + 叶披风（p1 弩手是横弩，方向相反）
+  p3_junglearcher: { cls: 'mid', h: 0.88, tip: '竖长弓+叶披风' },
+  // 高：h ≥ 1.18 —— 树冠 + 树干 + 根系（§15.4「读拔不起来」）；w 必须 <1.11h 才不落宽体档
+  p3_treant: { cls: 'tall', h: 1.22, tip: '树冠+根系' },
+  // 宽体：w ≥ 1.35h —— 横张肩背 + 举石（§15.4：要投石，不许真四足）
+  p3_ape: { cls: 'wide', h: 0.95, tip: '横张肩背+举石' },
+  // 巨物·飞行：h ≥ 1.45 —— 长颈 + 横身 + 长尾 + **下掠翼**（与恶魔同向，靠骨架分）
+  p3_greendragon: { cls: 'huge', h: 1.5, tip: '长颈+长尾+下掠翼' },
 };
 
 /** 已重画的族前缀。S3b/S3c 每落一族就往里加一个（不要按兵种逐个加）。 */
-export const BODY_PLAN_FAMILIES = new Set(['p1', 'p2']);
+export const BODY_PLAN_FAMILIES = new Set(['p1', 'p2', 'p3']);
 
 /** 该 unit 是否走新体形档 regime。 */
 export function hasBodyPlan(unit: string): boolean {
@@ -197,6 +210,33 @@ const P2 = {
   skin: '#d8a878',
   ink: '#2a1a12',
   hi: '#ffffff',
+} as const;
+
+/**
+ * p3 翠林（S3c，2026-11-06）：深翠绿 + 叶 + 树皮 + 石。
+ *
+ * 只用 `B0_PALETTE` 的字面 hex（§3.4 第 1 条）。S3b 交接单 §7 提醒的那条撞色先算过：
+ *   `p3accent2 #3fbe6e`(L*68.8/H142) ↔ `p2clash #2fbfa0`(L*69.8/H167) ΔL*=1.0、ΔH=25°
+ *   ⇒ 若两者贴边必红（同色相需 ≥12）。本族**不引入 `p2clash`**，逐帧断言 8 只看帧内相邻像素，
+ *   所以那条风险在 p3 上根本不会发生；但为稳妥，主布用更暗的 `p3accent0`(L*45.1)，
+ *   亮绿只作同族亮档（`idx 0 ↔ idx 2` 差 2，断言 2 也过）。
+ *
+ * 逐对核算过的另一处：`leaf4 #6fc24a` ↔ `skin2 #d8a878` ΔL*=1.0（ΔH 71° 需 ≥8）⇒
+ * 叶**不许贴脸**；脸周围一律是 `cloth`/`bark`/`ink0`（ΔL* 分别 27 / 42 / 61）。
+ * `leaf0` ↔ `wood0` 只差 ΔL* 4.1 ⇒ 树冠暗斑不许压到树皮，中间留叶亮档或墨缝。
+ */
+const P3 = {
+  cloth: '#1f7a45', // p3accent 0 —— 主布 / 龙身 / 兜帽（**万能中间调**，贴脸、贴树皮、贴叶都够）
+  trim: '#3fbe6e', // p3accent 2 —— 同族亮档，只贴 cloth
+  leaf: '#6fc24a', // leaf 4 —— 树冠 / 叶披风 / 龙翼骨
+  leafDark: '#2f5a24', // leaf 0 —— 树冠暗斑 / 下掠翼（同族，只许贴 leaf 或 cloth）
+  bark: '#5f4022', // wood 0 —— 树干 / 长弓 / 根 / 靴 / 猿人毛
+  barkLite: '#a8703c', // wood 4 —— 同族亮档，只贴 bark
+  skin: '#d8a878', // skin 2 —— 脸与手
+  rock: '#cfc6b4', // stone 4 —— 斧刃 / 箭镞 / 猿人的石弹
+  bloom: '#e0538f', // p3clash —— 小面积花果（对谁都 ΔL* ≥11）
+  ink: '#2a1a12', // ink0
+  hi: '#ffffff', // hi0 —— 只给眼睛右上角那一格
 } as const;
 
 /**
@@ -1354,6 +1394,444 @@ function drawDevil(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
 }
 
 /* ==========================================================================
+ * 4c. p3 翠林五兵（S3c）
+ *
+ * 档位按 spec §15.2 的分配表：矮人矮 / 丛林射手中 / 树人高 / 猿人宽体 / 绿龙巨物·飞行。
+ * §15.4 另给了两条玩法约束：树人要「树形 + 根系，读拔不起来」；绿龙与恶魔同为**下掠翼**，
+ * 所以族内不能靠翼向分，必须靠**长颈 + 横身 + 长尾**把龙和直立人形的恶魔分开。
+ *
+ * R4 出口象限：矮人=左（斧）· 射手=左上（长弓）· 树人=上（树冠）· 猿人=右上（举石）·
+ *              绿龙=右下（长尾）。同族五个方向各占一个。
+ * ========================================================================== */
+
+/** 矮人 · 矮档 · 大头 + 宽胡子 + 左手的宽刃斧。 */
+function drawDwarf(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+  const topY = base - h;
+  const hr = h * (card ? 0.235 : 0.215);
+  const hy = topY + hr * 1.12;
+  const shoulder = hy + hr * 0.92;
+  const hip = base - h * 0.30;
+
+  // ── 斧（出口象限：左）── 先画，柄压在身体后面
+  const ax = cx - h * 0.42;
+  tl(pb, ax, shoulder + h * 0.02, ax - h * 0.07, base - h * 0.04, P3.bark, Math.max(2, Math.round(h * 0.055)));
+  // 宽刃扇面：石浅色与树皮 ΔL* 50，和主布 ΔL* 35 —— 两侧都安全
+  pb.poly(
+    [
+      [ax + h * 0.02, shoulder - h * 0.12],
+      [ax - h * 0.22, shoulder - h * 0.19],
+      [ax - h * 0.25, shoulder + h * 0.02],
+      [ax - h * 0.19, shoulder + h * 0.13],
+      [ax + h * 0.02, shoulder + h * 0.06],
+    ],
+    P3.rock,
+  );
+  // 1px 墨缝：兵牌上删（<2px 的特征不画）
+  if (!card) tl(pb, ax - h * 0.01, shoulder - h * 0.1, ax - h * 0.01, shoulder + h * 0.05, P3.ink, 1);
+
+  // ── 圆桶身
+  pb.poly(
+    [
+      [cx - h * 0.29, shoulder],
+      [cx + h * 0.29, shoulder],
+      [cx + h * 0.33, hip],
+      [cx - h * 0.33, hip],
+    ],
+    P3.cloth,
+  );
+  R(pb, cx - h * 0.24, shoulder + h * 0.04, Math.max(2, h * 0.075), hip - shoulder - h * 0.08, P3.trim);
+  R(pb, cx - h * 0.32, hip - h * 0.045, h * 0.64, Math.max(2, h * 0.05), P3.ink);
+  const legW = Math.max(2, Math.round(h * 0.105));
+  R(pb, cx - h * 0.24, hip, legW, base - hip - h * 0.03, P3.bark);
+  R(pb, cx + h * 0.12, hip, legW, base - hip - h * 0.03, P3.bark);
+  R(pb, cx - h * 0.26, base - h * 0.04, legW + 1, Math.max(1, h * 0.04), P3.ink);
+  R(pb, cx + h * 0.10, base - h * 0.04, legW + 1, Math.max(1, h * 0.04), P3.ink);
+
+  // ── 大头：盔只盖颅顶（S3a 教训：盖到 −0.35hr 以下就会压住眼）
+  ell(pb, cx - hr, hy - hr, cx + hr, hy + hr, P3.skin);
+  pb.poly(
+    [
+      [cx - hr * 1.05, hy - hr * 0.34],
+      [cx - hr * 0.86, hy - hr * 1.16],
+      [cx + hr * 0.86, hy - hr * 1.16],
+      [cx + hr * 1.05, hy - hr * 0.34],
+    ],
+    P3.cloth,
+  );
+  // 宽胡子从颧骨下缘开始（**不许盖住嘴线**：嘴在 hy+0.12hr+3，胡子顶在 hy+0.82hr）
+  pb.poly(
+    [
+      [cx - hr * 0.72, hy + hr * 0.82],
+      [cx + hr * 0.72, hy + hr * 0.82],
+      [cx + hr * 0.52, shoulder + h * 0.09],
+      [cx - hr * 0.52, shoulder + h * 0.09],
+    ],
+    P3.bark,
+  );
+  // ⚠️ 胡子上的亮点**不画**：这簇胡子只有 2~3px 高，任何浅色小块都会同时贴到
+  //    肤色（stone4↔skin2 ΔL* 7.9、ΔH 10° 需 ≥12）与主布（wood4↔p3accent0 ΔL* 7.0）。
+  //    试过 barkLite / rock / 挪位置三种，都逃不开其中一条；通则「<2px 的特征不画」在这里
+  //    同样适用 —— 一整块深棕梯形在 43×37 上比两条亮点更像胡子。
+  if (face) {
+    const lx = Math.round(cx) - (card ? 2 : 3);
+    const ey = Math.round(hy - hr * 0.12);
+    if (card) cardFace(pb, lx, ey);
+    else h3Face(pb, lx, ey, 1, 3, 3);
+  }
+  if (atk) {
+    // 出手：斧整体前推一点，不改剪影高度（档位不受动作影响）
+    tl(pb, ax - h * 0.22, shoulder - h * 0.02, ax - h * 0.34, shoulder + h * 0.06, P3.rock, Math.max(2, Math.round(h * 0.05)));
+  }
+}
+
+/** 丛林射手 · 中档 · 竖长弓（与 p1 的**横**弩区分）+ 叶披风。 */
+function drawJungleArcher(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+  const topY = base - h;
+  const hr = h * (card ? 0.16 : 0.14);
+  const hy = topY + hr * 1.2;
+  const shoulder = hy + hr * 1.05;
+  const hip = base - h * 0.36;
+
+  // ── 长弓（出口象限：左上）── 一张**张开的 D**：细弓臂 + 直弦。
+  //    S3c 目检两轮：
+  //      ① 两段折线 + 墨弦 ⇒ 拐杖（折点硬、弦看不见）；
+  //      ② 四段弧 + 0.13h 弯度 ⇒ 弦与弓臂之间只剩 1px，被描边灌满 ⇒ 盾牌。
+  //    现在弯度加到 0.20h、弓臂压到 2px：中间留出 4px 透空，才读成"弓"。
+  const bx = cx - h * 0.3;
+  const bowTop = topY + h * 0.1;
+  const bowBot = base - h * 0.1;
+  const bowMidY = (bowTop + bowBot) / 2;
+  const bend = h * 0.2;
+  const bowT = Math.max(2, Math.round(h * 0.045));
+  tl(pb, bx, bowTop, bx - bend, bowMidY, P3.bark, bowT);
+  tl(pb, bx - bend, bowMidY, bx, bowBot, P3.bark, bowT);
+
+  // ── 领口：脸与叶披风之间的深翠绿隔层。
+  //    skin2 ↔ leaf4 只差 ΔL* 1.0、skin2 ↔ p3accent2 差 3.4 —— 直接贴必红。
+  //    布（p3accent0）对脸 27、对叶 26，两头都够；1px 的叶脉索性删（<2px 不画）。
+  R(pb, cx - h * 0.17, shoulder - h * 0.02, h * 0.34, Math.max(2, h * 0.07), P3.cloth);
+  // ── 叶披风（顶边下移到领口之下，不再碰脸）
+  pb.poly(
+    [
+      [cx - h * 0.30, shoulder + h * 0.05],
+      [cx + h * 0.26, shoulder + h * 0.05],
+      [cx + h * 0.34, hip],
+      [cx - h * 0.36, hip],
+    ],
+    P3.leaf,
+  );
+  // 躯干露在披风中间
+  pb.poly(
+    [
+      [cx - h * 0.16, shoulder],
+      [cx + h * 0.16, shoulder],
+      [cx + h * 0.13, hip],
+      [cx - h * 0.13, hip],
+    ],
+    P3.cloth,
+  );
+  // 躯干亮条用树皮色：leaf↔trim 只差 ΔL* 2.4，而 bark 对 leaf 41、对 cloth 15。
+  R(pb, cx - h * 0.02, shoulder + h * 0.05, Math.max(2, h * 0.035), hip - shoulder - h * 0.05, P3.bark);
+  const legW = Math.max(2, Math.round(h * 0.075));
+  R(pb, cx - h * 0.13, hip, legW, base - hip - h * 0.025, P3.bark);
+  R(pb, cx + h * 0.05, hip, legW, base - hip - h * 0.025, P3.bark);
+  R(pb, cx - h * 0.15, base - h * 0.035, legW + 1, Math.max(1, h * 0.035), P3.ink);
+  R(pb, cx + h * 0.03, base - h * 0.035, legW + 1, Math.max(1, h * 0.035), P3.ink);
+
+  // ── 兜帽 + 脸
+  ell(pb, cx - hr, hy - hr, cx + hr, hy + hr, P3.skin);
+  pb.poly(
+    [
+      [cx - hr * 1.12, hy - hr * 0.2],
+      [cx - hr * 0.9, hy - hr * 1.3],
+      [cx + hr * 0.9, hy - hr * 1.3],
+      [cx + hr * 1.12, hy - hr * 0.2],
+    ],
+    P3.cloth,
+  );
+  if (face) {
+    const lx = Math.round(cx) - (card ? 2 : 3);
+    const ey = Math.round(hy - hr * 0.1);
+    if (card) cardFace(pb, lx, ey);
+    else h3Face(pb, lx, ey, 1, 3, 3);
+  }
+  // ── 弓弦：**最后画**（压在叶披风上），否则会被披风盖掉半截，D 形就散了。
+  //    rock ↔ bark ΔL* 50 / rock ↔ leaf ΔL* 9.0（门槛 8），断言 8 两头都过。
+  //    兵牌也画：这不是「<2px 的装饰」，它是把弧认成弓的那一根线。
+  tl(pb, bx, bowTop, bx, bowBot, P3.rock, 1);
+  if (atk) {
+    // 搭箭：杆横过身体，箭镞用石浅色（对 bark ΔL* 50、对 cloth ΔL* 35）
+    tl(pb, bx - bend, bowMidY, cx + h * 0.34, bowMidY - h * 0.02, P3.bark, 2);
+    pb.poly(
+      [
+        [cx + h * 0.30, bowMidY - h * 0.06],
+        [cx + h * 0.42, bowMidY - h * 0.02],
+        [cx + h * 0.30, bowMidY + h * 0.03],
+      ],
+      P3.rock,
+    );
+  }
+}
+
+/** 树人 · 高档 · 树冠 + 根系。宽度必须 <1.11h，否则会落进「宽体」档（classify 的 w/h 用 H_REF 换算）。 */
+function drawTreant(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+  const topY = base - h;
+  const canopyBot = topY + h * 0.29;
+  const trunkTop = canopyBot - h * 0.01;
+  const hip = base - h * 0.16;
+
+  // ── 树冠：三团叶（card 用两团），最宽 0.88h —— 留出枝臂的余量
+  ell(pb, cx - h * 0.38, canopyBot - h * 0.24, cx + h * 0.38, canopyBot, P3.leaf);
+  ell(pb, cx - h * 0.3, topY, cx + h * 0.06, canopyBot - h * 0.07, P3.leaf);
+  if (!card) ell(pb, cx + h * 0.04, topY + h * 0.03, cx + h * 0.44, canopyBot - h * 0.05, P3.leaf);
+  // ── 冠上的花（`bloom`）：**错落、不成对**。
+  //    S3c ×12 目检：旧版两团对称暗斑正好长在树干脸的正上方，读成「第二双眼睛」，
+  //    一张脸变两张脸。改成偏左 / 偏右的三簇小花，只给"开花的树"这一条识别点，
+  //    不制造任何左右对称的孔洞。bloom ↔ leaf ΔL* 15.1，断言 8 安全。
+  const blooms: [number, number][] = card
+    ? [[-0.06, 0.03]]
+    : [
+        [-0.24, 0.055],
+        [0.14, 0.075],
+        [0.3, 0.11],
+      ];
+  for (const [fx, fy] of blooms) {
+    const fw = card ? Math.max(2, h * 0.12) : Math.max(2, h * 0.075);
+    R(pb, cx + h * fx, topY + h * fy, fw, Math.max(2, h * 0.055), P3.bloom);
+  }
+
+  // ── 树干（bark / barkLite 同族，脸盘也是 barkLite）
+  pb.poly(
+    [
+      [cx - h * 0.19, trunkTop],
+      [cx + h * 0.19, trunkTop],
+      [cx + h * 0.15, hip],
+      [cx - h * 0.15, hip],
+    ],
+    P3.bark,
+  );
+  R(pb, cx - h * 0.12, trunkTop + h * 0.02, Math.max(2, h * 0.045), hip - trunkTop - h * 0.04, P3.barkLite);
+
+  // ── 两根横枝（枝端叶团贴树皮 ΔL* 41，安全）
+  const armT = Math.max(2, Math.round(h * 0.055));
+  tl(pb, cx - h * 0.16, trunkTop + h * 0.15, cx - h * 0.47, trunkTop + h * 0.02, P3.bark, armT);
+  tl(pb, cx + h * 0.16, trunkTop + h * 0.17, cx + h * 0.47, trunkTop + h * 0.1, P3.bark, armT);
+  ell(pb, cx - h * 0.55, trunkTop - h * 0.05, cx - h * 0.4, trunkTop + h * 0.08, P3.leaf);
+  ell(pb, cx + h * 0.4, trunkTop + h * 0.02, cx + h * 0.55, trunkTop + h * 0.15, P3.leaf);
+
+  // ── 根系：兵牌只留两根（四根在 20px 高上会并成一块墨）
+  const roots = card ? [-0.3, 0.3] : [-0.36, -0.12, 0.14, 0.36];
+  for (const r of roots) {
+    tl(pb, cx + h * r * 0.3, hip, cx + h * r, base, P3.bark, Math.max(2, Math.round(h * 0.06)));
+  }
+
+  // ── 脸：树皮上的浅色面盘（barkLite ↔ bark 同族），h3 的墨眼/嘴在上面 ΔE 足够
+  const fy = trunkTop + h * 0.14;
+  const fr = h * (card ? 0.14 : 0.115);
+  ell(pb, cx - fr, fy - fr, cx + fr, fy + fr, P3.barkLite);
+  if (face) {
+    const lx = Math.round(cx) - (card ? 2 : 3);
+    const ey = Math.round(fy - fr * 0.25);
+    if (card) cardFace(pb, lx, ey);
+    else h3Face(pb, lx, ey, 1, Math.max(3, h * 0.09), 3);
+  }
+  if (atk) {
+    // 出手：右枝抬高，树冠不动
+    tl(pb, cx + h * 0.16, trunkTop + h * 0.17, cx + h * 0.47, trunkTop - h * 0.02, P3.bark, armT);
+  }
+}
+
+/** 猿人 · 宽体档 · 横张肩背 + 举石。R1 的机械判据只有 w≥1.35h，不许真画成四足（要投石）。 */
+function drawApe(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+  const topY = base - h;
+  const hr = h * (card ? 0.17 : 0.145);
+  const hy = topY + hr * 1.05; // 头往下压，埋进肩背里（不再是「坐在桌上的罐子」）
+  const shoulder = hy + hr * 0.55; // 肩线抬到头的下半部，省掉脖子
+  const hip = base - h * 0.3;
+  const outer = h * 0.76; // 肩头外缘 ±0.86h（含圆肩头）⇒ w≈1.7h，稳住宽体档
+  const armT = Math.max(3, Math.round(h * 0.09));
+
+  // ── 举石的手 + 石弹（出口象限：右上）── 先画，压在肩块后面。
+  //    stY 不许高过 topY + 0.03h：石弹顶超出 bbox 会把整只猿重新缩放（改档位）。
+  const stX = cx + h * 0.7;
+  const stY = shoulder - h * 0.1;
+  // 出手帧把**同一颗**石弹挪到右上，而不是再画一颗（旧版 atk 会同时出现两块石头）。
+  const stoneX = atk ? cx + h * 0.76 : stX;
+  const stoneY = atk ? stY - h * 0.02 : stY;
+  tl(pb, cx + h * 0.6, shoulder + h * 0.1, stX, stY + h * 0.06, P3.bark, armT);
+  ell(pb, stoneX - h * 0.12, stoneY - h * 0.1, stoneX + h * 0.12, stoneY + h * 0.1, P3.rock);
+  if (!card && !atk) R(pb, stX - h * 0.02, stY - h * 0.06, Math.max(2, h * 0.04), Math.max(2, h * 0.05), P3.bloom);
+
+  // ── 肩背：一整块**拱顶**多边形，最高点在脖子正中、两边往外下斜。
+  //    S3c 二次目检：两块斜楔子仍拼成一条水平通栏（还是桌子）。现在顶边是 ∧ 形
+  //    （没有水平边），再加左右圆肩头 + 一道浅色胸斑，把连续棕带切成三段。
+  pb.poly(
+    [
+      [cx - outer, shoulder + h * 0.14],
+      [cx - h * 0.26, shoulder - h * 0.04],
+      [cx, shoulder - h * 0.1],
+      [cx + h * 0.26, shoulder - h * 0.04],
+      [cx + outer, shoulder + h * 0.14],
+      [cx + outer * 1.04, shoulder + h * 0.3],
+      [cx + h * 0.24, shoulder + h * 0.26],
+      [cx - h * 0.24, shoulder + h * 0.26],
+      [cx - outer * 1.04, shoulder + h * 0.3],
+    ],
+    P3.bark,
+  );
+  for (const dir of [-1, 1]) {
+    ell(
+      pb,
+      cx + dir * outer - h * 0.1,
+      shoulder + h * 0.06,
+      cx + dir * outer + h * 0.1,
+      shoulder + h * 0.3,
+      P3.bark,
+    );
+  }
+  // 浅色胸斑（barkLite↔bark ΔL* 22.2 / ↔skin 20.1 / ↔trim 16.7，三条都过门槛）
+  ell(pb, cx - h * 0.17, shoulder + h * 0.11, cx + h * 0.17, shoulder + h * 0.29, P3.barkLite);
+
+  // ── 左臂**折肘**：上臂外斜 → 肘 → 前臂回收 → 拳。直柱是「桌腿」的全部来源。
+  const elbowY = shoulder + h * 0.45;
+  tl(pb, cx - h * 0.7, shoulder + h * 0.22, cx - h * 0.82, elbowY, P3.bark, armT);
+  // 前臂与拳必须**重叠 ≥1px**：22×30 时 0.02h < 1px，取整后会断成一颗孤立的点（目检实测）。
+  tl(pb, cx - h * 0.82, elbowY, cx - h * 0.74, base - h * 0.05, P3.bark, armT);
+  ell(pb, cx - h * 0.74 - h * 0.085, base - h * 0.14, cx - h * 0.74 + h * 0.085, base - h * 0.02, P3.bark);
+
+  // ── 躯干 + 叶围裙（trim 贴 bark ΔL* 38.8；离脸很远，不会撞 skin）
+  pb.poly(
+    [
+      [cx - h * 0.26, shoulder + h * 0.24],
+      [cx + h * 0.26, shoulder + h * 0.24],
+      [cx + h * 0.19, hip],
+      [cx - h * 0.19, hip],
+    ],
+    P3.bark,
+  );
+  pb.poly(
+    [
+      [cx - h * 0.2, hip - h * 0.1],
+      [cx + h * 0.2, hip - h * 0.1],
+      [cx + h * 0.22, hip + h * 0.04],
+      [cx - h * 0.22, hip + h * 0.04],
+    ],
+    P3.trim,
+  );
+  const legW = Math.max(2, Math.round(h * 0.1));
+  R(pb, cx - h * 0.17, hip, legW, base - hip - h * 0.03, P3.bark);
+  R(pb, cx + h * 0.07, hip, legW, base - hip - h * 0.03, P3.bark);
+  R(pb, cx - h * 0.19, base - h * 0.04, legW + 1, Math.max(1, h * 0.04), P3.ink);
+  R(pb, cx + h * 0.05, base - h * 0.04, legW + 1, Math.max(1, h * 0.04), P3.ink);
+
+  // ── 小头 + 眉脊（bark 贴 skin ΔL* 42）
+  ell(pb, cx - hr, hy - hr, cx + hr, hy + hr, P3.skin);
+  R(pb, cx - hr * 0.9, hy - hr * 0.58, hr * 1.8, Math.max(2, hr * 0.34), P3.bark);
+  if (face) {
+    const lx = Math.round(cx) - (card ? 2 : 3);
+    const ey = Math.round(hy - hr * 0.05);
+    if (card) cardFace(pb, lx, ey);
+    else h3Face(pb, lx, ey, 1, 3, 3);
+  }
+  // 出手姿态已在石弹位置里表达（见上），这里不再补第二颗石头。
+}
+
+/** 绿龙 · 巨物·飞行档 · 长颈 + 横身 + 长尾 + **下掠翼**。
+ *  §16.1：恶魔也是下掠翼，两者只能靠「直立人形 vs 横身长颈长尾」分，不许靠翼向。
+ *  ⚠️ 画布宽 64 ⇒ 高 54px 的龙，宽必须 ≤64（w/h ≤1.18），否则断言 12 横向溢出。 */
+function drawGreenDragon(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+  const topY = base - h;
+  const bodyCy = base - h * 0.42;
+
+  // ── 下掠双翼（先画，在身体后面）：**亮膜 + 暗翼骨**，翼尖朝下，与 p2 恶魔同向。
+  //    S3c ×12 目检：旧版膜是 leafDark（深色卡面上几乎看不见），只剩两条亮斜线
+  //    ⇒ 读成「两根斜杆」。现在膜用亮叶色、翼骨用暗色；所有翼点都推到 |x| ≥ 0.30h，
+  //    避开腿区。leaf↔leafDark ΔL* 37 / leaf↔cloth ΔL* 26，断言 8 两头都过。
+  for (const dir of [-1, 1]) {
+    const sx = cx + dir * h * 0.1;
+    const tipX = cx + dir * h * 0.5;
+    pb.poly(
+      [
+        [sx, bodyCy - h * 0.12],
+        [cx + dir * h * 0.52, bodyCy - h * 0.02],
+        [tipX, base - h * 0.12],
+        [cx + dir * h * 0.34, base - h * 0.24],
+        [cx + dir * h * 0.3, bodyCy + h * 0.1],
+      ],
+      P3.leaf,
+    );
+    // 两根翼骨：从肩到外下尖 / 到外上角，压在亮膜上才读成翼骨而不是孤立的杆
+    tl(pb, sx, bodyCy - h * 0.1, tipX, base - h * 0.12, P3.leafDark, card ? 1 : 2);
+    tl(pb, sx, bodyCy - h * 0.1, cx + dir * h * 0.52, bodyCy - h * 0.02, P3.leafDark, 1);
+  }
+
+  // ── 长颈（左上）+ 头：整只龙的最高点由后掠冠给出
+  tl(pb, cx - h * 0.22, bodyCy - h * 0.02, cx - h * 0.3, topY + h * 0.25, P3.cloth, Math.max(3, Math.round(h * 0.1)));
+  const hx = cx - h * 0.32;
+  const hyH = topY + h * 0.2;
+  ell(pb, hx - h * 0.12, hyH - h * 0.09, hx + h * 0.12, hyH + h * 0.09, P3.cloth);
+  // 吻朝左，伸出剪影（识别点不许藏在体内）
+  pb.poly(
+    [
+      [hx - h * 0.06, hyH - h * 0.02],
+      [hx - h * 0.2, hyH - h * 0.01],
+      [hx - h * 0.2, hyH + h * 0.06],
+      [hx - h * 0.06, hyH + h * 0.07],
+    ],
+    P3.trim,
+  );
+  // 后掠冠：触到 topY，保证 bbox 高 = h（巨物档靠高度，不靠翼展）
+  pb.poly(
+    [
+      [hx + h * 0.02, hyH - h * 0.07],
+      [hx + h * 0.18, topY],
+      [hx + h * 0.16, hyH - h * 0.02],
+    ],
+    P3.leaf,
+  );
+
+  // ── 横身 + **分节腹甲**：一整条通栏亮边配四条直腿，×12 实拍也读成一张桌子。
+  //    改成三片短甲，中间留缝；trim↔cloth ΔL* 23.6，安全。
+  ell(pb, cx - h * 0.28, bodyCy - h * 0.12, cx + h * 0.28, bodyCy + h * 0.12, P3.cloth);
+  for (let i = -1; i <= 1; i++) {
+    R(pb, cx + h * (i * 0.15 - 0.055), bodyCy + h * 0.045, Math.max(2, h * 0.11), Math.max(2, h * 0.042), P3.trim);
+  }
+  // ── 两条**折腿**（大腿 → 膝 → 胫 → 足）：四条等宽直柱在 cu 上读成「栅栏」。
+  //    与恶魔分家靠的是横身 + 长颈 + 长尾，不靠腿数，所以两种尺寸统一收成两足。
+  const legXs = card ? [-0.14, 0.18] : [-0.18, 0.18];
+  for (const lx of legXs) {
+    const x0 = cx + h * lx;
+    const kneeY = base - h * 0.17;
+    tl(pb, x0, bodyCy + h * 0.06, x0 + h * 0.045, kneeY, P3.cloth, Math.max(2, Math.round(h * 0.085)));
+    tl(pb, x0 + h * 0.045, kneeY, x0 - h * 0.01, base - h * 0.03, P3.cloth, Math.max(2, Math.round(h * 0.055)));
+    R(pb, x0 - h * 0.055, base - h * 0.045, Math.max(3, h * 0.11), Math.max(1, h * 0.035), P3.ink);
+  }
+
+  // ── 长尾（出口象限：右下）：这是与恶魔分家的第二处
+  tl(pb, cx + h * 0.26, bodyCy, cx + h * 0.48, bodyCy + h * 0.06, P3.cloth, Math.max(3, Math.round(h * 0.065)));
+  pb.poly(
+    [
+      [cx + h * 0.44, bodyCy - h * 0.02],
+      [cx + h * 0.52, bodyCy + h * 0.02],
+      [cx + h * 0.44, bodyCy + h * 0.1],
+    ],
+    P3.leaf,
+  );
+
+  // ── 脸：兽形侧脸（profile 通道），单眼、无嘴线
+  if (face) {
+    const ex = Math.round(hx - h * 0.01);
+    const ey = Math.round(hyH - h * 0.05);
+    if (card) pb.set(ex, ey, P3.ink);
+    else profileEye(pb, ex, ey);
+  }
+  if (atk) {
+    // 喷火：吻前一簇（用小面积高饱和 `bloom`，不改剪影高度）
+    R(pb, hx - h * 0.3, hyH + h * 0.01, Math.max(3, h * 0.08), Math.max(2, h * 0.045), P3.bloom);
+  }
+}
+
+/* ==========================================================================
  * 5. 入口
  * ========================================================================== */
 
@@ -1432,6 +1910,21 @@ export function drawBodyPlanUnit(
       break;
     case 'p2_devil':
       drawDevil(pb, cx, base, h, atk, face, card);
+      break;
+    case 'p3_dwarf':
+      drawDwarf(pb, cx, base, h, atk, face, card);
+      break;
+    case 'p3_junglearcher':
+      drawJungleArcher(pb, cx, base, h, atk, face, card);
+      break;
+    case 'p3_treant':
+      drawTreant(pb, cx, base, h, atk, face, card);
+      break;
+    case 'p3_ape':
+      drawApe(pb, cx, base, h, atk, face, card);
+      break;
+    case 'p3_greendragon':
+      drawGreenDragon(pb, cx, base, h, atk, face, card);
       break;
     default:
       return false;

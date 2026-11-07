@@ -211,6 +211,10 @@ export interface B0FrameSpec {
     | 'p2_threewolf'
     | 'p2_lavagiant'
     | 'p2_devil'
+    // S3c：p3 按新体形档重画的五个兵
+    | 'p3_junglearcher'
+    | 'p3_ape'
+    | 'p3_greendragon'
     // TP-4② 中立野怪（D-58 §6.4.4：不迁名，id 即帧名中缀）
     | 'wolf'
     | 'boar'
@@ -240,14 +244,8 @@ export const B0_FRAMES: B0FrameSpec[] = [
 export const B1_FRAMES: B0FrameSpec[] = [
   // ⚠️ 本批原有的 `*_p1_hornxbow_*` 3 帧已随 S3a 退役（同 B0 注释）。
   // ⚠️ `*_p2_axethrower_*` 3 帧已随 S3b 退役：p2 T2 现在是 `p2_bronze`（铜人）。
-  // 翠林 T1 浇水矮人（p3 圆形母题：圆滚滚一坨，头顶一丛叶）
-  { name: 'u_p3_dwarf_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_dwarf', kind: 'map' },
-  { name: 'cu_p3_dwarf', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_dwarf', kind: 'idle' },
-  { name: 'cu_p3_dwarf_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_dwarf', kind: 'atk' },
-  // 翠林 T2 荆棘射手（p3 圆形母题：弓成弧，头顶枝叶绕成环）
-  { name: 'u_p3_thornarcher_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_thornarcher', kind: 'map' },
-  { name: 'cu_p3_thornarcher', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_thornarcher', kind: 'idle' },
-  { name: 'cu_p3_thornarcher_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_thornarcher', kind: 'atk' },
+  // ⚠️ S3c（2026-11-06）：本批原有的 3 帧 `*_p3_<旧 id>_*` 已退役 —— p3 五兵现在画在 `P3V3_FRAMES` 里。
+  // ⚠️ S3c（2026-11-06）：本批原有的 3 帧 `*_p3_<旧 id>_*` 已退役 —— p3 五兵现在画在 `P3V3_FRAMES` 里。
   // 紫晶 T1 石雕小怪（p4 菱形母题：菱形石块，底部悬空 1px，身上一道裂纹）
   { name: 'u_p4_stoneimp_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_stoneimp', kind: 'map' },
   { name: 'cu_p4_stoneimp', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_stoneimp', kind: 'idle' },
@@ -271,14 +269,8 @@ export const B2_FRAMES: B0FrameSpec[] = [
   // ⚠️ 本批原有的 `*_p1_oathpike_*` / `*_p1_templar_*` 6 帧已随 S3a 退役（同 B0 注释）。
   // ⚠️ `*_p2_wolfrider_*` / `*_p2_firebrand_*` 6 帧已随 S3b 退役：
   //    p2 T3 现在是 `p2_threewolf`（三头狼）、T4 是 `p2_lavagiant`（熔岩巨人）。
-  // 翠林 T3 藤蔓卫士（p3 圆形母题：圆形藤甲覆盖躯干，无可见直角）
-  { name: 'u_p3_vineguard_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_vineguard', kind: 'map' },
-  { name: 'cu_p3_vineguard', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_vineguard', kind: 'idle' },
-  { name: 'cu_p3_vineguard_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_vineguard', kind: 'atk' },
-  // 翠林 T4 树人大叔（p3 圆形母题：最宽的圆，树干圆柱，头顶 2 丛树冠）
-  { name: 'u_p3_treant_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_treant', kind: 'map' },
-  { name: 'cu_p3_treant', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_treant', kind: 'idle' },
-  { name: 'cu_p3_treant_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_treant', kind: 'atk' },
+  // ⚠️ S3c（2026-11-06）：本批原有的 3 帧 `*_p3_<旧 id>_*` 已退役 —— p3 五兵现在画在 `P3V3_FRAMES` 里。
+  // ⚠️ S3c（2026-11-06）：本批原有的 3 帧 `*_p3_<旧 id>_*` 已退役 —— p3 五兵现在画在 `P3V3_FRAMES` 里。
   // 紫晶 T3 蹦跳魔偶（p4 菱形母题：菱形木偶，四肢细线，双脚离地）
   { name: 'u_p4_hopgolem_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_hopgolem', kind: 'map' },
   { name: 'cu_p4_hopgolem', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_hopgolem', kind: 'idle' },
@@ -308,10 +300,7 @@ export const B3_FRAMES: B0FrameSpec[] = [
   // ⚠️ `*_p2_lavatroll_*` 3 帧已随 S3b 退役：p2 T5 现在是 `p2_devil`（恶魔），
   //    "熔岩"母题下放成 T4 的 `p2_lavagiant`。旧图与新阵容的 tier 对不上，
   //    留着会让 b0audit 的 H1 在同一 tier 上读到两份体量。
-  // 翠林 T5 独角兽园丁（p3 圆形母题：圆身 + 长角指天，鬃毛圆波浪）
-  { name: 'u_p3_unicorn_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_unicorn', kind: 'map' },
-  { name: 'cu_p3_unicorn', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_unicorn', kind: 'idle' },
-  { name: 'cu_p3_unicorn_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_unicorn', kind: 'atk' },
+  // ⚠️ S3c（2026-11-06）：本批原有的 3 帧 `*_p3_<旧 id>_*` 已退役 —— p3 五兵现在画在 `P3V3_FRAMES` 里。
   // 紫晶 T5 失控大魔像（p4 菱形母题：悬浮菱形核心，四块碎石环绕，脚下无腿）
   { name: 'u_p4_colossus_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_colossus', kind: 'map' },
   { name: 'cu_p4_colossus', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_colossus', kind: 'idle' },
@@ -412,7 +401,42 @@ export const P2V3_FRAMES: B0FrameSpec[] = [
   { name: 'cu_p2_devil_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_devil', kind: 'atk' },
 ];
 
-/** unitArt.ts 内**全部**程序化兵种帧（B0 3 + B1 15 + B2 18 + B3 9 + B4 3 + P1V3 15 + P2V3 15 = 78），供 `tools/b0audit.mjs` 全扫描，
+/**
+ * P3V3 批（§15.2 / §16.1 · S3c，2026-11-06）：p3 翠林五个兵**按新体形档重画**。
+ *
+ * 与 P1V3/P2V3 同一条分叉（`BODY_PLAN` 决定体量，不读 `TIER_TARGET_PCT`）。
+ * 这一族带来三个**新骨架**：树人（树冠 + 根系）、猿人（横张肩背，w ≥ 1.35h）、
+ * 绿龙（长颈 + 横身 + 长尾）。绿龙与恶魔同为**下掠翼** ⇒ 族内没有翼向对照，
+ * 只能靠「四足长颈 vs 直立人形」分开（§16.1 / S3b 落地单 §7）。
+ *
+ * ⚠️ `p3_dwarf` 与 `p3_treant` 的帧基名和旧帧**恰好同名**（旧 T4 树人 → 新 T3 树人）：
+ *    旧帧已整组退役，这里重新登记同名帧，调用侧无需改帧名，但 `FRAME_ALIAS` 的两条
+ *    恒等别名必须同步删掉（否则 [0] 会判「还在看旧图」）。
+ */
+export const P3V3_FRAMES: B0FrameSpec[] = [
+  // 矮档：矮人（大头 + 宽胡子 + 左手的宽刃斧）
+  { name: 'u_p3_dwarf_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_dwarf', kind: 'map' },
+  { name: 'cu_p3_dwarf', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_dwarf', kind: 'idle' },
+  { name: 'cu_p3_dwarf_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_dwarf', kind: 'atk' },
+  // 中档：丛林射手（竖长弓 + 叶披风）
+  { name: 'u_p3_junglearcher_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_junglearcher', kind: 'map' },
+  { name: 'cu_p3_junglearcher', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_junglearcher', kind: 'idle' },
+  { name: 'cu_p3_junglearcher_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_junglearcher', kind: 'atk' },
+  // 高档：树人（树冠 + 树干 + 根系；宽度 <1.11h 才不落宽体档）
+  { name: 'u_p3_treant_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_treant', kind: 'map' },
+  { name: 'cu_p3_treant', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_treant', kind: 'idle' },
+  { name: 'cu_p3_treant_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_treant', kind: 'atk' },
+  // 宽体档：猿人（横张肩背 + 举石；要投石，不许真四足）
+  { name: 'u_p3_ape_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_ape', kind: 'map' },
+  { name: 'cu_p3_ape', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_ape', kind: 'idle' },
+  { name: 'cu_p3_ape_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_ape', kind: 'atk' },
+  // 巨物·飞行档：绿龙（长颈 + 横身 + 长尾 + 下掠翼）
+  { name: 'u_p3_greendragon_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_greendragon', kind: 'map' },
+  { name: 'cu_p3_greendragon', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_greendragon', kind: 'idle' },
+  { name: 'cu_p3_greendragon_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_greendragon', kind: 'atk' },
+];
+
+/** unitArt.ts 内**全部**程序化兵种帧（B0 0 + B1 6 + B2 6 + B3 3 + B4 3 + P1V3 15 + P2V3 15 + P3V3 15 = 63），供 `tools/b0audit.mjs` 全扫描，
  *  `atlas.ts` / `combatAtlas.ts` 也遍历本数组烘焙（#24 已接好，无需改那两个文件）。 */
 export const UNIT_FRAMES: B0FrameSpec[] = [
   ...B0_FRAMES,
@@ -422,6 +446,7 @@ export const UNIT_FRAMES: B0FrameSpec[] = [
   ...B4_FRAMES,
   ...P1V3_FRAMES,
   ...P2V3_FRAMES,
+  ...P3V3_FRAMES,
 ];
 
 /** 第 7 个资产：AI 生成的 `crestL_p1`（256×384），本轮不做，只在验收脚本里留人工项。 */
@@ -449,7 +474,7 @@ export const TIER_OF: Record<string, number> = {
   p3_dwarf: 1, p4_stoneimp: 1,
   p3_thornarcher: 2, p4_fireapprentice: 2,
   p3_vineguard: 3, p4_hopgolem: 3,
-  p3_treant: 4, p4_librarian: 4,
+  p3_treant: 3, p4_librarian: 4,
   p3_unicorn: 5, p4_colossus: 5,
   // S3a 新体形档的五个 p1 兵：tier 仍要登记（[C]/[M] 覆盖率、BattleRenderer 的
   // 高亮与排序、audit:power 都按 tier 读），但**体量不再由 tier 决定** ——
@@ -457,6 +482,8 @@ export const TIER_OF: Record<string, number> = {
   p1_child: 1, p1_crossbow: 2, p1_eagle: 3, p1_knight: 4, p1_angel: 5,
   // S3b：p2 五兵（同理，体量走 `BODY_PLAN`，tier 只给渲染/平衡侧的调用方读）
   p2_matchman: 1, p2_bronze: 2, p2_threewolf: 3, p2_lavagiant: 4, p2_devil: 5,
+  // S3c：p3 五兵（同理，体量走 `BODY_PLAN`，tier 只给渲染/平衡侧的调用方读）
+  p3_junglearcher: 2, p3_ape: 4, p3_greendragon: 5,
   // TP-4② 中立野怪（tier 取自 units.ts：wolf T1 / boar T3 / ogre T4）。
   // 入表 ⇒ cu 帧过 normalizeTier 归一化 + b0audit 的 S1（落靶 ±3pt）/ H2（跨档倒挂）
   // 覆盖；H1（每族 T1→T4 阶梯）不适用——中立怪不是族，见 b0audit 的分组注释。

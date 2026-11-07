@@ -96,11 +96,11 @@ const K = S * DPR; // 每个美术像素占多少**设备像素**
 
 const FACTION_CN = { p1: '晨曦', p2: '赤焰', p3: '翠林', p4: '紫晶' };
 const UNIT_CN = {
-  p1_child: '小孩', p2_matchman: '火柴人', p3_dwarf: '浇水矮人', p4_stoneimp: '石雕小怪',
-  p1_crossbow: '弩手', p2_bronze: '铜人', p3_thornarcher: '荆棘射手', p4_fireapprentice: '喷火学徒',
-  p1_eagle: '鹰', p2_threewolf: '三头狼', p3_vineguard: '藤蔓卫士', p4_hopgolem: '蹦跳魔偶',
-  p1_knight: '骑士', p2_lavagiant: '熔岩巨人', p3_treant: '树人大叔', p4_librarian: '亡灵图书管理员',
-  p1_angel: '天使', p2_devil: '恶魔', p3_unicorn: '独角兽园丁', p4_colossus: '失控大魔像',
+  p1_child: '小孩', p2_matchman: '火柴人', p3_dwarf: '矮人', p4_stoneimp: '石雕小怪',
+  p1_crossbow: '弩手', p2_bronze: '铜人', p3_junglearcher: '丛林射手', p4_fireapprentice: '喷火学徒',
+  p1_eagle: '鹰', p2_threewolf: '三头狼', p3_treant: '树人', p4_hopgolem: '蹦跳魔偶',
+  p1_knight: '骑士', p2_lavagiant: '熔岩巨人', p3_ape: '猿人', p4_librarian: '亡灵图书管理员',
+  p1_angel: '天使', p2_devil: '恶魔', p3_greendragon: '绿龙', p4_colossus: '失控大魔像',
 };
 /** 中立怪不是"人类单位"，H3 对兽类的要求是 2px 眼白 + 1px 瞳孔，本批**不进人类闸**。 */
 const NEUTRAL = new Set(['cu_wolf', 'cu_boar', 'cu_ogre']);
@@ -118,7 +118,7 @@ const FACE_LAW = {
   cu_p2_bronze: ['glow', '铜人（构装）：2×2 p2emissive 眼，无 hi0（§1.4 唯一高光不适用于构装）；"嘴"是 metal0 面甲缝，不是 ink0 嘴线'],
   cu_p2_lavagiant: ['glow', '熔岩巨人：2×2 p2emissive 眼 + 1px stone0 嘴线（下巴裂纹，嘴在眼下 5 行）'],
   cu_p2_threewolf: ['profile', '三头狼（兽形侧脸，§5.6.4）：三个头里只有主头画 ink 眼；另两颗是远侧的头，只点 p2wall0 暗点（凑不出 ink0+hi0 的 2×2 窗口）'],
-  cu_p3_unicorn: ['profile', '侧脸母题（§5.6.4 兽形）：只画一只眼，无独立嘴线'],
+  cu_p3_greendragon: ['profile', '绿龙（兽形侧脸，§5.6.4）：头是朝左的长吻，只有单眼；吻缝不是 ink0 的"嘴线"，按 h3 判会逼出一张假人脸'],
   cu_p1_eagle: ['profile', '猛禽侧脸：头是侧向钩喙（喙朝左），只有单眼；喙缝不是 ink0 的"嘴线"，按 h3 判会逼出一张假人脸'],
 };
 /**
