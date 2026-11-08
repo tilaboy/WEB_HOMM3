@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>p4 兵牌盲测 · 43×37 / 22×30</title>
+<style>
+  :root{
+    --bg:#121116; --card:#1b1a20; --card2:#232229; --line:#33313b;
+    --ink:#ece7dc; --muted:#9b958b; --gold:#d8b45c; --ok:#7fc08a; --bad:#e0705f;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+  header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:16px;
+    padding:12px 20px;background:rgba(18,17,22,.92);border-bottom:1px solid var(--line);backdrop-filter:blur(6px)}
+  .brand{font-size:16px;font-weight:600;letter-spacing:.02em}
+  .brand span{color:var(--muted);font-weight:400;margin-left:8px;font-size:13px}
+  header .who{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+  select{background:var(--card2);color:var(--ink);border:1px solid var(--line);
+    border-radius:8px;padding:7px 10px;font-size:14px}
+  main{max-width:1040px;margin:0 auto;padding:24px 20px 80px}
+  section{display:none}
+  section.on{display:block}
+  h2{font-size:19px;margin:0 0 6px}
+  .hint{color:var(--muted);margin:0 0 16px;font-size:13.5px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .sheet{overflow:auto;background:#3a3231;border-radius:10px;border:1px solid var(--line);padding:6px}
+  .sheet img{display:block;width:1440px;height:900px;image-rendering:pixelated}
+  /* 题面只保留内容那一条：原图 1440×900 大部分是空底色，整张显示会横向溢出、还把人缩得看不清。
+     这里用「窗口 + 负偏移」裁到内容 bbox（偏移量在生成时按像素算好），图本身仍是 1:1。 */
+  .crop{position:relative;overflow:hidden;margin:0 auto;background:#2b2f35;border-radius:8px;max-width:100%}
+  .crop img{position:absolute;width:1440px;height:900px;image-rendering:pixelated}
+  .cap{color:var(--muted);font-size:12.5px;text-align:center;margin:8px 0 0}
+  .names{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:6px}
+  .names li{display:flex;gap:10px;align-items:baseline;padding:7px 10px;background:var(--card2);border-radius:8px}
+  .names b{color:var(--gold);font-weight:600;min-width:18px}
+  .names i{font-style:normal;color:var(--muted);margin-left:auto;font-size:13px}
+  .rows{margin-top:16px;display:grid;gap:10px}
+  .row{display:grid;grid-template-columns:56px 1fr;gap:10px;align-items:center;
+    background:var(--card2);border:1px solid transparent;border-radius:10px;padding:8px 10px}
+  .row.done{border-color:#3f4a3f}
+  .row .no{color:var(--muted);font-size:13px}
+  .opts{display:flex;flex-wrap:wrap;gap:6px}
+  .opts button{background:#2b2a33;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+    padding:9px 12px;font-size:14px;cursor:pointer;min-height:38px}
+  .opts button:hover{border-color:#4a4756}
+  .opts button.sel{background:#3a3323;border-color:var(--gold);color:#f4e2b4}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:18px}
+  button.primary{background:var(--gold);color:#241d0c;border:0;border-radius:9px;padding:11px 20px;
+    font-size:15px;font-weight:600;cursor:pointer}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);border-radius:9px;
+    padding:10px 16px;font-size:14px;cursor:pointer}
+  button:disabled{opacity:.45;cursor:default}
+  .meta{color:var(--muted);font-size:13px;margin-left:auto}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:10px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+  th{color:var(--muted);font-weight:500;font-size:13px}
+  td.ok{color:var(--ok)} td.bad{color:var(--bad)}
+  .score{display:flex;gap:12px;flex-wrap:wrap;margin:4px 0 8px}
+  .score div{background:var(--card2);border-radius:10px;padding:12px 18px}
+  .score b{display:block;font-size:26px;line-height:1.2}
+  .score small{color:var(--muted)}
+  pre.copy{white-space:pre-wrap;background:#0e0d12;border:1px solid var(--line);border-radius:8px;
+    padding:12px;font-size:12.5px;color:#cfc9bd;margin:12px 0 0}
+  .warn{color:var(--gold);font-size:13px;margin:10px 0 0}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">p4 兵牌盲测 <span>43×37 与 22×30 两页 · 只看出形</span></div>
+  <div class="who">被测者
+    <select id="tester"></select>
+  </div>
+</header>
+
+<main>
+  <section id="s-study" class="on">
+    <h2>1 · 看 10 秒教材</h2>
+    <p class="hint">下面 5 个就是紫晶族五兵。记住「谁长什么样」，等下要在小尺寸里认出来。看够了按开始。</p>
+    <div class="card">
+      <div class="crop" id="cropStudy"><img src="study-p4.png" alt="教材页"></div>
+      <p class="cap">教材页 · 放大版（不计分）</p>
+      <ol class="names" id="studyList"></ol>
+    </div>
+    <div class="bar">
+      <button class="primary" id="toQuiz">开始（第 1 页：43×37）</button>
+      <span class="meta">图按 1:1 显示，别用浏览器缩放。</span>
+    </div>
+  </section>
+
+  <section id="s-quiz">
+    <h2>2 · 43×37（兵牌真实尺寸）</h2>
+    <p class="hint">图里 5 格，从左到右编号 1–5。每格选一个你认出来的兵。</p>
+    <div class="card">
+      <div class="crop" id="cropQuiz"><img id="imgQuiz" alt="43×37 题面"></div>
+      <p class="cap">每格 43×37 · 1:1 像素，没有放大</p>
+      <div class="rows" id="rowsQuiz"></div>
+    </div>
+    <div class="bar">
+      <button class="primary" id="toQuiz22" disabled>下一页（22×30）</button>
+      <button class="ghost" id="clearQuiz">清空本页</button>
+      <span class="meta" id="metaQuiz"></span>
+    </div>
+  </section>
+
+  <section id="s-quiz22">
+    <h2>3 · 22×30（更小尺寸 / 余量页）</h2>
+    <p class="hint">顺序和上一页不同，别照着上一页填。同样 5 格。</p>
+    <div class="card">
+      <div class="crop" id="cropQuiz22"><img id="imgQuiz22" alt="22×30 题面"></div>
+      <p class="cap">每格 22×30 · 1:1 像素</p>
+      <div class="rows" id="rowsQuiz22"></div>
+    </div>
+    <div class="bar">
+      <button class="primary" id="toResult" disabled>看结果</button>
+      <button class="ghost" id="clearQuiz22">清空本页</button>
+      <span class="meta" id="metaQuiz22"></span>
+    </div>
+  </section>
+
+  <section id="s-result">
+    <h2>4 · 结果</h2>
+    <p class="hint" id="resWho"></p>
+    <div class="score">
+      <div><b id="scoreQuiz">–</b><small>43×37</small></div>
+      <div><b id="scoreQuiz22">–</b><small>22×30</small></div>
+    </div>
+    <div class="card"><table id="resTable">
+      <thead><tr><th>页</th><th>格</th><th>你选的</th><th>正确</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <div class="bar">
+      <button class="primary" id="copyBtn">复制结果</button>
+      <button class="ghost" id="againBtn">同一个人重做</button>
+      <button class="ghost" id="nextBtn">换下一位</button>
+    </div>
+    <pre class="copy" id="copyBox" hidden></pre>
+    <p class="warn" id="diagWarn" hidden></p>
+    <div class="card" id="diagWrap" hidden style="margin-top:12px">
+      <p class="hint" style="margin:0 0 10px">回查用的 ×8 放大页（与 43×37 那一页同序）。</p>
+      <div class="crop" id="cropDiag"><img id="imgDiag" alt="放大回查"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const KEY = {"seed":20261108,"testers":["t1","t2","t3","t4","t5"],"study":{"1":{"id":"p4_skeleton","cn":"骷髅","cls":"矮"},"2":{"id":"p4_zombie","cn":"僵尸","cls":"中"},"3":{"id":"p4_vampire","cn":"吸血鬼","cls":"高"},"4":{"id":"p4_minotaur","cn":"牛头怪","cls":"宽体"},"5":{"id":"p4_wraith","cn":"摄魂怪","cls":"巨物·飞行"}},"quizzes":{"t1":[{"cell":"1","id":"p4_minotaur","cn":"牛头怪","cls":"宽体"},{"cell":"2","id":"p4_zombie","cn":"僵尸","cls":"中"},{"cell":"3","id":"p4_wraith","cn":"摄魂怪","cls":"巨物·飞行"},{"cell":"4","id":"p4_vampire","cn":"吸血鬼","cls":"高"},{"cell":"5","id":"p4_skeleton","cn":"骷髅","cls":"矮"}],"t2":[{"cell":"1","id":"p4_minotaur","cn":"牛头怪","cls":"宽体"},{"cell":"2","id":"p4_zombie","cn":"僵尸","cls":"中"},{"cell":"3","id":"p4_vampire","cn":"吸血鬼","cls":"高"},{"cell":"4","id":"p4_skeleton","cn":"骷髅","cls":"矮"},{"cell":"5","id":"p4_wraith","cn":"摄魂怪","cls":"巨物·飞行"}],"t3":[{"cell":"1","id":"p4_zombie","cn":"僵尸","cls":"中"},{"cell":"2","id":"p4_wraith","cn":"摄魂怪","cls":"巨物·飞行"},{"cell":"3","id":"p4_vampire","cn":"吸血鬼","cls":"高"},{"cell":"4","id":"p4_skeleton","cn":"骷髅","cls":"矮"},{"cell":"5","id":"p4_minotaur","cn":"牛头怪","cls":"宽体"}],"t4":[{"cell":"1","id":"p4_minotaur","cn":"牛头怪","cls":"宽体"},{"cell":"2","id":"p4_vampire","cn":"吸血鬼","cls":"高"},{"cell":"3","id":"p4_zombie","cn":"僵尸","cls":"中"},{"cell":"4","id":"p4_skeleton","cn":"骷髅","cls":"矮"},{"cell":"5","id":"p4_wraith","cn":"摄魂怪","cls":"巨物·飞行"}],"t5":[{"cell":"1","id":"p4_minotaur","cn":"牛头怪","cls":"宽体"},{"cell":"2","id":"p4_zombie","cn":"僵尸","cls":"中"},{"cell":"3","id":"p4_wraith","cn":"摄魂怪","cls":"巨物·飞行"},{"cell":"4","id":"p4_skeleton","cn":"骷髅","cls":"矮"},{"cell":"5","id":"p4_vampire","cn":"吸血鬼","cls":"高"}]},"quizzes22":{"t1":[{"cell":"1","id":"p4_wraith","cn":"摄魂怪","cls":"巨物·飞行"},{"cell":"2","id":"p4_minotaur","cn":"牛头怪","cls":"宽体"},{"cell":"3","id":"p4_skeleton","cn":"骷髅","cls":"矮"},{"cell":"4","id":"p4_vampire","cn":"吸血鬼","cls":"高"},{"cell":"5","id":"p4_zombie","cn":"僵尸","cls":"中"}],"t2":[{"cell":"1","id":"p4_skeleton","cn":"骷髅","cls":"矮"},{"cell":"2","id":"p4_vampire","cn":"吸血鬼","cls":"高"},{"cell":"3","id":"p4_zombie","cn":"僵尸","cls":"中"},{"cell":"4","id":"p4_wraith","cn":"摄魂怪","cls":"巨物·飞行"},{"cell":"5","id":"p4_minotaur","cn":"牛头怪","cls":"宽体"}],"t3":[{"cell":"1","id":"p4_vampire","cn":"吸血鬼","cls":"高"},{"cell":"2","id":"p4_zombie","cn":"僵尸","cls":"中"},{"cell":"3","id":"p4_wraith","cn":"摄魂怪","cls":"巨物·飞行"},{"cell":"4","id":"p4_minotaur","cn":"牛头怪","cls":"宽体"},{"cell":"5","id":"p4_skeleton","cn":"骷髅","cls":"矮"}],"t4":[{"cell":"1","id":"p4_zombie","cn":"僵尸","cls":"中"},{"cell":"2","id":"p4_minotaur","cn":"牛头怪","cls":"宽体"},{"cell":"3","id":"p4_skeleton","cn":"骷髅","cls":"矮"},{"cell":"4","id":"p4_wraith","cn":"摄魂怪","cls":"巨物·飞行"},{"cell":"5","id":"p4_vampire","cn":"吸血鬼","cls":"高"}],"t5":[{"cell":"1","id":"p4_skeleton","cn":"骷髅","cls":"矮"},{"cell":"2","id":"p4_vampire","cn":"吸血鬼","cls":"高"},{"cell":"3","id":"p4_wraith","cn":"摄魂怪","cls":"巨物·飞行"},{"cell":"4","id":"p4_minotaur","cn":"牛头怪","cls":"宽体"},{"cell":"5","id":"p4_zombie","cn":"僵尸","cls":"中"}]}};
+const CROP = {"diag-p4-t1.png":{"bg":"#2b2f35","x":232,"y":321,"w":960,"h":261},"diag-p4-t2.png":{"bg":"#2b2f35","x":232,"y":321,"w":952,"h":261},"diag-p4-t3.png":{"bg":"#2b2f35","x":232,"y":321,"w":976,"h":261},"diag-p4-t4.png":{"bg":"#2b2f35","x":232,"y":321,"w":952,"h":261},"diag-p4-t5.png":{"bg":"#2b2f35","x":232,"y":321,"w":960,"h":261},"quiz-p4-t1.png":{"bg":"#2b2f35","x":499,"y":402,"w":432,"h":94},"quiz-p4-t2.png":{"bg":"#2b2f35","x":499,"y":402,"w":432,"h":94},"quiz-p4-t3.png":{"bg":"#2b2f35","x":503,"y":402,"w":442,"h":94},"quiz-p4-t4.png":{"bg":"#2b2f35","x":499,"y":402,"w":432,"h":94},"quiz-p4-t5.png":{"bg":"#2b2f35","x":499,"y":402,"w":430,"h":94},"quiz22-p4-t1.png":{"bg":"#2b2f35","x":588,"y":410,"w":260,"h":80},"quiz22-p4-t2.png":{"bg":"#2b2f35","x":590,"y":410,"w":268,"h":80},"quiz22-p4-t3.png":{"bg":"#2b2f35","x":588,"y":410,"w":266,"h":80},"quiz22-p4-t4.png":{"bg":"#2b2f35","x":582,"y":410,"w":272,"h":80},"quiz22-p4-t5.png":{"bg":"#2b2f35","x":590,"y":410,"w":258,"h":80},"study-p4.png":{"bg":"#2b2f35","x":400,"y":381,"w":642,"h":132}};
+const PAD = 10;
+
+/** 把 1440×900 的题面裁到内容那一条：容器给窗口大小，图片用负偏移推位（仍是 1:1）。 */
+function applyCrop(boxId, file){
+  const c = CROP[file] || { x: 0, y: 0, w: 1440, h: 900 };
+  const box = document.getElementById(boxId);
+  if (!box) return;
+  box.style.width = (c.w + PAD * 2) + 'px';
+  box.style.height = (c.h + PAD * 2) + 'px';
+  const img = box.querySelector('img');
+  img.style.left = -(c.x - PAD) + 'px';
+  img.style.top = -(c.y - PAD) + 'px';
+}
+
+const UNITS = KEY.study;                     // { "1": {id,cn,cls}, ... }
+const NAME = {};                             // id -> cn
+Object.values(UNITS).forEach(u => NAME[u.id] = u.cn);
+
+const state = { tester: 't1', ans: { quiz: {}, quiz22: {} } };
+
+const $ = s => document.querySelector(s);
+const sel = $('#tester');
+KEY.testers.forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = t; sel.appendChild(o); });
+sel.value = state.tester;
+
+const storeKey = t => 'p4blind:' + t;
+function load(t){
+  state.tester = t;
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(storeKey(t)) || 'null'); } catch(e){}
+  state.ans = { quiz: (d && d.quiz) || {}, quiz22: (d && d.quiz22) || {} };
+  renderAll();
+}
+function save(){
+  try { localStorage.setItem(storeKey(state.tester), JSON.stringify(state.ans)); } catch(e){}
+}
+
+function show(id){
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === id));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function buildRows(host, page, cells){
+  host.innerHTML = '';
+  cells.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.dataset.cell = c.cell;
+    const no = document.createElement('div');
+    no.className = 'no';
+    no.textContent = '格 ' + (i + 1);
+    const opts = document.createElement('div');
+    opts.className = 'opts';
+    Object.values(UNITS).forEach(u => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = u.cn;
+      b.dataset.id = u.id;
+      b.onclick = () => {
+        state.ans[page][c.cell] = u.id;
+        save();
+        paint(page);
+        checkReady(page);
+      };
+      opts.appendChild(b);
+    });
+    row.append(no, opts);
+    host.appendChild(row);
+  });
+}
+
+function paint(page){
+  const host = page === 'quiz' ? $('#rowsQuiz') : $('#rowsQuiz22');
+  host.querySelectorAll('.row').forEach(row => {
+    const pick = state.ans[page][row.dataset.cell];
+    row.classList.toggle('done', !!pick);
+    row.querySelectorAll('button').forEach(b => b.classList.toggle('sel', b.dataset.id === pick));
+  });
+}
+
+function checkReady(page){
+  const cells = page === 'quiz' ? KEY.quizzes[state.tester] : KEY.quizzes22[state.tester];
+  const n = cells.filter(c => state.ans[page][c.cell]).length;
+  const btn = page === 'quiz' ? $('#toQuiz22') : $('#toResult');
+  const meta = page === 'quiz' ? $('#metaQuiz') : $('#metaQuiz22');
+  btn.disabled = n < cells.length;
+  meta.textContent = n + ' / ' + cells.length + ' 已选';
+}
+
+function renderPage(page){
+  const cells = page === 'quiz' ? KEY.quizzes[state.tester] : KEY.quizzes22[state.tester];
+  const host = page === 'quiz' ? $('#rowsQuiz') : $('#rowsQuiz22');
+  buildRows(host, page, cells);
+  paint(page);
+  checkReady(page);
+}
+
+function renderAll(){
+  const fq = 'quiz-p4-' + state.tester + '.png';
+  const f22 = 'quiz22-p4-' + state.tester + '.png';
+  const fd = 'diag-p4-' + state.tester + '.png';
+  $('#imgQuiz').src = fq;
+  $('#imgQuiz22').src = f22;
+  $('#imgDiag').src = fd;
+  applyCrop('cropQuiz', fq);
+  applyCrop('cropQuiz22', f22);
+  applyCrop('cropDiag', fd);
+  renderPage('quiz');
+  renderPage('quiz22');
+}
+
+function score(page){
+  const cells = page === 'quiz' ? KEY.quizzes[state.tester] : KEY.quizzes22[state.tester];
+  return cells.map(c => ({ cell: c.cell, want: c.id, got: state.ans[page][c.cell] || null, ok: state.ans[page][c.cell] === c.id }));
+}
+
+function resultText(rq, r22){
+  const okq = rq.filter(r => r.ok).length, ok22 = r22.filter(r => r.ok).length;
+  const bad = [];
+  rq.forEach((r, i) => { if (!r.ok) bad.push('43#' + (i + 1) + ' 选' + (NAME[r.got] || '未填') + '(应' + NAME[r.want] + ')'); });
+  r22.forEach((r, i) => { if (!r.ok) bad.push('22#' + (i + 1) + ' 选' + (NAME[r.got] || '未填') + '(应' + NAME[r.want] + ')'); });
+  return 'p4 盲测 · ' + state.tester + '\n43×37: ' + okq + '/5\n22×30: ' + ok22 + '/5\n错格: ' + (bad.length ? bad.join('；') : '无');
+}
+
+function renderResult(){
+  const rq = score('quiz'), r22 = score('quiz22');
+  const okq = rq.filter(r => r.ok).length, ok22 = r22.filter(r => r.ok).length;
+  $('#scoreQuiz').textContent = okq + '/5';
+  $('#scoreQuiz22').textContent = ok22 + '/5';
+  $('#resWho').textContent = '被测者 ' + state.tester + ' · 错格会列出你选的与正确的';
+  const tb = $('#resTable tbody');
+  tb.innerHTML = '';
+  const push = (label, rows) => rows.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + label + '</td><td>' + (i + 1) + '</td><td>' + (NAME[r.got] || '未填') +
+      '</td><td>' + NAME[r.want] + '</td><td class="' + (r.ok ? 'ok' : 'bad') + '">' + (r.ok ? '✓' : '✗') + '</td>';
+    tb.appendChild(tr);
+  });
+  push('43×37', rq);
+  push('22×30', r22);
+  const anyBad = okq < 5 || ok22 < 5;
+  $('#diagWrap').hidden = !anyBad;
+  $('#diagWarn').hidden = !anyBad;
+  $('#diagWarn').textContent = anyBad ? '有错格 —— 下面这张 ×8 是回查用的（与 43×37 同序），不计分。' : '';
+  $('#copyBox').hidden = true;
+  $('#copyBox').textContent = resultText(rq, r22);
+}
+
+/* ---- 事件 ---- */
+$('#toQuiz').onclick = () => { renderPage('quiz'); show('s-quiz'); };
+$('#toQuiz22').onclick = () => { renderPage('quiz22'); show('s-quiz22'); };
+$('#toResult').onclick = () => { renderResult(); show('s-result'); };
+$('#clearQuiz').onclick = () => { state.ans.quiz = {}; save(); renderPage('quiz'); };
+$('#clearQuiz22').onclick = () => { state.ans.quiz22 = {}; save(); renderPage('quiz22'); };
+$('#againBtn').onclick = () => { state.ans = { quiz: {}, quiz22: {} }; save(); renderAll(); show('s-study'); };
+$('#nextBtn').onclick = () => {
+  const i = KEY.testers.indexOf(state.tester);
+  sel.value = KEY.testers[(i + 1) % KEY.testers.length];
+  load(sel.value);
+  show('s-study');
+};
+$('#copyBtn').onclick = async () => {
+  const txt = $('#copyBox').textContent;
+  $('#copyBox').hidden = false;
+  try { await navigator.clipboard.writeText(txt); $('#copyBtn').textContent = '已复制'; }
+  catch(e){ $('#copyBtn').textContent = '请手动复制下面的框'; }
+  setTimeout(() => { $('#copyBtn').textContent = '复制结果'; }, 1600);
+};
+sel.onchange = () => load(sel.value);
+
+/* ---- 填充教材 ---- */
+const sl = $('#studyList');
+Object.entries(UNITS).forEach(([n, u]) => {
+  const li = document.createElement('li');
+  li.innerHTML = '<b>' + n + '</b> ' + u.cn + '<i>' + u.cls + '</i>';
+  sl.appendChild(li);
+});
+
+applyCrop('cropStudy', 'study-p4.png');
+load('t1');
+</script>
+</body>
+</html>

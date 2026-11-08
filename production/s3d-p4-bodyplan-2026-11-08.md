@@ -121,6 +121,10 @@ if (floor > BASELINE_MAX) { /* FAIL：本次读数作废（四次导航不在同
 - `production/s3d/p4v3-sheet.png` —— 15 帧三行表（map / idle / atk）。
 - `production/s3d/cards-direct-2026-11-08.png` —— 5 张兵牌 ×5 + 1× 真尺寸条（43 CSS px）。
 - `production/s3d/blind/` —— 19 文件盲测套件（study / quiz 43×37 ×5 / quiz22 22×30 ×5 / diag / `KEY.md` / `PROTOCOL.md` / `key.json`），5 人份独立乱序，seed `20261108`。
+- `production/s3d/blind/test.html` —— **交互测试页（双击就能用，不用起服务器）**：选被测者 t1–t5 → 看教材 → 43×37 五格 → 22×30 五格 → 自动判分 + 逐格对错 + 错格给 ×8 回查页 + 一键复制结果文本。
+  - 题面只显示内容那一条（窗口 + 负偏移，偏移量由像素 bbox 现算），**图仍按 1:1 显示、没有任何缩放**；
+  - 答案内置（不读 `key.json`，避免 `file://` 的 fetch 限制），进度按被测者分开存 `localStorage`（刷新不丢、换人不串）；
+  - 只覆盖 p4 一族（p1–p3 的材料还是旧的静态图）。
 
 ## 7. 还欠什么（不许记"通过"）
 
