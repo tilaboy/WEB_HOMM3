@@ -451,20 +451,23 @@ const small = new Map();
 }
 
 {
-  // N3：[3] 的尺子双向都有分辨力 —— 原样不报红、横向拉 2 倍必须报红
-  const okRows = [];
-  const badRows = [];
+  // N3：[3] 的尺子双向都有分辨力 —— 原样不报红、横向拉 2 倍必须报红。
+  //
+  // ⚠️ **必须逐族算**，不能把四族拍平成一个池子：`cardShapeProblems` 的第二段是
+  //    「族内宽窄次序不翻转」，拍平之后 `zombie` 会和 `knight` 比宽窄 —— 跨族本来
+  //    就不该有次序约束（体形档不同族各自独占，宽窄没有可比性）。S3d 加进 p4 后
+  //    这条正好翻红 1 条（原样 1 条），暴露的是**尺子的作用域错了**，不是画错了。
+  let okCount = 0;
+  let badCount = 0;
   for (const rows of shapeRows.values()) {
-    okRows.push(...rows);
-    badRows.push(...rows.map((r) => ({ ...r, card: r.card * 2 })));
+    okCount += cardShapeProblems(rows).length;
+    badCount += cardShapeProblems(rows.map((r) => ({ ...r, card: r.card * 2 }))).length;
   }
-  const ok = cardShapeProblems(okRows).length === 0;
-  const bad = cardShapeProblems(badRows).length > 0;
   record(
     'N3',
-    '[3] 有分辨力：原样 0 条、横向拉 2 倍必须报红',
-    ok && bad,
-    `原样 ${cardShapeProblems(okRows).length} 条 · 拉宽 ${cardShapeProblems(badRows).length} 条`,
+    '[3] 有分辨力：原样 0 条、横向拉 2 倍必须报红（逐族算，不跨族比宽窄）',
+    okCount === 0 && badCount > 0,
+    `原样 ${okCount} 条 · 拉宽 ${badCount} 条`,
   );
 }
 

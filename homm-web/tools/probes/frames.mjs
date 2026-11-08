@@ -77,16 +77,24 @@ const IDENTICAL = NEW_IDS.filter((id) => FRAME_ALIAS[id] === id);
 const rawHits = RENAMED.filter((id) => has(`u_${id}_map`) || has(`cu_${id}`));
 PASS(
   RENAMED.length + IDENTICAL.length === NEW_IDS.length && IDENTICAL.length === 0,
-  `⑥ ${RENAMED.length} 个真改名 + ${IDENTICAL.length} 个恒等（S3c 后 p3 恒等行已清）`,
+  `⑥ ${RENAMED.length} 个真改名 + ${IDENTICAL.length} 个恒等（S3d 后 p4 最后五行已删、别名表为空）`,
 );
-PASS(
-  rawHits.length === 0,
-  `⑦ 直拼（绕过别名层）取不到帧 —— 这一层是承重的${rawHits.length ? `（却取到了 ${rawHits.join(',')}）` : ''}`,
-);
-PASS(
-  RENAMED.every((id) => unitMapFrame(id) !== `u_${id}_map`),
-  `⑧ ${RENAMED.length} 个改名 id 的帧名与直拼结果确实不同（不是空操作）`,
-);
+// ⚠️ S3d（2026-11-08）之后别名表是**空**的：20 个兵全部有真帧，⑦⑧ 的样本数归零。
+// 这两条仍保留，但**必须如实报告"不适用"**，不许在 0 样本时打印"承重"——
+// 那会让人以为还有一层在兜底。真正承重的是 ③④⑤（20 个 id 的 map/idle/atk 都取得到）。
+if (RENAMED.length === 0) {
+  PASS(true, '⑦ 别名层已空 ⇒ 无改名样本，本判据不适用（承重的是 ③④⑤）');
+  PASS(true, '⑧ 同上：0 个改名 id，无空操作可查');
+} else {
+  PASS(
+    rawHits.length === 0,
+    `⑦ 直拼（绕过别名层）取不到帧 —— 这一层是承重的${rawHits.length ? `（却取到了 ${rawHits.join(',')}）` : ''}`,
+  );
+  PASS(
+    RENAMED.every((id) => unitMapFrame(id) !== `u_${id}_map`),
+    `⑧ ${RENAMED.length} 个改名 id 的帧名与直拼结果确实不同（不是空操作）`,
+  );
+}
 
 /* ---------------- ④ 未知名回退 + 只警告一次 ---------------- */
 PASS(unitFrameAlias('foo_bar') === 'foo_bar', '⑨ 未知名原样透传（不抛错、不改写）');

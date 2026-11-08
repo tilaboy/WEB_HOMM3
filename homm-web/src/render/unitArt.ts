@@ -215,6 +215,12 @@ export interface B0FrameSpec {
     | 'p3_junglearcher'
     | 'p3_ape'
     | 'p3_greendragon'
+    // S3d：p4 按新体形档重画的五个兵
+    | 'p4_skeleton'
+    | 'p4_zombie'
+    | 'p4_vampire'
+    | 'p4_minotaur'
+    | 'p4_wraith'
     // TP-4② 中立野怪（D-58 §6.4.4：不迁名，id 即帧名中缀）
     | 'wolf'
     | 'boar'
@@ -246,14 +252,8 @@ export const B1_FRAMES: B0FrameSpec[] = [
   // ⚠️ `*_p2_axethrower_*` 3 帧已随 S3b 退役：p2 T2 现在是 `p2_bronze`（铜人）。
   // ⚠️ S3c（2026-11-06）：本批原有的 3 帧 `*_p3_<旧 id>_*` 已退役 —— p3 五兵现在画在 `P3V3_FRAMES` 里。
   // ⚠️ S3c（2026-11-06）：本批原有的 3 帧 `*_p3_<旧 id>_*` 已退役 —— p3 五兵现在画在 `P3V3_FRAMES` 里。
-  // 紫晶 T1 石雕小怪（p4 菱形母题：菱形石块，底部悬空 1px，身上一道裂纹）
-  { name: 'u_p4_stoneimp_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_stoneimp', kind: 'map' },
-  { name: 'cu_p4_stoneimp', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_stoneimp', kind: 'idle' },
-  { name: 'cu_p4_stoneimp_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_stoneimp', kind: 'atk' },
-  // 紫晶 T2 喷火学徒（p4 菱形母题：细长锥袍，杖尖菱形，嘴前一小团火）
-  { name: 'u_p4_fireapprentice_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_fireapprentice', kind: 'map' },
-  { name: 'cu_p4_fireapprentice', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_fireapprentice', kind: 'idle' },
-  { name: 'cu_p4_fireapprentice_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_fireapprentice', kind: 'atk' },
+  // ⚠️ S3d（2026-11-08）：本批原有的 6 帧 `*_p4_<旧 id>_*` 已退役 ——
+  //    p4 T1 石雕小怪 / T2 喷火学徒换成**骷髅 / 僵尸**，五兵现在画在 `P4V3_FRAMES` 里。
 ];
 
 /**
@@ -271,14 +271,8 @@ export const B2_FRAMES: B0FrameSpec[] = [
   //    p2 T3 现在是 `p2_threewolf`（三头狼）、T4 是 `p2_lavagiant`（熔岩巨人）。
   // ⚠️ S3c（2026-11-06）：本批原有的 3 帧 `*_p3_<旧 id>_*` 已退役 —— p3 五兵现在画在 `P3V3_FRAMES` 里。
   // ⚠️ S3c（2026-11-06）：本批原有的 3 帧 `*_p3_<旧 id>_*` 已退役 —— p3 五兵现在画在 `P3V3_FRAMES` 里。
-  // 紫晶 T3 蹦跳魔偶（p4 菱形母题：菱形木偶，四肢细线，双脚离地）
-  { name: 'u_p4_hopgolem_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_hopgolem', kind: 'map' },
-  { name: 'cu_p4_hopgolem', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_hopgolem', kind: 'idle' },
-  { name: 'cu_p4_hopgolem_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_hopgolem', kind: 'atk' },
-  // 紫晶 T4 亡灵图书管理员（p4 菱形母题：高耸书堆突破肩线，远程姿态，书浮在手上）
-  { name: 'u_p4_librarian_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_librarian', kind: 'map' },
-  { name: 'cu_p4_librarian', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_librarian', kind: 'idle' },
-  { name: 'cu_p4_librarian_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_librarian', kind: 'atk' },
+  // ⚠️ S3d（2026-11-08）：本批原有的 6 帧 `*_p4_<旧 id>_*` 已退役 ——
+  //    p4 T3 蹦跳魔偶 / T4 图书管理员换成**吸血鬼 / 牛头怪**，五兵现在画在 `P4V3_FRAMES` 里。
 ];
 
 /**
@@ -301,10 +295,8 @@ export const B3_FRAMES: B0FrameSpec[] = [
   //    "熔岩"母题下放成 T4 的 `p2_lavagiant`。旧图与新阵容的 tier 对不上，
   //    留着会让 b0audit 的 H1 在同一 tier 上读到两份体量。
   // ⚠️ S3c（2026-11-06）：本批原有的 3 帧 `*_p3_<旧 id>_*` 已退役 —— p3 五兵现在画在 `P3V3_FRAMES` 里。
-  // 紫晶 T5 失控大魔像（p4 菱形母题：悬浮菱形核心，四块碎石环绕，脚下无腿）
-  { name: 'u_p4_colossus_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_colossus', kind: 'map' },
-  { name: 'cu_p4_colossus', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_colossus', kind: 'idle' },
-  { name: 'cu_p4_colossus_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_colossus', kind: 'atk' },
+  // ⚠️ S3d（2026-11-08）：本批原有的 3 帧 `*_p4_colossus_*` 已退役 ——
+  //    p4 T5 失控大魔像换成**摄魂怪**，五兵现在画在 `P4V3_FRAMES` 里。
 ];
 
 /**
@@ -436,6 +428,41 @@ export const P3V3_FRAMES: B0FrameSpec[] = [
   { name: 'cu_p3_greendragon_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_greendragon', kind: 'atk' },
 ];
 
+/**
+ * S3d（2026-11-08）· p4 紫晶五兵按**体形档**重画的 15 帧。
+ *
+ * 与前面三批同规格（§15.2 的五档、§16.1 的阵容、asset-spec §3.2 的槽位）：
+ *   map 52×44（ax=−10, ay=−12） / cu_* 64×56（ax=−32, ay=−48） / cu_*_atk 64×56。
+ * 档位分配**逐格照抄** §15.2 的「p4 行」，不按 tier 顺排：
+ *   骷髅(矮) / 僵尸(中) / 吸血鬼(高) / 牛头怪(宽体) / 摄魂怪(巨物·飞行)。
+ *
+ * ⚠️ 旧 p4 的 15 帧（stoneimp / fireapprentice / hopgolem / librarian / colossus）**已退役**：
+ *    它们与新阵容的 tier 对不上，"菱形母题"那条视觉线索也随阵容一起作废；
+ *    留着会让 `audit:b0` 的 H1 在同一 tier 上读到两份体量。
+ */
+export const P4V3_FRAMES: B0FrameSpec[] = [
+  // 矮档：骷髅（全骨 + 大头骨 + 右出锈剑）
+  { name: 'u_p4_skeleton_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_skeleton', kind: 'map' },
+  { name: 'cu_p4_skeleton', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_skeleton', kind: 'idle' },
+  { name: 'cu_p4_skeleton_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_skeleton', kind: 'atk' },
+  // 中档：僵尸（前倾 + 左臂前伸 + 露肋 + 破腰布）
+  { name: 'u_p4_zombie_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_zombie', kind: 'map' },
+  { name: 'cu_p4_zombie', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_zombie', kind: 'idle' },
+  { name: 'cu_p4_zombie_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_zombie', kind: 'atk' },
+  // 高档：吸血鬼（立领触顶 + 收拢蝠翼 + 及地斗篷；**不许展翼**，展了就判成宽体）
+  { name: 'u_p4_vampire_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_vampire', kind: 'map' },
+  { name: 'cu_p4_vampire', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_vampire', kind: 'idle' },
+  { name: 'cu_p4_vampire_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_vampire', kind: 'atk' },
+  // 宽体档：牛头怪（横张肩背 + 高举的斧；§15.4 要求必须留两条腿）
+  { name: 'u_p4_minotaur_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_minotaur', kind: 'map' },
+  { name: 'cu_p4_minotaur', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_minotaur', kind: 'idle' },
+  { name: 'cu_p4_minotaur_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_minotaur', kind: 'atk' },
+  // 巨物·飞行档：摄魂怪（兜帽 + 锯齿下摆垂到地 = 无脚）
+  { name: 'u_p4_wraith_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_wraith', kind: 'map' },
+  { name: 'cu_p4_wraith', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_wraith', kind: 'idle' },
+  { name: 'cu_p4_wraith_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_wraith', kind: 'atk' },
+];
+
 /** unitArt.ts 内**全部**程序化兵种帧（B0 0 + B1 6 + B2 6 + B3 3 + B4 3 + P1V3 15 + P2V3 15 + P3V3 15 = 63），供 `tools/b0audit.mjs` 全扫描，
  *  `atlas.ts` / `combatAtlas.ts` 也遍历本数组烘焙（#24 已接好，无需改那两个文件）。 */
 export const UNIT_FRAMES: B0FrameSpec[] = [
@@ -447,6 +474,7 @@ export const UNIT_FRAMES: B0FrameSpec[] = [
   ...P1V3_FRAMES,
   ...P2V3_FRAMES,
   ...P3V3_FRAMES,
+  ...P4V3_FRAMES,
 ];
 
 /** 第 7 个资产：AI 生成的 `crestL_p1`（256×384），本轮不做，只在验收脚本里留人工项。 */
@@ -484,6 +512,10 @@ export const TIER_OF: Record<string, number> = {
   p2_matchman: 1, p2_bronze: 2, p2_threewolf: 3, p2_lavagiant: 4, p2_devil: 5,
   // S3c：p3 五兵（同理，体量走 `BODY_PLAN`，tier 只给渲染/平衡侧的调用方读）
   p3_junglearcher: 2, p3_ape: 4, p3_greendragon: 5,
+  // S3d：p4 五兵（同上）。⚠️ 旧的 stoneimp/fireapprentice/hopgolem/librarian/colossus
+  // 仍在文件上方登记着 —— 它们的**帧已退役**，留着 tier 只因为旧绘制函数里还有
+  // 按 id 分支的 switch（删 id 会让那些 case 变成"不可比较的类型"报错）。
+  p4_skeleton: 1, p4_zombie: 2, p4_vampire: 3, p4_minotaur: 4, p4_wraith: 5,
   // TP-4② 中立野怪（tier 取自 units.ts：wolf T1 / boar T3 / ogre T4）。
   // 入表 ⇒ cu 帧过 normalizeTier 归一化 + b0audit 的 S1（落靶 ±3pt）/ H2（跨档倒挂）
   // 覆盖；H1（每族 T1→T4 阶梯）不适用——中立怪不是族，见 b0audit 的分组注释。

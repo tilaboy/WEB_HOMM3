@@ -13,8 +13,8 @@ import { getAtlas } from './atlas.js';
  *   ② 表里没有的 id **原样透传**（旧 id 在新阵容落地后仍然是合法输入）；
  *   ③ 取不到帧由调用方兜底（色块 + 只警告一次），这里**不抛错**。
  *
- * 当前状态（2026-11-06 S3c 后）：只剩 **p4 的 5 条**。p1/p2/p3 已按体形档重画，
- * 别名逐族删空；S3d 把 p4 换完，这张表就可以整个退休。
+ * 当前状态（2026-11-08 S3d 后）：**空表**。p1/p2/p3/p4 二十个兵都已按体形档重画，
+ * 别名逐族删空；这张表的历史任务（让改数据与重画美术分开做）到此结束。
  */
 export const FRAME_ALIAS: Readonly<Record<string, string>> = {
   /* 新 id（B1 之后）→ 图集里现存的帧基名。原 19 条改名 + 1 条同 id（p3_dwarf），
@@ -39,11 +39,12 @@ export const FRAME_ALIAS: Readonly<Record<string, string>> = {
   // ⚠️ 其中 `p3_dwarf` / `p3_treant` 是**恒等别名**（新旧帧基名恰好相同），
   //    删掉它们之后 `probe:frames` ⑥ 的恒等样本从 2 变 0 —— 那不是闸坏了，是这一层快退休了。
 
-  p4_skeleton: 'p4_stoneimp',
-  p4_zombie: 'p4_fireapprentice',
-  p4_vampire: 'p4_hopgolem',
-  p4_minotaur: 'p4_librarian',
-  p4_wraith: 'p4_colossus',
+  // S3d（2026-11-08）：p4 五条已删除 —— `cu_p4_skeleton` / `cu_p4_zombie` /
+  // `cu_p4_vampire` / `cu_p4_minotaur` / `cu_p4_wraith` 都是 `P4V3_FRAMES` 里的真帧。
+  //
+  // **这张表现在是空的，S3 的换树到此收口。** 保留这个模块（和四个取帧函数）是因为
+  // `probe:frames` 仍要断言"直拼与别名层口径一致"；真要整层退休，得连那几条判据一起删，
+  // 否则下一批美术会以为还有一层在兜底。
 };
 
 /** 新 id → 图集里的旧帧名。未知 id 原样返回。 */

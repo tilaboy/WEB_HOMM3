@@ -214,6 +214,22 @@ try {
         show(A, C, 'on vs off');
       }
       console.log(`--- 逐块差（单位=块，分母=${A.bw * A.bh}）： 本底(default vs default#2) → ${floor}； default vs =1 → ${ab}； default vs =0 → ${ac}`);
+      /* ★ **本底合理性闸**：`floor` 是"同一个 URL 抓两次"的差，实测本该 **0–28 块**。
+       *   2026-11-08 全量回归里读到 **1129 块**（12.6% 的画布）⇒ ② 的阈值被撑到 `10×1129=11290`
+       *   而信号只有 553 ⇒ 假红。真因是四次导航没落在同一状态（`quality.ts` 按实测帧率改档；
+       *   `tierMode=high` 已注入，但机器被别的 headless Chrome / 编译占满时仍有别的变量在动）。
+       *   ⇒ 这不是"判据结论"，是**读数作废**：本底超限就大声失败并说清原因，不往下算 ①②
+       *   （否则红绿都在骗人）。重跑即绿；**连续复现**才回头查代码。
+       *   `BASELINE_MAX = 200` 块 ≈ 2.2%（分母 8940），是实测本底 0–28 的 7 倍余量。 */
+      const BASELINE_MAX = 200;
+      if (floor > BASELINE_MAX) {
+        PASS(
+          false,
+          `本底 ${floor} 块 > ${BASELINE_MAX} ⇒ **本次读数作废**（四次导航不在同一状态，"quality.ts 运行时改档"是已知成因）。` +
+            `重跑；连续复现再查代码 —— 这**不是** ① ② 红`,
+        );
+        return;
+      }
       const sound = Math.max(K * floor, SIGNAL_MIN);
       console.log(`    判据： ① 须 ≤ ${floor} + ${NOISE_MARGIN} = ${floor + NOISE_MARGIN}； ② 须 ≥ max(${K}×${floor}, ${SIGNAL_MIN}) = ${sound}`);
       PASS(ab <= floor + NOISE_MARGIN, `① default ≡ ?devhaloafter=1（${ab} ≤ ${floor + NOISE_MARGIN}）—— 证"默认 == 开"`);

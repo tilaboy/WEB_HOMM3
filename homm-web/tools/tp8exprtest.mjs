@@ -96,11 +96,11 @@ const K = S * DPR; // 每个美术像素占多少**设备像素**
 
 const FACTION_CN = { p1: '晨曦', p2: '赤焰', p3: '翠林', p4: '紫晶' };
 const UNIT_CN = {
-  p1_child: '小孩', p2_matchman: '火柴人', p3_dwarf: '矮人', p4_stoneimp: '石雕小怪',
-  p1_crossbow: '弩手', p2_bronze: '铜人', p3_junglearcher: '丛林射手', p4_fireapprentice: '喷火学徒',
-  p1_eagle: '鹰', p2_threewolf: '三头狼', p3_treant: '树人', p4_hopgolem: '蹦跳魔偶',
-  p1_knight: '骑士', p2_lavagiant: '熔岩巨人', p3_ape: '猿人', p4_librarian: '亡灵图书管理员',
-  p1_angel: '天使', p2_devil: '恶魔', p3_greendragon: '绿龙', p4_colossus: '失控大魔像',
+  p1_child: '小孩', p2_matchman: '火柴人', p3_dwarf: '矮人', p4_skeleton: '骷髅',
+  p1_crossbow: '弩手', p2_bronze: '铜人', p3_junglearcher: '丛林射手', p4_zombie: '僵尸',
+  p1_eagle: '鹰', p2_threewolf: '三头狼', p3_treant: '树人', p4_vampire: '吸血鬼',
+  p1_knight: '骑士', p2_lavagiant: '熔岩巨人', p3_ape: '猿人', p4_minotaur: '牛头怪',
+  p1_angel: '天使', p2_devil: '恶魔', p3_greendragon: '绿龙', p4_wraith: '摄魂怪',
 };
 /** 中立怪不是"人类单位"，H3 对兽类的要求是 2px 眼白 + 1px 瞳孔，本批**不进人类闸**。 */
 const NEUTRAL = new Set(['cu_wolf', 'cu_boar', 'cu_ogre']);
@@ -110,11 +110,10 @@ const NEUTRAL = new Set(['cu_wolf', 'cu_boar', 'cu_ogre']);
  * 值 = [通道, 理由]。理由必须写清"为什么它的脸不是 h3 那张脸"，否则以后没人敢动这张表。
  */
 const FACE_LAW = {
-  cu_p4_stoneimp: ['glow', '构装：glowEye 画 2×2 p4emissive（§1.4「唯一高光」不适用），石像兽无嘴'],
-  cu_p4_fireapprentice: ['glow', '火人：面就是火，2×2 p4emissive 眼，无嘴'],
-  cu_p4_hopgolem: ['glow', '魔偶：2×2 p4emissive 眼，无嘴'],
-  cu_p4_librarian: ['glow', '亡灵：眼窝是发光点（无 hi0），无嘴'],
-  cu_p4_colossus: ['glow', '大魔像：2×2 p4emissive 眼，无嘴'],
+  // S3d（2026-11-08）：p4 换成骷髅/僵尸/吸血鬼/牛头怪/摄魂怪。前四个是**有机亡灵**
+  // （有颅骨、有肉身、有牛脸），走默认 h3；只有摄魂怪是兜帽里的幽光，走 glow。
+  // 这一族从"5 个构装全 glow"变成"1 个 glow"，是阵容换了，不是把判据放松了。
+  cu_p4_wraith: ['glow', '摄魂怪：兜帽内只有 2×2 p4emissive 幽光（无 hi0、无嘴线），脸本来就不存在'],
   cu_p2_bronze: ['glow', '铜人（构装）：2×2 p2emissive 眼，无 hi0（§1.4 唯一高光不适用于构装）；"嘴"是 metal0 面甲缝，不是 ink0 嘴线'],
   cu_p2_lavagiant: ['glow', '熔岩巨人：2×2 p2emissive 眼 + 1px stone0 嘴线（下巴裂纹，嘴在眼下 5 行）'],
   cu_p2_threewolf: ['profile', '三头狼（兽形侧脸，§5.6.4）：三个头里只有主头画 ink 眼；另两颗是远侧的头，只点 p2wall0 暗点（凑不出 ink0+hi0 的 2×2 窗口）'],
@@ -133,7 +132,7 @@ const FACE_LAW = {
  * 20 − 7 glow − 3 profile = **10 h3**。这不是放宽：p2 的五个兵里三个本来就没有
  * "人类的 2×2 ink 眼 + 嘴线"结构（构装两只 + 兽形一只）。
  */
-const CH_COUNT = { h3: 10, glow: 7, profile: 3 };
+const CH_COUNT = { h3: 14, glow: 3, profile: 3 };
 
 const BG = [208, 208, 208, 255]; // 与 ① 同底景（L=208），便于两批素材并排看
 const CELL_W = 52;

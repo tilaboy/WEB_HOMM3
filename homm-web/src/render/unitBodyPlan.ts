@@ -85,10 +85,24 @@ export const BODY_PLAN: Record<string, BodyPlan> = {
   p3_ape: { cls: 'wide', h: 0.95, tip: '横张肩背+举石' },
   // 巨物·飞行：h ≥ 1.45 —— 长颈 + 横身 + 长尾 + **下掠翼**（与恶魔同向，靠骨架分）
   p3_greendragon: { cls: 'huge', h: 1.5, tip: '长颈+长尾+下掠翼' },
+
+  // ── p4 紫晶（S3d，2026-11-08）─────────────────────────────────────
+  // 档位逐格照抄 spec §15.2 的「p4 行」。这一族的判据是**骨架**不是颜色：
+  // 五个兵全是紫 + 骨，靠"全骨 / 前倾 / 及地斗篷 / 横张肩背 / 无脚"分。
+  // 矮：h ≤0.68 —— 全骨（唯一没有布料主色的兵）+ 大头骨 + 右出锈剑
+  p4_skeleton: { cls: 'short', h: 0.65, tip: '大头骨+锈剑' },
+  // 中：0.84~1.00 —— 前倾 + 左臂前伸 + 两腿不齐（同档的 p1 弩手是正面站）
+  p4_zombie: { cls: 'mid', h: 0.88, tip: '前倾+左伸手' },
+  // 高：h ≥1.18 —— **收拢的蝠翼** + 立领触顶 + 及地斗篷（展开翼会先判成宽体）
+  p4_vampire: { cls: 'tall', h: 1.22, tip: '立领+收翼' },
+  // 宽体：w ≥1.35h —— 横张肩背 + 高举的斧；§15.4 要求**必须留两条腿**
+  p4_minotaur: { cls: 'wide', h: 0.95, tip: '横张肩背+举斧' },
+  // 巨物·飞行：h ≥1.45 —— 兜帽 + **锯齿下摆垂到地（无脚）**，读"不走路"
+  p4_wraith: { cls: 'huge', h: 1.5, tip: '兜帽+破碎下摆' },
 };
 
 /** 已重画的族前缀。S3b/S3c 每落一族就往里加一个（不要按兵种逐个加）。 */
-export const BODY_PLAN_FAMILIES = new Set(['p1', 'p2', 'p3']);
+export const BODY_PLAN_FAMILIES = new Set(['p1', 'p2', 'p3', 'p4']);
 
 /** 该 unit 是否走新体形档 regime。 */
 export function hasBodyPlan(unit: string): boolean {
@@ -237,6 +251,35 @@ const P3 = {
   bloom: '#e0538f', // p3clash —— 小面积花果（对谁都 ΔL* ≥11）
   ink: '#2a1a12', // ink0
   hi: '#ffffff', // hi0 —— 只给眼睛右上角那一格
+} as const;
+
+/**
+ * p4 紫晶（亡灵）· **只用 `B0_PALETTE` 的字面值**。
+ *
+ * 与 p3 同一套纪律（见上面 P3 的注释）：先算 ΔL* 与色相差，再决定谁贴谁。
+ * 断言 8 要求相邻异材质 ΔL* ≥8，色相差 <30° 时 ≥12。本组里**必须避开的四对**：
+ *   · `plumDark` ↔ `robe`   ΔL*=10.7，色相差 11° ⇒ 需 12，**差一点点**（最容易踩）
+ *   · `plum`     ↔ `robe`   ΔL*=3.1  ⇒ 主紫**不许贴**主袍色
+ *   · `plumLite` ↔ `bone`   ΔL*=3.3  ⇒ 亮紫**不许贴**骨/脸
+ *   · `bone`     ↔ `ironLite` ΔL*=6.7 ⇒ 骨**不许贴**亮铁
+ * 于是分工是：`plum` 只贴 `plumDark`/`ink`/`bone`；`robe` 只贴 `robeDark`/`flesh`/`bone`；
+ * `plumDark` 永远夹在 `plum` 与 `ink` 之间（不在袍子上开紫花）。
+ */
+const P4 = {
+  robe: '#58526e', // p4wall 2 —— 主袍 / 斗篷外皮（万能中间调：贴骨 43.7、贴肉 16.9）
+  robeDark: '#38334a', // p4wall 0 —— 同族暗档，只贴 robe / flesh
+  plum: '#a165e8', // p4accent 2 —— 主紫（披风 / 兜帽 / 腰布）
+  plumDark: '#6232a8', // p4accent 0 —— 只贴 plum / ink（贴 robe 只有 10.7，红）
+  plumLite: '#d4aefc', // p4accent 4 —— 只贴 plum（贴骨 3.3，红）
+  bone: '#cfc6b4', // stone 4 —— 骨 / 角 / 獠牙 / 苍白脸
+  boneDark: '#a9a093', // stone 2 —— 骨暗面（贴骨 13.9）
+  flesh: '#a87450', // skin 0 —— 僵尸/牛头怪的皮（贴骨 26.8）
+  iron: '#6b7686', // metal 0 —— 锈剑 / 斧 / 蹄铁
+  ironLite: '#aab6c2', // metal 2 —— 只贴 iron / plum（贴骨 6.7，红）
+  glow: '#8ffff0', // p4emissive 4 —— 摄魂怪的发光眼
+  clash: '#3fe0d0', // p4clash —— 小面积魂火（贴骨 1.1 ⇒ **离骨远**）
+  ink: '#2a1a12', // ink0
+  hi: '#ffffff', // hi0 —— h3 脸的右上角那一格
 } as const;
 
 /**
@@ -1831,6 +1874,552 @@ function drawGreenDragon(pb: PixBuf, cx: number, base: number, h: number, atk: b
   }
 }
 
+
+/* ==========================================================================
+ * 4b. p4 紫晶五兵（S3d）
+ *
+ * 档位照 §15.2 的「p4 行」：骷髅(矮) / 僵尸(中) / 吸血鬼(高) / 牛头怪(宽体) / 摄魂怪(巨物·飞行)。
+ * 出口按 §8.2 的五个上半扇区各占一个：
+ *   骷髅 **右**（锈剑）· 僵尸 **左**（前伸的臂）· 吸血鬼 **上**（立领的顶边）·
+ *   牛头怪 **右上**（扛在肩上的斧）· 摄魂怪 **左上**（伸出的骨爪）。
+ *
+ * ⚠️ 三条硬约束（与 p1–p3 相同，别在这里"例外"一次）：
+ *   ① **没有任何形状可以高过 `topY`**：`normalizeTier` 按剪影 bbox 归位，谁多出一像素，
+ *      整只兵就被等比缩小一次，`[1]` 的档位读数会整体偏矮（S3c 的弓顶就是这么栽的）。
+ *   ② 巨物档靠**高度**（h ≥1.45），不靠翼展；高个档（吸血鬼）**必须收翼**，
+ *      否则 w ≥1.35h 会先被判成宽体。
+ *   ③ 兵牌（`card`）上 **<2px 的特征一律不画** —— 肋缝、指骨、鼻孔都属此列。
+ *
+ * ── S3d 目检记录（×12/×16 单张 + 逐像素 ASCII，2026-11-08）──────────────
+ * 这一批**两次**目检都没过，记下来：断言只能证"合法"（档位、色差、眼嘴），
+ * 证不了"像"；而缩略图拼版会把 1px 的缝糊平，必须单张放大 + dump 像素。
+ *   第一版（五个全重画）：
+ *     · 骷髅 胸腔是一整块骨 ⇒ "米色小人"；剑太短 ⇒ "勺子"。
+ *     · 僵尸 头顶骨块 ⇒ 金发；1px 肋条 ⇒ 创可贴；整体像健康人。
+ *     · 吸血鬼 两根竖领尖 ⇒ 猫耳；蝠翼被斗篷盖住 ⇒ 紫裙法师。
+ *     · 牛头怪 水平通栏肩 + 两手同高 ⇒ 稻草人/十字架；斧柄用 ink ⇒ 斧头浮空。
+ *     · 摄魂怪 对称深 V 锯齿轮 ⇒ 两条腿。
+ *   第二版（改完仍有四张读错，说明只改局部没用）：
+ *     · 骷髅 暗腔被**脊柱竖条**和"比腔还宽"的骨条整块盖住 ⇒ 肋缝一次都没露出来。
+ *       ⇒ 删脊柱；骨条比腔**窄** 1px，靠左右露出的暗边当肋缝。
+ *     · 吸血鬼 立领改成一整块梯形面板后 ⇒ 变成**灯罩帽**（帽檐压着头）。
+ *       ⇒ 领子分两片、**只到下颌高度**，头必须完整露在领口上方。
+ *     · 牛头怪 举斧的斜臂 + 平肩仍读十字架；斧刃是长平行四边形 ⇒ 砍刀。
+ *       ⇒ 改 spec §16.5 的**扛斧**：斧扛在右肩、斧刃在肩后，左臂垂下带拳。
+ *     · 摄魂怪 下摆改浅扇贝后**跑到地上站着了**（§15.4 要"读不走路"）。
+ *       ⇒ 裙摆收到 3~4 条**长短不齐的垂布**，外侧两角切高 ≥0.08h。
+ *   军规：**暗色缝不是边界，透空缝才是**（描边会给暗缝灌墨）；兵牌必须单独按
+ *   目标像素高设计一遍（骷髅兵牌只有 **13px 高**，cu 帧是 24px —— 同一套比例搬
+ *   下来，Math.max 的地板会把 3px 的躯干撑成 7px）。
+ * ========================================================================== */
+
+/** 骷髅 · 矮档（0.65）· 大颅骨 + 露肋的空腔 + 右出锈剑。
+ *  与同档三家分开的判据：**唯一全骨**（骨 + 空腔暗，没有布料主色），
+ *  且颅骨占身高 ~30%（矮档里唯一"头比身子显眼"的）。 */
+function drawSkeleton(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+  const topY = base - h;
+  // 兵牌只有 13px 高：颅骨半径给像素下限，否则装不下 2×2 眼 + 1 行嘴。
+  const ry = card ? 2.4 : h * 0.15;
+  const sy = topY + ry; // 颅心
+  const skullB = topY + ry * 2;
+  const shoulder = skullB + Math.max(1, h * 0.03);
+  const hip = base - h * 0.29;
+  const halfW = Math.max(2, Math.round(h * 0.145)); // 胸腔半宽：cu 3 / card 2
+
+  // ── 锈剑（出口：右）。先画，握把压在手臂后面。
+  //    短一寸就读成勺子（第一版 0.32h 实测）⇒ 刃长 0.46h，且**护手必须是竖的一横**，
+  //    没有护手的横线在 22px 下与"棍子"没有区别。
+  const gy = shoulder + (hip - shoulder) * 0.30;
+  const gx = cx + halfW + Math.max(1, Math.round(h * 0.02));
+  const tx = cx + h * 0.60;
+  const bladeT = Math.max(1, Math.round(h * 0.07)); // cu 2 / card 1
+  tl(pb, gx, gy, tx, gy - h * 0.04, P4.iron, bladeT);
+  R(pb, tx - Math.max(1, h * 0.03), gy - h * 0.07, Math.max(2, h * 0.05), Math.max(1, h * 0.04), P4.ironLite); // 剑尖
+  if (!card) tl(pb, gx, gy - h * 0.02, tx - h * 0.03, gy - h * 0.055, P4.ironLite, 1); // 刃口亮线
+  // 护手：竖直一横（ink↔iron 38.2），上端高出刃 2px 才看得见"十字"
+  const guardH = Math.max(3, Math.round(h * 0.16));
+  R(pb, gx - Math.max(1, Math.round(h * 0.02)), gy - guardH * 0.5, Math.max(1, Math.round(h * 0.045)), guardH, P4.ink);
+  R(pb, gx - Math.max(2, h * 0.05), gy - Math.max(1, h * 0.025), Math.max(2, h * 0.05), Math.max(1, h * 0.035), P4.ink); // 柄头
+
+  // ── 腿（骨）+ 足（ink）：**腿宽 ≥2px、腿间透空 ≥2px**。
+  //    兵牌上 h 只有 13px，1px 的腿会被后置描边整根吃掉（12x 图里是一块黑砖），
+  //    所以这里给的是**像素下限**，不是 h 的比例。
+  const legT = Math.max(2, Math.round(h * 0.055));
+  const legOff = card ? 2 : Math.max(3, Math.round(halfW * 1.05));
+  for (const dir of [-1, 1] as const) {
+    tl(pb, cx + dir * legOff, hip, cx + dir * (legOff + 1), base - h * 0.04, P4.bone, legT);
+    R(pb, cx + dir * (legOff + 1) - (dir < 0 ? legT + 1 : 0), base - Math.max(2, h * 0.045), legT + 1, Math.max(1, h * 0.035), P4.ink);
+  }
+  R(pb, cx - halfW * 0.72, hip, halfW * 1.44, Math.max(2, Math.round(h * 0.06)), P4.bone); // 骨盆
+
+  // ── 胸廓：**骨为主体，暗缝只做 1px 且不碰外缘**。
+  //    第三次改的原因：前两版都是"暗腔 + 骨条"，暗面积大于骨 ⇒ 22px 下读成
+  //    **深色条纹上衣**（蓝灰底 + 白条），完全不像肋。骨架的读法相反：
+  //    胸廓是**一整块骨**，肋缝是**几条短横线**，所以留 1px 骨边、缝宽只 1px。
+  const cavH = Math.max(3, hip - shoulder - Math.max(1, h * 0.03));
+  R(pb, cx - halfW, shoulder, halfW * 2, cavH, P4.bone);
+  const ribs = cavH >= 6 ? 3 : cavH >= 4 ? 2 : 1;
+  for (let i = 1; i <= ribs; i++) {
+    const gy2 = shoulder + Math.round((cavH * i) / (ribs + 1));
+    R(pb, cx - halfW + 1, gy2, Math.max(1, halfW * 2 - 2), 1, P4.robeDark);
+  }
+
+  // ── 左臂（骨，**与躯干留 1px 透空**）。兵牌上不画：1px 的臂会被描边吃掉，
+  //    只在轮廓外多出一条黑边，反而让"瘦"变成"糊"。
+  if (!card) {
+    tl(pb, cx - halfW - Math.max(2, h * 0.045), shoulder + h * 0.02, cx - halfW - Math.max(2, h * 0.055), hip + h * 0.04, P4.bone, legT);
+    // 左前臂：折一下，末端 2×2 指骨 —— 直的会读成一根挂着的棍
+    tl(pb, cx - halfW - Math.max(2, h * 0.055), hip + h * 0.04, cx - halfW - h * 0.02, hip + h * 0.10, P4.bone, legT);
+  }
+
+  // ── 颅骨 + 下颌 + 齿列
+  ell(pb, cx - ry * 1.02, sy - ry, cx + ry * 1.02, sy + ry, P4.bone);
+  const jawW = Math.max(3, Math.round(h * 0.12));
+  R(pb, cx - jawW / 2, skullB - Math.max(1, h * 0.02), jawW, Math.max(1, h * 0.045), P4.bone);
+  if (!card) {
+    // 齿缝：下颌上一道 ink，宽 3，不能贴到轮廓（落到透明会被读成背景）
+    R(pb, cx - 1, skullB - Math.max(1, h * 0.015), 3, 1, P4.ink);
+    // 颧骨下的一道暗（boneDark↔bone 13.9），离眼 ≥2 行
+    R(pb, cx - ry * 0.75, sy + ry * 0.42, ry * 1.5, 1, P4.boneDark);
+  }
+
+  if (face) {
+    const lx = Math.round(cx) - 2;
+    const ey = Math.round(sy - ry * 0.45);
+    if (card) {
+      // 兵牌：眼 2×2 + **嘴也给一行**（13px 上"只有眼睛"读成幽灵，加一行才是骷髅）
+      cardFace(pb, lx, ey);
+      R(pb, lx + 1, ey + 3, 3, 1, P4.ink);
+    } else {
+      h3Face(pb, lx - (card ? 0 : 1), ey, 1, 3, 2);
+    }
+  }
+  if (atk) {
+    // 挥剑：刃上多一道高光；不加高、不加宽（动作不改档位）
+    tl(pb, cx + h * 0.26, gy - h * 0.03, cx + h * 0.56, gy - h * 0.07, P4.hi, 1);
+  }
+}
+
+/** 僵尸 · 中档（0.88）· 前倾 + 左臂前伸 + 破衣露肋。
+ *  第四次定稿的形状判据（每次目检都推翻一次，记下来）：
+ *    ① 露出的肋**不能是一块米色补丁**（读成围兜）⇒ 改成破衣上两道 1px 的骨白横线；
+ *    ② 头**不能圆**（读成小孩）⇒ 下颌要掉下来：颌骨与颅之间留一道 ink 开口；
+ *    ③ 两腿**不能并成一根柱**（读成木桩）⇒ 一条直、一条屈，中间 2px 透空。 */
+function drawZombie(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+  const lean = h * 0.05; // 整体前探（向左手方向）
+  const c0 = cx - lean;
+  const topY = base - h;
+  const hr = card ? Math.max(2.9, h * 0.135) : h * 0.13;
+  const hy = topY + hr; // 颅心
+  const jaw = hy + hr * 0.80;
+  const shoulderY = jaw + hr * 0.35;
+  const hip = base - h * 0.33;
+  const bodyW = Math.max(4, Math.round(h * 0.21)); // 躯干半宽
+  const armT = Math.max(2, Math.round(h * 0.075));
+
+  // ── 左臂（出口：左）：水平前伸 + **折腕** + 三根短指（一根平杆读成木板）
+  const armY = shoulderY + h * 0.05;
+  const handX = c0 - h * 0.42;
+  tl(pb, c0 - bodyW, armY, handX, armY - h * 0.01, P4.flesh, armT);
+  R(pb, handX - Math.max(2, h * 0.02), armY - h * 0.02, Math.max(2, h * 0.05), Math.max(2, h * 0.06), P4.flesh); // 腕
+  const fw = Math.max(1, Math.round(h * 0.025));
+  for (let i = 0; i < 3; i++) {
+    R(pb, handX - Math.max(3, h * 0.055) + i * (fw + 1), armY + h * 0.02, fw, Math.max(2, h * 0.045), P4.flesh);
+  }
+
+  // ── 腿：**一条直、一条屈**，中间 2px 透空；ink 脚
+  const legT = Math.max(3, Math.round(h * 0.105));
+  tl(pb, c0 - bodyW * 0.55, hip, c0 - bodyW * 0.62, base - h * 0.04, P4.flesh, legT);
+  tl(pb, c0 + bodyW * 0.60, hip, c0 + bodyW * 0.78, base - h * 0.12, P4.flesh, legT);
+  tl(pb, c0 + bodyW * 0.78, base - h * 0.12, c0 + bodyW * 0.70, base - h * 0.03, P4.flesh, Math.max(2, legT - 1));
+  R(pb, c0 - bodyW * 0.62 - Math.max(2, h * 0.03), base - Math.max(1, h * 0.045), Math.max(3, h * 0.10), Math.max(1, h * 0.035), P4.ink);
+  R(pb, c0 + bodyW * 0.56, base - Math.max(1, h * 0.045), Math.max(3, h * 0.10), Math.max(1, h * 0.035), P4.ink);
+
+  // ── 躯干：**深色破衣**，下摆两个尖角（撕口），左肩露一块皮（衣服烂掉了）
+  pb.poly(
+    [
+      [c0 - bodyW, shoulderY],
+      [c0 + bodyW, shoulderY],
+      [c0 + bodyW * 0.95, hip + h * 0.02],
+      [c0 + bodyW * 0.42, hip + h * 0.10],
+      [c0 + bodyW * 0.12, hip + h * 0.01],
+      [c0 - bodyW * 0.46, hip + h * 0.08],
+      [c0 - bodyW * 0.96, hip + h * 0.01],
+    ],
+    P4.robeDark,
+  );
+  // 露肩：左边一块**斜的**皮（不是直角补丁）
+  pb.poly(
+    [
+      [c0 - bodyW, shoulderY + h * 0.005],
+      [c0 - bodyW * 0.42, shoulderY + h * 0.005],
+      [c0 - bodyW * 0.55, shoulderY + h * 0.10],
+      [c0 - bodyW * 0.98, shoulderY + h * 0.14],
+    ],
+    P4.flesh,
+  );
+  // 露出的肋：破衣上两道 1px 骨白横线（**不是补丁**；bone↔robeDark 57.5）
+  const ribX = c0 - bodyW * 0.55;
+  const ribY = shoulderY + h * 0.16;
+  const ribW = Math.max(3, Math.round(h * 0.165));
+  R(pb, ribX, ribY, ribW, 1, P4.bone);
+  R(pb, ribX + 1, ribY + Math.max(2, h * 0.055), ribW - 1, 1, P4.bone);
+  if (!card) R(pb, ribX + 1, ribY + Math.max(2, h * 0.055) * 2, ribW - 2, 1, P4.bone);
+
+  // ── 右臂：垂下、比正常长一截（到膝盖），末端 2px 拳
+  tl(pb, c0 + bodyW - 1, shoulderY + h * 0.02, c0 + bodyW + h * 0.015, hip + h * 0.14, P4.flesh, Math.max(2, Math.round(h * 0.075)));
+
+  // ── 头：前探 + **掉下来的下颌**（颌与颅之间一道 ink 开口）
+  const hx = c0 - h * 0.035;
+  ell(pb, hx - hr, hy - hr, hx + hr, hy + hr, P4.flesh);
+  const mouthW = Math.max(3, Math.round(h * 0.075));
+  R(pb, hx - mouthW / 2 - 1, jaw - Math.max(1, h * 0.02), mouthW + 2, Math.max(1, Math.round(h * 0.04)), P4.ink);
+  R(pb, hx - mouthW / 2, jaw + Math.max(1, Math.round(h * 0.02)), mouthW, Math.max(1, Math.round(h * 0.035)), P4.flesh); // 下颌
+
+  if (face) {
+    const lx = Math.round(hx) - 2;
+    const ey = Math.round(hy - hr * 0.35);
+    if (card) cardFace(pb, lx, ey);
+    else h3Face(pb, lx - 1, ey, 1, 3, 2);
+  }
+  if (atk) {
+    // 抓击：前伸的手再往前一格（横移，不加高）
+    R(pb, handX - Math.max(3, h * 0.10), armY + h * 0.01, Math.max(2, h * 0.05), Math.max(2, h * 0.07), P4.boneDark);
+  }
+}
+
+/** 吸血鬼 · 高档（1.22）· 立领 + 收翼 + 及地斗篷。
+ *  三次目检的结论都在这三条里：
+ *    ① 立领**不能是两根竖尖**（猫耳），也**不能是一整块梯形面板**（灯罩）⇒
+ *       两片**向外斜的短领片**，只到下颌，头必须完整露在领口上方；
+ *    ② 翼必须**伸出斗篷轮廓之外**（第二版画在里侧，被斗篷全盖住）；
+ *    ③ 斗篷中央**不能有一条贯通的深色竖条**（读成神父的圣带）⇒ 去掉内衬，
+ *       中央只留下摆的一小段暗边。 */
+function drawVampire(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+  const topY = base - h;
+  const hr = card ? Math.max(3.0, h * 0.085) : h * 0.082;
+  const hy = topY + hr * 1.05; // 颅心（头顶贴 topY）
+  const jaw = hy + hr * 0.92;
+  const shoulderY = jaw + hr * 0.30;
+  const sleeveW = Math.max(4, Math.round(h * 0.115)); // 肩半宽
+  const hem = base;
+
+  // ── 蝠翼（先画，在斗篷**后面**，但外缘必须比斗篷宽 ≥0.05h）：亮紫 + 暗骨架
+  // **收翼**：翼只从肩后露出两个尖（0.10h），主体的识别交给立领。
+  // 给到 0.24h 时有三个扇贝的翼在 26px 下读成"泡泡袖"（目检实测两次）。
+  const wingOut = Math.max(3, Math.round(h * 0.10));
+  for (const dir of [-1, 1]) {
+    const x0 = cx + dir * (sleeveW - 2);
+    const x1 = cx + dir * (sleeveW + wingOut);
+    const y0 = shoulderY + h * 0.06;
+    pb.poly(
+      [
+        [x0, y0],
+        [x1, y0 - h * 0.06],
+        [x1 - dir * h * 0.01, y0 + h * 0.10],
+        [x0 + dir * h * 0.02, y0 + h * 0.12],
+      ],
+      P4.plum,
+    );
+  }
+
+  // ── 斗篷（暗紫，及地）：肩窄、下摆宽 + 三个尖；**中央不画竖条**
+  pb.poly(
+    [
+      [cx - sleeveW, shoulderY],
+      [cx + sleeveW, shoulderY],
+      [cx + sleeveW * 1.55, hem - h * 0.12],
+      [cx + sleeveW * 1.30, hem],
+      [cx + sleeveW * 0.55, hem - h * 0.04],
+      [cx, hem],
+      [cx - sleeveW * 0.55, hem - h * 0.04],
+      [cx - sleeveW * 1.30, hem],
+      [cx - sleeveW * 1.55, hem - h * 0.12],
+    ],
+    P4.plumDark,
+  );
+  // 下摆内侧：两道亮边（plum），把"及地"与"垂坠"分开
+  if (!card) {
+    tl(pb, cx - sleeveW * 1.30, hem - 1, cx - sleeveW * 0.55, hem - h * 0.04 - 1, P4.plum, 1);
+    tl(pb, cx + sleeveW * 0.55, hem - h * 0.04 - 1, cx + sleeveW * 1.30, hem - 1, P4.plum, 1);
+  }
+
+  // ── 立领：**两片高到耳际的领子**，把脸夹在中间（德拉库拉的唯一识别点）。
+  //    与斗篷同色（同色相邻不违反断言 8；换成亮紫会读成围脖）。
+  for (const dir of [-1, 1]) {
+    pb.poly(
+      [
+        [cx + dir * hr * 0.62, jaw + h * 0.01],
+        [cx + dir * (hr * 0.62 + h * 0.03), hy - hr * 0.35], // 领尖到耳际
+        [cx + dir * (hr * 0.62 + h * 0.075), hy - hr * 0.15],
+        [cx + dir * (sleeveW + h * 0.02), shoulderY + h * 0.04],
+      ],
+      P4.plumDark,
+    );
+  }
+
+  // ── 头：骨白 + 深色头发（美人尖）+ 眼
+  ell(pb, cx - hr, hy - hr * 0.95, cx + hr, hy + hr * 0.95, P4.bone);
+  pb.poly(
+    [
+      [cx - hr * 1.0, hy - hr * 0.50],
+      [cx + hr * 1.0, hy - hr * 0.50],
+      [cx + hr * 1.0, hy - hr * 0.95],
+      [cx - hr * 1.0, hy - hr * 0.95],
+    ],
+    P4.robeDark,
+  );
+  pb.poly(
+    [
+      [cx - hr * 0.55, hy - hr * 0.52],
+      [cx + hr * 0.55, hy - hr * 0.52],
+      [cx, hy - hr * 0.12],
+    ],
+    P4.robeDark,
+  );
+  if (face) {
+    const lx = Math.round(cx) - 2;
+    const ey = Math.round(hy - hr * 0.10);
+    if (card) cardFace(pb, lx, ey);
+    else h3Face(pb, lx - 1, ey, 1, 3, 2);
+  }
+
+  // ── 手：两只骨白的手从斗篷两侧探出（垂在身侧）
+  for (const dir of [-1, 1]) {
+    const wx = cx + dir * sleeveW - (dir < 0 ? Math.max(2, h * 0.045) : 0);
+    R(pb, wx, shoulderY + h * 0.13, Math.max(2, h * 0.045), Math.max(2, h * 0.06), P4.bone);
+  }
+
+  if (atk) {
+    // 扑击：翼尖再向外 1~2px（横移，不加高）
+    for (const dir of [-1, 1]) {
+      R(pb, cx + dir * (sleeveW + wingOut) - (dir < 0 ? 2 : 0), shoulderY - h * 0.02, 2, Math.max(2, h * 0.06), P4.plum);
+    }
+  }
+}
+
+/** 牛头怪 · 宽体档（0.95）· 横张肩背 + 持斧（spec §16.5：肩上斧 / 掷斧）。
+ *  "稻草人"的两次成因都写在这里，别再犯：
+ *    ① **肩是一条横杠 + 两只手臂同高同向** ⇒ 十字架；
+ *    ② **手臂直接长在斜肩上**（没有腋窝缺口）⇒ 臂与躯干连成一块肉饼。
+ *  现在的结构：窄躯干（±0.28h）+ **肩横板**（±0.46h）+ 两条从横板两端出发、
+ *  **与躯干之间留缺口**的手臂；宽度由「左拳 −0.66h」与「斧面 +0.76h」拿到
+ *  `w≈1.4h`，稳过宽体判据（§15.2 R1）。 */
+function drawMinotaur(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+  const topY = base - h;
+  const hr = card ? Math.max(2.9, h * 0.15) : h * 0.125;
+  const hy = topY + hr * 1.12; // 颅心（角尖顶到 topY）
+  const jawY = hy + hr * 0.90;
+  const shoulderY = jawY + hr * 0.28;
+  const hip = base - h * 0.30;
+  const padW = Math.max(4, Math.round(h * 0.46)); // 肩横板半宽
+  const armT = Math.max(3, Math.round(h * 0.115));
+
+  // ── 斧：**柄竖直立在身体右侧**（不斜穿躯干，否则柄被躯干压掉一半 ⇒ 斧面浮空），
+  //    斧面挂在柄的上段、向右伸出（出口：右上）。
+  const haftX = cx + h * 0.50;
+  tl(pb, haftX, hip + h * 0.06, haftX, shoulderY - h * 0.22, P4.plumDark, Math.max(2, Math.round(h * 0.055)));
+  pb.poly(
+    [
+      [haftX, shoulderY - h * 0.22],
+      [cx + h * 0.72, shoulderY - h * 0.16],
+      [cx + h * 0.72, shoulderY - h * 0.02],
+      // 斧面下缘**不许贴到右臂**：iron↔flesh 只有 ΔL*=4.1（门槛 8），
+      // 下缘落到 shoulderY+0.05h 时正好压在手臂上 ⇒ `audit:b0 [8]` 必红。
+      [haftX, shoulderY - h * 0.01],
+    ],
+    P4.iron,
+  );
+  if (!card) tl(pb, cx + h * 0.70, shoulderY - h * 0.15, cx + h * 0.70, shoulderY - h * 0.03, P4.ironLite, 1);
+
+  // ── 腿：两条粗腿 + ink 蹄，中间 2px 透空（四足就举不起斧，§15.4）
+  const legT = Math.max(4, Math.round(h * 0.14));
+  const legGap = Math.max(2, Math.round(h * 0.055));
+  tl(pb, cx - legGap / 2 - legT / 2, hip, cx - legGap / 2 - legT / 2 - h * 0.01, base - h * 0.04, P4.flesh, legT);
+  tl(pb, cx + legGap / 2 + legT / 2, hip, cx + legGap / 2 + legT / 2 + h * 0.01, base - h * 0.04, P4.flesh, legT);
+  R(pb, cx - legGap / 2 - legT / 2 - Math.max(2, h * 0.04), base - Math.max(1, h * 0.05), Math.max(3, legT + h * 0.02), Math.max(1, h * 0.045), P4.ink);
+  R(pb, cx + legGap / 2 + legT / 2 - Math.max(1, h * 0.02), base - Math.max(1, h * 0.05), Math.max(3, legT + h * 0.02), Math.max(1, h * 0.045), P4.ink);
+
+  // ── 腰布（紫，plumDark↔flesh 20.0）
+  pb.poly(
+    [
+      [cx - h * 0.24, hip - h * 0.04],
+      [cx + h * 0.24, hip - h * 0.04],
+      [cx + h * 0.20, hip + h * 0.07],
+      [cx - h * 0.20, hip + h * 0.07],
+    ],
+    P4.plumDark,
+  );
+
+  // ── 躯干：**窄**（±0.28h），上宽下略窄；肩线交给横板
+  pb.poly(
+    [
+      [cx - h * 0.28, shoulderY + h * 0.02],
+      [cx + h * 0.28, shoulderY + h * 0.02],
+      [cx + h * 0.26, hip],
+      [cx - h * 0.26, hip],
+    ],
+    P4.flesh,
+  );
+  // ── 肩横板：两端圆头（横张肩背），比躯干宽得多 ⇒ 出"肩"的读法
+  for (const dir of [-1, 1]) {
+    ell(pb, cx + dir * h * 0.10, shoulderY - h * 0.02, cx + dir * padW, shoulderY + h * 0.16, P4.flesh);
+  }
+  // 斜方肌：从脖子斜到肩板，把 ∧ 顶补上
+  pb.poly(
+    [
+      [cx - h * 0.14, shoulderY - h * 0.04],
+      [cx + h * 0.14, shoulderY - h * 0.04],
+      [cx + padW * 0.92, shoulderY + h * 0.06],
+      [cx - padW * 0.92, shoulderY + h * 0.06],
+    ],
+    P4.flesh,
+  );
+
+  // ── 左臂：从肩板左端**向下外斜**到 −0.62h，末端拳；与躯干之间靠肩板下缘出缺口
+  tl(pb, cx - padW + h * 0.03, shoulderY + h * 0.10, cx - h * 0.60, hip - h * 0.02, P4.flesh, armT);
+  ell(pb, cx - h * 0.68, hip - h * 0.10, cx - h * 0.56, hip + h * 0.03, P4.flesh);
+  // ── 右臂：从肩板右端**向外下伸**，拳握在竖直的柄上（骨白拳↔plumDark 46）
+  tl(pb, cx + padW - h * 0.04, shoulderY + h * 0.12, haftX - h * 0.02, shoulderY + h * 0.30, P4.flesh, armT);
+  ell(pb, haftX - h * 0.075, shoulderY + h * 0.24, haftX + h * 0.05, shoulderY + h * 0.36, P4.boneDark);
+
+  // ── 牛头：颅 + 吻 + 双角（角向外上，顶到 topY，不碰斧面）
+  ell(pb, cx - hr, hy - hr * 0.98, cx + hr, hy + hr * 0.90, P4.flesh);
+  R(pb, cx - hr * 0.52, hy + hr * 0.20, Math.max(3, hr * 1.04), Math.max(2, hr * 0.78), P4.flesh);
+  if (!card) {
+    R(pb, cx - hr * 0.36, hy + hr * 0.70, Math.max(1, hr * 0.20), Math.max(1, hr * 0.16), P4.ink); // 鼻孔
+    R(pb, cx + hr * 0.16, hy + hr * 0.70, Math.max(1, hr * 0.20), Math.max(1, hr * 0.16), P4.ink);
+  }
+  for (const dir of [-1, 1]) {
+    pb.poly(
+      [
+        [cx + dir * hr * 0.60, hy - hr * 0.55],
+        [cx + dir * (hr * 0.60 + h * 0.045), hy - hr * 0.95],
+        [cx + dir * (hr * 0.60 + h * 0.085), hy - hr * 0.72],
+        [cx + dir * hr * 0.92, hy - hr * 0.10],
+      ],
+      P4.bone,
+    );
+  }
+  if (face) {
+    const lx = Math.round(cx) - 2;
+    const ey = Math.round(hy - hr * 0.42);
+    if (card) cardFace(pb, lx, ey);
+    else h3Face(pb, lx - 1, ey, 1, 4, 3);
+  }
+  if (atk) {
+    // 掷斧：手里那把不动，**多一把**小斧飞向右上（横移，不越 topY）
+    pb.poly(
+      [
+        [cx + h * 0.80, topY + h * 0.18],
+        [cx + h * 0.92, topY + h * 0.09],
+        [cx + h * 0.94, topY + h * 0.21],
+        [cx + h * 0.81, topY + h * 0.26],
+      ],
+      P4.iron,
+    );
+  }
+}
+
+/** 摄魂怪 · 巨物·飞行档（1.5）· 兜帽 + 破碎下摆 + 骨爪。
+ *  §15.4 要"漂浮 + 破碎下摆（无脚），读不走路"。第二版的浅扇贝裙摆**落到了地上**，
+ *  这一版裙摆收成 3~4 条长短不齐的垂布，外侧两角切高 —— 站着的人没有这种下摆。 */
+function drawWraith(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+  const topY = base - h;
+  const hoodR = Math.max(3.0, card ? h * 0.085 : h * 0.075);
+  const hoodTop = topY;
+  const hoodCy = topY + hoodR * 1.25;
+  const shoulderY = hoodCy + hoodR * 1.05;
+  const waist = base - h * 0.34;
+  const hem = base;
+  const bodyW = Math.max(4, Math.round(h * 0.155));
+
+  // ── 裙（robe）：上窄下略宽，下缘**不收边**，交给垂布条
+  pb.poly(
+    [
+      [cx - bodyW * 0.85, shoulderY],
+      [cx + bodyW * 0.85, shoulderY],
+      [cx + bodyW * 1.18, waist],
+      [cx + bodyW * 1.02, hem - h * 0.10],
+      [cx - bodyW * 1.02, hem - h * 0.10],
+      [cx - bodyW * 1.18, waist],
+    ],
+    P4.robe,
+  );
+  // ── 破碎下摆：3~4 条垂布，长短不齐；**外侧两角切高 0.10h**（否则读成"站在地上"）
+  const strips = card ? 3 : 4;
+  const stripSpan = bodyW * 1.75;
+  const stripW = Math.max(2, Math.round(stripSpan / (strips * 2 - 1)));
+  const step = stripW + Math.max(2, Math.round(stripW * 0.9));
+  for (let i = 0; i < strips; i++) {
+    const sx = cx - stripSpan / 2 + i * step;
+    // 长短不齐：1、3 条几乎到地，2、4 条断在半空 —— 站着的人没有这种下摆
+    const drop = i === 1 ? h * 0.16 : i === 2 ? h * 0.05 : i === 0 ? h * 0.12 : h * 0.22;
+    R(pb, sx, hem - h * 0.16, stripW, h * 0.16 + drop, P4.robeDark);
+  }
+  // 裙摆内侧的暗（左侧一块，给"布"一点厚度）
+  pb.poly(
+    [
+      [cx - bodyW * 0.95, shoulderY + h * 0.02],
+      [cx - bodyW * 0.55, shoulderY + h * 0.02],
+      [cx - bodyW * 0.72, waist],
+      [cx - bodyW * 1.05, waist],
+    ],
+    P4.robeDark,
+  );
+
+  // ── 上肢：左爪高举（出口：左上），右爪收到腰侧
+  const armT = Math.max(3, Math.round(h * 0.075));
+  const clX = cx - bodyW * 1.55;
+  const clY = shoulderY - h * 0.10;
+  tl(pb, cx - bodyW * 0.75, shoulderY + h * 0.03, clX + h * 0.02, clY + h * 0.05, P4.robe, armT);
+  // 骨爪：腕 + 3 指（1~2px，指间留 1px 透空）+ 拇指
+  const fw = Math.max(1, Math.round(h * 0.022));
+  const fl = Math.max(3, Math.round(h * 0.075));
+  R(pb, clX - fw, clY, Math.max(3, h * 0.06), Math.max(3, h * 0.055), P4.bone);
+  for (let i = 0; i < 3; i++) {
+    R(pb, clX - fw + i * (fw + 1), clY - fl, fw, fl + 1, P4.bone);
+  }
+  R(pb, clX + Math.max(3, h * 0.06) - fw, clY + 1, fw, fl * 0.7, P4.bone); // 拇指
+  // 右臂：垂在体侧，末端 2 根短指（从袖口伸出）
+  tl(pb, cx + bodyW * 0.75, shoulderY + h * 0.05, cx + bodyW * 1.12, waist - h * 0.04, P4.robe, armT);
+  R(pb, cx + bodyW * 1.05, waist - h * 0.05, Math.max(3, h * 0.05), Math.max(2, h * 0.05), P4.bone);
+  R(pb, cx + bodyW * 1.05, waist + h * 0.005, fw, Math.max(2, h * 0.04), P4.bone);
+
+  // ── 兜帽：圆锥 + 帽口（梯形，内壁 robeDark）+ 帽尖略后掠
+  pb.poly(
+    [
+      [cx, hoodTop],
+      [cx + hoodR * 1.18, hoodTop + hoodR * 0.70],
+      [cx + hoodR * 1.05, shoulderY + h * 0.01],
+      [cx - hoodR * 1.05, shoulderY + h * 0.01],
+      [cx - hoodR * 1.18, hoodTop + hoodR * 0.70],
+    ],
+    P4.robe,
+  );
+  pb.poly(
+    [
+      [cx - hoodR * 0.66, hoodTop + hoodR * 0.80],
+      [cx + hoodR * 0.66, hoodTop + hoodR * 0.80],
+      [cx + hoodR * 0.78, shoulderY],
+      [cx - hoodR * 0.78, shoulderY],
+    ],
+    P4.robeDark,
+  );
+
+  // ── 脸：**glow 通道** —— 帽内两点 2×2 幽光，无 hi0、无嘴线
+  if (face) {
+    const lx = Math.round(cx) - 3;
+    const ey = Math.round(hoodCy - hoodR * 0.10);
+    R(pb, lx, ey, 2, 2, P4.glow);
+    R(pb, lx + 3, ey, 2, 2, P4.glow);
+  }
+  if (atk) {
+    // 吸魂：爪心一团幽光（glow↔bone 13.1），不加高
+    R(pb, Math.round(clX - h * 0.01), Math.round(clY - h * 0.02), Math.max(2, h * 0.05), Math.max(2, h * 0.05), P4.glow);
+  }
+}
+
 /* ==========================================================================
  * 5. 入口
  * ========================================================================== */
@@ -1925,6 +2514,21 @@ export function drawBodyPlanUnit(
       break;
     case 'p3_greendragon':
       drawGreenDragon(pb, cx, base, h, atk, face, card);
+      break;
+    case 'p4_skeleton':
+      drawSkeleton(pb, cx, base, h, atk, face, card);
+      break;
+    case 'p4_zombie':
+      drawZombie(pb, cx, base, h, atk, face, card);
+      break;
+    case 'p4_vampire':
+      drawVampire(pb, cx, base, h, atk, face, card);
+      break;
+    case 'p4_minotaur':
+      drawMinotaur(pb, cx, base, h, atk, face, card);
+      break;
+    case 'p4_wraith':
+      drawWraith(pb, cx, base, h, atk, face, card);
       break;
     default:
       return false;

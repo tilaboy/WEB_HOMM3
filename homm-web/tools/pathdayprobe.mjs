@@ -25,6 +25,11 @@
  * 为什么 `pathday-dash` 用"中点有没有笔触"而不是比颜色：颜色会被昼夜光照的 multiply 拉偏
  * （暖色 tint 能把冷蓝拉回中性），而**虚线在格与格之间留下空档**是几何事实，光照改不了它。
  *
+ * 为什么这条判据必须**钉住流动相位**（默认 `&devflowphase=0.5`）：虚线的相位在按墙上时间
+ * 前进，所以"中点这一帧有没有笔触"是**随机抽样**。2026-11-08 连跑两次，同一 seed 下明天段
+ * 留空数读到 3 和 1（门槛 2/9）⇒ 门时红时绿。钉相位只固定"抓哪一帧"，不碰门槛；
+ * 流动本身由 `probe:pathflow` 单独把关（那里也钉自己的相位）。
+ *
  * 为什么 `pathday` 需要一个专门的钩子：分段只在"目标超出今日移动力"时出现，
  * 而按可达点边缘选目标**永远**在今日范围内 ⇒ 用老钩子测分段，测出来永远是"没有分段"。
  * `__mapPreviewDay(mp)` 还会临时把移动力设小：满 1800 的跨天目标在十几格之外，
@@ -52,12 +57,20 @@ const LIGHT = opt('light', '0.68');
 const MP = Number(opt('mp', 200));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-/* `--extra=` 追加查询串：钉死流动相位（`&devflowphase=0.5`）、关掉流动（`&devflow=0`）等。
+/* `--extra=` 覆盖默认的相位钉（例如 `--extra=&devflow=0` 让虚线彻底静止）。
    ★ 这个参数曾经"写了但没接进 URL"（§16.3 栽过一次），这次一并接上并复核。 */
 const EXTRA = opt('extra', '');
+/* ★ **默认钉死虚线相位**。虚线是流动的（`MapRenderer.flowPhase` 按墙上时间推进），
+   而 `pathday-dash` 量的是"明天段的中点有没有笔触"—— 本质上是**抓一帧**：
+   相位不钉死 ⇒ 同一 seed 下留空数在 1~4 之间跳（2026-11-08 连跑两次读到 3 / 1，
+   而门槛是 `ceil(9×0.2)=2`）⇒ 判据随机变红，看起来像功能回归。
+   `0.5` 是半个虚线周期（3.0 实 + 4.2 空 = 7.2）；钉住之后连跑三次都是 4。
+   门槛、几何、配色一个字没动 —— 只是把"抓哪一帧"从墙上时间换成常数；
+   流动本身另有 `probe:pathflow` 把关（速度、减少动态、相位推进都在那）。 */
+const FLOW_PIN = EXTRA || '&devflowphase=0.5';
 const BASE =
   `http://127.0.0.1:${PORT}/index.html?devquick=1&devreveal=1&devprobe=1&devbandstats=1` +
-  `&devreachprobe=1&devseed=${SEED}&devlight=${LIGHT}${EXTRA}`;
+  `&devreachprobe=1&devseed=${SEED}&devlight=${LIGHT}${FLOW_PIN}`;
 
 const rows = [];
 const check = (id, label, ok, detail) => {

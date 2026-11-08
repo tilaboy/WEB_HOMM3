@@ -90,6 +90,13 @@ const FAMS = {
     { id: 'p3_ape', cn: '猿人', cls: '宽体' },
     { id: 'p3_greendragon', cn: '绿龙', cls: '巨物·飞行' },
   ],
+  p4: [
+    { id: 'p4_skeleton', cn: '骷髅', cls: '矮' },
+    { id: 'p4_zombie', cn: '僵尸', cls: '中' },
+    { id: 'p4_vampire', cn: '吸血鬼', cls: '高' },
+    { id: 'p4_minotaur', cn: '牛头怪', cls: '宽体' },
+    { id: 'p4_wraith', cn: '摄魂怪', cls: '巨物·飞行' },
+  ],
 };
 const FAM_KEYS = FAM_ARG ? FAM_ARG.split(',').map((s) => s.trim()) : Object.keys(FAMS);
 for (const f of FAM_KEYS) {
