@@ -132,6 +132,7 @@
     </table></div>
     <div class="bar">
       <button class="primary" id="copyBtn">复制结果</button>
+      <button class="primary" id="allBtn">导出全部</button>
       <button class="ghost" id="againBtn">同一个人重做</button>
       <button class="ghost" id="nextBtn">换下一位</button>
     </div>
@@ -166,6 +167,7 @@ const NAME = {};                             // id -> cn
 Object.values(UNITS).forEach(u => NAME[u.id] = u.cn);
 
 const state = { tester: 't1', ans: { quiz: {}, quiz22: {} } };
+let singleText = '';
 
 const $ = s => document.querySelector(s);
 const sel = $('#tester');
@@ -263,12 +265,34 @@ function score(page){
   return cells.map(c => ({ cell: c.cell, want: c.id, got: state.ans[page][c.cell] || null, ok: state.ans[page][c.cell] === c.id }));
 }
 
-function resultText(rq, r22){
+function resultText(rq, r22, who){
   const okq = rq.filter(r => r.ok).length, ok22 = r22.filter(r => r.ok).length;
   const bad = [];
   rq.forEach((r, i) => { if (!r.ok) bad.push('43#' + (i + 1) + ' 选' + (NAME[r.got] || '未填') + '(应' + NAME[r.want] + ')'); });
   r22.forEach((r, i) => { if (!r.ok) bad.push('22#' + (i + 1) + ' 选' + (NAME[r.got] || '未填') + '(应' + NAME[r.want] + ')'); });
-  return 'p4 盲测 · ' + state.tester + '\n43×37: ' + okq + '/5\n22×30: ' + ok22 + '/5\n错格: ' + (bad.length ? bad.join('；') : '无');
+  return 'p4 盲测 · ' + (who || state.tester) + '\n43×37: ' + okq + '/5\n22×30: ' + ok22 + '/5\n错格: ' + (bad.length ? bad.join('；') : '无');
+}
+
+/* 三个人原本要分三次「复制结果」再拼起来，容易漏人 ⇒ 一次导全部。
+   没有作答记录的被测者跳过，不留空表。 */
+function stored(t){
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(storeKey(t)) || 'null'); } catch(e){}
+  return { quiz: (d && d.quiz) || {}, quiz22: (d && d.quiz22) || {} };
+}
+function scoreWith(t, page, ans){
+  const cells = page === 'quiz' ? KEY.quizzes[t] : KEY.quizzes22[t];
+  return cells.map(c => ({ cell: c.cell, want: c.id, got: ans[page][c.cell] || null,
+    ok: ans[page][c.cell] === c.id }));
+}
+function allText(){
+  const blocks = [];
+  KEY.testers.forEach(t => {
+    const ans = stored(t);
+    if (!Object.keys(ans.quiz).length && !Object.keys(ans.quiz22).length) return;
+    blocks.push(resultText(scoreWith(t, 'quiz', ans), scoreWith(t, 'quiz22', ans), t));
+  });
+  return blocks.length ? blocks.join('\n\n') : '还没有任何作答记录。';
 }
 
 function renderResult(){
@@ -292,7 +316,8 @@ function renderResult(){
   $('#diagWarn').hidden = !anyBad;
   $('#diagWarn').textContent = anyBad ? '有错格 —— 下面这张 ×8 是回查用的（与 43×37 同序），不计分。' : '';
   $('#copyBox').hidden = true;
-  $('#copyBox').textContent = resultText(rq, r22);
+  singleText = resultText(rq, r22);
+  $('#copyBox').textContent = singleText;
 }
 
 /* ---- 事件 ---- */
@@ -309,11 +334,20 @@ $('#nextBtn').onclick = () => {
   show('s-study');
 };
 $('#copyBtn').onclick = async () => {
-  const txt = $('#copyBox').textContent;
+  const txt = singleText;
   $('#copyBox').hidden = false;
+  $('#copyBox').textContent = txt;
   try { await navigator.clipboard.writeText(txt); $('#copyBtn').textContent = '已复制'; }
   catch(e){ $('#copyBtn').textContent = '请手动复制下面的框'; }
   setTimeout(() => { $('#copyBtn').textContent = '复制结果'; }, 1600);
+};
+$('#allBtn').onclick = async () => {
+  const txt = allText();
+  $('#copyBox').hidden = false;
+  $('#copyBox').textContent = txt;
+  try { await navigator.clipboard.writeText(txt); $('#allBtn').textContent = '已复制全部'; }
+  catch(e){ $('#allBtn').textContent = '请手动复制下面的框'; }
+  setTimeout(() => { $('#allBtn').textContent = '导出全部'; }, 1800);
 };
 sel.onchange = () => load(sel.value);
 
