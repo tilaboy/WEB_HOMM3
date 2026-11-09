@@ -1084,7 +1084,7 @@ function drawAngel(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
  * ========================================================================== */
 
 /** 火柴人 · 矮档 · 细棍四肢 + 大头 + 头顶火苗。 */
-function drawMatchman(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawMatchman(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
   const topY = base - h;
   // 火苗占最上面 0.12h：剪影最高点必须是火苗尖，否则归一化会把头削平。
   // 兵牌（h≈14）上给 **3px 下限**：1.4px 的火苗落到画布上就是头顶的一道红边，
@@ -1133,6 +1133,25 @@ function drawMatchman(pb: PixBuf, cx: number, base: number, h: number, atk: bool
     tl(pb, cx + h * 0.24, base - h * 0.38, cx + h * 0.3, base - h * 0.22, P2.wood0, Math.max(1, Math.round(h * 0.035)));
     R(pb, cx + h * 0.28, base - h * 0.24, Math.max(2, h * 0.05), Math.max(2, h * 0.05), P2.red);
   }
+  if (elite) {
+    // ── 大火柴（S4）：火**更宽**，不是更高 ──
+    // 火苗本来就是剪影最高点（topY = −1.0h）。把它加高 ⇒ 自然身高 +N px ⇒
+    // 归一化按高等比缩 ⇒ 整只反而变小（骑士的枪旗踩过同一个坑，见 drawKnight）。
+    // 所以只往**两侧**长：左右各多一簇，尖端压在 topY 之下。
+    // 手持的火柴也点着了（idle 那一支在腰侧，ato 那一支已经在脸上，两处都不超高）。
+    for (const dir of [-1, 1]) {
+      pb.poly(
+        [
+          [cx + dir * fw * 0.6, topY + flameH * 0.36],
+          [cx + dir * fw * 1.9, topY + flameH * 0.14],
+          [cx + dir * fw * 1.1, topY + flameH * 0.72],
+        ],
+        dir < 0 ? P2.glow : P2.red,
+      );
+    }
+    // 手里那支火柴的火头（1~2px，card 上就是一粒亮点）
+    R(pb, cx + h * 0.3, base - h * 0.3, Math.max(1, Math.round(h * 0.04)), Math.max(1, Math.round(h * 0.05)), P2.glow);
+  }
 }
 
 /**
@@ -1143,7 +1162,7 @@ function drawMatchman(pb: PixBuf, cx: number, base: number, h: number, atk: bool
  * glow 通道允许无嘴，但**不许**用 ink0 画一道 3px 以上的横线（那会被当成嘴，
  * 而嘴的上下行必须不是同样宽的墨，构装脸上没有那个结构）。
  */
-function drawBronze(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawBronze(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
   // ── 为什么这一版是**矮胖方盒**（h 0.90 → 0.88、躯干加宽到 0.5h）──
   //
   // `audit:bodyplan` 的 [4] 在 22×30 下量「同族两两剪影差 ≥15%」，铜人与熔岩巨人
@@ -1209,6 +1228,28 @@ function drawBronze(pb: PixBuf, cx: number, base: number, h: number, atk: boolea
   }
   // 执锤的手（最后画，压在柄上 ⇒ 读"握着"）
   R(pb, hx - Math.max(1, h * 0.03), shoulder + h * 0.22, Math.max(3, h * 0.08), Math.max(3, h * 0.07), P2.bronzeLite);
+  if (elite) {
+    // ── 黄铜人（S4）：胸口三道**发光熔炉缝** ──
+    // 不换整身颜色（那是调色不是升级），而是在最好的一块平面（0.4h 宽的胸）上
+    // 开三道缝：命名词是"熔炉"，读法是"里面烧着"。
+    // 用 glow（与眼睛同色、同材质对）⇒ 断言 8 用的是同一对 bronze↔glow，已通过。
+    // 三道而不是一道：一道会被读成"胸甲上的一道划痕"，三道并排才是"炉栅"。
+    // 第一版是三道 1px 细缝：×12 读得出来，43×37 上每道只剩 1×4px、合计差 **3.2%**
+    // （门槛 8%）—— 「三道细线」在这个尺寸上等于不存在。改成一扇**炉窗**：
+    // 一整块 0.22h × 0.17h 的发光面，中间压两根铜条当炉栅。
+    // 面积够大（card 上 ≈ 7×5px），"里面烧着"才读得出来。
+    // 第二版加了炉栅（两根铜条）—— 43×37 上反而更差（3.6%）：铜条把本来就不大的
+    // 发光面又切碎，读起来还是"三道竖纹"，而且它正好盖住基础版的三颗铆钉（同一位置、
+    // 同一尺寸），等于只换了颜色。第三版：**一整块实心发光面**，不加任何栅条，
+    // 面积给到 0.30h × 0.22h（card 上 ≈ 8×6px），"胸口开了一扇炉门"。
+    const winW = Math.max(5, Math.round(h * 0.3));
+    const winH = Math.max(4, Math.round(h * 0.22));
+    const wx = Math.round(cx - winW / 2);
+    const wy = Math.round(shoulder + h * 0.05);
+    R(pb, wx, wy, winW, winH, P2.glow);
+    // 炉口下缘一道石色（把发光面"框住"，不然在缩略图上它会往胸口外溢）
+    R(pb, wx, wy + winH, winW, Math.max(1, Math.round(h * 0.02)), P2.stoneDark);
+  }
 }
 
 /**
@@ -1217,7 +1258,7 @@ function drawBronze(pb: PixBuf, cx: number, base: number, h: number, atk: boolea
  * ⚠️ 宽度必须 **< 1.35h**：宽体档归三头狼。§15.4 也明说「慢而硬」靠高度与肩厚，
  *    不靠横张 —— 横张是猿人/牛头怪的语法，不能借给巨人。
  */
-function drawLavaGiant(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawLavaGiant(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
   const topY = base - h;
   const headR = h * 0.085;
   const headCy = topY + headR + h * 0.015;
@@ -1252,8 +1293,12 @@ function drawLavaGiant(pb: PixBuf, cx: number, base: number, h: number, atk: boo
     P2.red,
   );
   // 裂缝：三段发光细线（这是"熔岩"的唯一证据；没有它就是一块红石头）
-  tl(pb, cx - bw * 0.16, shoulder + h * 0.12, cx - bw * 0.04, hip - h * 0.08, P2.glow, 2);
-  tl(pb, cx + bw * 0.02, shoulder + h * 0.16, cx + bw * 0.1, hip - h * 0.06, P2.glow, 2);
+  // S4：升级形态的裂缝**加粗一档**（2 → 3px）。这是"熔岩领主"最省的一笔：
+  // 裂缝本来就贯穿整个胸口（两条各约 0.3h 长），加宽 1px 在 43×37 上多出约 16 个
+  // 变化像素，而冠与肩甲合起来才 7.9%。不是为了让闸变绿而加粗 ——
+  // "领主"在这个族里的语义就是"烧得更狠"，加宽与冠是同一句话。
+  tl(pb, cx - bw * 0.16, shoulder + h * 0.12, cx - bw * 0.04, hip - h * 0.08, P2.glow, elite ? 3 : 2);
+  tl(pb, cx + bw * 0.02, shoulder + h * 0.16, cx + bw * 0.1, hip - h * 0.06, P2.glow, elite ? 3 : 2);
   // 肩：两块厚岩（横向只到 bw*0.56 ⇒ 总宽仍远小于 1.35h）
   R(pb, cx - bw * 0.56, shoulder - h * 0.04, Math.max(3, bw * 0.3), Math.max(2, h * 0.1), P2.red);
   R(pb, cx + bw * 0.26, shoulder - h * 0.04, Math.max(3, bw * 0.3), Math.max(2, h * 0.1), P2.red);
@@ -1295,6 +1340,37 @@ function drawLavaGiant(pb: PixBuf, cx: number, base: number, h: number, atk: boo
   pb.poly([[cx + headR * 0.3, headCy - headR * 0.8], [cx + headR * 0.85, topY + h * 0.012], [cx + headR * 1.15, headCy - headR * 0.35]], P2.redDark);
   // 眼（glow）+ 嘴（stone0 横线，在下巴位置 —— 巨人的嘴就是一道裂口）
   if (face) glowFace(pb, Math.round(cx) - 2, Math.round(headCy - headR * 0.1), 1, Math.round(cx) - h * (card ? 0.055 : 0.09), card ? Math.max(3, h * 0.13) : h * 0.18, 5);
+  if (elite) {
+    // ── 熔岩领主（S4）：**发光岩冠**（三尖，夹在两根角之间）──
+    // 三尖的尖端压在 topY（= 角尖），一分不高：往上一分就会被归一化砍掉，
+    // 连带把整只压小（drawKnight 的枪旗踩过）。
+    // 冠用 glow，角是 redDark ⇒ 同一条"熔岩"语汇从胸口裂缝延伸到头顶。
+    // ⚠️ crownY 落在 topY **之下** 0.047h（头顶 = topY，冠底在头的上半），
+    // 所以 `topY - crownY` 是负数；第一版在这里 fallback 到 0.08h，冠尖反而
+    // 冲到 topY 之上 1.4px ⇒ **[6] 自然身高差 2px**。高度必须夹在 `crownY - topY`。
+    const crownY = Math.round(headCy - headR * 0.62);
+    const crownH = Math.max(1, Math.round(crownY - topY));
+    const bandW = Math.max(4, Math.round(h * 0.2));
+    R(pb, Math.round(cx - bandW / 2), crownY, bandW, Math.max(1, Math.round(h * 0.025)), P2.glow);
+    for (const dx of [-0.55, 0, 0.55]) {
+      const px = cx + h * 0.08 * dx;
+      pb.poly(
+        [
+          [px - h * 0.04, crownY + 1],
+          [px, crownY - crownH],
+          [px + h * 0.04, crownY + 1],
+        ],
+        P2.glow,
+      );
+    }
+    // 双肩甲烧红：巨人的肩是全身**面积最大**的两块平面（各 0.14h × 0.1h），
+    // 冠在 43×37 上只有 4px 宽（差 4.1%），必须靠这两块把读数补起来。
+    // glow 压在 red 上就是胸口那道裂缝的同一对色（已过断言 8），不是新语汇。
+    for (const dir of [-1, 1]) {
+      const sx = dir < 0 ? cx - bw * 0.56 : cx + bw * 0.26;
+      R(pb, Math.round(sx), Math.round(shoulder - h * 0.04), Math.max(4, Math.round(bw * 0.34)), Math.max(2, Math.round(h * 0.12)), P2.glow);
+    }
+  }
 }
 
 /**
@@ -1323,7 +1399,7 @@ function drawLavaGiant(pb: PixBuf, cx: number, base: number, h: number, atk: boo
  *    2×2 窗口，所以不会被数成眼。这不是绕过判据：兽形侧脸的定义本来就是一只眼，
  *    三个头里的两只是侧影，画成高光眼反而会读成"三个正面脸"。
  */
-function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
   const bodyCy = base - h * 0.46;
   const halfLen = h * 0.3;
   const legW = Math.max(2, Math.round(h * 0.08));
@@ -1509,6 +1585,45 @@ function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boo
       R(pb, xm, top, 1, Math.max(2, bot - top), P2.ink);
     }
   }
+  if (elite) {
+    // ── 狼王（S4）：背脊一排骨刺 ──
+    //
+    // 为什么不是"给中间那颗头戴王冠"：三颗头的顶（−0.88h）就是剪影最高点，
+    // 王冠只能往上 ⇒ 自然身高涨 ⇒ 归一化按高等比缩 ⇒ 整只变矮变窄（骑士的坑）。
+    // 背脊在 −0.64h，离头顶还有 0.24h 的余量，刺尖压在 −0.74h 一分不高。
+    //
+    // 为什么不是"一条浅色颈环"（第二版）：那条 0.5h 宽的实心亮带在 ×12 上读成
+    // **一块横搭在背上的白板** —— 它是几何形，不是器官。骨刺才是"狼王"该长的东西。
+    // 改成：脊线 1px + 四根三角刺，**都用 bronzeLite**。
+    // 一根 1px 的脊线把四根刺连成一条"骨脊"，43×37 上才不会退化成四个孤立的亮点。
+    //
+    // x 从 +0.02h 起：最右那颗头的心在 −0.12h、半径 0.078h，右缘到 −0.04h，
+    // 再往左就会把刺扎进狼嘴里（三颗头是本兵唯一的识别点，不许盖）。
+    const ridgeY = bodyCy - h * 0.13;
+    R(
+      pb,
+      Math.round(cx - h * 0.2),
+      Math.round(ridgeY),
+      Math.max(4, Math.round(h * 0.46)),
+      1,
+      P2.bronzeLite,
+    );
+    // 三根而不是四根：0.06h 的间距配 0.06h 的刺宽 ⇒ 四根正好**首尾相接**，
+    // ×12 实拍是一整块浅色"帆"，不是刺。改成 0.1h 间距、0.05h 刺宽，
+    // 中间留 1~2px 的透空缝，才有"一排骨刺"的锯齿边。
+    for (let i = 0; i < 3; i++) {
+      const px = cx + h * (0.04 + i * 0.1);
+      const tip = bodyCy - h * (0.32 - (i % 2) * 0.04);
+      pb.poly(
+        [
+          [px - h * 0.025, ridgeY],
+          [px, tip],
+          [px + h * 0.025, ridgeY],
+        ],
+        P2.bronzeLite,
+      );
+    }
+  }
   if (atk) {
     // 出手：前爪抬起前扑
     tl(pb, cx - halfLen * 0.62, bodyCy + h * 0.06, cx - h * 0.48, base - h * 0.28, P2.wall, Math.max(2, Math.round(h * 0.1)));
@@ -1522,7 +1637,7 @@ function drawThreeWolf(pb: PixBuf, cx: number, base: number, h: number, atk: boo
  * 下掠翼的宽度必须控制在 `1.12h` 以内 —— h=1.50 归一化到 55px 时要乘 1.06，
  * 再宽就顶破 64px 画布（`audit:b0` 断言 12）。
  */
-function drawDevil(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawDevil(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
   const topY = base - h;
   const headR = h * 0.1;
   const headCy = topY + h * 0.19;
@@ -1589,6 +1704,50 @@ function drawDevil(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
   // 尾：从臀部向右下，末端一个三角（"尾巴"是恶魔与天使的第三处不同）
   tl(pb, cx + h * 0.1, hip, cx + h * 0.42, base - h * 0.16, P2.redDark, Math.max(2, Math.round(h * 0.035)));
   pb.poly([[cx + h * 0.4, base - h * 0.2], [cx + h * 0.5, base - h * 0.08], [cx + h * 0.36, base - h * 0.1]], P2.red);
+  if (elite) {
+    // ── 大恶魔（S4）：角**分叉** + 尾尖**三叉** ──
+    // 两处都只往外长、不往上长：角尖本来就在 topY，抬高就会被归一化砍掉。
+    // 角是 bronze（铜）压在 redDark 的翼上 —— 这对色差够大，也是全兵最亮的一处，
+    // 所以在角上加叉的读数远好于在暗红身体上加纹。
+    for (const dir of [-1, 1]) {
+      // 第二版这两根叉一路顶到 topY+0.05h，×12 实拍读成**鹿角**（两对等高的长枝）。
+      // 改成从角的中段往**外**（不是往上）分一小叉：读法是"角更粗、带分岔"，
+      // 而不是"多长了一对枝"。叉尖压在 headCy 附近，离 topY 还有 0.15h。
+      pb.poly(
+        [
+          [cx + dir * headR * 1.05, headCy - headR * 0.8],
+          [cx + dir * headR * 1.95, headCy - headR * 0.15],
+          [cx + dir * headR * 1.1, headCy - headR * 0.25],
+        ],
+        P2.bronze,
+      );
+    }
+    // 青铜胸甲：躯干正面整块换材质（红 → 铜），左右各外挑 0.02h。
+    //
+    // 为什么必须有它：角分叉在 ×12 上成立，43×37 上两支角各只多 1px，实测差 **6.8%**。
+    // 胸甲是全身第二大的平面（0.26h × 0.2h ⇒ card 上 ≈ 11×8px），铜压在红上又是
+    // 本族最亮的一对 ⇒ 一个改动就把读数拉过门槛，而且"大恶魔披甲"本身就是命名依据。
+    // ⚠️ 第一版是一块**正矩形**：×12 实拍读成"胸前挂了一块木板/木箱"——
+    // 矩形没有甲的结构。第二版做成**胸甲形**：上宽下窄的梯形 + 亮上缘 +
+    // 一道中脊 + 左右两条 1px 暗缝。四样里有三样是 1px 的东西，但它们合起来
+    // 给出"这是甲"的结构；缩到 43×37 时留下的是梯形与那条亮上缘。
+    pb.poly(
+      [
+        [cx - h * 0.17, shoulder + h * 0.02],
+        [cx + h * 0.17, shoulder + h * 0.02],
+        [cx + h * 0.13, shoulder + h * 0.24],
+        [cx - h * 0.13, shoulder + h * 0.24],
+      ],
+      P2.bronze,
+    );
+    // 上缘亮边
+    R(pb, Math.round(cx - h * 0.17), Math.round(shoulder + h * 0.02), Math.max(4, Math.round(h * 0.34)), Math.max(1, Math.round(h * 0.025)), P2.bronzeLite);
+    // 中脊
+    R(pb, Math.round(cx) - 1, Math.round(shoulder + h * 0.05), Math.max(1, Math.round(h * 0.02)), Math.max(2, Math.round(h * 0.17)), P2.bronzeLite);
+    // 尾尖：原单三角外侧再补两根，成三叉（尾本来就在剪影最右，多两叉不改高度）
+    pb.poly([[cx + h * 0.47, base - h * 0.19], [cx + h * 0.56, base - h * 0.1], [cx + h * 0.44, base - h * 0.09]], P2.red);
+    pb.poly([[cx + h * 0.38, base - h * 0.22], [cx + h * 0.42, base - h * 0.06], [cx + h * 0.32, base - h * 0.09]], P2.redDark);
+  }
   if (atk) {
     // 出手：前爪横扫（右臂抬起），不改变高度档
     tl(pb, cx + h * 0.14, shoulder + h * 0.08, cx + h * 0.42, shoulder + h * 0.02, P2.red, Math.max(2, Math.round(h * 0.06)));
@@ -1608,7 +1767,8 @@ function drawDevil(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
  * ========================================================================== */
 
 /** 矮人 · 矮档 · 大头 + 宽胡子 + 左手的宽刃斧。 */
-function drawDwarf(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawDwarf(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
+  void elite; // S4b：本族的升级形态下一批落地（参数已接通，先占位防 TS6133）
   const topY = base - h;
   const hr = h * (card ? 0.235 : 0.215);
   const hy = topY + hr * 1.12;
@@ -1688,7 +1848,8 @@ function drawDwarf(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
 }
 
 /** 丛林射手 · 中档 · 竖长弓（与 p1 的**横**弩区分）+ 叶披风。 */
-function drawJungleArcher(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawJungleArcher(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
+  void elite; // S4b：本族的升级形态下一批落地（参数已接通，先占位防 TS6133）
   const topY = base - h;
   const hr = h * (card ? 0.16 : 0.14);
   const hy = topY + hr * 1.2;
@@ -1777,7 +1938,8 @@ function drawJungleArcher(pb: PixBuf, cx: number, base: number, h: number, atk: 
 }
 
 /** 树人 · 高档 · 树冠 + 根系。宽度必须 <1.11h，否则会落进「宽体」档（classify 的 w/h 用 H_REF 换算）。 */
-function drawTreant(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawTreant(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
+  void elite; // S4b：本族的升级形态下一批落地（参数已接通，先占位防 TS6133）
   const topY = base - h;
   const canopyBot = topY + h * 0.29;
   const trunkTop = canopyBot - h * 0.01;
@@ -1845,7 +2007,8 @@ function drawTreant(pb: PixBuf, cx: number, base: number, h: number, atk: boolea
 }
 
 /** 猿人 · 宽体档 · 横张肩背 + 举石。R1 的机械判据只有 w≥1.35h，不许真画成四足（要投石）。 */
-function drawApe(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawApe(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
+  void elite; // S4b：本族的升级形态下一批落地（参数已接通，先占位防 TS6133）
   const topY = base - h;
   const hr = h * (card ? 0.17 : 0.145);
   const hy = topY + hr * 1.05; // 头往下压，埋进肩背里（不再是「坐在桌上的罐子」）
@@ -1942,7 +2105,8 @@ function drawApe(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, 
 /** 绿龙 · 巨物·飞行档 · 长颈 + 横身 + 长尾 + **下掠翼**。
  *  §16.1：恶魔也是下掠翼，两者只能靠「直立人形 vs 横身长颈长尾」分，不许靠翼向。
  *  ⚠️ 画布宽 64 ⇒ 高 54px 的龙，宽必须 ≤64（w/h ≤1.18），否则断言 12 横向溢出。 */
-function drawGreenDragon(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawGreenDragon(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
+  void elite; // S4b：本族的升级形态下一批落地（参数已接通，先占位防 TS6133）
   const topY = base - h;
   const bodyCy = base - h * 0.42;
 
@@ -2076,7 +2240,8 @@ function drawGreenDragon(pb: PixBuf, cx: number, base: number, h: number, atk: b
 /** 骷髅 · 矮档（0.65）· 大颅骨 + 露肋的空腔 + 右出锈剑。
  *  与同档三家分开的判据：**唯一全骨**（骨 + 空腔暗，没有布料主色），
  *  且颅骨占身高 ~30%（矮档里唯一"头比身子显眼"的）。 */
-function drawSkeleton(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawSkeleton(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
+  void elite; // S4b：本族的升级形态下一批落地（参数已接通，先占位防 TS6133）
   const topY = base - h;
   // 兵牌只有 13px 高：颅骨半径给像素下限，否则装不下 2×2 眼 + 1 行嘴。
   const ry = card ? 2.4 : h * 0.15;
@@ -2165,7 +2330,8 @@ function drawSkeleton(pb: PixBuf, cx: number, base: number, h: number, atk: bool
  *    ① 露出的肋**不能是一块米色补丁**（读成围兜）⇒ 改成破衣上两道 1px 的骨白横线；
  *    ② 头**不能圆**（读成小孩）⇒ 下颌要掉下来：颌骨与颅之间留一道 ink 开口；
  *    ③ 两腿**不能并成一根柱**（读成木桩）⇒ 一条直、一条屈，中间 2px 透空。 */
-function drawZombie(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawZombie(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
+  void elite; // S4b：本族的升级形态下一批落地（参数已接通，先占位防 TS6133）
   const lean = h * 0.05; // 整体前探（向左手方向）
   const c0 = cx - lean;
   const topY = base - h;
@@ -2255,7 +2421,8 @@ function drawZombie(pb: PixBuf, cx: number, base: number, h: number, atk: boolea
  *    ② 翼必须**伸出斗篷轮廓之外**（第二版画在里侧，被斗篷全盖住）；
  *    ③ 斗篷中央**不能有一条贯通的深色竖条**（读成神父的圣带）⇒ 去掉内衬，
  *       中央只留下摆的一小段暗边。 */
-function drawVampire(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawVampire(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
+  void elite; // S4b：本族的升级形态下一批落地（参数已接通，先占位防 TS6133）
   const topY = base - h;
   const hr = card ? Math.max(3.0, h * 0.085) : h * 0.082;
   const hy = topY + hr * 1.05; // 颅心（头顶贴 topY）
@@ -2365,7 +2532,8 @@ function drawVampire(pb: PixBuf, cx: number, base: number, h: number, atk: boole
  *  现在的结构：窄躯干（±0.28h）+ **肩横板**（±0.46h）+ 两条从横板两端出发、
  *  **与躯干之间留缺口**的手臂；宽度由「左拳 −0.66h」与「斧面 +0.76h」拿到
  *  `w≈1.4h`，稳过宽体判据（§15.2 R1）。 */
-function drawMinotaur(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawMinotaur(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
+  void elite; // S4b：本族的升级形态下一批落地（参数已接通，先占位防 TS6133）
   const topY = base - h;
   const hr = card ? Math.max(2.9, h * 0.15) : h * 0.125;
   const hy = topY + hr * 1.12; // 颅心（角尖顶到 topY）
@@ -2484,7 +2652,8 @@ function drawMinotaur(pb: PixBuf, cx: number, base: number, h: number, atk: bool
 /** 摄魂怪 · 巨物·飞行档（1.5）· 兜帽 + 破碎下摆 + 骨爪。
  *  §15.4 要"漂浮 + 破碎下摆（无脚），读不走路"。第二版的浅扇贝裙摆**落到了地上**，
  *  这一版裙摆收成 3~4 条长短不齐的垂布，外侧两角切高 —— 站着的人没有这种下摆。 */
-function drawWraith(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawWraith(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
+  void elite; // S4b：本族的升级形态下一批落地（参数已接通，先占位防 TS6133）
   const topY = base - h;
   const hoodR = Math.max(3.0, card ? h * 0.085 : h * 0.075);
   const hoodTop = topY;
@@ -2648,49 +2817,49 @@ export function drawBodyPlanUnit(
       drawAngel(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p2_matchman':
-      drawMatchman(pb, cx, base, h, atk, face, card);
+      drawMatchman(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p2_bronze':
-      drawBronze(pb, cx, base, h, atk, face, card);
+      drawBronze(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p2_lavagiant':
-      drawLavaGiant(pb, cx, base, h, atk, face, card);
+      drawLavaGiant(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p2_threewolf':
-      drawThreeWolf(pb, cx, base, h, atk, face, card);
+      drawThreeWolf(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p2_devil':
-      drawDevil(pb, cx, base, h, atk, face, card);
+      drawDevil(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p3_dwarf':
-      drawDwarf(pb, cx, base, h, atk, face, card);
+      drawDwarf(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p3_junglearcher':
-      drawJungleArcher(pb, cx, base, h, atk, face, card);
+      drawJungleArcher(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p3_treant':
-      drawTreant(pb, cx, base, h, atk, face, card);
+      drawTreant(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p3_ape':
-      drawApe(pb, cx, base, h, atk, face, card);
+      drawApe(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p3_greendragon':
-      drawGreenDragon(pb, cx, base, h, atk, face, card);
+      drawGreenDragon(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p4_skeleton':
-      drawSkeleton(pb, cx, base, h, atk, face, card);
+      drawSkeleton(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p4_zombie':
-      drawZombie(pb, cx, base, h, atk, face, card);
+      drawZombie(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p4_vampire':
-      drawVampire(pb, cx, base, h, atk, face, card);
+      drawVampire(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p4_minotaur':
-      drawMinotaur(pb, cx, base, h, atk, face, card);
+      drawMinotaur(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p4_wraith':
-      drawWraith(pb, cx, base, h, atk, face, card);
+      drawWraith(pb, cx, base, h, atk, face, card, elite);
       break;
     default:
       return false;

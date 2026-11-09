@@ -228,6 +228,12 @@ export interface B0FrameSpec {
     | 'p1_eagle_u'
     | 'p1_knight_u'
     | 'p1_angel_u'
+    // S4b：p2 赤焰五兵的升级形态
+    | 'p2_matchman_u'
+    | 'p2_bronze_u'
+    | 'p2_lavagiant_u'
+    | 'p2_threewolf_u'
+    | 'p2_devil_u'
     // TP-4② 中立野怪（D-58 §6.4.4：不迁名，id 即帧名中缀）
     | 'wolf'
     | 'boar'
@@ -414,6 +420,29 @@ export const P1U_FRAMES: B0FrameSpec[] = [
   { name: 'cu_p1_angel_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_angel_u', kind: 'atk' },
 ];
 
+export const P2U_FRAMES: B0FrameSpec[] = [
+  // 矮档升级：大火柴（火更宽 + 手里的火柴点着）
+  { name: 'u_p2_matchman_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_matchman_u', kind: 'map' },
+  { name: 'cu_p2_matchman_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_matchman_u', kind: 'idle' },
+  { name: 'cu_p2_matchman_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_matchman_u', kind: 'atk' },
+  // 中档升级：黄铜人（胸口三道熔炉缝）
+  { name: 'u_p2_bronze_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_bronze_u', kind: 'map' },
+  { name: 'cu_p2_bronze_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_bronze_u', kind: 'idle' },
+  { name: 'cu_p2_bronze_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_bronze_u', kind: 'atk' },
+  // 高档升级：熔岩领主（发光岩冠）
+  { name: 'u_p2_lavagiant_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_lavagiant_u', kind: 'map' },
+  { name: 'cu_p2_lavagiant_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_lavagiant_u', kind: 'idle' },
+  { name: 'cu_p2_lavagiant_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_lavagiant_u', kind: 'atk' },
+  // 宽体升级：狼王（背脊四根岩刺）
+  { name: 'u_p2_threewolf_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_threewolf_u', kind: 'map' },
+  { name: 'cu_p2_threewolf_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_threewolf_u', kind: 'idle' },
+  { name: 'cu_p2_threewolf_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_threewolf_u', kind: 'atk' },
+  // 巨物·飞行升级：大恶魔（角分叉 + 尾三叉）
+  { name: 'u_p2_devil_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p2_devil_u', kind: 'map' },
+  { name: 'cu_p2_devil_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_devil_u', kind: 'idle' },
+  { name: 'cu_p2_devil_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p2_devil_u', kind: 'atk' },
+];
+
 /**
  * P2V3 批（§15.2 / §16.1 · S3b，2026-11-06）：p2 赤焰五个兵**按新体形档重画**。
  *
@@ -531,6 +560,7 @@ export const UNIT_FRAMES: B0FrameSpec[] = [
   ...B4_FRAMES,
   ...P1V3_FRAMES,
   ...P1U_FRAMES,
+  ...P2U_FRAMES,
   ...P2V3_FRAMES,
   ...P3V3_FRAMES,
   ...P4V3_FRAMES,
@@ -571,6 +601,7 @@ export const TIER_OF: Record<string, number> = {
   // 登记它们是为了让按 tier 读的调用方（`audit:power` 的封顶闸按同族下一档比较、
   // BattleRenderer 的高亮/排序）不必各自写 `_u` 特判。体量仍由 `planOf` 走体形档。
   p1_child_u: 1, p1_crossbow_u: 2, p1_eagle_u: 3, p1_knight_u: 4, p1_angel_u: 5,
+  p2_matchman_u: 1, p2_bronze_u: 2, p2_lavagiant_u: 3, p2_threewolf_u: 4, p2_devil_u: 5,
   // S3b：p2 五兵（同理，体量走 `BODY_PLAN`，tier 只给渲染/平衡侧的调用方读）
   p2_matchman: 1, p2_bronze: 2, p2_threewolf: 3, p2_lavagiant: 4, p2_devil: 5,
   // S3c：p3 五兵（同理，体量走 `BODY_PLAN`，tier 只给渲染/平衡侧的调用方读）

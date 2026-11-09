@@ -123,6 +123,11 @@ const FACE_LAW = {
   // 因此每个 `_u` 帧继承基础版的通道。这里只登记**与默认 h3 不同**的那一个；
   // 其余四个（孩子王/连弩手/圣骑士/大天使）走默认 h3，与基础版同脸。
   cu_p1_eagle_u: ['profile', '与 cu_p1_eagle 同脸（升级形态只在颈背/翼尖/尾羽上加东西，脸一个像素没动）'],
+  // S4b（p2 五个升级形态）：与各自的基础版同通道 —— 升级形态不改脸。
+  // 只登记**不是默认 h3** 的三条（铜人/熔岩巨人是构装，三头狼是侧脸）。
+  cu_p2_bronze_u: ['glow', '与 cu_p2_bronze 同通道：2×2 同色发光眼、无 hi0、面无 ink 嘴线'],
+  cu_p2_lavagiant_u: ['glow', '与 cu_p2_lavagiant 同通道：发光眼 + stone0 裂口，头顶多了冠但不改脸'],
+  cu_p2_threewolf_u: ['profile', '与 cu_p2_threewolf 同通道：主头单眼侧脸，另两颗头仍是远侧暗点'],
 };
 /**
  * 三档帧数（写死 ⇒ 谁想偷偷把一个单位挪进例外，得同时改这三个数并在 review 里解释）。
@@ -142,8 +147,15 @@ const FACE_LAW = {
  *   · profile +1：cu_p1_eagle_u（鹰的升级形态，同一条侧脸理由，已在 FACE_LAW 登记）；
  *   · glow 不变：p1 五兵本来就没有构装/亡灵。
  * 25 − 3 glow − 4 profile = **18 h3**。
+ *
+ * 18/3/4 → **20/5/5** 的来历（2026-11-09，S4b 加 p2 五个升级形态）：
+ *   · h3 +2：大火柴 / 大恶魔（与基础版同脸，走默认）；
+ *   · glow +2：黄铜人 / 熔岩领主（构装，同基础版的发光眼）；
+ *   · profile +1：狼王（主头单眼侧脸，与 cu_p2_threewolf 同一条）；
+ *   · 30 − 5 glow − 5 profile = **20 h3**。
+ * 三个数之和必须 = `UNIT_FRAMES` 里 cu_ idle 的帧数（现在 30）。
  */
-const CH_COUNT = { h3: 18, glow: 3, profile: 4 };
+const CH_COUNT = { h3: 20, glow: 5, profile: 5 };
 
 const BG = [208, 208, 208, 255]; // 与 ① 同底景（L=208），便于两批素材并排看
 const CELL_W = 52;
