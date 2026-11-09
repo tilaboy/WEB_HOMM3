@@ -1,4 +1,4 @@
-import type { BuildingDef } from '../types.js';
+import type { BuildingDef, ResourceBag } from '../types.js';
 
 /**
  * 建筑树共 16 座（含预置的酒馆），分四条线：
@@ -100,6 +100,8 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     cost: { gold: 300, wood: 5 },
     requires: ['tavern'],
     growth: { tier: 1 },
+    // S4：兵营五座是**唯一**可升的线（L2 = 兵种升级入口，spec §2.5 / §2.4）
+    maxLevel: 3,
   },
   dwell2: {
     id: 'dwell2',
@@ -108,6 +110,7 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     cost: { gold: 1000, wood: 5, ore: 5 },
     requires: ['dwell1'],
     growth: { tier: 2 },
+    maxLevel: 3,
   },
   dwell3: {
     id: 'dwell3',
@@ -116,6 +119,7 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     cost: { gold: 2500, ore: 10 },
     requires: ['dwell2'],
     growth: { tier: 3 },
+    maxLevel: 3,
   },
   dwell4: {
     id: 'dwell4',
@@ -124,6 +128,7 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     cost: { gold: 5000, wood: 10, ore: 10 },
     requires: ['dwell3'],
     growth: { tier: 4 },
+    maxLevel: 3,
   },
   dwell5: {
     id: 'dwell5',
@@ -132,6 +137,7 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     cost: { gold: 9000, wood: 10, ore: 20 },
     requires: ['dwell4'],
     growth: { tier: 5 },
+    maxLevel: 3,
   },
 
   /* ---------------- 王牌线：banner（§23.4 / §27.3） ----------------
@@ -202,6 +208,33 @@ export const BUILDING_ORDER = [
 
 /** 兵营 id → 对应兵种，用于渲染城镇外观等级。 */
 export const DWELLING_IDS = ['dwell1', 'dwell2', 'dwell3', 'dwell4', 'dwell5'];
+
+/** 某等级建筑的造价。缺省 1 级 = 建造成本；没有下一级返回 null。 */
+export function levelCostOf(id: string, targetLevel: number): ResourceBag | null {
+  const def = BUILDINGS[id];
+  if (!def || targetLevel < 2 || targetLevel > (def.maxLevel ?? 1)) return null;
+  return upgradeCostOf(def);
+}
+
+/**
+ * 兵营 L2/L3 的升级价（spec §2.4，决策 60）：**0 金 + L1 的木/矿 × 0.5 向上取整**。
+ *
+ * 三件必须一起成立，缺一条都会把经济账算错：
+ *   ① **金币必须是 0** —— 兵种升级的代价已经落在「招募单价 ×1.2」上，再收金币是重复收费；
+ *      金币树已占满预算 89%，五营全升只收 10% 金就会把 W4/W5 的余钱吃干，
+ *      「建墙 / 招将 / 升级」三者只能留一个。
+ *   ② **不是逐级再折半** —— L2 与 L3 各取 L1 的 50%，不是 L3 再在 L2 上折半。
+ *      例：`dwell5`（10 木 20 矿）→ L2 5 木 10 矿、L3 也是 5 木 10 矿。
+ *   ③ 稀有资源不参与 —— 兵营造价里本来就没有宝石/水晶。
+ */
+export function upgradeCostOf(def: BuildingDef): ResourceBag {
+  const out: ResourceBag = {};
+  for (const k of ['wood', 'ore'] as const) {
+    const v = def.cost[k] ?? 0;
+    if (v > 0) out[k] = Math.ceil(v * 0.5);
+  }
+  return out;
+}
 
 export const HERO_HIRE_COST = 2500;
 

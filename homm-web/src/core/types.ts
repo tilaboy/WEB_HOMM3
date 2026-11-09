@@ -133,6 +133,15 @@ export interface UnitType {
    * 新增单位带这条之前先想清楚——这是"免掉一次交换成本"，对平衡的撬动和 +2 攻同一量级。
    */
   noRetaliate?: boolean;
+  /**
+   * **升级形态指向基础版 id**（S4 · spec §2.5）。只有 `p*_xxx_u` 这一层带它，
+   * 基础版与中立怪都没有 ⇒ 「是不是升级版」读这个字段，**不要读 id 后缀**
+   * （后缀是命名约定，字段是数据；两者同源由 `data/units.ts` 的生成器保证）。
+   *
+   * 数值**不排表**（决策 66）：攻防 +1 / 伤害上限 +1 / HP ×1.25 向上取整 / 速度不动 /
+   * 招募价 ×1.2 逐项取整，全部由 `makeUpgrade()` 从基础版算出来。
+   */
+  upgradeOf?: string;
 }
 
 export interface Stack {
@@ -319,6 +328,14 @@ export interface BuildingDef {
   desc: string;
   cost: ResourceBag;
   requires: string[];
+  /**
+   * 最高等级（S4 · spec §2.4）。缺省 **1** = 只有一级、没有升级入口。
+   *
+   * 只有**兵营五座**现在是 3（L2 就是兵种升级入口，§2.5）。市场 / 魔法链的三级外形
+   * 是 02c / S5 的美术活，**没有落地前不许把 maxLevel 写成 3** —— 否则玩家花 800 金
+   * 买到一个什么都不变的等级，那比"没有升级"更糟。
+   */
+  maxLevel?: number;
   /** 每日金币税收 */
   dailyGold?: number;
   /** 驻军防御加成（取已建城墙中的最大值） */
@@ -375,6 +392,17 @@ export interface Town {
   footprint?: GridPos[];
   owner: PlayerId;
   buildings: string[];
+  /**
+   * 建筑等级（S4 · spec §2.4）：`{ dwell3: 2 }`。**缺省 / 缺失 = 1**。
+   *
+   * 为什么单独一张表而不是在 `buildings` 里写重复 id：`buildings` 是"有哪些建筑"的
+   * 集合（`hasBuilding` = includes），升级是"同一栋长大"，不是新建一栋。写重复 id
+   * 会让所有 `for (const id of town.buildings)` 的遍历各读一次同一栋楼
+   * （日收入、城防、周产都在这条循环里）。
+   *
+   * 可选字段 —— 旧存档读出来是 undefined，按 1 处理，不需要迁移器。
+   */
+  levels?: Record<string, number>;
   garrison: Army;
   growthPool: Record<string, number>;
   /** 每周增长的的小数余数累加器：growthBonus 让 growthPerWeek×mult 出现小数，

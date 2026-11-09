@@ -289,10 +289,12 @@ function paintBuildings(
     if (!def) continue;
     const st = buildStatus(state, town, id);
     const card = document.createElement('div');
-    card.className = 'bcard' + (st.built ? ' built' : '') + (st.unlocked && !st.built ? ' open' : '');
+    card.className =
+      'bcard' + (st.built ? ' built' : '') + (st.unlocked && (!st.built || st.canUpgrade) ? ' open' : '');
     const nm = document.createElement('div');
     nm.className = 'bn';
-    nm.textContent = def.name;
+    // 等级只在 >1 时写出来：Lv.1 是常态，写在每张卡上是噪音（spec §2.4「只显示差价与效果差」）
+    nm.textContent = st.level > 1 ? `${def.name} Lv.${st.level}` : def.name;
     // Plan B'：两行紧凑卡 —— 首行 [建筑名 · 建造]、次行整宽「还差」状态（不截断）。
     // D-70：建筑名区域可点 —— 点开该卡描述浮层（见上 revealDesc）。描述不再只躺在 title。
     nm.setAttribute('role', 'button');
@@ -310,7 +312,7 @@ function paintBuildings(
     brow.className = 'brow';
     brow.appendChild(nm);
     card.append(brow, buildStateLine(st));
-    if (st.unlocked && !st.built) {
+    if (st.level === 0 && st.unlocked) {
       const ready = st.affordable && !st.spentToday;
       brow.appendChild(
         actionBtn('建造', ready, () => {
@@ -321,6 +323,23 @@ function paintBuildings(
             }
             sfx.build();
             return `${def.name} 建成`;
+          });
+        }),
+      );
+    } else if (st.canUpgrade) {
+      /* S4：同一个入口，只是文案换成「升级」。升级价 = 0 金 + 木/矿半价（spec §2.4），
+         所以玩家在金币吃紧时也能升 —— 这正是决策 60 要的：升级不跟"建墙/招将"抢金币。 */
+      const ready = st.affordable && !st.spentToday;
+      brow.appendChild(
+        actionBtn('升级', ready, () => {
+          act(() => {
+            const before = st.level;
+            if (!build(state, town, id)) {
+              sfx.error();
+              return st.spentToday ? '今日已动工，明日再来' : '资源不足';
+            }
+            sfx.build();
+            return before + 1 >= 2 && def.growth ? `${def.name} Lv.${before + 1} · 之后产升级版` : `${def.name} Lv.${before + 1}`;
           });
         }),
       );
@@ -589,9 +608,9 @@ function chip(text: string, extra = ''): HTMLElement {
  */
 function buildStateLine(st: BuildStatus): HTMLElement {
   const el = document.createElement('div');
-  if (st.built) {
+  if (st.built && !st.canUpgrade) {
     el.className = 'bs built';
-    el.textContent = '✓ 已建成';
+    el.textContent = st.level > 1 ? `✓ Lv.${st.level}` : '✓ 已建成';
     return el;
   }
   /* 前置没满足：这句必须留文字（"需先建造：市场"没法图标化），它也就两个字多一点。 */
@@ -602,7 +621,7 @@ function buildStateLine(st: BuildStatus): HTMLElement {
   }
   if (st.spentToday) {
     el.className = 'bs warn';
-    el.textContent = '今日已建 · 明日再来';
+    el.textContent = '今日已动工 · 明日再来';
     return el;
   }
   /* 造价：**图标 + 数字**，一行、不折行。

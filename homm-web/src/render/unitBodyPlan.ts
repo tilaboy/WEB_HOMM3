@@ -104,9 +104,19 @@ export const BODY_PLAN: Record<string, BodyPlan> = {
 /** 已重画的族前缀。S3b/S3c 每落一族就往里加一个（不要按兵种逐个加）。 */
 export const BODY_PLAN_FAMILIES = new Set(['p1', 'p2', 'p3', 'p4']);
 
-/** 该 unit 是否走新体形档 regime。 */
+/** `p1_child_u` → `p1_child`；基础版原样返回。升级形态与基础版**共用同一档**。 */
+export function baseUnitOf(unit: string): string {
+  return unit.endsWith('_u') ? unit.slice(0, -2) : unit;
+}
+
+/** 体形档查询：升级形态没有自己的档，直接读基础版那条（§2.5「脸不动、比例不变」）。 */
+export function planOf(unit: string): BodyPlan | undefined {
+  return BODY_PLAN[baseUnitOf(unit)];
+}
+
+/** 该 unit 是否走新体形档 regime（**含升级形态**）。 */
 export function hasBodyPlan(unit: string): boolean {
-  return BODY_PLAN[unit] !== undefined;
+  return planOf(unit) !== undefined;
 }
 
 /**
@@ -386,7 +396,7 @@ function profileEye(pb: PixBuf, x: number, y: number): void {
  * ========================================================================== */
 
 /** 小孩 · 矮档 · 大头小身子。脚在 base，头顶在 base − h。 */
-function drawChild(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawChild(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
   // 兵牌（h≈12）：头必须**再大一点**才撑得住"大头"这条档位特征 —— 0.18h 在 12px 上
   // 只剩 4.3px 宽的脑袋，2×2 的眼块会顶到脑壳外。0.22h ⇒ 5.3px，正好放下
   // 「2 + 净空 1 + 2」。
@@ -438,6 +448,25 @@ function drawChild(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
   pb.ellipse(cx, headTop + hr * (card ? 0.32 : 0.38), hr, hr * (card ? 0.32 : 0.38), P.hair);
   // 呆毛
   R(pb, cx + hr * 0.1, headTop - 1, Math.max(1, hr * 0.22), Math.max(1, hr * 0.3), P.hair);
+  if (elite) {
+    // ── 孩子王（S4）：纸王冠 + 一面小旗 ──
+    // 王冠画在**头发上**，不压皮肤：goldDark ↔ skin 的 ΔL 只有 5、色相也同属暖色，
+    // 贴在一起会被断言 8 判红（P4 的 plum↔flesh 同一个坑）。
+    R(pb, cx - hr * 0.82, headTop + hr * 0.22, hr * 1.64, Math.max(1, hr * 0.3), P.goldDark);
+    for (const dx of [-0.52, 0, 0.52]) {
+      R(pb, cx + hr * dx - Math.max(1, hr * 0.12), headTop + hr * 0.02, Math.max(1, hr * 0.24), Math.max(1, hr * 0.24), P.goldDark);
+    }
+    // 旗：从左手向外挑 0.30h（cu 上 ≈6px）。
+    // ⚠️ 它不是「凸起判据」的对象：`audit:bodyplan [6]` 已把"外接框凸起"降级为读数
+    // （归一化按高度等比缩放 + 按中心居中，单侧伸出的东西会被对半分），
+    // 真正判的是**自然身高不变 + 43×37 兵牌像素差 ≥8%**。
+    const poleX = Math.round(cx - h * 0.3);
+    R(pb, poleX, base - h * 0.86, Math.max(1, Math.round(h * 0.03)), h * 0.4, P.leather);
+    R(pb, poleX - h * 0.26, base - h * 0.86, h * 0.26, h * 0.18, P.white);
+    // 旗的下缘用 **ink**（第一版是 steelDark）：steelDark ↔ 旗杆 leather 的 ΔL 只有 5.3，
+    // 而杆是 1~2px 宽、旗面下缘必然贴着它 ⇒ 断言 8 三张帧全红。ink ↔ leather 的 ΔL ≈ 22。
+    R(pb, poleX - h * 0.26, base - h * 0.7, h * 0.26, Math.max(1, Math.round(h * 0.03)), P.ink);
+  }
   // 眼睛 + 嘴：2+1+2 的净宽正好吃掉 8.5px 脑袋的一大半 —— 这就是「大头小孩」该有的比例
   if (face) {
     const ey = Math.round(headTop + hr * 0.95);
@@ -486,7 +515,7 @@ function biped(
 }
 
 /** 弩手 · 中档 · 横弩。弩是唯一的横向元素 —— 与「高」的鹰、「宽」的骑士都不撞。 */
-function drawCrossbow(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawCrossbow(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
   const b = biped(pb, cx, base, h, { w: 0.32, headR: card ? 0.13 : 0.115 });
   const lean = atk ? -1 : 0;
   const hx = cx + lean;
@@ -534,6 +563,42 @@ function drawCrossbow(pb: PixBuf, cx: number, base: number, h: number, atk: bool
   }
   // 前手托弩（落在托的后段 = 身体边缘，不是悬空）
   R(pb, x0 + h * 0.26, y + h * 0.05, Math.max(2, h * 0.07), Math.max(2, h * 0.08), P.skin);
+  if (elite) {
+    // ── 连弩手（S4）：**第二具弩**（右手，指向右）+ 金肩甲 ──
+    //
+    // 走过两版弯路，记在这里免得再走：
+    //   ① 背后一根水平浅钢杆 + 最外端竖弓 ⇒ ×12 读成悬空的**横杠 / 路牌**；
+    //   ② 改成"斜挎"（弓臂放肩线上、托往右下斜）⇒ 弓臂那条横线正好落在**头的范围里**
+    //      （头 y ∈ −1.005h ~ −0.775h，我把它放在 −0.84h）⇒ ×12 读成**白额带**，
+    //      托把脸颊划了一道。斜挎在正面视图里没有景深线索，怎么摆都像"身上多一根杆"。
+    //
+    // 现在：**第二具弩就在右手里、指向右**，与左手那具**一高一低**（胸 vs 腰）错开。
+    // 「连弩」的字面意思就是"两具弩"，两根平行的短托比任何斜挎都直接；
+    // 高低错开是为了不合成一根长横杠（那会读成"端着一根扁担"）。
+    const y2 = base - h * (card ? 0.46 : 0.5);
+    const x2 = Math.round(cx + h * 0.1);
+    const len2 = h * (card ? 0.26 : 0.28);
+    R(pb, x2, y2 - 1, Math.round(len2), stockH, P.leather);
+    R(pb, x2, y2 + stockH - 2, Math.round(len2), 1, P.leatherDark);
+    // 竖弓：托的右端（与左手那具同样的"弓在剪影外"口径）
+    const bowH2 = h * (card ? 0.15 : 0.14);
+    const bx2 = x2 + Math.round(len2);
+    R(pb, bx2, y2 - 1 - bowH2, 1, bowH2 * 2 + 1, P.steelLite);
+    R(pb, bx2 - 1, y2 - 1 - bowH2, 2, 1, P.steelLite);
+    R(pb, bx2 - 1, y2 - 1 + bowH2, 2, 1, P.steelLite);
+    // 握着它的小臂（画在托上 ⇒ 读成"握"，不是"穿过"）
+    R(pb, x2 + Math.round(h * 0.02), y2 + Math.round(h * 0.03), Math.max(2, Math.round(h * 0.07)), Math.max(2, Math.round(h * 0.08)), P.skin);
+    // 肩甲：**先铺 1px ink 边框、再填金**。理由不是审美，是断言 8：
+    // goldDark ↔ skin 的 ΔL 只有 5.3（map 帧实测），而这块甲正好卡在肩线上、
+    // 上缘贴着脖子/下巴；只要留出 1px ink，四周邻接就都不足为患。
+    // 位置再往**外侧**挪 0.05h（第一版压在脖子边，×12 读成"下巴上贴了块金箔"）。
+    const ax = Math.round(cx - h * 0.25);
+    const ay = Math.round(b.shoulder);
+    const aw = Math.max(2, Math.round(h * 0.1));
+    const ah = Math.max(1, Math.round(h * 0.05));
+    R(pb, ax - 1, ay - 1, aw + 2, ah + 2, P.ink);
+    R(pb, ax, ay, aw, ah, P.goldDark);
+  }
   // 脸：眼在护鼻之下、嘴在眼下 3 行
   if (face) {
     const fey = Math.round(b.headY - hr * 0.15);
@@ -549,7 +614,7 @@ function drawCrossbow(pb: PixBuf, cx: number, base: number, h: number, atk: bool
  *    平展双翼会让鹰直接与天使落进同一档（§8.4 当场红）。而为了过闸把鹰画小，
  *    §15.4 要的「起跳就到」又没了。所以辨识靠**长度**：腿长、body 竖、翼贴体。
  */
-function drawEagle(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawEagle(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
   const lean = atk ? -h * 0.05 : 0;
   const lw = Math.max(2, Math.round(h * 0.05));
   // 兵牌：两条腿的间距从 0.055h 拉到 0.075h。0.055h 在 26px 的身高上只有 1.4px，
@@ -611,8 +676,11 @@ function drawEagle(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
     );
   }
   // 尾羽：三根长短不一的尖（齐边会读成一把扇子）
-  pb.poly([[cx + h * 0.02, base - h * 0.46], [cx + h * 0.1, base - h * 0.46], [cx + h * 0.22, base - h * 0.2]], P.featherDark);
-  pb.poly([[cx - h * 0.02, base - h * 0.46], [cx + h * 0.05, base - h * 0.46], [cx + h * 0.12, base - h * 0.24]], P.feather);
+  // S4：升级形态把两根尾羽**都换成 goldDark**（§2.5 不改比例，改材质）。
+  // 第一版只把其中一根换成 belly（浅金）⇒ ×12 实拍那块浅色三角比腿还大，
+  // 读成"拖到地上的一片翅膀"。两根同色 ⇒ 融成一束**金尾**，形状与原图一致，只换材质。
+  pb.poly([[cx + h * 0.02, base - h * 0.46], [cx + h * 0.1, base - h * 0.46], [cx + h * 0.22, base - h * 0.2]], elite ? P.goldDark : P.featherDark);
+  pb.poly([[cx - h * 0.02, base - h * 0.46], [cx + h * 0.05, base - h * 0.46], [cx + h * 0.12, base - h * 0.24]], elite ? P.goldDark : P.feather);
   // ── 颈 + 头 ──
   pb.poly(
     [
@@ -655,6 +723,39 @@ function drawEagle(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
     ],
     P.featherLite,
   );
+  if (elite) {
+    // ── 金雕（S4）：淡金颈背 + 白翼尖 + 一根长尾羽 ──
+    // 金雕的识别点本来就是「淡色颈背」，不是"整体刷金"：featherLite ↔ belly 的
+    // ΔL ≈ 30，贴在一起干净；把全身换成 goldDark 反而会和尾羽、喙糊成一块棕。
+    // 淡金颈背：**偏右（背侧）**、只到 −0.81h。
+    // 第一版从 cx−0.07h 起、压到 −0.90h —— 与左上方的钩喙只隔 0.02h，
+    // map 帧归一化后不足 1px ⇒ beak ↔ belly 的 ΔL 9.3 < 12，断言 8 红（(20,14)）。
+    // 喙朝左、颈背在右，这本来就是"鹰"的解剖关系，不是为了让闸变绿而挪。
+    pb.poly(
+      [
+        [cx - h * 0.02 + lean, base - h * 0.89],
+        [cx + h * 0.09 + lean, base - h * 0.88],
+        [cx + h * 0.07 + lean, base - h * 0.81],
+        [cx - h * 0.01 + lean, base - h * 0.81],
+      ],
+      P.belly,
+    );
+    // 白翼尖：**已删**。第一版在 ±0.23h / −0.33h 各点了 2×1px 白，×12 实拍是两颗
+    // 悬在翼外的白点 —— 那个高度上收翼的末端还差 0.05h，点不到翼上，读成噪点。
+    // 「金雕」的证据现在交给**金尾**（下面）与颈背：两处都落在本来就有的形里。
+    // 一根长尾羽：从金尾的根部长出去 0.24h、**细而尖**（0.09h 宽）。
+    // 第一版是一块 0.14h 宽的实心三角、一路拖到 −0.12h —— ×12 实拍像一片拖到地上的
+    // 浅色板（比腿还大），既不像羽毛也不像尾巴。羽毛要**窄、直、收尖**。
+    pb.poly(
+      [
+        [cx + h * 0.1, base - h * 0.44],
+        [cx + h * 0.19, base - h * 0.44],
+        [cx + h * 0.34, base - h * 0.16],
+        [cx + h * 0.28, base - h * 0.2],
+      ],
+      P.goldDark,
+    );
+  }
   // atk：抬爪前扑（不改变高度档）
   if (atk) {
     tl(pb, cx - h * 0.06, base - h * 0.3, cx - h * 0.2, base - h * 0.22, P.goldDark, lw);
@@ -669,7 +770,7 @@ function drawEagle(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
  *    `cx − 0.72h`、马尾甩到 `cx + 0.7h`。把它画成「一个骑在马上的人」而
  *    总宽只有 1.1h，R1 会当场判它既不是宽体也不是高 —— 档位就塌了。
  */
-function drawKnight(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawKnight(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
   // ── 马 ──
   const bodyTop = base - h * 0.62;
   const bodyBot = base - h * 0.3;
@@ -731,7 +832,9 @@ function drawKnight(pb: PixBuf, cx: number, base: number, h: number, atk: boolea
       [cx + halfLen * 0.68, bodyBot + h * 0.02],
       [cx + halfLen * 0.3, bodyBot + h * 0.06],
     ],
-    P.trim, // 钢制马铠：与白马的 ΔL 17、与蓝袍 15 —— 同时躲开「蓝砖」与断言 8
+    elite
+      ? P.goldDark // 圣骑士：**金色马铠**（基础版是钢）。金↔白 23.5 / 皮革 21 / 蓝袍 8.4，全过
+      : P.trim, // 钢制马铠：与白马的 ΔL 17、与蓝袍 15 —— 同时躲开「蓝砖」与断言 8
   );
   R(pb, Math.round(cx + halfLen * 0.3), Math.round(bodyTop + h * 0.05), Math.max(1, Math.round(h * 0.03)), Math.max(2, Math.round(h * 0.14)), P.leatherDark);
   // ── 长枪：**idle 举枪 / atk 平捅**，枪尖到 cx − 0.82h（宽度靠它撑到 1.4h）──
@@ -778,6 +881,50 @@ function drawKnight(pb: PixBuf, cx: number, base: number, h: number, atk: boolea
   );
   // 肩甲（横向 1px 外挑，读「骑士」）
   R(pb, Math.round(cx - h * 0.1), Math.round(shoulderY), Math.max(2, Math.round(h * 0.2)), Math.max(2, Math.round(h * 0.04)), P.steel);
+  if (elite) {
+    // ── 圣骑士（S4）：金色马铠 + 枪旗 + 加长白缨 ──
+    //
+    // 马铠的金色在**上面那条 poly 里**换（`elite ? goldDark : trim`），不在这里补 ——
+    // 这块甲本来就压在白马背上，是整只兵里面积最大、离钢件最远的一块平面。
+    //
+    // 为什么不是"双金肩甲"（第一版就是）：肩线上下全是钢 —— 盔底（−0.836h）和
+    // **握枪的手**（`P.steel`，画在本函数最后，会直接压上来）都在那儿，
+    // goldDark ↔ steel 只有 **6.6**（需 ≥8）；补 1px ink 边也没用，
+    // 盔与手是在 elite 块之后画的，会把缝重新盖掉。深蓝肩甲则又撞皮革（7.4）。
+    //
+    // 枪旗：**从枪尖往下挂**的三角旗（不是往上挑）。
+    //
+    // 第一版往上挑 0.12h，实测把整只兵的自然身高抬了 3px（41→44）——
+    // 归一化是按高度等比缩放的，于是整只被压小 7%，**升级版反而比基础版窄**，
+    // 剪影凸起变成负数。任何"往上加"的东西都会踩这个坑：骑士的盔冠本来就在 1.04h
+    // （= BODY_PLAN 声明高），再往上就是逼着归一化砍自己。
+    // 下垂的旗不改变最高点，面积照加，读起来也更像"枪上挂的令旗"。
+    const px0 = tipX + h * 0.06;
+    const py0 = tipY;
+    pb.poly(
+      [
+        [px0, py0],
+        [px0 + h * 0.16, py0],
+        [px0 + h * 0.13, py0 + h * 0.13],
+        [px0 + h * 0.03, py0 + h * 0.15],
+      ],
+      P.white,
+    );
+    // 白马十字：直接压在金马铠正中（**这是本兵升级后最亮的一笔**）。
+    //
+    // 为什么必须有它：只把马铠从钢换成金，×12 实拍读成「鞍垫换了块布」——
+    // 同一个形状换个颜色，玩家看到的是调色，不是「升级了」。十字是**新出现的图案**，
+    // 在 43×37 上只剩 1~2px 宽也仍然是一块亮斑（goldDark ↔ white 的 ΔL≈20）。
+    // 白十字还有个副作用是好的：它是「圣」这个字在 8px 尺度上唯一还成立的符号。
+    const bx = cx + halfLen * 0.39;
+    const by = (bodyTop + bodyBot) / 2 - h * 0.01;
+    const arm = Math.max(1, Math.round(h * 0.025));
+    R(pb, Math.round(bx - arm / 2), Math.round(by - h * 0.1), arm, Math.max(3, Math.round(h * 0.2)), P.white);
+    R(pb, Math.round(bx - h * 0.08), Math.round(by - arm / 2), Math.max(3, Math.round(h * 0.16)), arm, P.white);
+    // 白缨的加长**不在这里**：缨在下面「盔冠」那一句里画，这里补一笔会被它盖回去
+    // （第一版就是这么写的：0.07h 的缨先画、0.05h 的缨后画，落地几乎看不出差别，
+    //   注释却写着"加长一档"）。改成让那一句自己按 elite 取宽。
+  }
   // 头 + 大盔
   // ⚠️ 头盔半径从 0.068h 放大到 0.105h：h3 脸要「2 + 净空 1 + 2」= 5px 的净宽，
   //    原来那颗 5px 宽的头盔连两只 2×2 的眼都放不下（放下就贴盔沿，归一化后粘成一条黑）。
@@ -796,7 +943,8 @@ function drawKnight(pb: PixBuf, cx: number, base: number, h: number, atk: boolea
   // 盔冠（白缨）—— 剪影最高点。
   // 高度给到 1.04h（= BODY_PLAN 的声明高）：归一化会把「比目标高的部分从顶上删掉」，
   // 首版写到 1.06h ⇒ 多出来的 2 行正好被删光，白缨整根消失。
-  R(pb, Math.round(cx - h * 0.01), Math.round(base - h * 1.04), Math.max(1, Math.round(h * 0.03)), Math.max(2, Math.round(h * 0.05)), P.white);
+  // S4：升级形态**只加宽不加高**（0.03h → 0.05h）—— 加高就会被归一化砍掉。
+  R(pb, Math.round(cx - h * 0.01), Math.round(base - h * 1.04), Math.max(1, Math.round(h * (elite ? 0.05 : 0.03))), Math.max(2, Math.round(h * 0.05)), P.white);
   // 执枪的手（画在最后 ⇒ 压在枪杆上，看起来是"握着"而不是"穿过"）
   R(pb, Math.round(handX - h * 0.03), Math.round(handY - h * 0.02), Math.max(2, Math.round(h * 0.06)), Math.max(2, Math.round(h * 0.06)), P.steel);
 }
@@ -807,7 +955,7 @@ function drawKnight(pb: PixBuf, cx: number, base: number, h: number, atk: boolea
  * 翅膀朝向是全表唯一的两档（§16.1）：天使上掠、恶魔与龙下掠、鹰收翼。
  * 这一条不是画风 —— 它是「同族五个兵各占一档」之外的第二层区分。
  */
-function drawAngel(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false): void {
+function drawAngel(pb: PixBuf, cx: number, base: number, h: number, atk: boolean, face: boolean, card = false, elite = false): void {
   // ── 自上而下的高度预算（这一版最要紧的结构改动）──
   //
   // 首版把 h 全给了「身体」、又拿 `bb = base − 0.04h` 当基准往上画，三处一起塌：
@@ -880,6 +1028,16 @@ function drawAngel(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
   );
   // 腰带
   R(pb, cx - h * 0.13, shoulder + h * 0.16, h * 0.26, Math.max(2, h * 0.035), P.leatherDark);
+  if (elite) {
+    // 大天使：**深蓝腰封**（+ 加宽光环，见下方）。
+    //
+    // 第一版是金腰带，被断言 8 判红：袍子右半是 `whiteMid`（暗面），
+    // goldDark ↔ whiteMid 的 ΔL 只有 **2.4**（需 12）—— 金压在暗白上就是一滩泥。
+    // 腰带横跨整件袍子，**任何位置都会压到那条暗面**，所以这里不能靠挪位置解决。
+    // 改用 clothDark（p1 蓝的暗档）：↔ white 50 / ↔ whiteMid 32，两边都够；
+    // 「大天使」的金色记忆点交给**光环加宽 40%**（那是 43×37 上唯一还读得出的一笔）。
+    R(pb, cx - h * 0.13, shoulder + h * 0.16, h * 0.26, Math.max(2, h * 0.04), P.clothDark);
+  }
   // 肩 + 头
   R(pb, cx - h * 0.13, shoulder - h * 0.04, h * 0.26, h * 0.1, P.white);
   ell(pb, cx - headR, hy - headR, cx + headR, hy + headR, P.skin);
@@ -893,12 +1051,14 @@ function drawAngel(pb: PixBuf, cx: number, base: number, h: number, atk: boolean
   }
   // 光环：**实心**扁椭圆（画布没有"擦除"，1px 的环会被描边灌成一枚黑环）
   if (card) {
-    const hw = Math.max(3, Math.round(headR * 1.35));
+    // 大天使：光环**加宽 40%**（每侧多 1~2px）—— 头上面那一横是唯一在 12px 上还在的"身份"
+    const hw = Math.max(3, Math.round(headR * (elite ? 1.9 : 1.35)));
     R(pb, cx - hw, haloCy, hw * 2 + 1, 1, P.goldDark);
     pb.set(cx - hw, haloCy + 1, P.goldDark);
     pb.set(cx + hw, haloCy + 1, P.goldDark);
+    if (elite) R(pb, cx - hw + 1, haloCy - 1, hw * 2 - 1, 1, P.goldDark);
   } else {
-    pb.ellipse(cx, haloCy, headR * 1.15, haloRy, P.goldDark);
+    pb.ellipse(cx, haloCy, headR * (elite ? 1.55 : 1.15), haloRy, P.goldDark);
   }
   // 剑：idle 垂在身侧（**在袍外、翼下** —— 首版从翼后面穿出来，43×37 下像一片蓝胶带），
   // atk 举过头顶。
@@ -2451,7 +2611,9 @@ export function drawBodyPlanUnit(
   kind: 'map' | 'idle' | 'atk',
   opts: BodyPlanDrawOpts = {},
 ): boolean {
-  const plan = BODY_PLAN[unit];
+  const baseUnit = baseUnitOf(unit);
+  const elite = baseUnit !== unit;
+  const plan = planOf(unit);
   if (!plan) return false;
   // `u` = 1 个 H_REF 单位的像素数。
   //   战斗帧：画布高 ÷ 1.54（天使触顶），再按「最高的那个兵也要留 2px 描边余量」压一次；
@@ -2469,21 +2631,21 @@ export function drawBodyPlanUnit(
   // 只剩 20~24px 高，2×2 的眼块会占掉脑袋宽度的 2/3 —— 22px 下读成一条黑杠。
   // 兵牌（cu_* / cu_*_atk）必须画，`audit:expr` 认的就是它们。
   const face = kind !== 'map';
-  switch (unit) {
+  switch (baseUnit) {
     case 'p1_child':
-      drawChild(pb, cx, base, h, atk, face, card);
+      drawChild(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p1_crossbow':
-      drawCrossbow(pb, cx, base, h, atk, face, card);
+      drawCrossbow(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p1_eagle':
-      drawEagle(pb, cx, base, h, atk, face, card);
+      drawEagle(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p1_knight':
-      drawKnight(pb, cx, base, h, atk, face, card);
+      drawKnight(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p1_angel':
-      drawAngel(pb, cx, base, h, atk, face, card);
+      drawAngel(pb, cx, base, h, atk, face, card, elite);
       break;
     case 'p2_matchman':
       drawMatchman(pb, cx, base, h, atk, face, card);
@@ -2538,7 +2700,7 @@ export function drawBodyPlanUnit(
 
 /** 供门控/审计读：某兵种的**目标剪影高**（像素，含 1px 描边，口径 = 成品帧 bbox 高）。 */
 export function bodyPlanTargetHeight(unit: string, canvasH: number): number | null {
-  const plan = BODY_PLAN[unit];
+  const plan = planOf(unit);
   if (!plan) return null;
   return Math.round((plan.h / H_REF_HUGE) * canvasH);
 }

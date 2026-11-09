@@ -41,6 +41,7 @@ const {
   B3_FRAMES,
   B4_FRAMES,
   P1V3_FRAMES,
+  P1U_FRAMES,
   P2V3_FRAMES,
   P3V3_FRAMES,
   P4V3_FRAMES,
@@ -71,6 +72,7 @@ const BATCHES = [
   ['B3', B3_FRAMES],
   ['B4', B4_FRAMES], // TP-4② 中立野怪（cu_wolf / cu_boar / cu_ogre）
   ['P1v3', P1V3_FRAMES], // S3a 体形档重画的 p1 五兵（15 帧）
+  ['P1u', P1U_FRAMES], // S4 升级形态 p1 五兵（15 帧）—— 漏登记会被自检抓（63≠78 就是这么来的）
   ['P2v3', P2V3_FRAMES], // S3b 体形档重画的 p2 五兵（15 帧）
   ['P3v3', P3V3_FRAMES], // S3c 体形档重画的 p3 五兵（15 帧）——漏登记会让结论文案少算 15 帧
   ['P4v3', P4V3_FRAMES], // S3d 体形档重画的 p4 五兵（15 帧）——漏登记会让结论文案少算 15 帧

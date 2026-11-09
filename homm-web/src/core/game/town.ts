@@ -10,11 +10,11 @@ import type {
   Town,
   WarMachineId,
 } from '../types.js';
-import { BASE_TOWN_INCOME, BUILDINGS, HERO_HIRE_COST } from '../data/buildings.js';
+import { BASE_TOWN_INCOME, BUILDINGS, DWELLING_IDS, HERO_HIRE_COST, upgradeCostOf } from '../data/buildings.js';
 import { WAR_MACHINES } from '../data/warmachines.js';
 import { DIFFICULTIES, factionIds, factionName } from '../data/factions.js';
 import { getSpell, spellsOfGuild } from '../data/spells.js';
-import { MAX_STACKS, getUnit, unitIdForTier } from '../data/units.js';
+import { MAX_STACKS, getUnit, unitIdForTier, upgradeUnlockedFor } from '../data/units.js';
 import { heroTemplateFor, startArmyFor } from '../data/heroes.js';
 import { addResources, maxMovePoints } from './hero.js';
 import { isNewWeek, weekOf } from './calendar.js';
@@ -50,6 +50,28 @@ export const MARKET_RATES: Record<TradableResource, { buyGold: number; buyAmount
 
 export function hasBuilding(town: Town, id: string): boolean {
   return town.buildings.includes(id);
+}
+
+/**
+ * 建筑等级（S4 · spec §2.4）：**没建 = 0，建了缺省 = 1**。
+ *
+ * 单独读 `town.levels` 而不是把等级塞进 `buildings` 里：`buildings` 是集合语义
+ * （日收入 / 城防 / 周产都 `for (const id of town.buildings)` 遍历），
+ * 重复 id 会让同一栋楼被结算两次。
+ */
+export function levelOf(town: Town, id: string): number {
+  if (!hasBuilding(town, id)) return 0;
+  return Math.max(1, town.levels?.[id] ?? 1);
+}
+
+/** 下一级造价；已满级 / 未知建筑返回 null。 */
+export function nextUpgradeCost(town: Town, id: string): ResourceBag | null {
+  const def = BUILDINGS[id];
+  if (!def) return null;
+  const lv = levelOf(town, id);
+  const max = def.maxLevel ?? 1;
+  if (lv < 1 || lv >= max) return null;
+  return upgradeCostOf(def);
 }
 
 export function townDailyIncome(town: Town): number {
@@ -93,6 +115,22 @@ export function tierGrowthMultiplier(town: Town, tier: number): number {
     if (b && b.tier === tier) m *= b.mult;
   }
   return m;
+}
+
+/**
+ * 兵营等级 → 该档周产倍率（S4 · spec §2.5 表格最后一行）：
+ * **L1 = 1、L2 = 1、L3 = 1.25**。
+ *
+ * 只有 L3 加产量，L2 不加 —— L2 的全部意义是"换成升级版"，再叠一个 +25%
+ * 会让"升级"这一笔钱同时买到两种东西（单位变强 + 产量变多），
+ * 玩家就分不清自己在为什么付钱（决策 59 把两笔钱分开的同一理由）。
+ * 与 `banner`（T3 ×1.5）**乘算**：满建 T3 = 1.5 × 1.25 = 1.875。
+ */
+export function dwellingLevelGrowthMult(town: Town, tier: number): number {
+  const id = DWELLING_IDS[tier - 1];
+  if (!id) return 1;
+  const lv = levelOf(town, id);
+  return lv >= 3 ? 1.25 : 1;
 }
 
 /**
@@ -193,13 +231,18 @@ export function missingResources(
 
 export interface BuildStatus {
   built: boolean;
+  /** 现有等级：未建 = 0，建成未升 = 1（S4 · spec §2.4） */
+  level: number;
+  maxLevel: number;
+  /** 已建成、还有下一级 ⇒ UI 把「建造」换成「升级」 */
+  canUpgrade: boolean;
   /** 前置建筑是否齐备 */
   unlocked: boolean;
   affordable: boolean;
-  /** 今天这座城是否已经建过别的建筑（HOMM 规则：每城每日限一座） */
+  /** 今天这座城是否已经动过工（HOMM 规则：每城每日一次，建造与升级共用） */
   spentToday: boolean;
   reason: string;
-  /** 这座建筑的完整造价（七种资源，UI 用来画明细） */
+  /** **下一笔**要花的钱：建造 = 全额；升级 = 0 金 + 木/矿半价；满级 = 空 */
   cost: ResourceBag;
   /** 到底差哪些资源：UI 把这几项标红，玩家一眼知道缺什么 */
   missing: { resource: ResourceKind; have: number; need: number }[];
@@ -209,7 +252,8 @@ const NO_COST: ResourceBag = {};
 
 function fail(reason: string, cost: ResourceBag = NO_COST): BuildStatus {
   return {
-    built: false, unlocked: false, affordable: false, spentToday: false,
+    built: false, level: 0, maxLevel: 1, canUpgrade: false,
+    unlocked: false, affordable: false, spentToday: false,
     reason, cost, missing: [],
   };
 }
@@ -217,42 +261,58 @@ function fail(reason: string, cost: ResourceBag = NO_COST): BuildStatus {
 export function buildStatus(state: GameState, town: Town, id: string, actor: PlayerId = 'p1'): BuildStatus {
   const def = BUILDINGS[id];
   if (!def) return fail('未知建筑');
+  const maxLevel = def.maxLevel ?? 1;
+  const level = levelOf(town, id);
+  // 兵种升级要等这一族的升级形态画完（`ELITE_ART_FAMILIES`）——
+  // 没画完却给出「升级」按钮，玩家花木/矿换到一个什么都不变的等级。
+  const artReady = !def.growth || upgradeUnlockedFor(town.owner, def.growth.tier);
+  const tier = { level, maxLevel, canUpgrade: level >= 1 && level < maxLevel && artReady };
   if (town.owner !== actor) {
     return {
-      built: hasBuilding(town, id), unlocked: false, affordable: false, spentToday: false,
+      ...tier, built: level > 0, unlocked: false, affordable: false, spentToday: false,
       reason: '非我方城镇', cost: def.cost, missing: [],
     };
   }
-  if (hasBuilding(town, id)) {
+  if (level >= maxLevel) {
     return {
-      built: true, unlocked: true, affordable: true, spentToday: false,
-      reason: '已建成', cost: def.cost, missing: [],
+      ...tier, built: true, unlocked: true, affordable: true, spentToday: false,
+      reason: level > 1 ? `已满级 Lv.${level}` : '已建成', cost: NO_COST, missing: [],
     };
   }
-  const lacks = def.requires.filter((r) => !hasBuilding(town, r));
+  if (level > 0 && !artReady) {
+    // 形态还没画：如实说"未开放"，不给一个点了也没用的「升级」按钮
+    return {
+      ...tier, built: true, unlocked: true, affordable: false, spentToday: false,
+      reason: '升级形态制作中', cost: NO_COST, missing: [],
+    };
+  }
+  // 升级分支：先建后升，**升级不需要再满足前置**（前置在建 L1 时已经付过）
+  const cost = level === 0 ? def.cost : (nextUpgradeCost(town, id) ?? NO_COST);
+  const lacks = level === 0 ? def.requires.filter((r) => !hasBuilding(town, r)) : [];
   if (lacks.length) {
     const names = lacks.map((m) => BUILDINGS[m]?.name ?? m).join('、');
-    return fail(`需先建造：${names}`, def.cost);
+    return { ...fail(`需先建造：${names}`, cost), level };
   }
   if (town.builtDay === state.day) {
     return {
-      built: false, unlocked: true, affordable: false, spentToday: true,
-      reason: `今日已在 ${town.name} 建造过，明日再来`, cost: def.cost, missing: [],
+      ...tier, built: level > 0, unlocked: true, affordable: false, spentToday: true,
+      reason: `今日已在 ${town.name} 动工，明日再来`, cost, missing: [],
     };
   }
   // 差什么就说差什么，并把"现有 / 需要"一起报出来：
   // 只说"资源不足"而玩家看不到宝石水晶的库存，等于什么也没说
-  const short = missingResources(state, town.owner, def.cost);
+  const short = missingResources(state, town.owner, cost);
   return {
-    built: false,
+    ...tier,
+    built: level > 0,
     unlocked: true,
     affordable: short.length === 0,
     spentToday: false,
-    cost: def.cost,
+    cost,
     missing: short,
     reason: short.length
       ? `资源不足：${short.map((m) => `${COST_LABEL[m.resource]} ${m.have}/${m.need}`).join('、')}`
-      : costText(def.cost),
+      : costText(cost),
   };
 }
 
@@ -263,7 +323,31 @@ export function canBuildToday(state: GameState, town: Town): boolean {
 
 export function canBuild(state: GameState, town: Town, id: string, actor: PlayerId = 'p1'): boolean {
   const s = buildStatus(state, town, id, actor);
-  return !s.built && s.unlocked && s.affordable && !s.spentToday;
+  // 建 L1 与升下一级走同一个入口（spec §2.4「点已建建筑 → 建造换成升级」）
+  return s.unlocked && s.affordable && !s.spentToday && (s.level === 0 || s.canUpgrade);
+}
+
+/**
+ * 兵营升到 L2 时，池里的基础版**免费**转成升级版（决策 59「未售出库存」）。
+ *
+ * 为什么连 `growthRemainder` 一起搬：两张表的键是兵种 id，L2 之后周产只往升级版累加，
+ * 基础版那条小数余数会永远停在原地 —— 不搬就是"升级后产量莫名少了一个零头"。
+ * `delete` 而不是置 0：基础版绝版（spec §2.5「产出」一行），留下一个 0 键只会让
+ * 面板继续列一行 0 个。
+ */
+function convertPoolToUpgrade(town: Town, tier: number): void {
+  const base = unitIdForTier(town.owner, tier);
+  const up = unitIdForTier(town.owner, tier, true);
+  if (!base || !up || base === up) return;
+  const n = town.growthPool[base] ?? 0;
+  if (n > 0) town.growthPool[up] = (town.growthPool[up] ?? 0) + n;
+  delete town.growthPool[base];
+  const r = town.growthRemainder?.[base] ?? 0;
+  if (r > 0) {
+    if (!town.growthRemainder) town.growthRemainder = {};
+    town.growthRemainder[up] = (town.growthRemainder[up] ?? 0) + r;
+  }
+  if (town.growthRemainder) delete town.growthRemainder[base];
 }
 
 /**
@@ -278,7 +362,10 @@ export function canBuild(state: GameState, town: Town, id: string, actor: Player
  * 且全项目没有任何一处把 `owner` 改回 `'neutral'`），所以显式失败是安全的。
  */
 function dwellUnitId(town: Town, tier: number, where: string): string | null {
-  const id = unitIdForTier(town.owner, tier);
+  // L2（兵营升过一次）之后只产升级版；L1 产基础版（spec §2.5「产出」一行）
+  const dwellId = DWELLING_IDS[tier - 1];
+  const upgraded = !!dwellId && levelOf(town, dwellId) >= 2;
+  const id = unitIdForTier(town.owner, tier, upgraded);
   if (!id) {
     console.warn(
       `[town] ${where}: 城镇 ${town.id}（owner=${town.owner}）解析不出 tier${tier} 的兵种，已跳过（按规则 5 不 fallback 到 p1）`,
@@ -289,10 +376,26 @@ function dwellUnitId(town: Town, tier: number, where: string): string | null {
 
 export function build(state: GameState, town: Town, id: string, actor: PlayerId = 'p1'): boolean {
   if (!canBuild(state, town, id, actor)) return false;
-  if (!pay(state, actor, BUILDINGS[id]!.cost)) return false;
+  const def = BUILDINGS[id]!;
+  const lv = levelOf(town, id);
+  /* ---- 升级分支（S4 · spec §2.4）----
+     与建造共用「每日一次」与同一个按钮；只收木/矿（兵营 0 金，决策 60）。 */
+  if (lv > 0) {
+    const cost = nextUpgradeCost(town, id);
+    if (!cost) return false;
+    if (!pay(state, actor, cost)) return false;
+    town.levels = { ...(town.levels ?? {}), [id]: lv + 1 };
+    town.builtDay = state.day;
+    // 兵营刚升到 L2 ⇒ 池里的基础版免费转升级版（这一级就是兵种升级入口）
+    const g = def.growth;
+    if (g && lv + 1 === 2) convertPoolToUpgrade(town, g.tier);
+    pushLog(state, `${town.name} 的「${def.name}」升级到 Lv.${lv + 1}`);
+    return true;
+  }
+  if (!pay(state, actor, def.cost)) return false;
   town.buildings.push(id);
   town.builtDay = state.day;
-  const g = BUILDINGS[id]!.growth;
+  const g = def.growth;
   if (g) {
     // 兵种按 owner 现解析：四族各建各的 dwell1，池子里开出来的键也必须各不相同。
     const uid = dwellUnitId(town, g.tier, 'build');
@@ -428,7 +531,10 @@ export function applyWeeklyGrowth(state: GameState, eventMult = 1): void {
         const unitTypeId = dwellUnitId(town, g.tier, 'applyWeeklyGrowth');
         if (!unitTypeId) continue;
         const exact =
-          getUnit(unitTypeId).growthPerWeek * mult * tierGrowthMultiplier(town, g.tier);
+          getUnit(unitTypeId).growthPerWeek *
+          mult *
+          tierGrowthMultiplier(town, g.tier) *
+          dwellingLevelGrowthMult(town, g.tier);
         const whole = Math.floor(exact);
         const frac = exact - whole;
         let pool = (town.growthPool[unitTypeId] ?? 0) + whole;
@@ -516,9 +622,12 @@ export function buildingDesc(town: Town, id: string): string {
   if (!def) return '';
   const g = def.growth;
   if (g) {
-    const unitTypeId = unitIdForTier(town.owner, g.tier);
+    const lv = levelOf(town, id);
+    const unitTypeId = unitIdForTier(town.owner, g.tier, lv >= 2);
     if (!unitTypeId) return def.desc;
-    return `${def.desc}（本族每周 +${getUnit(unitTypeId).growthPerWeek}）`;
+    const u = getUnit(unitTypeId);
+    const tail = (lv >= 2 ? ` · 产出 ${u.name}` : '') + (lv >= 3 ? ' · 周产 ×1.25' : '');
+    return `${def.desc}（本族每周 +${u.growthPerWeek}${tail}）`;
   }
   // `banner`：把"×1.5"翻成本族的具体数字（16 → 24），否则玩家得自己算
   const boost = def.tierGrowthBoost;

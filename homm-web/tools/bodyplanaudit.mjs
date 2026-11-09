@@ -52,7 +52,7 @@ const {
   H_REF_HUGE,
   classify,
 } = await import(u('render/unitBodyPlan.js'));
-const { UNIT_FRAMES, buildB0Frame, buildPortraitFrame } = await import(u('render/unitArt.js'));
+const { UNIT_FRAMES, buildB0Frame, buildPortraitFrame, setTierNormalizeEnabled, isTierNormalizeEnabled } = await import(u('render/unitArt.js'));
 const { PixBuf } = await import(u('render/pixel.js'));
 const { FRAME_ALIAS, unitCombatFrame, unitMapFrame } = await import(u('render/unitFrames.js'));
 const { FACTION_UNITS } = await import(u('core/data/units.js'));
@@ -410,7 +410,159 @@ const small = new Map();
   record('5', '鹰不展翼：必须是高档且 w/h <1.35（§16.1 的硬约束）', problems.length === 0 && details.length > 0, problems.length ? problems.join(' · ') : details.join(' · '));
 }
 
-/* ---------------------------------------------------------------- 负向对照 */
+/* ------------------------------------------------- [6] S4 升级形态（elite） */
+
+/**
+ * 升级形态（`*_u`）的判据。**不是**复用 [1] R1：
+ *   R1 量「同族五兵各占一档」—— 升级版**本来就该和基础版同档**，
+ *   把它塞进 R1 会直接判「两个兵同档」。
+ *
+ * ── 为什么**不**用「外接框凸起 ≥4px」当判据（原计划写的是这一条）──
+ *
+ * 实测三件事，说明这条在现有管线里量的是个假对象：
+ *   ① `normalizeTier` 按**高度**等比缩放，再**按帧中心**居中。单侧伸出的东西
+ *      会被对半分到左右：孩子王的旗让自然宽度 +50%（14→21px），落地只有左右各 3px；
+ *   ② 骑士与天使**四边顶满画布**（骑士 58/64 宽、天使 56×56 全高），
+ *      没有任何一侧还有 4px 余量 —— 凸起在物理上不存在；
+ *   ③ 更糟的是反向：骑士第一版把枪旗往上挑 0.12h，自然身高 +3px ⇒ 归一化把整只
+ *      压小 7% ⇒ **升级版比基础版还窄**（凸起 −2px）。越"加东西"越缩小。
+ * 所以凸起只作为**读数**打印（含"该兵是否已顶满画布"），不参与判词。
+ * 想让它成为判据，得先改归一化的居中/缩放口径 —— 那是另一把尺子，不在 S4 里动。
+ *
+ * ── 真正守的三条 ──
+ *   (a) **自然身高不变**（归一化**前**，|Δh| ≤1px）。守「不许靠画大再让归一化压回来」
+ *       与「往上加东西逼归一化砍自己」两个坑 —— 它就是上面 ③ 的回归闸。
+ *   (b) **兵牌上看得出是另一件东西**：43×37（玩家真正读的尺寸）**像素差 ≥8%**
+ *       （颜色或剪影任一变都算）。cu 上不能量：归一化的重采样会让"只改了一小块颜色"
+ *       也算出 45% 的 XOR，尺子被噪声撑满。
+ *   (c) **同档**：升级版不许自带 `BODY_PLAN` 条目（它必须读基础版那条）。
+ *
+ * 两条覆盖断言（与 [0b] 同一条思路，防"只做了一半"）：
+ *   · `ELITE_ART_FAMILIES` 里的族，五个升级形态的 3 张帧 + 兵牌**全都要在**；
+ *   · 不在 `ELITE_ART_FAMILIES` 里的族，**一张 `_u` 帧也不许登记** ——
+ *     登记了却不让招募 = 占着图集骗人，放开了却缺帧 = 一招募就抛异常。
+ */
+const ELITE_NAT_HEIGHT_TOL = 1; // 归一化前的像素
+const ELITE_CARD_DIFF_MIN = 0.08; // 43×37 上的像素差
+
+/** 带原点的外接框（`bbox` 只给宽高）。 */
+function bboxOf(pb) {
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (let y = 0; y < pb.h; y++) {
+    for (let x = 0; x < pb.w; x++) {
+      if (pb.px(x, y)[3] <= 8) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  return x1 < x0 ? null : { x0, x1, y0, y1, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+/** 两张同尺寸立绘的像素差（透明对透明不算；任一不透明且 RGB 明差 >24 或 α 不同 = 差）。 */
+function cardPixelDiff(a, b) {
+  let diff = 0;
+  let union = 0;
+  for (let y = 0; y < a.h; y++) {
+    for (let x = 0; x < a.w; x++) {
+      const p = a.px(x, y);
+      const q = b.px(x, y);
+      const po = p[3] > 8;
+      const qo = q[3] > 8;
+      if (!po && !qo) continue;
+      union++;
+      if (po !== qo || Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2]) > 24) diff++;
+    }
+  }
+  return union ? diff / union : 0;
+}
+
+// `UNITS` 在上面（`canFlyOf` 那段）已经取过一次，这里只补两个新的。
+const { ELITE_ART_FAMILIES, upgradedUnitIdOf } = await import(u('core/data/units.js'));
+// `setTierNormalizeEnabled` / `isTierNormalizeEnabled` 已在文件头的解构里取过。
+
+{
+  const problems = [];
+  const readings = [];
+  const withUpFrames = new Set(
+    UNIT_FRAMES.filter((sp) => sp.unit.endsWith('_u')).map((sp) => sp.unit.slice(0, 2)),
+  );
+  for (const fam of ELITE_ART_FAMILIES) {
+    const ids = [...new Set(FACTION_UNITS[fam] ?? [])];
+    if (ids.length !== 5) problems.push(`${fam} 只有 ${ids.length} 个兵（应 5）`);
+    for (const id of ids) {
+      const upId = upgradedUnitIdOf(id);
+      if (!upId || !UNITS[upId]) {
+        problems.push(`${fam}/${id} 没有升级形态`);
+        continue;
+      }
+      if (UNITS[upId].upgradeOf !== id) problems.push(`${upId}.upgradeOf 不等于 ${id}`);
+      if (BODY_PLAN[upId]) problems.push(`${upId} 自己声明了体形档（应读基础版那条）`);
+      const combat = unitCombatFrame(upId);
+      for (const name of [combat, `${combat}_atk`, unitMapFrame(upId)]) {
+        if (!UNIT_FRAMES.some((sp) => sp.name === name)) {
+          problems.push(`${fam}/${upId} 缺帧 ${name}`);
+          continue;
+        }
+        if (!bbox(buildB0Frame(name))) problems.push(`${fam}/${upId} 帧 ${name} 是空的`);
+      }
+
+      // (a) 归一化**前**的自然身高
+      const wasOn = isTierNormalizeEnabled();
+      setTierNormalizeEnabled(false);
+      const rawBase = buildB0Frame(unitCombatFrame(id));
+      const rawUp = buildB0Frame(combat);
+      setTierNormalizeEnabled(wasOn);
+      const rb = bboxOf(rawBase);
+      const ru = bboxOf(rawUp);
+      if (!rb || !ru) {
+        problems.push(`${upId} 归一化前是空帧`);
+        continue;
+      }
+      const dh = Math.abs(ru.h - rb.h);
+      if (dh > ELITE_NAT_HEIGHT_TOL) problems.push(`${upId} 自然身高差 ${dh}px（上限 ${ELITE_NAT_HEIGHT_TOL}）`);
+
+      // (b) 43×37 兵牌上的像素差
+      const ptBase = buildPortraitFrame(unitCombatFrame(id));
+      const ptUp = buildPortraitFrame(combat);
+      if (ptUp.w !== 43 || ptUp.h !== 37) problems.push(`${upId} 兵牌尺寸 ${ptUp.w}×${ptUp.h} ≠ 43×37`);
+      const dPct = cardPixelDiff(ptBase, ptUp);
+      if (dPct < ELITE_CARD_DIFF_MIN) {
+        problems.push(`${upId} 兵牌像素差 ${(dPct * 100).toFixed(1)}% < ${ELITE_CARD_DIFF_MIN * 100}%`);
+      }
+
+      // 读数（不判）：归一化后的剪影凸起 + 是否还有画布余量
+      const fin = bboxOf(buildB0Frame(combat));
+      const fb = bboxOf(buildB0Frame(unitCombatFrame(id)));
+      const protrusion = Math.max(fb.x0 - fin.x0, fin.x1 - fb.x1, fb.y0 - fin.y0, fin.y1 - fb.y1);
+      const room = Math.min(fb.x0, fb.y0, rawBase.w, rawBase.h);
+      readings.push(
+        `${upId.replace(`${fam}_`, '')} 兵牌差${(dPct * 100).toFixed(1)}% · 自然高${diffSign(ru.h - rb.h)} · 凸起${protrusion}px${room < 12 ? '(顶满)' : ''}`,
+      );
+    }
+  }
+  for (const [fam, ids] of Object.entries(FACTION_UNITS)) {
+    if (ELITE_ART_FAMILIES.has(fam)) continue;
+    const stray = [...new Set(ids)].filter((id) => UNIT_FRAMES.some((sp) => sp.unit === `${id}_u`));
+    if (stray.length) problems.push(`${fam} 未开放升级却有 ${stray.length} 个 _u 帧`);
+  }
+  record(
+    '6',
+    `S4 升级形态：五兵齐全、自然身高不变(±${ELITE_NAT_HEIGHT_TOL}px)、兵牌像素差 ≥${ELITE_CARD_DIFF_MIN * 100}%`,
+    problems.length === 0 && readings.length > 0,
+    problems.length ? problems.join(' · ') : readings.join(' · '),
+  );
+}
+
+function diffSign(v) {
+  return v > 0 ? `+${v}` : `${v}`;
+}
+
+/* ---------------------------------------------------------------- 负向对照 *//* ---------------------------------------------------------------- 负向对照 */
 
 {
   // N1：阶判据本身有分辨力 —— 五组合成比例必须原样读回五个档
@@ -471,6 +623,32 @@ const small = new Map();
   );
 }
 
+{
+  // N4：[6] 的尺子（43×37 像素差）必须有分辨力。
+  //   · 自比 0%；
+  //   · 只改 1 个像素的"假升级"必须**低于**门槛（否则一个点就能冒充升级版）；
+  //   · 真升级必须过门槛；
+  //   · 换成另一个兵必须远高于门槛（说明这把尺子量的是"差异"，不是恒真的常数）。
+  const a = buildPortraitFrame(unitCombatFrame('p1_child'));
+  const real = buildPortraitFrame(unitCombatFrame('p1_child_u'));
+  const fake = new PixBuf(a.w, a.h);
+  for (let y = 0; y < a.h; y++) for (let x = 0; x < a.w; x++) {
+    const p = a.px(x, y);
+    if (p[3] > 8) fake.set(x, y, rgbHexOf(p));
+  }
+  fake.set(20, 20, '#ff00ff'); // 一处像素（不合色板，仅作对照；不进图集）
+  const selfD = cardPixelDiff(a, a);
+  const fakeD = cardPixelDiff(a, fake);
+  const realD = cardPixelDiff(a, real);
+  const crossD = cardPixelDiff(a, buildPortraitFrame(unitCombatFrame('p1_crossbow')));
+  record(
+    'N4',
+    '[6] 的尺子有分辨力：自比 0%、改 1 像素不过门槛、真升级过门槛、跨兵远高于门槛',
+    selfD === 0 && fakeD < ELITE_CARD_DIFF_MIN && realD >= ELITE_CARD_DIFF_MIN && crossD > 0.3,
+    `自比 ${(selfD * 100).toFixed(1)}% · 改1像素 ${(fakeD * 100).toFixed(1)}% · 真升级 ${(realD * 100).toFixed(1)}% · 跨兵 ${(crossD * 100).toFixed(1)}%`,
+  );
+}
+
 /* ---------------------------------------------------------------- PNG */
 
 if (pngDir) {
@@ -513,7 +691,10 @@ if (pngDir) {
  * 「S3a p1 + S3b p2」，读者无法从输出判断 p3 到底有没有被量）。 */
 const STAGE_OF = { p1: 'S3a', p2: 'S3b', p3: 'S3c', p4: 'S3d' };
 const famNames = fams.map((f) => f.fam);
-const famText = famNames.map((f) => `${STAGE_OF[f] ?? f} ${f}`).join(' + ');
+// S4 的升级形态是**另一条轴**（不是第五个族），单独追加，不混进 BODY_PLAN_FAMILIES 的族名里。
+const famText =
+  famNames.map((f) => `${STAGE_OF[f] ?? f} ${f}`).join(' + ') +
+  (ELITE_ART_FAMILIES.size ? ` + S4 升级形态 ${[...ELITE_ART_FAMILIES].join(',')}` : '');
 const lastFam = famNames[famNames.length - 1];
 const lastStage = (STAGE_OF[lastFam] ?? '').toLowerCase();
 console.log('\n' + '='.repeat(72));

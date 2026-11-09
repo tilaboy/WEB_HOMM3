@@ -221,6 +221,13 @@ export interface B0FrameSpec {
     | 'p4_vampire'
     | 'p4_minotaur'
     | 'p4_wraith'
+    // S4：p1 的五个**升级形态**（`_u` 后缀）。它们没有自己的体形档 ——
+    // `planOf()` 剥掉后缀去读基础版那条，绘制走 `drawBodyPlanUnit` 的 `elite` 分支。
+    | 'p1_child_u'
+    | 'p1_crossbow_u'
+    | 'p1_eagle_u'
+    | 'p1_knight_u'
+    | 'p1_angel_u'
     // TP-4② 中立野怪（D-58 §6.4.4：不迁名，id 即帧名中缀）
     | 'wolf'
     | 'boar'
@@ -361,6 +368,53 @@ export const P1V3_FRAMES: B0FrameSpec[] = [
 ];
 
 /**
+ * P1U 批（S4 · 2026-11-09）：p1 五个**升级形态**（兵营升到 L2 之后产的兵）。
+ *
+ * 与 P1V3 的关系：**同档、同比例、同一套绘制函数**。每只只加"多一件能叫出名字的
+ * 东西" + 一处 ≥4px 的剪影凸起（见 `unitBodyPlan.ts` 各函数末尾的 `elite` 段）：
+ *   孩子王 child_u    纸王冠 + 左挑小旗
+ *   连弩手 crossbow_u 背后第二具弩（横挂）+ 金肩甲
+ *   金雕   eagle_u    淡金颈背 + 白翼尖 + 右下长尾羽
+ *   圣骑士 knight_u   金色马铠 + 枪旗（上挑）+ 加长白缨
+ *   大天使 angel_u    金腰带 + 加宽光环
+ *
+ * ⚠️ 三条不许漂移：
+ *   ① **帧的几何（w/h/ax/ay）与基础版逐字相同** —— 精灵是同一个体形档、同一个底锚，
+ *      换尺寸会让 `normalizeTier` 的目标高与落点同时变，物理上"变高"就是数值说谎；
+ *   ② map / idle / atk 三张都要登记，**一张不落**。战斗渲染按 `cu_<id>` 与
+ *      `cu_<id>_atk` 成对取帧（`probe:atkframes` 断言配对），地图帧缺了则是空白格；
+ *   ③ 兵牌 `pt_p1_*_u` **不在这里登记** —— 它是 `atlas.ts` 遍历 `kind === 'idle'`
+ *      时由 `buildPortraitFrame()` 派生出来的（与基础版同一条路）。
+ *
+ * ⚠️ 进这个数组 = 图集会烤这 15 帧 = `combatAtlas.need('cu_p1_child_u')` 不再抛异常。
+ *    反过来说：**登记帧与放开 `ELITE_ART_FAMILIES` 必须同一批提交**（`units.ts` 的
+ *    `upgradeUnlockedFor`）。只放开族不登记帧 ⇒ 一招募就白屏；只登记帧不放开族 ⇒
+ *    15 帧占了图集但永远没人调。
+ */
+export const P1U_FRAMES: B0FrameSpec[] = [
+  // 矮档升级：孩子王（王冠 + 旗）
+  { name: 'u_p1_child_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_child_u', kind: 'map' },
+  { name: 'cu_p1_child_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_child_u', kind: 'idle' },
+  { name: 'cu_p1_child_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_child_u', kind: 'atk' },
+  // 中档升级：连弩手（第二具弩 + 金肩甲）
+  { name: 'u_p1_crossbow_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_crossbow_u', kind: 'map' },
+  { name: 'cu_p1_crossbow_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_crossbow_u', kind: 'idle' },
+  { name: 'cu_p1_crossbow_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_crossbow_u', kind: 'atk' },
+  // 高档升级：金雕（淡金颈背 + 白翼尖 + 长尾羽）
+  { name: 'u_p1_eagle_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_eagle_u', kind: 'map' },
+  { name: 'cu_p1_eagle_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_eagle_u', kind: 'idle' },
+  { name: 'cu_p1_eagle_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_eagle_u', kind: 'atk' },
+  // 宽体升级：圣骑士（双肩甲 + 枪旗）
+  { name: 'u_p1_knight_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_knight_u', kind: 'map' },
+  { name: 'cu_p1_knight_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_knight_u', kind: 'idle' },
+  { name: 'cu_p1_knight_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_knight_u', kind: 'atk' },
+  // 巨物·飞行升级：大天使（金腰带 + 加宽光环）
+  { name: 'u_p1_angel_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p1_angel_u', kind: 'map' },
+  { name: 'cu_p1_angel_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_angel_u', kind: 'idle' },
+  { name: 'cu_p1_angel_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p1_angel_u', kind: 'atk' },
+];
+
+/**
  * P2V3 批（§15.2 / §16.1 · S3b，2026-11-06）：p2 赤焰五个兵**按新体形档重画**。
  *
  * 与 P1V3 同一条分叉（`BODY_PLAN` 决定体量，不读 `TIER_TARGET_PCT`）。
@@ -463,8 +517,12 @@ export const P4V3_FRAMES: B0FrameSpec[] = [
   { name: 'cu_p4_wraith_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_wraith', kind: 'atk' },
 ];
 
-/** unitArt.ts 内**全部**程序化兵种帧（B0 0 + B1 6 + B2 6 + B3 3 + B4 3 + P1V3 15 + P2V3 15 + P3V3 15 = 63），供 `tools/b0audit.mjs` 全扫描，
- *  `atlas.ts` / `combatAtlas.ts` 也遍历本数组烘焙（#24 已接好，无需改那两个文件）。 */
+/**
+ * unitArt.ts 内**全部**程序化兵种帧 = **78** 张
+ * （B4 3 + P1V3 15 + P1U 15 + P2V3 15 + P3V3 15 + P4V3 15；B0–B3 四批已全部退役）。
+ * 供 `tools/b0audit.mjs` 全扫描，`atlas.ts` / `combatAtlas.ts` 也遍历本数组烘焙
+ * （#24 已接好，无需改那两个文件）。
+ */
 export const UNIT_FRAMES: B0FrameSpec[] = [
   ...B0_FRAMES,
   ...B1_FRAMES,
@@ -472,6 +530,7 @@ export const UNIT_FRAMES: B0FrameSpec[] = [
   ...B3_FRAMES,
   ...B4_FRAMES,
   ...P1V3_FRAMES,
+  ...P1U_FRAMES,
   ...P2V3_FRAMES,
   ...P3V3_FRAMES,
   ...P4V3_FRAMES,
@@ -508,6 +567,10 @@ export const TIER_OF: Record<string, number> = {
   // 高亮与排序、audit:power 都按 tier 读），但**体量不再由 tier 决定** ——
   // 见 normalizeTier 里 `BODY_PLAN` 那一段。
   p1_child: 1, p1_crossbow: 2, p1_eagle: 3, p1_knight: 4, p1_angel: 5,
+  // S4：p1 五个**升级形态**。tier 与基础版相同（升级只改数值与外观，不换档位），
+  // 登记它们是为了让按 tier 读的调用方（`audit:power` 的封顶闸按同族下一档比较、
+  // BattleRenderer 的高亮/排序）不必各自写 `_u` 特判。体量仍由 `planOf` 走体形档。
+  p1_child_u: 1, p1_crossbow_u: 2, p1_eagle_u: 3, p1_knight_u: 4, p1_angel_u: 5,
   // S3b：p2 五兵（同理，体量走 `BODY_PLAN`，tier 只给渲染/平衡侧的调用方读）
   p2_matchman: 1, p2_bronze: 2, p2_threewolf: 3, p2_lavagiant: 4, p2_devil: 5,
   // S3c：p3 五兵（同理，体量走 `BODY_PLAN`，tier 只给渲染/平衡侧的调用方读）

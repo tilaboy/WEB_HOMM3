@@ -1,4 +1,4 @@
-import type { FactionId, UnitType } from '../types.js';
+import type { FactionId, ResourceBag, UnitType } from '../types.js';
 import { FACTIONS } from './factions.js';
 import { powerRef } from '../combat/damage.js';
 
@@ -250,6 +250,139 @@ export const UNITS: Record<string, UnitType> = {
   },
 };
 
+/** 中立野怪，不进兵营、**也没有升级形态**（spec §2.5「中立怪」一行）。 */
+export const MONSTER_UNIT_IDS = ['wolf', 'boar', 'ogre'];
+
+/* ==========================================================================
+ * 1b. 升级形态（S4 · spec §2.5，决策 59 / 66）
+ *
+ * 20 个兵各**恰好一档**升级（后缀 `_u`，例 `p1_child` → `p1_child_u`），不做二级树。
+ * 数值**不排表**：下面 `makeUpgrade()` 按五条系数从基础版现算 —— 排一张表就等于
+ * 把同一份信息抄两遍，改基础值时要改两处（本稿反复出现的"两套数"）。
+ *
+ * | 项 | 系数 | 取整 |
+ * |---|---|---|
+ * | 攻 / 防 | +1 | 无 |
+ * | 伤害 | 上限 +1、下限不动 | 无 |
+ * | HP | ×1.25 | **向上取整** |
+ * | 速度 | 不动（改先手序列，玩家最敏感） | 无 |
+ * | 招募价 | ×1.2 | **逐项取整**，非零项至少 1 |
+ *
+ * `expValue` / `growthPerWeek` / `shots` / 族色**照抄基础版**：§2.5 只列了上面五项，
+ * 多改一项就是第四个真值源。经验值现在还是"档位基线"（见文件头），等 H3 批再定。
+ * ========================================================================== */
+
+/**
+ * 升级形态的名字。**这张表只回答"叫什么"**，不回答"多强"。
+ *
+ * 命名口径：读起来必须像"同一个人、多了一件能叫出名字的东西"（§2.5 美术第 2 条），
+ * 不是换了个兵种。所以避免"XX 大师 / 高级 XX"这类批量后缀，逐个取装备/身份：
+ * 孩子王（多一顶纸王冠）· 连弩手（多一具弩）· 金雕（羽色转金）· 圣骑士（肩甲）·
+ * 大天使（金环）· 大火柴（整根烧起来）· 黄铜人（铜转黄铜 + 肩甲）· 狼王（竖鬃）·
+ * 熔岩领主（岩肩更大）· 大恶魔（角更长）· 矮人老兵（竖鬃 + 双斧）· 丛林游侠（斗篷）·
+ * 远古树人（树冠更大）· 巨猿（长臂 + 肩甲）· 翡翠龙（鳞色转翡翠）· 骷髅战士（锈剑换斧）·
+ * 腐尸（更破的衣 + 垂手）· 吸血鬼伯爵（立领更高）· 牛头王（金角）· 幽冥摄魂（兜帽更深）。
+ */
+const UPGRADE_NAMES: Record<string, string> = {
+  p1_child: '孩子王',
+  p1_crossbow: '连弩手',
+  p1_eagle: '金雕',
+  p1_knight: '圣骑士',
+  p1_angel: '大天使',
+  p2_matchman: '大火柴',
+  p2_bronze: '黄铜人',
+  p2_threewolf: '狼王',
+  p2_lavagiant: '熔岩领主',
+  p2_devil: '大恶魔',
+  p3_dwarf: '矮人老兵',
+  p3_junglearcher: '丛林游侠',
+  p3_treant: '远古树人',
+  p3_ape: '巨猿',
+  p3_greendragon: '翡翠龙',
+  p4_skeleton: '骷髅战士',
+  p4_zombie: '腐尸',
+  p4_vampire: '吸血鬼伯爵',
+  p4_minotaur: '牛头王',
+  p4_wraith: '幽冥摄魂',
+};
+
+export const UPGRADE_SUFFIX = '_u';
+
+/**
+ * **已画出升级形态的族**（S4 分批落地，按族而不按兵）。
+ *
+ * 为什么需要这道闸：数值/解锁链可以先落地，但升级版一旦能被招募，
+ * 战斗渲染会去 `combatAtlas.need('cu_p4_wraith_u')` —— 缺帧是**抛异常**，
+ * 不是掉一张图。所以没画完的族必须继续产基础版，并且**UI 不显示升级按钮**
+ * （`buildStatus.canUpgrade` 也读这一条），否则玩家花了木头矿、什么也没变。
+ *
+ * 每落一族就往这里加一个（S4b p1 → S4c p2/p3 → S4d p4），
+ * 与 `unitArt.ts` 的帧登记**同一批提交**，不许只改一边。
+ */
+export const ELITE_ART_FAMILIES: ReadonlySet<FactionId> = new Set<FactionId>(['p1']);
+
+/** 该阵营的兵种升级是否已可用。`tier` 现在不参与判定（按族开关），保留参数是为了将来按档逐步放开。 */
+export function upgradeUnlockedFor(owner: string, _tier?: number): boolean {
+  return ELITE_ART_FAMILIES.has(owner as FactionId);
+}
+
+export function upgradeIdOf(baseId: string): string {
+  return `${baseId}${UPGRADE_SUFFIX}`;
+}
+
+export function isUpgradeId(id: string): boolean {
+  return id.endsWith(UPGRADE_SUFFIX);
+}
+
+/** 升级版 → 基础版；基础版原样返回。读档清洗与"存量转换"共用。 */
+export function baseUnitIdOf(id: string): string {
+  return isUpgradeId(id) ? id.slice(0, -UPGRADE_SUFFIX.length) : id;
+}
+
+/** 基础版 → 升级版 id；中立怪 / 已停用 id 返回 null（**不猜**）。 */
+export function upgradedUnitIdOf(baseId: string): string | null {
+  const up = upgradeIdOf(baseId);
+  return UNITS[up] ? up : null;
+}
+
+/** 招募价 = 基础价 × 1.2，逐项取整；非零项至少 1（0.2 个矿不能变成 0）。 */
+function upgradeCost(base: ResourceBag): ResourceBag {
+  const out: ResourceBag = {};
+  for (const [k, v] of Object.entries(base) as [keyof ResourceBag, number][]) {
+    if (!v) continue;
+    out[k] = Math.max(1, Math.round(v * 1.2));
+  }
+  return out;
+}
+
+function makeUpgrade(base: UnitType, name: string): UnitType {
+  return {
+    ...base,
+    id: upgradeIdOf(base.id),
+    name,
+    upgradeOf: base.id,
+    attack: base.attack + 1,
+    defense: base.defense + 1,
+    damageMin: base.damageMin,
+    damageMax: base.damageMax + 1,
+    hp: Math.ceil(base.hp * 1.25),
+    // 速度不动 —— 上面表里唯一"故意不变"的一维
+    cost: upgradeCost(base.cost),
+    // aiValue 必须按**新的**四维重算，不能继承基础版的（那是"看起来有依据"的另一个数）
+    aiValue: aiValueOf(
+      { attack: base.attack + 1, defense: base.defense + 1, damageMin: base.damageMin, damageMax: base.damageMax + 1, hp: Math.ceil(base.hp * 1.25) },
+      !!base.shots,
+    ),
+  };
+}
+
+/* 生成顺序即 UPGRADE_NAMES 的书写顺序（T1→T5、p1→p4），与 FACTION_UNITS 同序，便于对表。 */
+for (const [baseId, name] of Object.entries(UPGRADE_NAMES)) {
+  const base = UNITS[baseId];
+  if (!base) throw new Error(`升级形态缺少基础版：${baseId}（UPGRADE_NAMES 与 UNITS 不同步）`);
+  UNITS[upgradeIdOf(baseId)] = makeUpgrade(base, name);
+}
+
 /**
  * 阵营 × tier → canonical id（按 T1→T5）。**tier 解析的唯一入口**
  * （`races.md §6.4.2` 规则 3）。
@@ -272,10 +405,17 @@ export const FACTION_UNITS: Record<FactionId, readonly [string, string, string, 
  * 这条路径当前实际不可达（中立城 `buildings: []`，`applyWeeklyGrowth` 只遍历 `ownedTowns`，
  * 且全项目没有任何一处把 `owner` 改回 `'neutral'`），所以显式失败是安全的。
  */
-export function unitIdForTier(owner: string, tier: number): string | null {
+export function unitIdForTier(owner: string, tier: number, upgraded = false): string | null {
   const row = FACTION_UNITS[owner as FactionId];
   if (!row) return null;
-  return row[tier - 1] ?? null;
+  const base = row[tier - 1] ?? null;
+  if (!base) return null;
+  // 升级版缺帧/未生成时**退回基础版**而不是返回 null：那会让整座兵营停产，
+  // 比"产出没升级"严重得多（缺形态是内容缺口，缺产能是玩法 bug）。
+  if (!upgraded) return base;
+  // 美术没就绪的族继续产基础版（缺帧会在战斗里抛异常，见 ELITE_ART_FAMILIES）
+  if (!upgradeUnlockedFor(owner, tier)) return base;
+  return upgradedUnitIdOf(base) ?? base;
 }
 
 /**
@@ -478,9 +618,6 @@ export function getUnit(id: string): UnitType {
 export function meleeStyleOf(unitTypeId: string): 'thrust' | 'slash' | 'smash' {
   return UNITS[unitTypeId]?.anim ?? 'slash';
 }
-
-/** 中立野怪，不进兵营。 */
-export const MONSTER_UNIT_IDS = ['wolf', 'boar', 'ogre'];
 
 /** 英雄部队最多 5 个兵种槽位（HOMM 规则）。 */
 export const MAX_STACKS = 5;

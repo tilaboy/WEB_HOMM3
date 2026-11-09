@@ -98,5 +98,136 @@ const ctlOk = Math.abs(childA - 4.5) < 0.05 && Math.abs(childB - 3.3) < 0.05;
 if (!ctlOk) bad += 1;
 console.log(`${ctlOk ? '✓' : '✗'} 小孩 A=${childA.toFixed(1)} / B=${childB.toFixed(1)}（A 必须 4.5、B 必须 3.3）`);
 
+/* ==========================================================================
+ * D. 升级形态（S4 · spec §2.5）
+ *
+ * 这一段**不是报表**：`UNITS` 里 20 个 `_u` 是代码按五条系数生成的，本段逐条复算，
+ * 确认"生成的确实是那五条"，并跑唯一硬闸 `powerRef(升级版) ≤ 同族下一档 × 0.9`。
+ *
+ * 为什么闸读公式而不是读表（决策 66）：表只回答"这一行长什么样"，闸回答"它有没有越界"。
+ * 排一张表就等于把同一份信息抄两遍，改基础值时要改两处。
+ * ========================================================================== */
+const { UNITS, FACTION_UNITS, MONSTER_UNIT_IDS, baseUnitIdOf, upgradedUnitIdOf } = await import(
+  distUrl('core/data/units.js', DIST)
+);
+
+const FAMS = ['p1', 'p2', 'p3', 'p4'];
+const CAP = 0.9;
+console.log('\n=== D. 升级形态：五条系数 + 封顶闸（≤ 同族下一档 × 0.9） ===');
+
+/** 系数复算：返回不成立的项（空数组 = 全对）。**只读基础版**，不读生成的升级版。 */
+function coefProblems(base, up) {
+  const out = [];
+  const want = {
+    attack: base.attack + 1,
+    defense: base.defense + 1,
+    damageMin: base.damageMin,
+    damageMax: base.damageMax + 1,
+    hp: Math.ceil(base.hp * 1.25),
+    speed: base.speed,
+  };
+  for (const [k, v] of Object.entries(want)) {
+    if (up[k] !== v) out.push(`${k} ${up[k]}≠${v}`);
+  }
+  // 价：逐项 round(×1.2)，非零项至少 1
+  for (const [k, v] of Object.entries(base.cost)) {
+    const wantC = v ? Math.max(1, Math.round(v * 1.2)) : 0;
+    if ((up.cost[k] ?? 0) !== wantC) out.push(`cost.${k} ${up.cost[k] ?? 0}≠${wantC}`);
+  }
+  for (const k of Object.keys(up.cost)) {
+    if (!(k in base.cost)) out.push(`cost 多出 ${k}`);
+  }
+  if (up.upgradeOf !== base.id) out.push(`upgradeOf ${up.upgradeOf}≠${base.id}`);
+  if (up.expValue !== base.expValue) out.push('expValue 被改了');
+  if (up.growthPerWeek !== base.growthPerWeek) out.push('growthPerWeek 被改了');
+  if (!!up.shots !== !!base.shots) out.push('shots 被改了');
+  return out;
+}
+
+let capRows = 0;
+let capSkip = 0;
+let tightest = { pct: 0, who: '' };
+for (const fam of FAMS) {
+  const ids = FACTION_UNITS[fam];
+  for (let i = 0; i < ids.length; i++) {
+    const base = UNITS[ids[i]];
+    const upId = upgradedUnitIdOf(base.id);
+    if (!upId) {
+      bad += 1;
+      console.log(`✗ ${fam} ${base.name}：缺升级形态 ${base.id}${'_u'}`);
+      continue;
+    }
+    const up = UNITS[upId];
+    const probs = coefProblems(base, up);
+    const nextId = ids[i + 1];
+    const next = nextId ? UNITS[nextId] : null;
+    const pe = powerRef(up);
+    let capTxt = '不适用（T5 已是本族封顶）';
+    if (next) {
+      // ⚠️ **两个分母，两个数，必须都印**。
+      //   `pct`  = 升级版战力 / **下一档战力**（"它有多接近下一档"）
+      //   `used` = 升级版战力 / **闸上限（下一档 × 0.9）**（"闸用了多少"）
+      // 2026-11-09 踩过：本脚本只印 pct（铜人 82.6%），而 `audit:balance --upgrades`
+      // 印的是 used（同一条 91.8%）—— 两个门对同一个兵给出两个百分比，
+      // 谁看都以为其中一个错了。判词用 used（>100 才是越界），pct 保留作读数。
+      const nextPow = powerRef(next);
+      const pct = (pe / nextPow) * 100;
+      const used = (pe / (nextPow * CAP)) * 100;
+      capSkip += 0;
+      capRows += 1;
+      if (used > tightest.pct) tightest = { pct: used, who: `${fam} ${up.name}` };
+      const ok = pe <= nextPow * CAP;
+      if (!ok) {
+        probs.push(`封顶 闸内 ${used.toFixed(1)}% > 100%（下一档 ${next.name} 的 90% = ${(nextPow * CAP).toFixed(1)}）`);
+      }
+      capTxt = `对下一档 ${pct.toFixed(1)}% · 闸内 ${used.toFixed(1)}%`;
+    } else {
+      capSkip += 1;
+    }
+    if (probs.length) bad += 1;
+    const dmg = `${base.damageMin}-${base.damageMax}→${up.damageMin}-${up.damageMax}`;
+    console.log(
+      `${probs.length ? '✗' : '✓'} ${fam} ${base.name}→${up.name}`.padEnd(26, ' ') +
+        ` 攻 ${base.attack}→${up.attack} 防 ${base.defense}→${up.defense} 伤 ${dmg} ` +
+        `HP ${base.hp}→${up.hp} 速 ${up.speed} 价 ${base.cost.gold ?? 0}→${up.cost.gold ?? 0} ` +
+        `战力 ${powerRef(base).toFixed(1)}→${pe.toFixed(1)}  ${capTxt}` +
+        (probs.length ? `  ⚠ ${probs.join(' / ')}` : ''),
+    );
+  }
+}
+// 覆盖闸：20 个升级形态、自指正确、中立怪不许有
+const allUp = Object.keys(UNITS).filter((id) => id.endsWith('_u'));
+const expectUp = FAMS.flatMap((f) => FACTION_UNITS[f].map((id) => `${id}_u`));
+const missing = expectUp.filter((id) => !UNITS[id]);
+const extra = allUp.filter((id) => !expectUp.includes(id));
+const badBack = allUp.filter((id) => {
+  const b = baseUnitIdOf(id);
+  return UNITS[b]?.upgradeOf !== undefined || UNITS[id]?.upgradeOf !== b;
+});
+const monsterLeak = MONSTER_UNIT_IDS.filter((id) => UNITS[`${id}_u`]);
+if (missing.length || extra.length || badBack.length || monsterLeak.length) bad += 1;
+console.log(
+  `${!missing.length && !extra.length && !badBack.length && !monsterLeak.length ? '✓' : '✗'} ` +
+    `覆盖：升级形态 ${allUp.length}/20${missing.length ? ` 缺 ${missing.join(',')}` : ''}` +
+    `${extra.length ? ` 多 ${extra.join(',')}` : ''}${badBack.length ? ` 自指错 ${badBack.join(',')}` : ''}` +
+    `${monsterLeak.length ? ` 中立怪不该有 ${monsterLeak.join(',')}` : ''}`,
+);
+console.log(
+  `   封顶闸 ${capRows} 条生效 / ${capSkip} 条不适用（T5）· 最紧 ${tightest.who || '-'} 闸内 ${tightest.pct.toFixed(1)}%`,
+);
+
+/* 负向对照：闸必须还能变红（否则"全过"只证明它没在看） */
+const bronze = UNITS['p2_bronze'];
+const fatBronze = { ...UNITS['p2_bronze_u'], hp: 40, attack: 8 };
+const fatPct = (powerRef(fatBronze) / powerRef(UNITS['p2_threewolf'])) * 100;
+const fatUsed = fatPct / CAP; // 闸内占用 = 占下一档 / 0.9
+const coefCtrl = coefProblems(bronze, { ...UNITS['p2_bronze_u'], hp: bronze.hp }).length > 0;
+const capCtrl = fatUsed > 100;
+if (!coefCtrl || !capCtrl) bad += 1;
+console.log(
+  `${coefCtrl && capCtrl ? '✓' : '✗'} 负向对照：把 HP 改回基础值 ⇒ 系数闸报警；` +
+    `把铜人抬到 8/10/40 ⇒ 占下一档 ${fatPct.toFixed(1)}% · 闸内 ${fatUsed.toFixed(1)}%（>100），闸仍会红`,
+);
+
 console.log(`\n=== ${bad === 0 ? 'PASS' : `FAIL（${bad} 条）`} ===`);
 if (bad > 0) process.exitCode = 1;
