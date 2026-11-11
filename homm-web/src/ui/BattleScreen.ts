@@ -7,6 +7,7 @@
  */
 import type { GameState } from '../core/types.js';
 import { getUnit, meleeStyleOf } from '../core/data/units.js';
+import { unitAbilityHints } from '../core/data/innates.js';
 import { sfx } from './sfx.js';
 import { installIcons, labelIcon, setLabel } from './icons.js';
 import { WAR_MACHINES } from '../core/data/warmachines.js';
@@ -55,7 +56,7 @@ import { hexCenter, hexEq, hexKey, inField, isAdjacent, pickHex, FIELD_H, FIELD_
 import { STRUCTURE_NAME, structureAt, structureById, type SiegeStructure } from '../core/combat/siege.js';
 import { getSpell } from '../core/data/spells.js';
 import { BattleRenderer, BASE_H, BASE_W, PAD } from '../render/BattleRenderer.js';
-import type { FloatText } from '../render/BattleRenderer.js';
+import type { BattleFx, BattleFxKind, FloatText } from '../render/BattleRenderer.js';
 import { getAtlas } from '../render/atlas.js';
 import { unitPortraitFrame, warnMissingFrame } from '../render/unitFrames.js';
 // TP-3：战斗场景曲（audio-direction.md §10.1 接线③）。开关都在屏内 ——
@@ -305,7 +306,14 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   /** 已选中待指定目标的法术（点面板 → 点目标）。 */
   let pendingSpell: string | null = null;
   let spellTargets: Set<string> | null = null;
-  const spellFx: { hex: Hex; life: number; color: string; splash?: boolean }[] = [];
+  const spellFx: BattleFx[] = [];
+  /**
+   * 能力/法术演出。`kind` 决定形状（见 `BattleFxKind`），颜色只作第二线索 ——
+   * 同一法术在四族手里是同一个颜色（§11.2 的最后一条）。
+   */
+  function addFx(hex: Hex, color: string, kind: BattleFxKind = 'ring', extra?: Partial<BattleFx>): void {
+    spellFx.push({ hex, life: 1, color, kind, ...extra });
+  }
   /** 近战打击特效与闪电（纯表演，p 走到头就移除）。 */
   const impacts: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number; dur: number; unitId?: string }[] = [];
   let bolt: { x: number; y: number; p: number } | null = null;
@@ -471,6 +479,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     for (const hint of [chargeHint(battle, u), overtimeHint(battle, u), rootHint(battle, u)]) {
       if (hint) lines.push(hint);
     }
+    // 招牌能力与自带魔法（§16.3 / §10.3）。文案由 core 出（`unitAbilityHints`），
+    // 这里只负责印 —— 探针才能断言"这条规则在界面上真的说得出来"。
+    lines.push(...unitAbilityHints(def));
     if (u.defending) lines.push('防御中');
     if (u.waited) lines.push('已等待');
     return lines.join('\n');
@@ -777,6 +788,10 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       case 'move': {
         const pts = [hexCenter(e.from), ...e.path.map((h) => hexCenter(h))];
         const n = pts.length - 1;
+        // 飞行演出（§16.3）：走**更高的弧**、起落各一圈尘环。
+        // 判断读 `BattleUnit.canFly`（不是兵种 id）—— 升级形态自动跟着飞。
+        const flyer = unitById(battle, e.unitId)?.canFly === true;
+        if (flyer) addFx(e.from, '#cfd8e2', 'fly');
         anim = {
           t: 0,
           dur: Math.max(150, 130 * n),
@@ -786,12 +801,16 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
             const k = f - i;
             const a = pts[i];
             const b = pts[Math.min(n, i + 1)];
-            // 行军小颠簸：每跨一格轻轻一跳，不然像在冰面上滑行
-            const bob = Math.abs(Math.sin(f * Math.PI)) * 2.5;
+            // 行军小颠簸：每跨一格轻轻一跳，不然像在冰面上滑行。
+            // 飞行兵改成 9px 的整段弧（一眼看出"它不是走过去的"）。
+            const bob = flyer
+              ? Math.abs(Math.sin(p * Math.PI)) * 9
+              : Math.abs(Math.sin(f * Math.PI)) * 2.5;
             posOverride[e.unitId] = { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k - bob };
           },
           end: () => {
             delete posOverride[e.unitId];
+            if (flyer) addFx(e.path.length ? e.path[e.path.length - 1] : e.from, '#cfd8e2', 'fly');
           },
         };
         break;
@@ -985,8 +1004,63 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       case 'root': {
         // 缠根：藤蔓从地面缠上目标（浮字挂在守方脚下，一眼看得出"谁被按住了"）
         addFloat('缠根！', hexOf(e.targetId), '#9ed07a');
-        spellFx.push({ hex: hexOf(e.targetId), life: 1, color: '#9ed07a' });
+        addFx(hexOf(e.targetId), '#9ed07a');
         anim = { t: 0, dur: 380, step: () => undefined };
+        break;
+      }
+      case 'innate': {
+        // 自带魔法（§10.3）：一行浮字 + 一个专属形状。**不加按钮、不弹窗**。
+        const self = hexOf(e.unitId);
+        const foe = e.targetId ? hexOf(e.targetId) : self;
+        switch (e.innate) {
+          case 'oath':
+            addFloat('誓约', self, '#cfe3ff');
+            addFx(foe, '#cfe3ff', 'oath');
+            break;
+          case 'lavaArmor':
+            addFloat(`反弹 ${e.amount ?? 0}`, self, '#ffb066');
+            if (e.damage) addFloat(`-${e.damage}`, foe, '#ff9a6b');
+            addFx(self, '#e0662c', 'lava');
+            break;
+          case 'flameBody':
+            addFloat('烈焰缠身', self, '#ffc06a');
+            if (e.damage) addFloat(`-${e.damage}`, foe, '#ff9a6b');
+            addFx(self, '#ff9a3c', 'flame');
+            break;
+          case 'stoneSuppress':
+            addFloat('压制！', foe, '#e0c08a');
+            addFx(foe, '#c9a06a', 'dread');
+            break;
+          case 'stun':
+            addFloat('震慑！', foe, '#ffe08a');
+            addFx(foe, '#d9c07a', 'ring');
+            break;
+          default:
+            addFloat(e.innate, self, '#e8dcc0');
+            addFx(self, '#e8dcc0');
+            break;
+        }
+        anim = { t: 0, dur: 360, step: () => undefined };
+        break;
+      }
+      case 'drain': {
+        // 吸血：血珠从受害者流回攻方（方向本身就是这条能力的意思）
+        addFloat(`+${e.healed}`, hexOf(e.unitId), '#9ef0a8');
+        addFx(hexOf(e.targetId), '#b8324a', 'drain', { to: hexOf(e.unitId) });
+        anim = { t: 0, dur: 320, step: () => undefined };
+        break;
+      }
+      case 'revive': {
+        // 天使重返战场：金色光柱 + 上浮颗粒（§11.2 模板 6）
+        addFloat(`重返战场 +${e.revived}`, hexOf(e.unitId), '#ffd76a');
+        addFx(hexOf(e.unitId), '#ffd76a', 'revive');
+        anim = { t: 0, dur: 520, step: () => undefined };
+        break;
+      }
+      case 'dread': {
+        addFloat('威压！', hexOf(e.targetId), '#c9a6e0');
+        addFx(hexOf(e.targetId), '#6b4a7a', 'dread');
+        anim = { t: 0, dur: 340, step: () => undefined };
         break;
       }
       case 'die': {

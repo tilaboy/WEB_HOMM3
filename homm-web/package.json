@@ -69,7 +69,8 @@
     "probe:hexgeom": "node tools/probes/hexgeom.mjs",
     "probe:card": "node tools/probes/card.mjs",
     "probe:save": "node tools/probes/save.mjs",
-    "probe:upgrade": "node tools/probes/upgrade.mjs"
+    "probe:upgrade": "node tools/probes/upgrade.mjs",
+    "probe:innate": "node tools/probes/innate.mjs"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",

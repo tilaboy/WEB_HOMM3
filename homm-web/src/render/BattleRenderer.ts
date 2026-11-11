@@ -45,6 +45,33 @@ export interface FloatText {
   color: string;
 }
 
+/**
+ * 战斗演出模板（§11.2 的六类里，本批实现的是"能力"用到的那五类）。
+ *
+ * **为什么要有 `kind` 而不是只换颜色**：12 个法术里有 10 个原本长得一模一样
+ * （都是一个扩张圆环），玩家分不出"这是火球还是冰箭"，更分不出
+ * "我被吸血了"和"我被缠住了"。形状是唯一读得懂的线索，颜色只是第二线索。
+ */
+export type BattleFxKind =
+  | 'ring' // 缺省：扩张圆环（法术 / 缠根）
+  | 'drain' // 吸血：粒子从受害者流向攻方
+  | 'revive' // 复活：金色光柱 + 上浮颗粒
+  | 'dread' // 威压：暗环**下沉** + 碎屑下落
+  | 'lava' // 熔岩护甲：四道外溅火星
+  | 'flame' // 烈焰缠身：三簇上窜火舌
+  | 'oath' // 誓约：目标头顶一道护罩弧
+  | 'fly'; // 起落：地面两道尘环
+
+export interface BattleFx {
+  hex: Hex;
+  life: number;
+  color: string;
+  splash?: boolean;
+  kind?: BattleFxKind;
+  /** `drain` 的终点（攻方所在格）：粒子从 `hex` 流向它。 */
+  to?: Hex;
+}
+
 export interface BattleDraw {
   battle: BattleState;
   activeId: string | null;
@@ -58,8 +85,8 @@ export interface BattleDraw {
   floats: FloatText[];
   /** 施法目标格高亮（选了法术后点目标时用）。 */
   spellTargets?: Set<string> | null;
-  /** 施法特效：格子 + 剩余生命（1 → 0），画一圈扩散的光环。 */
-  spellFx?: { hex: Hex; life: number; color: string; splash?: boolean }[];
+  /** 施法/能力特效。`life` 从 1 衰减到 0，`kind` 决定画什么（见 `BattleFxKind`）。 */
+  spellFx?: BattleFx[];
   /** 闪电：从目标头顶劈下来（p: 剩余生命 1 → 0）。 */
   bolt?: { x: number; y: number; p: number } | null;
   /** 近战打击特效（p: 0 → 1 播放进度）。`unitId` = 受击方，供 H5 受击位移用。 */
@@ -825,23 +852,174 @@ export class BattleRenderer {
     g.globalAlpha = 1;
   }
 
-  /** 施法特效：一圈向外扩散的彩色光环，life 从 1 衰减到 0。 */
-  private drawSpellFx(g: CanvasRenderingContext2D, fx: { hex: Hex; life: number; color: string; splash?: boolean }): void {
+  /**
+   * 施法与能力演出。五种形状，**一眼能分开**：
+   *   ring（扩张环）/ drain（粒子回流）/ revive（光柱上浮）/ dread（暗环下沉）/ lava·flame·oath（短促脉冲）
+   * 全部是 canvas 图元，**0 新图集**（§11.2 的实现口径）。
+   */
+  private drawSpellFx(g: CanvasRenderingContext2D, fx: BattleFx): void {
     const c = hexCenter(fx.hex);
+    const cx = c.x + PAD;
+    const cy = c.y + PAD;
     const p = 1 - Math.max(0, Math.min(1, fx.life)); // 0 → 1 进度
-    const r = (fx.splash ? 8 : 5) + p * (fx.splash ? 26 : 14);
     const a = Math.max(0, 1 - p) * 0.9;
+    const kind = fx.kind ?? 'ring';
+
+    if (kind === 'drain') {
+      // 吸血：血珠从受害者（hex）沿直线飞向攻方（to），越飞越小。
+      //
+      // ① 珠径 2.2 → 3.0：第一版 2.2px 在 482×310 的战场上只有 1 设备像素，
+      //    ×图纸目检时整列"几乎空白"（`#b8324a` 压在土色上本来就不亮）。
+      // ② 用**亮芯 + 暗边**两层：暗红单色在棕色地面上读不出来，而换成纯亮红
+      //    又会和「熔岩火星」撞色 —— 外层保留 fx.color（族色/主题色），
+      //    内层固定高光，形状靠"一串往回飞的珠子"而不是靠色相。
+      // ③ 起点相位拉开（0 / 0.34 / 0.68）：第一版三颗挤在起点一起出发，
+      //    中途又同时变小 ⇒ 任一时刻只看得见 1~2 个点，读不成"一条流"。
+      const to = hexCenter(fx.to ?? fx.hex);
+      const tx = to.x + PAD;
+      const ty = to.y + PAD;
+      g.globalAlpha = Math.max(0, 1 - p * 0.55);
+      for (let i = 0; i < 3; i++) {
+        const k = Math.max(0, Math.min(1, (p - i * 0.17) * 1.5 + i * 0.05));
+        if (k <= 0 || k >= 1) continue;
+        const r = 3.0 - k * 1.4;
+        const x = cx + (tx - cx) * k;
+        const y = cy + (ty - cy) * k - Math.sin(k * Math.PI) * 9;
+        g.fillStyle = fx.color;
+        g.beginPath();
+        g.arc(x, y, r, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = '#ff8fa0';
+        g.beginPath();
+        g.arc(x - r * 0.22, y - r * 0.28, Math.max(0.7, r * 0.42), 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalAlpha = 1;
+      return;
+    }
+
+    if (kind === 'revive') {
+      // 复活：4px 金柱从地面顶到单位头顶 + 8 粒上浮（§11.2 模板 6）
+      const h = 34;
+      g.globalAlpha = Math.max(0, 1 - p) * 0.95;
+      g.fillStyle = fx.color;
+      g.fillRect(cx - 2, cy + 8 - h * Math.min(1, p * 1.6), 4, h * Math.min(1, p * 1.6));
+      g.globalAlpha = Math.max(0, 1 - p) * 0.7;
+      for (let i = 0; i < 8; i++) {
+        const ang = (i / 8) * Math.PI * 2;
+        const rad = 5 + ((i * 7) % 5);
+        const rise = p * 26 + ((i * 11) % 9);
+        g.fillRect(cx + Math.cos(ang) * rad - 1, cy + 8 - rise, 2, 2);
+      }
+      g.globalAlpha = 1;
+      return;
+    }
+
+    if (kind === 'dread') {
+      // 威压：暗环**下沉** + 3 片碎屑下落（与"缠根"的上浮藤蔓方向相反）
+      g.globalAlpha = a;
+      g.strokeStyle = fx.color;
+      g.lineWidth = 2;
+      g.beginPath();
+      g.ellipse(cx, cy + 4 + p * 6, 10 + p * 4, 4 + p * 2, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.fillStyle = fx.color;
+      for (let i = 0; i < 3; i++) {
+        const x = cx + (i - 1) * 7;
+        g.fillRect(x, cy - 2 + p * 14 + i * 3, 2, 2);
+      }
+      g.globalAlpha = 1;
+      return;
+    }
+
+    if (kind === 'lava') {
+      // 熔岩护甲：四道沿对角外溅的火星（短、快、只播一次）
+      g.globalAlpha = a;
+      g.strokeStyle = fx.color;
+      g.lineWidth = 2;
+      for (let i = 0; i < 4; i++) {
+        const ang = Math.PI * 0.25 + (i * Math.PI) / 2;
+        const r0 = 4 + p * 10;
+        const r1 = r0 + 4;
+        g.beginPath();
+        g.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0 * 0.6);
+        g.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1 * 0.6);
+        g.stroke();
+      }
+      g.globalAlpha = 1;
+      return;
+    }
+
+    if (kind === 'flame') {
+      // 烈焰缠身：三簇上窜火舌。
+      //
+      // ×3 图纸目检（`tools/fxsheet.mjs`）第一版读成 **「||| 」三根竖条**：
+      // 底宽只有 4px、三簇等高、间距 6px ⇒ 间隔 2px 的等宽竖条，形状上就是条形码。
+      // 三处改：底宽 5px（斜率看得见）· 中簇最高（高低起伏）· 每簇加一层亮芯。
+      const hs = [0.78, 1, 0.86];
+      g.globalAlpha = a;
+      for (let i = 0; i < 3; i++) {
+        const x = cx + (i - 1) * 7;
+        const hh = (8 + (1 - p) * 11) * hs[i];
+        g.fillStyle = fx.color;
+        g.beginPath();
+        g.moveTo(x - 2.6, cy + 6);
+        g.lineTo(x, cy + 6 - hh);
+        g.lineTo(x + 2.6, cy + 6);
+        g.closePath();
+        g.fill();
+        g.fillStyle = '#ffd9a0';
+        g.beginPath();
+        g.moveTo(x - 1.1, cy + 6);
+        g.lineTo(x, cy + 6 - hh * 0.55);
+        g.lineTo(x + 1.1, cy + 6);
+        g.closePath();
+        g.fill();
+      }
+      g.globalAlpha = 1;
+      return;
+    }
+
+    if (kind === 'oath') {
+      // 誓约：护罩弧从头顶浮起（不画整圈 —— 整圈会被读成"又一个法术环"）
+      g.globalAlpha = a;
+      g.strokeStyle = fx.color;
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(cx, cy - 2 + p * 5, 9 + p * 3, Math.PI * 1.15, Math.PI * 1.85);
+      g.stroke();
+      g.globalAlpha = 1;
+      return;
+    }
+
+    if (kind === 'fly') {
+      // 起落尘环：两道贴地扁环向外散（飞行兵起落各一次）
+      g.globalAlpha = a * 0.8;
+      g.strokeStyle = fx.color;
+      g.lineWidth = 1.5;
+      for (let i = 0; i < 2; i++) {
+        const r = 6 + p * 10 + i * 4;
+        g.beginPath();
+        g.ellipse(cx, cy + 6, r, r * 0.32, 0, 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.globalAlpha = 1;
+      return;
+    }
+
+    // 缺省：原有的扩张圆环
+    const r = (fx.splash ? 8 : 5) + p * (fx.splash ? 26 : 14);
     g.globalAlpha = a;
     g.strokeStyle = fx.color;
     g.lineWidth = 2;
     g.beginPath();
-    g.arc(c.x + PAD, c.y + PAD, r, 0, Math.PI * 2);
+    g.arc(cx, cy, r, 0, Math.PI * 2);
     g.stroke();
     if (p < 0.35) {
       g.globalAlpha = a * 0.35;
       g.fillStyle = fx.color;
       g.beginPath();
-      g.arc(c.x + PAD, c.y + PAD, (fx.splash ? 16 : 9) * (1 - p), 0, Math.PI * 2);
+      g.arc(cx, cy, (fx.splash ? 16 : 9) * (1 - p), 0, Math.PI * 2);
       g.fill();
     }
     g.globalAlpha = 1;

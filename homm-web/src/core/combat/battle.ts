@@ -10,6 +10,7 @@
  */
 import type { Army, WarMachineId } from '../types.js';
 import { getUnit } from '../data/units.js';
+import { INNATES } from '../data/innates.js';
 import { getSpell, SPELLS } from '../data/spells.js';
 import { WAR_MACHINES } from '../data/warmachines.js';
 import { mulberry32, randInt } from '../rng.js';
@@ -147,6 +148,31 @@ export interface BattleUnit {
   startCount: number;
   /** 身上的时效法术（M4）。 */
   effects: UnitEffect[];
+  /* ---------- 招牌能力与自带魔法（S4 · spec §10.3 / §16.3） ---------- */
+
+  /** 飞行（§16.9①）。建队时从兵种表抄一份 —— 寻路与护城河判定每帧都读它。 */
+  canFly: boolean;
+  /**
+   * 自带魔法的**每场用量**。只有 `trigger` 类会涨（烈焰缠身 2 / 投石压制 3 / 震慑 2）；
+   * 光环与被动（誓约 / 熔岩护甲 / 龙威）永远 0 —— 它们不靠次数封顶，靠数值封顶。
+   */
+  innateUses: number;
+  /**
+   * 「誓约」本回合已经替哪些邻格友军挡过（按**被保护者**的 id 记）。
+   * `startRound` 清空 ⇒ 上限是"每回合每格一次"（§10.3 的上限列）。
+   */
+  oathCells: string[];
+  /** 「龙威」本回合是否被邻格绿龙压住（`startRound` 每回合重算，离开范围就恢复）。 */
+  feared: boolean;
+  /** 「震慑」累计的防御惩罚（到战斗结束，**不随回合清**）。 */
+  stunDef: number;
+  /** 招牌能力「自复活」是否已用（每场一次）。 */
+  selfRevived: boolean;
+  /**
+   * 最近一次挨打的**战前人数**。自复活要按它算 `ceil(count × 0.2)` ——
+   * `applyDamage` 会把 `count` 清零，事后再读就只剩 0，招牌能力等于没发生。
+   */
+  lastCountBefore: number;
 }
 
 export interface BattleState {
@@ -221,6 +247,25 @@ export type BattleEvent =
   | { t: 'bounce'; unitId: string; targetId: string }
   /** 翠林「缠根」生效：目标速度 −2，到它下一次行动结束。 */
   | { t: 'root'; unitId: string; targetId: string }
+  /**
+   * 自带魔法触发（§10.3）。`innate` 是要断言的 id，`amount` 是这次生效的数值
+   * （减伤 1 / 反弹 N / 火焰 6 / −2 / −2），`killed` 只对伤害类有值。
+   */
+  | {
+      t: 'innate';
+      innate: string;
+      unitId: string;
+      targetId?: string;
+      amount?: number;
+      damage?: number;
+      killed?: number;
+    }
+  /** 吸血（招牌能力）：攻方回补了 `healed` 个。 */
+  | { t: 'drain'; unitId: string; targetId: string; healed: number }
+  /** 天使「自复活」（招牌能力）：本队被歼灭后重返战场。 */
+  | { t: 'revive'; unitId: string; revived: number }
+  /** 威压（招牌能力）：命中让目标速度 −2（与缠根同一套时效）。 */
+  | { t: 'dread'; unitId: string; targetId: string }
   | { t: 'die'; unitId: string }
   /** 攻城器械开火：投石车砸城防，弩车射部队。 */
   | {
@@ -296,6 +341,13 @@ function deploy(army: Army, side: 0 | 1, seqBase: number): BattleUnit[] {
       seq: seqBase + i,
       startCount: s.count,
       effects: [],
+      canFly: u.canFly === true,
+      innateUses: 0,
+      oathCells: [],
+      feared: false,
+      stunDef: 0,
+      selfRevived: false,
+      lastCountBefore: s.count,
     };
   });
 }
@@ -486,6 +538,8 @@ export function upcomingUnits(s: BattleState, n = 2): BattleUnit[] {
 function moatPenalty(s: BattleState, u: BattleUnit): number {
   if (!s.siege) return 0;
   if (u.side !== 0) return 0;
+  // 飞行兵不踩泥（§16.9① 第 3 条）：它从护城河上方过去，脚没湿
+  if (u.canFly) return 0;
   return isMoat(u.hex) ? MOAT_DEFENSE_PENALTY : 0;
 }
 
@@ -493,7 +547,7 @@ function moatPenalty(s: BattleState, u: BattleUnit): number {
 function defBonusOf(s: BattleState, u: BattleUnit): number {
   // 「试剂泄漏」腐蚀护甲：双方同受（这里只管被结算方的防御，所以攻守都吃）。
   const leak = s.accident?.kind === 'leak' ? ACCIDENT_DEF_PENALTY : 0;
-  return s.defBonus[u.side] + effDefBonus(u) + (u.defending ? 3 : 0) - moatPenalty(s, u) - leak;
+  return s.defBonus[u.side] + effDefBonus(u) + (u.defending ? 3 : 0) - moatPenalty(s, u) - leak + u.stunDef;
 }
 
 /** 部队站不上去的格子：有人，或者还立着一截城墙。 */
@@ -502,10 +556,23 @@ function blockedHex(s: BattleState, h: Hex, exceptId?: string): boolean {
   return blocksMove(s.siege, h);
 }
 
-/** 可移动到的格子 → 路径（不含起点）。 */
+/**
+ * 可移动到的格子 → 路径（不含起点）。
+ *
+ * **飞行走第二条 BFS**（§16.9①，决策 25 = B 越墙）：
+ *   - 人 / 城墙 / 城门 / 护城河**全能穿过**（`blocked` 恒 false）；
+ *   - **落点**仍禁「有人 / 有城防 / 护城河」—— 飞行不是瞬移；
+ *   - AI 全部走本函数，所以飞行分支对 AI 自动生效（§16.9① 第 3 条）。
+ */
 export function reachable(s: BattleState, u: BattleUnit): Map<string, Hex[]> {
   const speed = unitSpeed(s, u);
-  return bfs(u.hex, speed, (h) => blockedHex(s, h, u.id));
+  if (!u.canFly) return bfs(u.hex, speed, (h) => blockedHex(s, h, u.id));
+  return bfs(
+    u.hex,
+    speed,
+    () => false,
+    (h) => !occupied(s, h, u.id) && !blocksMove(s.siege, h) && !(s.siege && isMoat(h)),
+  );
 }
 
 /**
@@ -563,7 +630,11 @@ function addEffect(u: BattleUnit, spellId: string, rounds: number): void {
  * `effects` 里**不只有法术**：族动词也会挂效果（「缠根」）。
  * UI 以前直接 `getSpell(e.spellId).name`，遇到非法术 id 会抛异常 —— 统一走这里。
  */
-export const EFFECT_LABEL: Record<string, string> = { root: '缠根' };
+export const EFFECT_LABEL: Record<string, string> = {
+  root: '缠根',
+  suppress: '投石压制',
+  dread: '威压',
+};
 
 export function effectLabel(effectId: string): string {
   return SPELLS[effectId]?.name ?? EFFECT_LABEL[effectId] ?? effectId;
@@ -719,7 +790,8 @@ export function strikeAtkBonus(
     s.atkBonus[u.side] +
     effAtkBonus(u, melee) +
     chargeAtkBonus(s, u, melee, assumeMoveDist) +
-    overtimeAtkBonus(s, u.side)
+    overtimeAtkBonus(s, u.side) -
+    (u.feared ? FEAR_ATK : 0)
   );
 }
 
@@ -730,7 +802,7 @@ export function strikeAtkBonus(
  * 的预估。以前这两处各写一遍，改一处就会分裂（"提示说 40、实际挨 60"）。
  */
 function retaliationAtkBonus(s: BattleState, u: BattleUnit): number {
-  return s.atkBonus[u.side] + effAtkBonus(u, true) + overtimeAtkBonus(s, u.side);
+  return s.atkBonus[u.side] + effAtkBonus(u, true) + overtimeAtkBonus(s, u.side) - (u.feared ? FEAR_ATK : 0);
 }
 
 /* ---------------- 族动词 · 翠林「缠根」（2026-10-20） ----------------
@@ -825,8 +897,184 @@ export function rootTargetBonus(s: BattleState, u: BattleUnit, t: BattleUnit): n
 export function unitSpeed(_s: BattleState, u: BattleUnit): number {
   let v = getUnit(u.unitTypeId).speed;
   if (hasEffect(u, 'haste')) v += 2;
-  if (hasEffect(u, 'slow') || hasEffect(u, ROOT_EFFECT)) v -= 2;
+  // 四条 −2 只取一次：减速 / 缠根 / 投石压制 / 威压。它们是同一种手感，
+  // 叠起来会把一支突击兵按死，且玩家分辨不出"我该再放一张减速吗"（见上面注释）。
+  if (
+    hasEffect(u, 'slow') ||
+    hasEffect(u, ROOT_EFFECT) ||
+    hasEffect(u, SUPPRESS_EFFECT) ||
+    hasEffect(u, DREAD_EFFECT)
+  ) {
+    v -= 2;
+  }
   return Math.max(1, v);
+}
+
+/* ---------------- 招牌能力（§16.3）与自带魔法（§10.3） ----------------
+ *
+ * 两批东西，**落地方式不同，别混**：
+ *   · **招牌能力**（飞行 / 吸血 / 自复活 / 威压）是兵种字段：`canFly` / `drain` /
+ *     `selfRevive` / `dread`。它们是这个兵的身份。
+ *   · **自带魔法**（6 条）统一挂在 `innate.id` 上，表在 `data/innates.ts`；战斗里只认 id。
+ * 共同点：**不耗蓝、不占按钮、不占行动**（§10.3 第 1 条）。
+ *
+ * 一条铁律（最容易破，所以写在这里）：所有"让数值变大变小"的效果只能接在
+ * `strikeAtkBonus` / `defBonusOf` / `unitSpeed` 这三个入口上，**不要**在 `actMelee`
+ * 里就地加减 —— 否则预估与实战立刻分裂，而且不会有任何断言响。
+ */
+
+/** 「投石压制」挂的效果 id（与缠根同构，但名字不同：玩家要能分清是谁按住了他）。 */
+export const SUPPRESS_EFFECT = 'suppress';
+/** 「威压」挂的效果 id（§16.3 第 4 条：不新建士气系统，复用缠根的时效实现）。 */
+export const DREAD_EFFECT = 'dread';
+/** 誓约：一次近战减 1（写成百分比玩家算不出来）。 */
+export const OATH_REDUCE = 1;
+/** 熔岩护甲反弹比例（上限是"不致死"，见 `lavaReflect`）。 */
+export const LAVA_REFLECT_RATE = 0.25;
+/** 烈焰缠身的固定火焰伤害：不看人数、不看攻防。 */
+export const FLAME_BODY_DAMAGE = 6;
+/** 震慑：防御 −2，到战斗结束。 */
+export const STUN_DEF = 2;
+/** 龙威：邻格敌军攻击 −1。 */
+export const FEAR_ATK = 1;
+
+/** 这个部队的自带魔法 id（没有则 undefined）。**不要按 id 字面量判断**。 */
+export function innateOf(u: BattleUnit): string | undefined {
+  return getUnit(u.unitTypeId).innate?.id;
+}
+
+/** 这一下能不能再用一次 `trigger` 类自带魔法；能用就记一次用量。 */
+function useInnate(u: BattleUnit, id: string): boolean {
+  if (innateOf(u) !== id) return false;
+  const cap = INNATES[id as keyof typeof INNATES]?.perBattle ?? 0;
+  if (cap > 0 && u.innateUses >= cap) return false;
+  u.innateUses += 1;
+  return true;
+}
+
+/** 「誓约」：找一个本回合还没替 `target` 挡过的邻格友军骑士。 */
+function oathGuard(s: BattleState, target: BattleUnit): BattleUnit | null {
+  for (const a of aliveOf(s, target.side)) {
+    if (a.id === target.id) continue;
+    if (innateOf(a) !== 'oath') continue;
+    if (!isAdjacent(a.hex, target.hex)) continue;
+    if (a.oathCells.includes(target.id)) continue;
+    return a;
+  }
+  return null;
+}
+
+/** 近战伤害落账前的「誓约」减伤（只挡刀，不挡箭）。 */
+function applyOath(s: BattleState, target: BattleUnit, dmg: number): { dmg: number; ev: BattleEvent[] } {
+  if (dmg <= 1) return { dmg, ev: [] }; // 1 点伤害挡不动，别白白消耗一次
+  const guard = oathGuard(s, target);
+  if (!guard) return { dmg, ev: [] };
+  guard.oathCells.push(target.id);
+  return {
+    dmg: Math.max(1, dmg - OATH_REDUCE),
+    ev: [{ t: 'innate', innate: 'oath', unitId: guard.id, targetId: target.id, amount: OATH_REDUCE }],
+  };
+}
+
+/** 熔岩护甲反弹量：25% 向下取整，**不致死**（最多打到还剩 1 点血）。 */
+function lavaReflect(attacker: BattleUnit, dealt: number): number {
+  if (dealt <= 0) return 0;
+  const raw = Math.round(dealt * LAVA_REFLECT_RATE);
+  const maxSafe = Math.max(0, poolOf(attacker) - 1);
+  return Math.max(0, Math.min(raw, maxSafe));
+}
+
+/** 吸血：`伤害 × 比例 ÷ 自身 HP` 折人数（向下取整），上限 = 建队人数。 */
+function drainAfterAttack(u: BattleUnit, dealt: number): number {
+  const rate = getUnit(u.unitTypeId).drain;
+  if (!rate || dealt <= 0) return 0;
+  const room = Math.max(0, u.startCount - u.count);
+  if (room <= 0) return 0;
+  const hp = getUnit(u.unitTypeId).hp;
+  const healed = Math.min(room, Math.floor((dealt * rate) / hp));
+  if (healed <= 0) return 0;
+  u.count += healed;
+  if (u.hpTop <= 0) u.hpTop = hp;
+  return healed;
+}
+
+/**
+ * 守方挨完近战之后的**反噬式**自带魔法：熔岩护甲（反弹）/ 烈焰缠身（固定火焰）。
+ * 只在近战调用 —— 射击不触发（"护甲"与"缠身"都是贴身才成立的东西）。
+ */
+function innateOnMeleeHit(
+  defender: BattleUnit,
+  attacker: BattleUnit,
+  dealt: number,
+): BattleEvent[] {
+  const ev: BattleEvent[] = [];
+  if (attacker.count <= 0 || dealt <= 0) return ev;
+  const id = innateOf(defender);
+  if (id === 'lavaArmor') {
+    const reflect = lavaReflect(attacker, dealt);
+    if (reflect <= 0) return ev;
+    const killed = applyDamage(attacker, reflect);
+    ev.push({
+      t: 'innate',
+      innate: 'lavaArmor',
+      unitId: defender.id,
+      targetId: attacker.id,
+      amount: reflect,
+      damage: reflect,
+      killed,
+    });
+  } else if (id === 'flameBody' && useInnate(defender, 'flameBody')) {
+    const killed = applyDamage(attacker, FLAME_BODY_DAMAGE);
+    ev.push({
+      t: 'innate',
+      innate: 'flameBody',
+      unitId: defender.id,
+      targetId: attacker.id,
+      amount: FLAME_BODY_DAMAGE,
+      damage: FLAME_BODY_DAMAGE,
+      killed,
+    });
+  }
+  return ev;
+}
+
+/** 「震慑」：近战命中后扣目标防御（到战斗结束，不随回合恢复）。 */
+function applyStun(u: BattleUnit, target: BattleUnit): BattleEvent[] {
+  if (target.count <= 0) return [];
+  if (!useInnate(u, 'stun')) return [];
+  target.stunDef -= STUN_DEF;
+  return [{ t: 'innate', innate: 'stun', unitId: u.id, targetId: target.id, amount: STUN_DEF }];
+}
+
+/**
+ * 「威压」/「投石压制」共用的 −2 速度挂载。
+ * 轮数规则与缠根逐字相同（见 `applyRoot` 上面的时效陷阱）：吃它**下一次行动**。
+ */
+function applySpeedDebuff(s: BattleState, target: BattleUnit, id: string): boolean {
+  if (target.count <= 0) return false;
+  const fresh = !hasEffect(target, id);
+  addEffect(target, id, actedThisRound(s, target) ? 2 : 1);
+  return fresh;
+}
+
+/**
+ * 「龙威」重算（每回合开始）：邻格敌军攻击 −1。
+ * 只写 `feared` 标志，真正的 −1 在 `strikeAtkBonus` / `retaliationAtkBonus` 里 ——
+ * 这样预估（`estimateDamage`）和实战吃的是同一条式子。
+ */
+function refreshFear(s: BattleState): void {
+  for (const u of s.units) u.feared = false;
+  let any = false;
+  for (const d of s.units) {
+    if (d.count <= 0 || innateOf(d) !== 'dragonFear') continue;
+    for (const f of s.units) {
+      if (f.count <= 0 || f.side === d.side) continue;
+      if (!isAdjacent(d.hex, f.hex)) continue;
+      f.feared = true;
+      any = true;
+    }
+  }
+  if (any && s.round === 1) s.log.push(`龙威：邻格敌军攻击 −${FEAR_ATK}`);
 }
 
 /* ---------------- damage ---------------- */
@@ -863,7 +1111,10 @@ export function estimateDamage(
     if (hasEffect(def, 'shield')) mod *= 0.5; // 护盾
     mod *= accidentDamageScale(s, true); // 反重力：远程少两成（同受）
   }
-  return Math.max(1, Math.round(avg * mod));
+  // 「誓约」是**守方侧**的减伤，不能糊进 `damageMultiplier`（那是攻方侧的式子）。
+  // 预估必须和 `actMelee` 的 `applyOath` 同源，否则提示说 20、实际 19。
+  const guarded = !ranged && oathGuard(s, def) ? OATH_REDUCE : 0;
+  return Math.max(1, Math.round(avg * mod) - guarded);
 }
 
 /**
@@ -892,6 +1143,8 @@ export function poolOf(u: BattleUnit): number {
 function applyDamage(u: BattleUnit, dmg: number): number {
   const hp = getUnit(u.unitTypeId).hp;
   const before = u.count;
+  // 自复活要按"倒下前的人数"算 `ceil(count × 0.2)`；清零之后读不到，只能记在这里。
+  u.lastCountBefore = before;
   let d = dmg;
   while (d > 0 && u.count > 0) {
     if (d >= u.hpTop) {
@@ -921,12 +1174,17 @@ function startRound(s: BattleState): void {
     u.moved = false;
     u.moatStuck = false;
     u.moveDist = 0;
+    // 「誓约」是**每回合每格一次**（§10.3 上限列）：新回合把"替谁挡过"清空。
+    u.oathCells.length = 0;
     // 法术时效：进入新回合扣 1 轮，归零则消失
     u.effects = u.effects.filter((e) => {
       e.rounds -= 1;
       return e.rounds > 0;
     });
   }
+  // 「龙威」在排行动顺序之前重算：它不改速度，只改攻击，但顺序读的是速度 ⇒ 先后无所谓，
+  // 放在排序前只是为了"这一回合的所有读数都是同一时刻的"。
+  refreshFear(s);
   s.castUsed = [false, false];
   // 行动顺序：速度降序；**同速时攻方（side 0）先动** —— 这是刻意的，不是 bug。
   // HOMM3 同款：攻方本来就该有先手优势（2026-10-20 拍板保留，原本差点被"洗牌"掉）。
@@ -999,7 +1257,8 @@ export function actMove(s: BattleState, u: BattleUnit, to: Hex): BattleEvent[] {
   u.hex = { ...to };
   u.moved = true;
   // 护城河：踩进去本回合就结束了（见 BattleUnit.moatStuck 的说明）
-  u.moatStuck = !!s.siege && u.side === 0 && isMoat(u.hex);
+  // 飞行兵不受影响（§16.9① 第 3 条）：它是从护城河上方过去的。
+  u.moatStuck = !!s.siege && u.side === 0 && !u.canFly && isMoat(u.hex);
   // `path` 不含起点（见 `reachable`），所以长度 = 移动格数。
   u.moveDist = path.length;
   return [{ t: 'move', unitId: u.id, path, from }];
@@ -1010,17 +1269,47 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
   const ev: BattleEvent[] = [];
   const from = { ...u.hex };
   const to = { ...target.hex };
-  const dmg = rollDamage(
-    s.rng,
-    getUnit(u.unitTypeId),
-    u.count,
-    strikeAtkBonus(s, u, true),
-    getUnit(target.unitTypeId),
-    defBonusOf(s, target),
+  // 「誓约」在伤害落账**之前**减（§10.3）：它是"挡了一下"，不是"事后补血"。
+  const oath = applyOath(
+    s,
+    target,
+    rollDamage(
+      s.rng,
+      getUnit(u.unitTypeId),
+      u.count,
+      strikeAtkBonus(s, u, true),
+      getUnit(target.unitTypeId),
+      defBonusOf(s, target),
+    ),
   );
+  const dmg = oath.dmg;
+  ev.push(...oath.ev);
   const killed = applyDamage(target, dmg);
   ev.push({ t: 'melee', unitId: u.id, targetId: target.id, damage: dmg, killed, from, to });
-  ev.push(...afterHit(target));
+  ev.push(...afterHit(s, target));
+
+  // 守方的反噬式自带魔法：熔岩护甲（反弹）/ 烈焰缠身（6 点火焰）。
+  // 放在缠根/反击之前：它和"被咬到"是同一瞬间的事，先结算攻方有没有被烫退。
+  ev.push(...innateOnMeleeHit(target, u, dmg));
+  if (u.count <= 0) {
+    ev.push(...afterHit(s, u));
+    checkOver(s);
+    return ev;
+  }
+
+  // 「震慑」：近战命中扣目标防御，到战斗结束（每场 2 次）。
+  ev.push(...applyStun(u, target));
+
+  // 招牌能力「吸血」：只有**自己主动出手**才吸，反击不吸（§16.3 第 2 条）。
+  const healed = drainAfterAttack(u, dmg);
+  if (healed > 0) ev.push({ t: 'drain', unitId: u.id, targetId: target.id, healed });
+
+  // 招牌能力「威压」：命中让目标速度 −2（每一下都挂，不封次数 —— 它不是 trigger 类）。
+  if (getUnit(u.unitTypeId).dread && target.count > 0) {
+    if (applySpeedDebuff(s, target, DREAD_EFFECT)) {
+      ev.push({ t: 'dread', unitId: u.id, targetId: target.id });
+    }
+  }
 
   // 翠林「缠根」：命中之后才缠（不是命中前），且只在本族近战兵**自己出手**时触发。
   // 放在反击之前：藤蔓是先缠住才轮到对面回手，顺序上说得通；机制上互不影响（缠根不碰攻击力）。
@@ -1044,7 +1333,7 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
   //   **每队每场一次**：无限次实测会把带这条的族推成结构性强族（见 §11.7），
   //   收成一次性之后它变成"要挑时机花掉的资源"。
   //   判定与 `estimateRetaliation` 必须同源，否则提示说"不会挨反击"、实际还是挨了一记。
-  const wouldRetaliate = target.count > 0 && !target.retaliated;
+  const wouldRetaliate = u.count > 0 && target.count > 0 && !target.retaliated;
   const bounce = wouldRetaliate && getUnit(u.unitTypeId).noRetaliate === true && !u.freeHitUsed && u.moveDist > 0;
   if (bounce) {
     // 只有"本来会挨这一下"才消耗；目标被一击打死则不消耗（那一击本来就没反击）。
@@ -1052,17 +1341,25 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
     ev.push({ t: 'bounce', unitId: u.id, targetId: target.id });
   } else if (wouldRetaliate) {
     target.retaliated = true;
-    const back = rollDamage(
-      s.rng,
-      getUnit(target.unitTypeId),
-      target.count,
-      retaliationAtkBonus(s, target),
-      getUnit(u.unitTypeId),
-      defBonusOf(s, u),
+    // 反击也是"被近战攻击"：誓约照样挡，熔岩护甲照样反弹，烈焰照样烫手。
+    const oathBack = applyOath(
+      s,
+      u,
+      rollDamage(
+        s.rng,
+        getUnit(target.unitTypeId),
+        target.count,
+        retaliationAtkBonus(s, target),
+        getUnit(u.unitTypeId),
+        defBonusOf(s, u),
+      ),
     );
-    const k2 = applyDamage(u, back);
-    ev.push({ t: 'retaliate', unitId: target.id, targetId: u.id, damage: back, killed: k2 });
-    ev.push(...afterHit(u));
+    ev.push(...oathBack.ev);
+    const k2 = applyDamage(u, oathBack.dmg);
+    ev.push({ t: 'retaliate', unitId: target.id, targetId: u.id, damage: oathBack.dmg, killed: k2 });
+    ev.push(...afterHit(s, u));
+    ev.push(...innateOnMeleeHit(u, target, oathBack.dmg));
+    if (target.count <= 0) ev.push(...afterHit(s, target));
   }
   checkOver(s);
   return ev;
@@ -1147,7 +1444,14 @@ export function actShoot(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
   u.shots -= 1;
   const killed = applyDamage(target, dmg);
   ev.push({ t: 'shoot', unitId: u.id, targetId: target.id, damage: dmg, killed, from, to, blocked, longRange });
-  ev.push(...afterHit(target));
+  ev.push(...afterHit(s, target));
+
+  // 猿人「投石压制」：远程命中 ⇒ 目标速度 −2（每场 3 次）。
+  // 上限只在**真的按下去了**的时候消耗：目标已经被压住时再砸不扣次数。
+  if (target.count > 0 && !hasEffect(target, SUPPRESS_EFFECT) && useInnate(u, 'stoneSuppress')) {
+    applySpeedDebuff(s, target, SUPPRESS_EFFECT);
+    ev.push({ t: 'innate', innate: 'stoneSuppress', unitId: u.id, targetId: target.id, amount: 2 });
+  }
   checkOver(s);
   return ev;
 }
@@ -1216,7 +1520,7 @@ export function towerPhase(s: BattleState): BattleEvent[] {
     const dmg = Math.max(1, Math.round(raw * mod));
     const killed = applyDamage(target, dmg);
     ev.push({ t: 'tower', structureId: tower.id, targetId: target.id, damage: dmg, killed });
-    ev.push(...afterHit(target));
+    ev.push(...afterHit(s, target));
   }
   return ev;
 }
@@ -1306,13 +1610,32 @@ function machineHitUnit(
   const killed = applyDamage(target, dmg);
   return [
     { t: 'machine', side, machine: def.id, targetId: target.id, damage: dmg, killed, destroyed: false, to: target.hex },
-    ...afterHit(target),
+    ...afterHit(s, target),
   ];
 }
 
-function afterHit(target: BattleUnit): BattleEvent[] {
+/**
+ * 伤害落账后的收尾：**先判自复活，再判死亡**。
+ *
+ * 天使的招牌能力是"本队被歼灭时自动重返战场，每场一次"（§16.3 第 3 条）。
+ * 取整必须是 `ceil` 且下限 1：T5 周产 2，玩家手里常见的是 1~2 只的栈，
+ * `floor(0.2 × 1) = 0` 会让这个招牌能力在最常见的状态下什么都不发生。
+ */
+function afterHit(_s: BattleState, target: BattleUnit): BattleEvent[] {
   if (target.count > 0) return [];
-  return [{ t: 'die', unitId: target.id }];
+  const def = getUnit(target.unitTypeId);
+  const ev: BattleEvent[] = [];
+  const ratio = def.selfRevive;
+  if (ratio && !target.selfRevived) {
+    const n = Math.max(1, Math.ceil(target.lastCountBefore * ratio));
+    target.selfRevived = true;
+    target.count = n;
+    target.hpTop = def.hp;
+    ev.push({ t: 'revive', unitId: target.id, revived: n });
+  }
+  if (target.count > 0) return ev;
+  ev.push({ t: 'die', unitId: target.id });
+  return ev;
 }
 
 export function actWait(s: BattleState, u: BattleUnit): BattleEvent[] {
@@ -1396,7 +1719,7 @@ export function castSpell(
       const dmg = spellDamage(spellId, sp);
       const killed = applyDamage(t, dmg);
       ev.push({ t: 'cast', side, spellId, targetId: t.id, hex: { ...t.hex }, damage: dmg, killed });
-      ev.push(...afterHit(t));
+      ev.push(...afterHit(s, t));
       break;
     }
     case 'fireball': {
@@ -1408,7 +1731,7 @@ export function castSpell(
         if (!v || v.count <= 0) continue;
         const killed = applyDamage(v, dmg);
         ev.push({ t: 'cast', side, spellId, targetId: v.id, hex: { ...cell }, damage: dmg, killed, splash: true });
-        ev.push(...afterHit(v));
+        ev.push(...afterHit(s, v));
       }
       if (!ev.length) ev.push({ t: 'cast', side, spellId, hex: { ...h }, damage: 0, killed: 0, splash: true });
       break;
@@ -1859,6 +2182,31 @@ export function describeEvent(s: BattleState, e: BattleEvent): string {
       return `${name(e.unitId)} 三口齐咬，${name(e.targetId)} 来不及反击`;
     case 'root':
       return `${name(e.unitId)} 缠根：${name(e.targetId)} 速度 −${ROOT_SPEED_PENALTY}（到它下次行动）`;
+    case 'innate': {
+      // 一句一条规则（§10.3 的落地口径：只写一行战报，不弹窗、不加按钮）。
+      const label = INNATES[e.innate as keyof typeof INNATES]?.name ?? e.innate;
+      const tgt = e.targetId ? name(e.targetId) : '';
+      switch (e.innate) {
+        case 'oath':
+          return `「誓约」${name(e.unitId)} 替 ${tgt} 挡下 ${e.amount ?? OATH_REDUCE} 点伤害`;
+        case 'lavaArmor':
+          return `「熔岩护甲」${name(e.unitId)} 反弹 ${e.amount ?? 0} 点伤害${e.killed ? `，击杀 ${e.killed}` : ''}`;
+        case 'flameBody':
+          return `「烈焰缠身」${name(e.unitId)} 灼伤 ${tgt} ${e.amount ?? FLAME_BODY_DAMAGE} 点${e.killed ? `，击杀 ${e.killed}` : ''}`;
+        case 'stoneSuppress':
+          return `「投石压制」${name(e.unitId)} 压制 ${tgt}：速度 −${e.amount ?? 2}`;
+        case 'stun':
+          return `「震慑」${name(e.unitId)} 震退 ${tgt}：防御 −${e.amount ?? STUN_DEF}（到战斗结束）`;
+        default:
+          return `${name(e.unitId)} 触发「${label}」`;
+      }
+    }
+    case 'drain':
+      return `${name(e.unitId)} 吸血：回补 ${e.healed}`;
+    case 'revive':
+      return `${name(e.unitId)} 重返战场：复活 ${e.revived}`;
+    case 'dread':
+      return `${name(e.unitId)} 威压：${name(e.targetId)} 速度 −2（到它下次行动）`;
     case 'machine': {
       const m = WAR_MACHINES[e.machine];
       const what = e.structureId

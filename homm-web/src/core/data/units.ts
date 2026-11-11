@@ -73,6 +73,8 @@ export const UNITS: Record<string, UnitType> = {
     attack: 6, defense: 3, damageMin: 4, damageMax: 6, hp: 14, speed: 9,
     expValue: EXP_BY_TIER[2], growthPerWeek: 4, cost: { gold: 240 },
     anim: 'thrust',
+    // 飞行（§16.9① B 口径：可越墙）。六个飞行兵之一。
+    canFly: true,
     aiValue: aiValueOf({ attack: 6, defense: 3, damageMin: 4, damageMax: 6, hp: 14 }),
     ...theme('p1'),
   },
@@ -81,6 +83,8 @@ export const UNITS: Record<string, UnitType> = {
     attack: 7, defense: 8, damageMin: 7, damageMax: 9, hp: 36, speed: 7,
     expValue: EXP_BY_TIER[3], growthPerWeek: 3, cost: { gold: 520, ore: 3 },
     anim: 'thrust',
+    // 自带魔法「誓约」（§10.3）：邻格友军挨近战，这一下 −1。
+    innate: { id: 'oath' },
     aiValue: aiValueOf({ attack: 7, defense: 8, damageMin: 7, damageMax: 9, hp: 36 }),
     ...theme('p1'),
   },
@@ -88,6 +92,9 @@ export const UNITS: Record<string, UnitType> = {
     id: 'p1_angel', name: '天使', tier: 5,
     attack: 10, defense: 10, damageMin: 13, damageMax: 17, hp: 65, speed: 8,
     expValue: EXP_BY_TIER[4], growthPerWeek: 2, cost: { gold: 1500, ore: 5, wood: 5 },
+    // 飞行 + 招牌能力「自复活」（§16.3 第 3 条，每场一次）。
+    canFly: true,
+    selfRevive: 0.2,
     aiValue: aiValueOf({ attack: 10, defense: 10, damageMin: 13, damageMax: 17, hp: 65 }),
     ...theme('p1'),
   },
@@ -127,6 +134,8 @@ export const UNITS: Record<string, UnitType> = {
     attack: 9, defense: 7, damageMin: 6, damageMax: 9, hp: 34, speed: 4,
     expValue: EXP_BY_TIER[3], growthPerWeek: 3, cost: { gold: 520, ore: 4 },
     anim: 'smash',
+    // 自带魔法「熔岩护甲」：被动，被近战打就反弹 25%（不致死，无限次）。
+    innate: { id: 'lavaArmor' },
     aiValue: aiValueOf({ attack: 9, defense: 7, damageMin: 6, damageMax: 9, hp: 34 }),
     ...theme('p2'),
   },
@@ -135,6 +144,9 @@ export const UNITS: Record<string, UnitType> = {
     attack: 12, defense: 7, damageMin: 14, damageMax: 18, hp: 55, speed: 9,
     expValue: EXP_BY_TIER[4], growthPerWeek: 2, cost: { gold: 1250, ore: 5 },
     anim: 'smash',
+    // 飞行 + 自带魔法「烈焰缠身」：被近战命中 ⇒ 攻击者吃 6 点，每场 2 次。
+    canFly: true,
+    innate: { id: 'flameBody' },
     aiValue: aiValueOf({ attack: 12, defense: 7, damageMin: 14, damageMax: 18, hp: 55 }),
     ...theme('p2'),
   },
@@ -169,6 +181,8 @@ export const UNITS: Record<string, UnitType> = {
     attack: 8, defense: 4, damageMin: 7, damageMax: 10, hp: 30, speed: 5, shots: 10,
     expValue: EXP_BY_TIER[3], growthPerWeek: 4, cost: { gold: 540, wood: 2 },
     anim: 'thrust',
+    // 自带魔法「投石压制」：远程命中 ⇒ 目标速度 −2，每场 3 次。
+    innate: { id: 'stoneSuppress' },
     aiValue: aiValueOf({ attack: 8, defense: 4, damageMin: 7, damageMax: 10, hp: 30 }, true),
     ...theme('p3'),
   },
@@ -177,6 +191,9 @@ export const UNITS: Record<string, UnitType> = {
     attack: 11, defense: 9, damageMin: 11, damageMax: 15, hp: 62, speed: 7,
     expValue: EXP_BY_TIER[4], growthPerWeek: 2, cost: { gold: 1100, gem: 2, wood: 5 },
     anim: 'slash',
+    // 飞行 + 自带魔法「龙威」：光环，每回合开始让邻格敌军攻击 −1（无限次）。
+    canFly: true,
+    innate: { id: 'dragonFear' },
     aiValue: aiValueOf({ attack: 11, defense: 9, damageMin: 11, damageMax: 15, hp: 62 }),
     ...theme('p3'),
   },
@@ -202,6 +219,9 @@ export const UNITS: Record<string, UnitType> = {
     id: 'p4_vampire', name: '吸血鬼', tier: 3,
     attack: 7, defense: 4, damageMin: 3, damageMax: 6, hp: 15, speed: 8,
     expValue: EXP_BY_TIER[2], growthPerWeek: 5, cost: { gold: 250, crystal: 1 },
+    // 飞行 + 吸血 50%（§16.3。吸血是招牌能力，不走 `innate`）。
+    canFly: true,
+    drain: 0.5,
     aiValue: aiValueOf({ attack: 7, defense: 4, damageMin: 3, damageMax: 6, hp: 15 }),
     ...theme('p4'),
   },
@@ -210,6 +230,8 @@ export const UNITS: Record<string, UnitType> = {
     attack: 9, defense: 6, damageMin: 7, damageMax: 10, hp: 30, speed: 6, shots: 10,
     expValue: EXP_BY_TIER[3], growthPerWeek: 5, cost: { gold: 540, ore: 3 },
     anim: 'thrust',
+    // 自带魔法「震慑」：近战命中 ⇒ 目标防御 −2 到战斗结束，每场 2 次。
+    innate: { id: 'stun' },
     aiValue: aiValueOf({ attack: 9, defense: 6, damageMin: 7, damageMax: 10, hp: 30 }, true),
     ...theme('p4'),
   },
@@ -217,6 +239,10 @@ export const UNITS: Record<string, UnitType> = {
     id: 'p4_wraith', name: '摄魂怪', tier: 5,
     attack: 10, defense: 8, damageMin: 10, damageMax: 13, hp: 60, speed: 9,
     expValue: EXP_BY_TIER[4], growthPerWeek: 2, cost: { gold: 800, crystal: 4 },
+    // 飞行 + 吸血 30% + 招牌能力「威压」（§16.3，命中让目标速度 −2）。
+    canFly: true,
+    drain: 0.3,
+    dread: true,
     aiValue: aiValueOf({ attack: 10, defense: 8, damageMin: 10, damageMax: 13, hp: 60 }),
     ...theme('p4'),
   },

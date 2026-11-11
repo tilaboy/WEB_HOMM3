@@ -117,22 +117,38 @@ export function hexLine(a: Hex, b: Hex): Hex[] {
   return out;
 }
 
-/** 广度优先：从 from 出发最多 maxSteps 步，blocked 里的格子不可进入。 */
-export function bfs(from: Hex, maxSteps: number, blocked: (h: Hex) => boolean): Map<string, Hex[]> {
+/**
+ * 广度优先：从 from 出发最多 maxSteps 步。
+ *
+ * - `blocked(h)`：**进不去**的格子（不进门，也不会被穿过）。
+ * - `landable(h)`：**可以落脚**的格子。缺省 = 全部可落。
+ *   它存在的唯一理由是飞行（§16.9①）：飞行兵能穿过人与城墙，
+ *   但**落点**仍禁"有人 / 有城防" —— 飞行不是瞬移。
+ */
+export function bfs(
+  from: Hex,
+  maxSteps: number,
+  blocked: (h: Hex) => boolean,
+  landable?: (h: Hex) => boolean,
+): Map<string, Hex[]> {
   const out = new Map<string, Hex[]>();
   if (blocked(from)) return out;
-  out.set(hexKey(from), []);
-  let frontier: Hex[] = [{ ...from }];
+  // `seen` 与 `out` 必须分开：不能落脚的格子照样要**穿过**（飞行），
+  // 只是不记进可达集合 —— 否则飞行兵会被自己的落点规则挡在城墙外。
+  const seen = new Set<string>([hexKey(from)]);
+  if (!landable || landable(from)) out.set(hexKey(from), []);
+  let frontier: { h: Hex; path: Hex[] }[] = [{ h: { ...from }, path: [] }];
   for (let step = 0; step < maxSteps; step++) {
-    const next: Hex[] = [];
+    const next: { h: Hex; path: Hex[] }[] = [];
     for (const cur of frontier) {
-      const curPath = out.get(hexKey(cur))!;
-      for (const nb of neighbors(cur)) {
+      for (const nb of neighbors(cur.h)) {
         if (!inField(nb) || blocked(nb)) continue;
         const k = hexKey(nb);
-        if (out.has(k)) continue;
-        out.set(k, [...curPath, nb]);
-        next.push(nb);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const path = [...cur.path, nb];
+        if (!landable || landable(nb)) out.set(k, path);
+        next.push({ h: nb, path });
       }
     }
     if (!next.length) break;
