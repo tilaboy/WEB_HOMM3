@@ -45,6 +45,7 @@ const {
   P2U_FRAMES,
   P2V3_FRAMES,
   P3V3_FRAMES,
+  P3U_FRAMES,
   P4V3_FRAMES,
   B0_PALETTE,
   B0_SHADE_STEPS,
@@ -77,6 +78,7 @@ const BATCHES = [
   ['P2u', P2U_FRAMES], // S4b 升级形态 p2 五兵（15 帧）—— 漏登记会被自检抓（63≠78 就是这么来的）
   ['P2v3', P2V3_FRAMES], // S3b 体形档重画的 p2 五兵（15 帧）
   ['P3v3', P3V3_FRAMES], // S3c 体形档重画的 p3 五兵（15 帧）——漏登记会让结论文案少算 15 帧
+  ['P3u', P3U_FRAMES], // S4c 升级形态 p3 五兵（15 帧）—— 漏登记同样会被上面的自检抓
   ['P4v3', P4V3_FRAMES], // S3d 体形档重画的 p4 五兵（15 帧）——漏登记会让结论文案少算 15 帧
 ];
 const batchLabel = BATCHES.map(([n, a]) => `${n} ${a.length}`).join(' + ');

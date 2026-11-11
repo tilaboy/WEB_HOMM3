@@ -1,12 +1,12 @@
 # TP-8② 手机表情可读 · 素材清单
 dist: /Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist
-指纹: {"dir":"/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist","md5":"4880e6dbb88b9c2132b12bd7baad331c","sha256":"d87d983b1709fede","mtime":"2026-11-09T05:24:51.489Z","files":["main.js","style.css","index.html"]}
+指纹: {"dir":"/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist","md5":"4880e6dbb88b9c2132b12bd7baad331c","sha256":"d87d983b1709fede","mtime":"2026-11-11T08:21:57.848Z","files":["main.js","style.css","index.html"]}
 seed: 20261020   rounds: 3
 口径: 792×320 CSS @ dpr3 · 战场 BASE 482×310（BattleRenderer.ts:18-19）
       s = 1.0000（缩放）· k = 3.0000 设备像素/美术像素
 底景: L=208（与 ① 同）· 格 52×42 · 间距 8
-帧数: 30 个 cu_ idle（中立怪 wolf/boar/ogre 不进人类闸，H3 对兽类是另一条）
-通道: h3 20 · glow 5 · profile 5
+帧数: 35 个 cu_ idle（中立怪 wolf/boar/ogre 不进人类闸，H3 对兽类是另一条）
+通道: h3 24 · glow 5 · profile 6
 查看: tp8-expr-viewer.html（pixelated；1× 档 = 评分口径）
 files:
   tp8-expr-E-r1.png
@@ -16,9 +16,9 @@ files:
   tp8-expr-E-r3.png
   tp8-expr-Ecss-r3.png
 轮次排列（Round 1 即答案钥）:
-  R1: cu_p4_minotaur cu_p1_knight_u cu_p3_treant cu_p3_greendragon cu_p2_matchman_u cu_p2_threewolf_u cu_p1_crossbow_u cu_p4_wraith cu_p2_lavagiant_u cu_p1_angel_u cu_p2_bronze cu_p1_crossbow cu_p4_vampire cu_p1_child_u cu_p2_bronze_u cu_p3_dwarf cu_p2_threewolf cu_p2_matchman cu_p2_devil cu_p3_ape cu_p3_junglearcher cu_p1_child cu_p4_skeleton cu_p1_angel cu_p4_zombie cu_p2_lavagiant cu_p2_devil_u cu_p1_knight cu_p1_eagle_u cu_p1_eagle
-  R2: cu_p1_angel_u cu_p2_lavagiant_u cu_p1_child_u cu_p2_matchman cu_p2_matchman_u cu_p2_devil cu_p4_wraith cu_p3_dwarf cu_p2_threewolf cu_p3_ape cu_p3_treant cu_p4_minotaur cu_p1_crossbow_u cu_p2_bronze cu_p1_eagle_u cu_p1_crossbow cu_p2_lavagiant cu_p1_child cu_p4_skeleton cu_p1_eagle cu_p2_devil_u cu_p4_vampire cu_p1_knight cu_p3_junglearcher cu_p1_knight_u cu_p4_zombie cu_p3_greendragon cu_p2_bronze_u cu_p1_angel cu_p2_threewolf_u
-  R3: cu_p3_ape cu_p4_wraith cu_p2_devil cu_p1_child_u cu_p1_child cu_p2_lavagiant cu_p3_treant cu_p2_matchman cu_p1_crossbow_u cu_p2_devil_u cu_p2_bronze cu_p3_dwarf cu_p4_skeleton cu_p2_bronze_u cu_p1_angel cu_p4_minotaur cu_p1_knight_u cu_p2_matchman_u cu_p1_knight cu_p2_lavagiant_u cu_p1_crossbow cu_p1_eagle_u cu_p3_junglearcher cu_p2_threewolf cu_p4_vampire cu_p3_greendragon cu_p2_threewolf_u cu_p1_angel_u cu_p4_zombie cu_p1_eagle
+  R1: cu_p4_vampire cu_p1_eagle cu_p3_ape cu_p4_minotaur cu_p1_angel_u cu_p2_lavagiant cu_p2_threewolf_u cu_p4_zombie cu_p2_lavagiant_u cu_p2_matchman cu_p2_matchman_u cu_p2_bronze_u cu_p3_greendragon_u cu_p3_greendragon cu_p3_treant_u cu_p3_junglearcher cu_p3_junglearcher_u cu_p1_angel cu_p1_eagle_u cu_p2_devil_u cu_p3_dwarf_u cu_p3_dwarf cu_p2_devil cu_p3_ape_u cu_p1_crossbow_u cu_p1_child cu_p1_crossbow cu_p4_skeleton cu_p1_child_u cu_p2_threewolf cu_p3_treant cu_p2_bronze cu_p4_wraith cu_p1_knight_u cu_p1_knight
+  R2: cu_p4_wraith cu_p1_knight_u cu_p3_dwarf cu_p1_child_u cu_p3_dwarf_u cu_p1_eagle_u cu_p1_eagle cu_p2_threewolf cu_p3_ape cu_p3_ape_u cu_p3_greendragon cu_p4_vampire cu_p2_lavagiant_u cu_p3_treant cu_p2_bronze cu_p3_treant_u cu_p1_crossbow_u cu_p2_devil cu_p3_junglearcher cu_p1_angel_u cu_p1_crossbow cu_p2_bronze_u cu_p1_child cu_p4_skeleton cu_p1_knight cu_p2_lavagiant cu_p2_devil_u cu_p4_minotaur cu_p3_junglearcher_u cu_p2_matchman_u cu_p4_zombie cu_p3_greendragon_u cu_p2_threewolf_u cu_p1_angel cu_p2_matchman
+  R3: cu_p4_wraith cu_p3_dwarf cu_p3_ape cu_p1_child_u cu_p3_treant_u cu_p2_devil_u cu_p1_child cu_p3_greendragon cu_p1_knight_u cu_p3_greendragon_u cu_p2_devil cu_p2_lavagiant cu_p3_dwarf_u cu_p4_minotaur cu_p1_eagle_u cu_p2_lavagiant_u cu_p1_crossbow cu_p3_treant cu_p2_bronze cu_p1_crossbow_u cu_p2_threewolf cu_p2_matchman_u cu_p2_threewolf_u cu_p1_angel cu_p4_zombie cu_p1_eagle cu_p1_angel_u cu_p3_junglearcher_u cu_p3_junglearcher cu_p4_vampire cu_p3_ape_u cu_p2_matchman cu_p2_bronze_u cu_p4_skeleton cu_p1_knight
 
 声明式例外（FACE_LAW）:
   cu_p4_wraith → glow：摄魂怪：兜帽内只有 2×2 p4emissive 幽光（无 hi0、无嘴线），脸本来就不存在
@@ -31,12 +31,13 @@ files:
   cu_p2_bronze_u → glow：与 cu_p2_bronze 同通道：2×2 同色发光眼、无 hi0、面无 ink 嘴线
   cu_p2_lavagiant_u → glow：与 cu_p2_lavagiant 同通道：发光眼 + stone0 裂口，头顶多了冠但不改脸
   cu_p2_threewolf_u → profile：与 cu_p2_threewolf 同通道：主头单眼侧脸，另两颗头仍是远侧暗点
+  cu_p3_greendragon_u → profile：与 cu_p3_greendragon 同通道：吻朝左的单眼侧脸，升级只在背脊/尾鳍/翼展上加东西
 
 机器预检（本次）:
-  [PASS] Law:table 声明表自洽：h3/glow/profile = 20/5/5（应为 20/5/5） 
-  [PASS] Law 30 个 cu_ idle 帧都认出 1 张脸 30/30
-  [PASS] Eye 每只眼都是 2×2（间距 ≥1，不粘成一条） 30/30
-  [PASS] Mouth 嘴线：1~2 行高、3~14 宽、在眼下 1~8 行（h3 恒有 / glow 仅声明帧 / profile 无） 20 个 h3 帧 · 0 红
+  [PASS] Law:table 声明表自洽：h3/glow/profile = 24/5/6（应为 24/5/6） 
+  [PASS] Law 35 个 cu_ idle 帧都认出 1 张脸 35/35
+  [PASS] Eye 每只眼都是 2×2（间距 ≥1，不粘成一条） 35/35
+  [PASS] Mouth 嘴线：1~2 行高、3~14 宽、在眼下 1~8 行（h3 恒有 / glow 仅声明帧 / profile 无） 24 个 h3 帧 · 0 红
   [PASS] Contr 最小 ΔE76 ≥ 20 最低 31.1 · 次低 31.1 · 中位 65.5
   [PASS] Phone 眼块在设备像素里仍 ≥2×2（没被采样掉一行/一列） 最小 6×6 设备px（≈2.00 CSS px）
   [PASS] Mat 3 轮素材都生成了（设备像素 + CSS 像素两版） tp8-expr-E-r1.png / tp8-expr-Ecss-r1.png / tp8-expr-E-r2.png / tp8-expr-Ecss-r2.png / tp8-expr-E-r3.png / tp8-expr-Ecss-r3.png

@@ -234,6 +234,12 @@ export interface B0FrameSpec {
     | 'p2_lavagiant_u'
     | 'p2_threewolf_u'
     | 'p2_devil_u'
+    // S4c：p3 翠林五兵的升级形态
+    | 'p3_dwarf_u'
+    | 'p3_junglearcher_u'
+    | 'p3_treant_u'
+    | 'p3_ape_u'
+    | 'p3_greendragon_u'
     // TP-4② 中立野怪（D-58 §6.4.4：不迁名，id 即帧名中缀）
     | 'wolf'
     | 'boar'
@@ -512,6 +518,40 @@ export const P3V3_FRAMES: B0FrameSpec[] = [
 ];
 
 /**
+ * P3U 批（§2.5 / 决策 66 · S4c，2026-11-11）：p3 翠林五个兵的**升级形态**。
+ *
+ * 规格与 P1U / P2U 完全一致：每个兵 3 帧（map / idle / atk），槽位、锚点照抄基础版。
+ * 升级形态**没有自己的体形档**：`planOf()` 剥 `_u` 读基础版那条，绘制走 `elite` 分支，
+ * 所以这里一个尺寸都不许改 —— 改了就等于在升级形态上偷偷换档。
+ *
+ * 五处识别点（详细取舍见 `unitBodyPlan.ts` 各自的 `if (elite)` 注释）：
+ *   矮人老兵 = 右手圆盾 · 丛林游侠 = 背后箭袋三支箭 · 远古树人 = 暗冠垫底 + 气根 ·
+ *   巨猿 = 双肩石板 + 左拳抱石 · 翡翠龙 = 翼外扩 + 背脊三刺 + 大尾鳍。
+ */
+export const P3U_FRAMES: B0FrameSpec[] = [
+  // 矮档升级：矮人老兵（右手圆盾）
+  { name: 'u_p3_dwarf_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_dwarf_u', kind: 'map' },
+  { name: 'cu_p3_dwarf_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_dwarf_u', kind: 'idle' },
+  { name: 'cu_p3_dwarf_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_dwarf_u', kind: 'atk' },
+  // 中档升级：丛林游侠（背后箭袋 + 三支箭）
+  { name: 'u_p3_junglearcher_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_junglearcher_u', kind: 'map' },
+  { name: 'cu_p3_junglearcher_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_junglearcher_u', kind: 'idle' },
+  { name: 'cu_p3_junglearcher_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_junglearcher_u', kind: 'atk' },
+  // 高档升级：远古树人（暗冠垫底 + 冠下垂须 + 多两簇花）
+  { name: 'u_p3_treant_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_treant_u', kind: 'map' },
+  { name: 'cu_p3_treant_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_treant_u', kind: 'idle' },
+  { name: 'cu_p3_treant_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_treant_u', kind: 'atk' },
+  // 宽体档升级：巨猿（双肩石板 + 左拳抱石）
+  { name: 'u_p3_ape_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_ape_u', kind: 'map' },
+  { name: 'cu_p3_ape_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_ape_u', kind: 'idle' },
+  { name: 'cu_p3_ape_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_ape_u', kind: 'atk' },
+  // 巨物·飞行升级：翡翠龙（翼外扩 + 背脊三刺 + 大尾鳍）
+  { name: 'u_p3_greendragon_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p3_greendragon_u', kind: 'map' },
+  { name: 'cu_p3_greendragon_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_greendragon_u', kind: 'idle' },
+  { name: 'cu_p3_greendragon_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p3_greendragon_u', kind: 'atk' },
+];
+
+/**
  * S3d（2026-11-08）· p4 紫晶五兵按**体形档**重画的 15 帧。
  *
  * 与前面三批同规格（§15.2 的五档、§16.1 的阵容、asset-spec §3.2 的槽位）：
@@ -547,8 +587,9 @@ export const P4V3_FRAMES: B0FrameSpec[] = [
 ];
 
 /**
- * unitArt.ts 内**全部**程序化兵种帧 = **78** 张
- * （B4 3 + P1V3 15 + P1U 15 + P2V3 15 + P3V3 15 + P4V3 15；B0–B3 四批已全部退役）。
+ * unitArt.ts 内**全部**程序化兵种帧 = **108** 张
+ * （B4 3 + P1V3 15 + P1U 15 + P2V3 15 + P2U 15 + P3V3 15 + P3U 15 + P4V3 15；
+ *   B0–B3 四批已全部退役）。
  * 供 `tools/b0audit.mjs` 全扫描，`atlas.ts` / `combatAtlas.ts` 也遍历本数组烘焙
  * （#24 已接好，无需改那两个文件）。
  */
@@ -563,6 +604,7 @@ export const UNIT_FRAMES: B0FrameSpec[] = [
   ...P2U_FRAMES,
   ...P2V3_FRAMES,
   ...P3V3_FRAMES,
+  ...P3U_FRAMES,
   ...P4V3_FRAMES,
 ];
 
@@ -602,6 +644,8 @@ export const TIER_OF: Record<string, number> = {
   // BattleRenderer 的高亮/排序）不必各自写 `_u` 特判。体量仍由 `planOf` 走体形档。
   p1_child_u: 1, p1_crossbow_u: 2, p1_eagle_u: 3, p1_knight_u: 4, p1_angel_u: 5,
   p2_matchman_u: 1, p2_bronze_u: 2, p2_lavagiant_u: 3, p2_threewolf_u: 4, p2_devil_u: 5,
+  // S4c：p3 五个升级形态（同上；tier 与基础版一致，体量走 `planOf` → 体形档）
+  p3_dwarf_u: 1, p3_junglearcher_u: 2, p3_treant_u: 3, p3_ape_u: 4, p3_greendragon_u: 5,
   // S3b：p2 五兵（同理，体量走 `BODY_PLAN`，tier 只给渲染/平衡侧的调用方读）
   p2_matchman: 1, p2_bronze: 2, p2_threewolf: 3, p2_lavagiant: 4, p2_devil: 5,
   // S3c：p3 五兵（同理，体量走 `BODY_PLAN`，tier 只给渲染/平衡侧的调用方读）

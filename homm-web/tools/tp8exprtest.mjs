@@ -128,6 +128,8 @@ const FACE_LAW = {
   cu_p2_bronze_u: ['glow', '与 cu_p2_bronze 同通道：2×2 同色发光眼、无 hi0、面无 ink 嘴线'],
   cu_p2_lavagiant_u: ['glow', '与 cu_p2_lavagiant 同通道：发光眼 + stone0 裂口，头顶多了冠但不改脸'],
   cu_p2_threewolf_u: ['profile', '与 cu_p2_threewolf 同通道：主头单眼侧脸，另两颗头仍是远侧暗点'],
+  // S4c（p3 五个升级形态）：同样不改脸，只登记**不是默认 h3** 的那一条。
+  cu_p3_greendragon_u: ['profile', '与 cu_p3_greendragon 同通道：吻朝左的单眼侧脸，升级只在背脊/尾鳍/翼展上加东西'],
 };
 /**
  * 三档帧数（写死 ⇒ 谁想偷偷把一个单位挪进例外，得同时改这三个数并在 review 里解释）。
@@ -153,9 +155,15 @@ const FACE_LAW = {
  *   · glow +2：黄铜人 / 熔岩领主（构装，同基础版的发光眼）；
  *   · profile +1：狼王（主头单眼侧脸，与 cu_p2_threewolf 同一条）；
  *   · 30 − 5 glow − 5 profile = **20 h3**。
- * 三个数之和必须 = `UNIT_FRAMES` 里 cu_ idle 的帧数（现在 30）。
+ *
+ * 20/5/5 → **24/5/6** 的来历（2026-11-11，S4c 加 p3 五个升级形态）：
+ *   · h3 +4：矮人老兵 / 丛林游侠 / 远古树人 / 巨猿（与基础版同脸，走默认）；
+ *   · profile +1：翡翠龙（吻朝左的单眼侧脸，与 cu_p3_greendragon 同一条）；
+ *   · glow 不变：p3 五兵本来就没有构装/亡灵/幽光；
+ *   · 35 − 5 glow − 6 profile = **24 h3**。
+ * 三个数之和必须 = `UNIT_FRAMES` 里 cu_ idle 的帧数（现在 35 = 20 基础版 + 15 升级形态）。
  */
-const CH_COUNT = { h3: 20, glow: 5, profile: 5 };
+const CH_COUNT = { h3: 24, glow: 5, profile: 6 };
 
 const BG = [208, 208, 208, 255]; // 与 ① 同底景（L=208），便于两批素材并排看
 const CELL_W = 52;
