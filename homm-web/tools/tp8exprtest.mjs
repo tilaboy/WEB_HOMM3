@@ -130,6 +130,8 @@ const FACE_LAW = {
   cu_p2_threewolf_u: ['profile', '与 cu_p2_threewolf 同通道：主头单眼侧脸，另两颗头仍是远侧暗点'],
   // S4c（p3 五个升级形态）：同样不改脸，只登记**不是默认 h3** 的那一条。
   cu_p3_greendragon_u: ['profile', '与 cu_p3_greendragon 同通道：吻朝左的单眼侧脸，升级只在背脊/尾鳍/翼展上加东西'],
+  // S4d（p4 五个升级形态）：同样不改脸，只登记**不是默认 h3** 的那一条。
+  cu_p4_wraith_u: ['glow', '与 cu_p4_wraith 同通道：帽内两点 2×2 幽光、无 hi0、无嘴线（升级只加右爪与下摆）'],
 };
 /**
  * 三档帧数（写死 ⇒ 谁想偷偷把一个单位挪进例外，得同时改这三个数并在 review 里解释）。
@@ -161,9 +163,14 @@ const FACE_LAW = {
  *   · profile +1：翡翠龙（吻朝左的单眼侧脸，与 cu_p3_greendragon 同一条）；
  *   · glow 不变：p3 五兵本来就没有构装/亡灵/幽光；
  *   · 35 − 5 glow − 6 profile = **24 h3**。
- * 三个数之和必须 = `UNIT_FRAMES` 里 cu_ idle 的帧数（现在 35 = 20 基础版 + 15 升级形态）。
+ * 24/5/6 → **28/6/6** 的来历（2026-11-11，S4d 加 p4 五个升级形态）：
+ *   · h3 +4：骷髅战士 / 腐尸 / 吸血鬼伯爵 / 牛头王（与基础版同脸，走默认）；
+ *   · glow +1：幽冥摄魂（帽内两点幽光，与 cu_p4_wraith 同一条）；
+ *   · profile 不变：p4 五兵本来就没有兽形侧脸；
+ *   · 40 − 6 glow − 6 profile = **28 h3**。
+ * 三个数之和必须 = `UNIT_FRAMES` 里 cu_ idle 的帧数（现在 40 = 20 基础版 + 20 升级形态）。
  */
-const CH_COUNT = { h3: 24, glow: 5, profile: 6 };
+const CH_COUNT = { h3: 28, glow: 6, profile: 6 };
 
 const BG = [208, 208, 208, 255]; // 与 ① 同底景（L=208），便于两批素材并排看
 const CELL_W = 52;

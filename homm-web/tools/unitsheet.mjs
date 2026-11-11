@@ -36,6 +36,13 @@ const BATCHES = {
   P2V3: art.P2V3_FRAMES,
   P3V3: art.P3V3_FRAMES,
   P4V3: art.P4V3_FRAMES,
+  // S4a–S4d：20 个升级形态各自成批（每批 15 帧 = 5 兵 × map/idle/atk）。
+  // 升级形态**必须单独出表**：它们和基础版在同一张表里会排进不同列，
+  // "换了没有"要贴着看 —— 那正是 elitesheet.mjs 的活；这里管 atk/map 的逐帧目检。
+  P1U: art.P1U_FRAMES,
+  P2U: art.P2U_FRAMES,
+  P3U: art.P3U_FRAMES,
+  P4U: art.P4U_FRAMES,
 };
 
 const OUT = process.argv[2] ?? '/tmp/unitsheet.png';

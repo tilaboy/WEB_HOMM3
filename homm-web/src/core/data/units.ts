@@ -316,10 +316,10 @@ export const UPGRADE_SUFFIX = '_u';
  * 不是掉一张图。所以没画完的族必须继续产基础版，并且**UI 不显示升级按钮**
  * （`buildStatus.canUpgrade` 也读这一条），否则玩家花了木头矿、什么也没变。
  *
- * 每落一族就往这里加一个（S4a p1 → S4b p2 → S4c p3 → S4d p4），
+ * 每落一族就往这里加一个（S4a p1 → S4b p2 → S4c p3 → S4d p4；**四族到此齐**），
  * 与 `unitArt.ts` 的帧登记**同一批提交**，不许只改一边。
  */
-export const ELITE_ART_FAMILIES: ReadonlySet<FactionId> = new Set<FactionId>(['p1', 'p2', 'p3']);
+export const ELITE_ART_FAMILIES: ReadonlySet<FactionId> = new Set<FactionId>(['p1', 'p2', 'p3', 'p4']);
 
 /** 该阵营的兵种升级是否已可用。`tier` 现在不参与判定（按族开关），保留参数是为了将来按档逐步放开。 */
 export function upgradeUnlockedFor(owner: string, _tier?: number): boolean {

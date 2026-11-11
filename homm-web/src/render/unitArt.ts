@@ -240,6 +240,12 @@ export interface B0FrameSpec {
     | 'p3_treant_u'
     | 'p3_ape_u'
     | 'p3_greendragon_u'
+    // S4d：p4 紫晶五兵的升级形态
+    | 'p4_skeleton_u'
+    | 'p4_zombie_u'
+    | 'p4_vampire_u'
+    | 'p4_minotaur_u'
+    | 'p4_wraith_u'
     // TP-4② 中立野怪（D-58 §6.4.4：不迁名，id 即帧名中缀）
     | 'wolf'
     | 'boar'
@@ -563,6 +569,37 @@ export const P3U_FRAMES: B0FrameSpec[] = [
  *    它们与新阵容的 tier 对不上，"菱形母题"那条视觉线索也随阵容一起作废；
  *    留着会让 `audit:b0` 的 H1 在同一 tier 上读到两份体量。
  */
+/**
+ * P4U 批（§2.5 / 决策 66 · S4d，2026-11-11）：p4 紫晶五个兵的**升级形态**。
+ *
+ * 与 P1U/P2U/P3U 同规格（每兵 map / idle / atk 三帧，槽位与锚点照抄基础版，
+ * 升级形态没有自己的体形档）。五处识别点：
+ *   骷髅战士 = 左臂圆盾 · 腐尸 = 右臂也前伸 · 吸血鬼伯爵 = 更高的立领 + 外扩翼 + 更宽下摆 ·
+ *   牛头王 = 斧面加宽一档 + 腰带亮边 · 幽冥摄魂 = 右爪也举起 + 下摆更长。
+ */
+export const P4U_FRAMES: B0FrameSpec[] = [
+  // 矮档升级：骷髅战士（左臂圆盾）
+  { name: 'u_p4_skeleton_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_skeleton_u', kind: 'map' },
+  { name: 'cu_p4_skeleton_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_skeleton_u', kind: 'idle' },
+  { name: 'cu_p4_skeleton_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_skeleton_u', kind: 'atk' },
+  // 中档升级：腐尸（双手前伸）
+  { name: 'u_p4_zombie_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_zombie_u', kind: 'map' },
+  { name: 'cu_p4_zombie_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_zombie_u', kind: 'idle' },
+  { name: 'cu_p4_zombie_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_zombie_u', kind: 'atk' },
+  // 高档升级：吸血鬼伯爵（立领更高 + 翼外扩 + 下摆更宽）
+  { name: 'u_p4_vampire_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_vampire_u', kind: 'map' },
+  { name: 'cu_p4_vampire_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_vampire_u', kind: 'idle' },
+  { name: 'cu_p4_vampire_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_vampire_u', kind: 'atk' },
+  // 宽体档升级：牛头王（斧面加宽 + 腰带亮边）
+  { name: 'u_p4_minotaur_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_minotaur_u', kind: 'map' },
+  { name: 'cu_p4_minotaur_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_minotaur_u', kind: 'idle' },
+  { name: 'cu_p4_minotaur_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_minotaur_u', kind: 'atk' },
+  // 巨物·飞行升级：幽冥摄魂（双爪 + 更长下摆）
+  { name: 'u_p4_wraith_u_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_wraith_u', kind: 'map' },
+  { name: 'cu_p4_wraith_u', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_wraith_u', kind: 'idle' },
+  { name: 'cu_p4_wraith_u_atk', w: 64, h: 56, ax: -32, ay: -48, unit: 'p4_wraith_u', kind: 'atk' },
+];
+
 export const P4V3_FRAMES: B0FrameSpec[] = [
   // 矮档：骷髅（全骨 + 大头骨 + 右出锈剑）
   { name: 'u_p4_skeleton_map', w: 52, h: 44, ax: -10, ay: -12, unit: 'p4_skeleton', kind: 'map' },
@@ -587,8 +624,8 @@ export const P4V3_FRAMES: B0FrameSpec[] = [
 ];
 
 /**
- * unitArt.ts 内**全部**程序化兵种帧 = **108** 张
- * （B4 3 + P1V3 15 + P1U 15 + P2V3 15 + P2U 15 + P3V3 15 + P3U 15 + P4V3 15；
+ * unitArt.ts 内**全部**程序化兵种帧 = **123** 张
+ * （B4 3 + P1V3 15 + P1U 15 + P2V3 15 + P2U 15 + P3V3 15 + P3U 15 + P4V3 15 + P4U 15；
  *   B0–B3 四批已全部退役）。
  * 供 `tools/b0audit.mjs` 全扫描，`atlas.ts` / `combatAtlas.ts` 也遍历本数组烘焙
  * （#24 已接好，无需改那两个文件）。
@@ -606,6 +643,7 @@ export const UNIT_FRAMES: B0FrameSpec[] = [
   ...P3V3_FRAMES,
   ...P3U_FRAMES,
   ...P4V3_FRAMES,
+  ...P4U_FRAMES,
 ];
 
 /** 第 7 个资产：AI 生成的 `crestL_p1`（256×384），本轮不做，只在验收脚本里留人工项。 */
@@ -646,6 +684,8 @@ export const TIER_OF: Record<string, number> = {
   p2_matchman_u: 1, p2_bronze_u: 2, p2_lavagiant_u: 3, p2_threewolf_u: 4, p2_devil_u: 5,
   // S4c：p3 五个升级形态（同上；tier 与基础版一致，体量走 `planOf` → 体形档）
   p3_dwarf_u: 1, p3_junglearcher_u: 2, p3_treant_u: 3, p3_ape_u: 4, p3_greendragon_u: 5,
+  // S4d：p4 五个升级形态（同上）
+  p4_skeleton_u: 1, p4_zombie_u: 2, p4_vampire_u: 3, p4_minotaur_u: 4, p4_wraith_u: 5,
   // S3b：p2 五兵（同理，体量走 `BODY_PLAN`，tier 只给渲染/平衡侧的调用方读）
   p2_matchman: 1, p2_bronze: 2, p2_threewolf: 3, p2_lavagiant: 4, p2_devil: 5,
   // S3c：p3 五兵（同理，体量走 `BODY_PLAN`，tier 只给渲染/平衡侧的调用方读）
