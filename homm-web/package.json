@@ -73,7 +73,8 @@
     "probe:innate": "node tools/probes/innate.mjs",
     "probe:battlebg": "node tools/probes/battlebg.mjs",
     "probe:spellfx": "node tools/probes/spellfx.mjs",
-    "probe:castbeat": "node tools/probes/castbeat.mjs"
+    "probe:castbeat": "node tools/probes/castbeat.mjs",
+    "probe:weekevent": "node tools/probes/weekevent.mjs"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",

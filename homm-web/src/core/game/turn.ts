@@ -3,6 +3,7 @@ import { factionIds, factionName } from '../data/factions.js';
 import { addResources, dailyGoldBonus, manaMaxOf, maxMovePoints } from './hero.js';
 import { applyWeeklyGrowth, mineIncome, ownedTowns, townDailyIncome } from './town.js';
 import { isNewWeek } from './calendar.js';
+import { eventAddOf, rollWeekEvent } from './week.js';
 import { pushLog } from './log.js';
 import { runAiTurn } from './ai.js';
 import { resetAiEvents } from './aiReport.js';
@@ -83,7 +84,12 @@ export function endDay(state: GameState): void {
   }
 
   if (isNewWeek(state.day)) {
-    applyWeeklyGrowth(state);
+    /* §19.2：掷本周事件 → **先结算**（池子按事件长）→ 再公告。
+       顺序不能反：公告说"产量 +5"，而池子还没加，玩家会看到文字与数字不符。
+       随机流单开（`week.ts` 的 `deriveSeed(seed, 'week', week)`），
+       所以第 1~2 周与"平静周"的读数与改动前逐位一致。 */
+    const ev = rollWeekEvent(state);
+    applyWeeklyGrowth(state, ev.mult, eventAddOf(ev));
     pushLog(state, `第 ${Math.floor((state.day - 1) / 7) + 1} 周开始，各城兵力增长`);
   }
 

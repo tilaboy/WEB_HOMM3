@@ -14,7 +14,7 @@ import { BASE_TOWN_INCOME, BUILDINGS, DWELLING_IDS, HERO_HIRE_COST, upgradeCostO
 import { WAR_MACHINES } from '../data/warmachines.js';
 import { DIFFICULTIES, factionIds, factionName } from '../data/factions.js';
 import { getSpell, spellsOfGuild } from '../data/spells.js';
-import { MAX_STACKS, getUnit, unitIdForTier, upgradeUnlockedFor } from '../data/units.js';
+import { MAX_STACKS, baseUnitIdOf, getUnit, unitIdForTier, upgradeUnlockedFor } from '../data/units.js';
 import { heroTemplateFor, startArmyFor } from '../data/heroes.js';
 import { addResources, maxMovePoints } from './hero.js';
 import { isNewWeek, weekOf } from './calendar.js';
@@ -512,11 +512,17 @@ export interface AssembleResult {
  * 周事件**乘算**（§27.10）。`banner` 另乘一档（`tierGrowthMultiplier`），
  * 于是满建 T3 = `1.5 × 1.5 = 2.25×`。
  *
- * `eventMult` 是 §19.2 周事件的唯一接入点（现在没有事件系统，恒 1）。
- * 加这个参数而不是让调用方自己乘：顺序（先地板后乘）只在 `weeklyGrowthMultiplier`
- * 里写一次，探针能直接量到它。
+ * `eventMult` 是 §19.2 周事件的**全局倍率**（瘟疫 0.5），`eventAdd` 是**单兵种绝对增量**
+ * （生物周 T1 +5 / T2 +3 / T3 +2）。两者都在这里接入，而不是让调用方自己乘：
+ * 顺序（先地板后乘）只在 `weeklyGrowthMultiplier` 里写一次，探针能直接量到它；
+ * `eventAdd` 加在 `growthPerWeek` 上、再统一乘后面三个倍率 —— 于是 `banner`（×1.5）
+ * 与兵营 L3（×1.25）也作用于事件增量，与 §19.2 的算式 `(growth + add) × …` 一致。
  */
-export function applyWeeklyGrowth(state: GameState, eventMult = 1): void {
+export function applyWeeklyGrowth(
+  state: GameState,
+  eventMult = 1,
+  eventAdd?: (unitTypeId: string, tier: number) => number,
+): void {
   const diff = DIFFICULTIES[state.config?.difficulty ?? 'normal'];
   for (const player of factionIds(state)) {
     const isHuman = state.players[player]?.isHuman;
@@ -530,8 +536,10 @@ export function applyWeeklyGrowth(state: GameState, eventMult = 1): void {
         // 段 2：兵种按 owner × tier 现解析（中立方 → null ⇒ 跳过，不 fallback）。
         const unitTypeId = dwellUnitId(town, g.tier, 'applyWeeklyGrowth');
         if (!unitTypeId) continue;
+        // 事件按**基础版 id**定义，升级后的巢穴同样吃到（归一后再比对）。
+        const add = eventAdd ? eventAdd(baseUnitIdOf(unitTypeId), g.tier) : 0;
         const exact =
-          getUnit(unitTypeId).growthPerWeek *
+          (getUnit(unitTypeId).growthPerWeek + add) *
           mult *
           tierGrowthMultiplier(town, g.tier) *
           dwellingLevelGrowthMult(town, g.tier);

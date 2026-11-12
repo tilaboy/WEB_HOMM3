@@ -512,6 +512,29 @@ export interface GameState {
   log: LogEntry[];
   nextObjectId: number;
   status: GameStatus;
+  /**
+   * 本周生长事件（spec §19.2 / EV1）。`endDay` 在周界重掷并写入。
+   *
+   * **为什么要进存档**：事件已经作用于 `growthPool`，若只留在 UI 内存里，
+   * 读档后玩家看到"池子比上周多 5 个"却没有任何解释 —— 那会被当成 bug。
+   */
+  weekEvent?: WeekEvent;
+}
+
+/**
+ * 一周的生长事件：`calm`（67%）/ `growth`（25%，某兵 +5/+3/+2）/ `plague`（8%，×0.5）。
+ *
+ * `unitTypeId` 是**基础版 id**：升级后的巢穴由 `eventAddOf` 归一到基础版再比对，
+ * 于是"升过级的兵也能吃到生物周"（§19.2「作用形态」）。
+ */
+export interface WeekEvent {
+  kind: 'calm' | 'growth' | 'plague';
+  week: number;
+  unitTypeId?: string;
+  tier?: number;
+  add?: number;
+  mult: number;
+  text: string;
 }
 
 export interface LogEntry {

@@ -373,6 +373,31 @@ const GARRISON_KEEP_VALUE = 1200;
  * 实测 3 种子 × 60 天：9 个 AI 局里 5 局英雄**一次都没补到过兵**、3 局终局英雄 0 兵，
  * 而同期驻军兵数增长 23~40 次——军队全长在玩家看不见的地方。
  */
+/**
+ * 单栈上限：一栈不得超过英雄全军 `aiValue` 的 **60%**（spec §25.5 / A5）。
+ *
+ * 为什么这条必须在 AI 里、而不是只写在探针里：A5 是**设计约束**（"一栈流会被一发法术
+ * 打崩"），探针只能事后判红；AI 的征兵顺序是"高档优先"（`poolOrder` / `refillFromGarrison`），
+ * 天生倾向把战力堆进同一栈 —— 没有这条闸，任何一次增长波动都可能把某个种子推过 60%。
+ * 2026-11-12 实测：周事件接入后 seed 10104 的 T4 栈 53% → 61%，A5 立刻红。
+ *
+ * 算法：设当前该栈战力 `s`、单只 `u`、全军 `V`，再加 `x` 只后要求
+ * `s + x·u ≤ 0.6·(V + x·u)` ⇒ `x ≤ (0.6V − s) / (0.4u)`。
+ * **空军队不设限**（`V = 0` 时无论加什么都占 100%，先把人派出去再谈结构）。
+ */
+const MAX_STACK_SHARE = 0.6;
+
+function capForStackShare(hero: Hero, unitTypeId: string, ask: number): number {
+  if (ask <= 0) return 0;
+  const total = armyValue(hero.army);
+  if (total <= 0) return ask;
+  const each = getUnit(unitTypeId).aiValue;
+  if (each <= 0) return ask;
+  const cur = (hero.army.find((s) => s.unitTypeId === unitTypeId)?.count ?? 0) * each;
+  const room = (MAX_STACK_SHARE * total - cur) / (each * (1 - MAX_STACK_SHARE));
+  return Math.max(0, Math.min(ask, Math.floor(room)));
+}
+
 function refillFromGarrison(state: GameState, hero: Hero, town: Town): void {
   let ghValue = garrisonStrength(town.garrison);
   if (ghValue <= GARRISON_KEEP_VALUE) return;
@@ -388,7 +413,7 @@ function refillFromGarrison(state: GameState, hero: Hero, town: Town): void {
     //    结果就是"AI 丢光城镇"那个老 bug 换个形式回来。
     const valueEach = getUnit(st.unitTypeId).aiValue;
     const spare = Math.floor((ghValue - GARRISON_KEEP_VALUE) / valueEach);
-    const count = Math.min(st.count, spare);
+    const count = Math.min(st.count, spare, capForStackShare(hero, st.unitTypeId, Infinity));
     if (count <= 0) continue;
     const t = garrisonToHero(hero, town, st.unitTypeId, count);
     moved += t;
@@ -538,13 +563,21 @@ function aiRecruit(state: GameState, player: FactionId, budget: GoldBudget): voi
       while ((town.growthPool[unitTypeId] ?? 0) > 0 && guard++ < 40) {
         const left = town.growthPool[unitTypeId] ?? 0;
         // 预算不够就整批跳过（不去"能买几个买几个"——那样高档兵永远轮不到）
-        const ask = goldEach > 0 ? Math.min(left, Math.floor(budget.left / goldEach)) : left;
-        if (ask <= 0) break;
-        const res = inTown
-          ? recruitToHero(state, town, inTown, unitTypeId, ask)
-          : recruitToGarrison(state, town, unitTypeId, ask);
-        if (res.taken <= 0) break;
-        budget.left -= res.taken * goldEach;
+        const ask0 = goldEach > 0 ? Math.min(left, Math.floor(budget.left / goldEach)) : left;
+        if (ask0 <= 0) break;
+        /* A5 单栈上限：能进英雄的进英雄，**装不下的买进驻军**。
+           不能像最初那样 `break` —— 那只让兵留在池子里（钱也花不出去），
+           实测会把英雄战力砍掉 1/3（seed 4242 D28 1315 → 1003）。 */
+        let taken = 0;
+        if (inTown) {
+          const room = capForStackShare(inTown, unitTypeId, ask0);
+          if (room > 0) taken += recruitToHero(state, town, inTown, unitTypeId, room).taken;
+          if (taken < ask0) taken += recruitToGarrison(state, town, unitTypeId, ask0 - taken).taken;
+        } else {
+          taken = recruitToGarrison(state, town, unitTypeId, ask0).taken;
+        }
+        if (taken <= 0) break;
+        budget.left -= taken * goldEach;
       }
     }
   }
@@ -1138,9 +1171,12 @@ export function runAiTurn(state: GameState, player: FactionId): void {
         const left = town.growthPool[unitTypeId] ?? 0;
         if (left <= 0) continue;
         const goldEach = getUnit(unitTypeId).cost.gold ?? 0;
-        const ask = goldEach > 0 ? Math.min(left, Math.floor(budget.left / goldEach)) : left;
-        if (ask <= 0) continue;
-        const got = recruitToHero(state, town, hero, unitTypeId, ask).taken;
+        const ask0 = goldEach > 0 ? Math.min(left, Math.floor(budget.left / goldEach)) : left;
+        if (ask0 <= 0) continue;
+        // 同上：能进英雄的进英雄，装不下的买进驻军（不许把兵晾在池子里）。
+        const room = capForStackShare(hero, unitTypeId, ask0);
+        let got = room > 0 ? recruitToHero(state, town, hero, unitTypeId, room).taken : 0;
+        if (got < ask0) got += recruitToGarrison(state, town, unitTypeId, ask0 - got).taken;
         budget.left -= got * goldEach;
       }
       // 增长池通常已被当天的 aiRecruit 抽干送进驻军，这里把驻军的富余兵力搬回英雄身上

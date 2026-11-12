@@ -863,6 +863,38 @@ body {
   opacity: 1;
 }
 
+/* ---------- 周事件横幅（spec §19.2 公告） ---------- */
+/* 与 #hint 同一套"铁牌"质感，但位置在顶部中央、停留 4.5s：
+   周事件是本周的规则变化，不是一次点击反馈，不能被下一句 toast 顶掉。 */
+#week-banner {
+  position: absolute;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 6px);
+  transform: translate(-50%, -8px);
+  max-width: 68%;
+  padding: 7px 16px;
+  border-radius: 999px;
+  background-color: rgba(12, 8, 3, 0.78);
+  border: 1px solid rgba(255, 232, 170, 0.28);
+  backdrop-filter: blur(8px);
+  color: var(--parchment);
+  font-size: var(--t-body);
+  text-align: center;
+  z-index: 32;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+#week-banner.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+#week-banner[hidden] {
+  display: none;
+}
+
 /* ---------- modal ---------- */
 #modal-root {
   position: absolute;

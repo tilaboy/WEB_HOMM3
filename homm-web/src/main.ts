@@ -33,7 +33,7 @@ import type { ScenarioObjective } from './core/data/scenarios.js';
 import { SCENARIO_BY_ID, scenarioGenOptions } from './core/data/scenarios.js';
 import { ownedMines } from './core/game/town.js';
 import { removeHero } from './core/game/interaction.js';
-import { endDay } from './core/game/turn.js';
+import { endDay, isNewWeek } from './core/game/turn.js';
 import { aiEvents } from './core/game/aiReport.js';
 import type { AiEvent, AiEventKind } from './core/game/aiReport.js';
 import { evaluateOutcome, isEliminated, livingEnemies, outcomeSummary } from './core/game/victory.js';
@@ -130,6 +130,16 @@ side.appendChild(sideBody);
 const hintEl = document.createElement('div');
 hintEl.id = 'hint';
 stage.appendChild(hintEl);
+
+/**
+ * 周事件横幅（spec §19.2「公告」）。与底部 toast 分开：
+ * 周事件是**本周的规则变化**，不是一次操作反馈 —— 混进 2s 的 hint 里会被下一句
+ * "第 8 天"直接顶掉，玩家还没读到就消失了。
+ */
+const weekBanner = document.createElement('div');
+weekBanner.id = 'week-banner';
+weekBanner.hidden = true;
+stage.appendChild(weekBanner);
 
 /* ---------------- 底部拇指带（UX IA §4.2 / R5） ---------------- */
 
@@ -992,6 +1002,22 @@ function hint(text: string): void {
   hintTimer = window.setTimeout(() => hintEl.classList.remove('show'), 2000);
 }
 
+/** 顶部周事件横幅：4.5s（比 toast 长一倍），播完再收 `hidden`。 */
+let weekBannerTimer = 0;
+function showWeekBanner(text: string): void {
+  weekBanner.textContent = text;
+  weekBanner.hidden = false;
+  // 先上 DOM 再加类，transition 才有起点（`hidden` 元素上的类切换不会触发动画）。
+  requestAnimationFrame(() => weekBanner.classList.add('show'));
+  window.clearTimeout(weekBannerTimer);
+  weekBannerTimer = window.setTimeout(() => {
+    weekBanner.classList.remove('show');
+    window.setTimeout(() => {
+      weekBanner.hidden = true;
+    }, 220);
+  }, 4500);
+}
+
 function recomputeField(): void {
   const hero = selected ? state.heroes[selected] : null;
   if (!hero) {
@@ -1796,6 +1822,11 @@ function doEndDay(): void {
   saveAuto();
   endDay(state);
   sfx.day();
+  /* §19.2：周界刚掷出的事件要在**第一次招募之前**被看到。
+     判据用 `isNewWeek`（只有周首日成立），否则整周每次结束一天都会重播。 */
+  if (isNewWeek(state.day) && state.weekEvent && state.weekEvent.kind !== 'calm') {
+    showWeekBanner(state.weekEvent.text);
+  }
   lastStepFrom = null;
   recomputeField();
   refresh();
