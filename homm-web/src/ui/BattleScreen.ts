@@ -54,7 +54,7 @@ import {
 } from '../core/combat/battle.js';
 import { hexCenter, hexEq, hexKey, inField, isAdjacent, pickHex, FIELD_H, FIELD_W, type Hex } from '../core/combat/hex.js';
 import { STRUCTURE_NAME, structureAt, structureById, type SiegeStructure } from '../core/combat/siege.js';
-import { getSpell } from '../core/data/spells.js';
+import { getSpell, spellTemplate } from '../core/data/spells.js';
 import { BattleRenderer, BASE_H, BASE_W, PAD } from '../render/BattleRenderer.js';
 import type { BattleFx, BattleFxKind, FloatText } from '../render/BattleRenderer.js';
 import type { BattleBg } from '../render/battleBg.js';
@@ -321,9 +321,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   function addFx(hex: Hex, color: string, kind: BattleFxKind = 'ring', extra?: Partial<BattleFx>): void {
     spellFx.push({ hex, life: 1, color, kind, ...extra });
   }
-  /** 近战打击特效与闪电（纯表演，p 走到头就移除）。 */
+  /** 近战打击特效（纯表演，p 走到头就移除）。 */
   const impacts: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number; dur: number; unitId?: string }[] = [];
-  let bolt: { x: number; y: number; p: number } | null = null;
 
   function fit(): void {
     // 宽到放得下"两侧名单 + 战场"才显示名单（桌面窄窗/竖屏时自动隐藏，观感与旧版一致）
@@ -942,15 +941,22 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         const hex = e.hex ?? hexOf(e.targetId ?? '');
         const color = SPELL_FX_COLOR[e.spellId] ?? '#f0e0b0';
         const b = hexCenter(hex);
+        /* §11.2：形状由**模板**决定（`SPELL_FX_TEMPLATE` 是唯一映射，probe:spellfx 按它做覆盖闸）。
+           落到缺省 `ring` 说明这个法术没配模板 —— 门上会红，不让它悄悄退回"一个圆环"。 */
+        const kind = spellTemplate(e.spellId) ?? 'ring';
+        const originUnit = aliveOf(battle, e.side)[0];
+        const originHex = originUnit?.hex ?? null;
         const hitFx = (): void => {
           sfx.spell();
           if (e.damage) addFloat(`-${e.damage}`, hex, color);
           if (e.killed) addFloat(`-${e.killed}`, hex, '#ffdcd2');
-          spellFx.push({ hex, life: 1, color, splash: e.splash });
+          // `to` = 施法方所在格：投射的拖尾方向靠它（见 drawSpellFx 的 `proj`）。
+          spellFx.push({ hex, life: 1, color, splash: e.splash, kind, to: originHex ?? undefined });
         };
-        if (e.spellId === 'lightningBolt') {
-          // 闪电：从目标头顶劈下，命中瞬间闪白 + 伤害浮字
-          bolt = { x: b.x, y: b.y, p: 1 };
+        if (kind === 'chain') {
+          // 链（闪电）：从目标头顶劈下，命中瞬间闪白 + 伤害浮字。
+          // 折线本身由 `drawSpellFx` 的 `chain` 模板画 —— 原来这里是独立的 `bolt` 状态，
+          // 那次"一道雷永远钉在战场上"就是它漏了衰减。
           let hit = false;
           anim = {
             t: 0,
@@ -962,9 +968,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
               }
             },
           };
-        } else if (e.spellId === 'magicArrow' || e.spellId === 'iceBolt' || e.spellId === 'fireball') {
-          // 飞行道具：从施法方第一支部队飞向目标（英雄本尊不在战场上）
-          const originUnit = aliveOf(battle, e.side)[0];
+        } else if (kind === 'proj' || kind === 'burst') {
+          // 飞行道具：从施法方第一支部队飞向目标（英雄本尊不在战场上）。
+          // 火球也走这条飞行，但落点是 `burst`（三圈 + 碎屑），不是小而尖的命中点。
           const o = originUnit ? hexCenter(originUnit.hex) : { x: e.side === 0 ? 10 : BASE_W - 30, y: BASE_H / 2 };
           let hit = false;
           anim = {
@@ -993,8 +999,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
             },
           };
         } else {
-          // 增益/减益/复活：目标格光环立即亮起
-          spellFx.push({ hex, life: 1, color });
+          // 增益（符文上浮）/ 减益（暗环下沉）/ 复活（金柱）：目标格立即起演
+          spellFx.push({ hex, life: 1, color, kind });
           if (e.revived) addFloat(`+${e.revived}`, hex, '#9ef0a8');
           if (!e.damage && !e.revived) addFloat(getSpell(e.spellId).name, hex, color);
           anim = { t: 0, dur: 420, step: () => undefined };
@@ -1543,12 +1549,9 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       im.p += dt / im.dur;
       if (im.p >= 1) impacts.splice(i, 1);
     }
-    // 闪电同理：bolt.p 赋 1 之后没人衰减，一道雷永远钉在战场上 ——
-    // 玩家报的"施法后印记一直留在战场上"，本尊就是它
-    if (bolt) {
-      bolt.p -= dt / 360;
-      if (bolt.p <= 0) bolt = null;
-    }
+    // 闪电不再用独立的 `bolt` 状态：它走 `spellFx` 的 `chain` 模板，
+    // 由 `life` 自动衰减 —— 旧实现在这里手动减 `bolt.p`，漏一次就"一道雷永远钉在战场上"
+    // （玩家报过）。模板化之后这条病不可能再犯：没有独立的常驻状态。
 
     const u = currentUnit(battle);
     if (u && u.side === 0 && `${battle.round}:${u.id}` !== lastActive) recomputeOptions();
@@ -1584,7 +1587,6 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       floats,
       spellTargets,
       spellFx,
-      bolt,
       impacts,
       time: now,
     });

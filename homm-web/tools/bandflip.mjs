@@ -127,6 +127,25 @@ const BLOCKS = `(() => {
   return { ok: true, w: W, h: H, bw, bh, blocks: out };
 })()`;
 
+/* 「这张 canvas 到底出画了没有」—— 只判**像素是否有内容**，不判内容对不对。
+ * 起因（2026-11-12 全量顺序跑）：本门排在第 44 位，`?devtint=0` 那一臂抓到**整幅空白**的
+ * canvas（与默认臂逐块差 8940 / 8940 = 全差），⑥ 判红；同一份 dist 单独跑两次全绿。
+ * 空白帧是**稳定**的 ⇒ 原「冻帧稳定」判据抓不到它。这里在量块之前先等它真的画上东西。 */
+const DRAWN = `(() => {
+  const cs = [...document.querySelectorAll('canvas')].filter((c) => c.width > 0 && c.height > 0);
+  if (!cs.length) return false;
+  cs.sort((a, b) => b.width * b.height - a.width * a.height);
+  const c = cs[0], ctx = c.getContext('2d');
+  if (!ctx) return false;
+  const d = ctx.getImageData(0, 0, c.width, c.height).data;
+  const seen = new Set();
+  for (let i = 0; i < d.length; i += 4 * 997) {
+    seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+    if (seen.size > 8) return true;
+  }
+  return false;
+})()`;
+
 const diffBlocks = (a, b) => {
   if (!a || !b || a.bw !== b.bw || a.bh !== b.bh) return -1;
   let n = 0;
@@ -145,6 +164,19 @@ async function capture(send, evaluate, extra, label) {
     } catch { /* 导航中 */ }
   }
   await sleep(4200); // 等启动 toast 退场（≈4s），四臂同一状态
+  /* 再等「真的画上了」：冷启动 / 前一个 Chrome 门残留时，canvas 尺寸已就绪但首帧还没画，
+     空白帧同样会「冻帧稳定」⇒ 只看稳定性会把它当成有效读数。最多再等 5s。 */
+  let drawn = false;
+  for (let i = 0; i < 20 && !drawn; i++) {
+    try {
+      drawn = await evaluate(DRAWN);
+    } catch { /* 仍在导航 */ }
+    if (!drawn) await sleep(250);
+  }
+  if (!drawn) {
+    console.log(`[${label}] 量不到：canvas 一直是空白（等满 5s 仍无内容）`);
+    return null;
+  }
   await evaluate(FREEZE);
   await sleep(500);
   const st = await evaluate('window.__bandStats || null');

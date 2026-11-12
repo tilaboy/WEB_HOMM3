@@ -45,16 +45,28 @@ if (!chromeAvailable()) {
  * 图纸页。**临时写进 dist/**（dist 被 .gitignore 忽略），出图后删掉。
  * 用 `image-rendering: pixelated` + 3 倍内部缩放：形状是矢量的，放大不掉细节。
  */
-const KINDS = [
-  ['ring', '圆环（法术/缠根）', '#cfe0ff'],
+const ALL_KINDS = [
+  // §11.2 六类施法模板（法术形状的唯一来源）
+  ['proj', '① 投射', '#f4e27a'],
+  ['burst', '② 爆发', '#ff8b3d'],
+  ['chain', '③ 链', '#f0f0ff'],
+  ['buff', '④ 增益', '#ffe9a8'],
+  ['debuff', '⑤ 减益', '#a86ad8'],
+  ['revive', '⑥ 复活', '#ffd76a'],
+  // 能力演出（S4e）
+  ['ring', '圆环（缠绕/缺省）', '#cfe0ff'],
   ['drain', '吸血（血珠回流）', '#b8324a'],
-  ['revive', '复活（金柱上浮）', '#ffd76a'],
   ['dread', '威压（暗环下沉）', '#6b4a7a'],
   ['lava', '熔岩护甲（火星）', '#e0662c'],
   ['flame', '烈焰缠身（火舌）', '#ff9a3c'],
   ['oath', '誓约（护罩弧）', '#cfe3ff'],
   ['fly', '飞行起落（尘环）', '#cfd8e2'],
 ];
+/* `--from=0 --to=6`：只出一段（14 列并排时每格 140px，×3 目检仍然偏小）。
+   第一段 = 六类施法模板，第二段 = S4e 能力演出。 */
+const FROM = Math.max(0, Number(opt('from', 0)) || 0);
+const TO = Math.min(ALL_KINDS.length, Number(opt('to', ALL_KINDS.length)) || ALL_KINDS.length);
+const KINDS = ALL_KINDS.slice(FROM, TO);
 const LIVES = [0.92, 0.62, 0.34, 0.1];
 
 const html = `<!doctype html>

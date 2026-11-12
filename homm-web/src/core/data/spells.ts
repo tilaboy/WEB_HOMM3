@@ -183,6 +183,40 @@ export const SPELLS: Record<string, Spell> = {
 
 export const SPELL_ORDER = Object.keys(SPELLS);
 
+/**
+ * §11.2 六类施法模板。**形状**由模板决定，颜色只作第二线索
+ * （同一法术在四族手里是同一个颜色 —— 按阵营换色会让玩家认不出"这是火球还是冰箭"）。
+ *
+ * 这张表是"法术 → 模板"的**唯一**映射：渲染器按它分派，`probe:spellfx` 按它做覆盖闸
+ * （表里每个 `combat: true` 的法术都必须有模板，落到缺省 `ring` 就是漏了一个）。
+ */
+export type SpellFxTemplate = 'proj' | 'burst' | 'chain' | 'buff' | 'debuff' | 'revive';
+
+export const SPELL_FX_TEMPLATE: Record<string, SpellFxTemplate> = {
+  /* 1 · 投射：施法者→目标的弹体 + 拖尾 */
+  magicArrow: 'proj',
+  iceBolt: 'proj',
+  /* 2 · 爆发：落点三圈扩散 + 碎屑 */
+  fireball: 'burst',
+  /* 3 · 链：折线主干 + 分叉 */
+  lightningBolt: 'chain',
+  /* 4 · 增益：脚下符文**上浮** + 光柱 */
+  bless: 'buff',
+  haste: 'buff',
+  shield: 'buff',
+  stoneSkin: 'buff',
+  bloodlust: 'buff',
+  /* 5 · 减益：脚下暗环**下沉** + 碎屑下落 */
+  curse: 'debuff',
+  slow: 'debuff',
+  /* 6 · 复活：金柱 + 上浮颗粒 */
+  resurrect: 'revive',
+};
+
+export function spellTemplate(id: string): SpellFxTemplate | null {
+  return SPELL_FX_TEMPLATE[id] ?? null;
+}
+
 export function getSpell(id: string): Spell {
   const s = SPELLS[id];
   if (!s) throw new Error(`unknown spell: ${id}`);

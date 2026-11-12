@@ -14,6 +14,7 @@ import type { CombatAtlas } from './combatAtlas.js';
 import { quality } from './quality.js';
 import { unitCombatFrame } from './unitFrames.js';
 import { BATTLE_BG_SPECS, type BattleBg } from './battleBg.js';
+import type { SpellFxTemplate } from '../core/data/spells.js';
 
 const PAD = 6;
 export { PAD };
@@ -61,7 +62,8 @@ export type BattleFxKind =
   | 'lava' // 熔岩护甲：四道外溅火星
   | 'flame' // 烈焰缠身：三簇上窜火舌
   | 'oath' // 誓约：目标头顶一道护罩弧
-  | 'fly'; // 起落：地面两道尘环
+  | 'fly' // 起落：地面两道尘环
+  | SpellFxTemplate; // §11.2 六类施法模板（proj/burst/chain/buff/debuff/revive）
 
 export interface BattleFx {
   hex: Hex;
@@ -91,7 +93,6 @@ export interface BattleDraw {
   /** 施法/能力特效。`life` 从 1 衰减到 0，`kind` 决定画什么（见 `BattleFxKind`）。 */
   spellFx?: BattleFx[];
   /** 闪电：从目标头顶劈下来（p: 剩余生命 1 → 0）。 */
-  bolt?: { x: number; y: number; p: number } | null;
   /** 近战打击特效（p: 0 → 1 播放进度）。`unitId` = 受击方，供 H5 受击位移用。 */
   impacts?: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number; unitId?: string }[];
   time: number;
@@ -215,7 +216,6 @@ export class BattleRenderer {
       }
     }
 
-    if (d.bolt) this.drawBolt(g, d.bolt);
     for (const im of d.impacts ?? []) this.drawImpact(g, im);
 
     for (const f of d.floats) this.drawFloat(g, f);
@@ -225,40 +225,6 @@ export class BattleRenderer {
     c.imageSmoothingEnabled = false;
     c.clearRect(0, 0, this.canvas.width, this.canvas.height);
     c.drawImage(this.off, 0, 0, BASE_W, BASE_H, 0, 0, this.canvas.width, this.canvas.height);
-  }
-
-  /** 闪电：主干 + 两道分叉，命中点闪白。 */
-  private drawBolt(g: CanvasRenderingContext2D, b: { x: number; y: number; p: number }): void {
-    const x = b.x + PAD;
-    const y = b.y + PAD;
-    const a = Math.max(0, Math.min(1, b.p));
-    const segs: [number, number][] = [
-      [0, -46],
-      [-5, -34],
-      [4, -22],
-      [-3, -10],
-      [0, 0],
-    ];
-    g.globalAlpha = a;
-    for (const [w, color] of [
-      [3, '#f4f0ff'],
-      [1, '#8fb8ff'],
-    ] as const) {
-      g.strokeStyle = color;
-      g.lineWidth = w;
-      g.beginPath();
-      g.moveTo(x + segs[0][0], y + segs[0][1]);
-      for (let i = 1; i < segs.length; i++) g.lineTo(x + segs[i][0], y + segs[i][1]);
-      g.stroke();
-    }
-    if (a > 0.5) {
-      g.globalAlpha = (a - 0.5) * 1.6;
-      g.fillStyle = '#ffffff';
-      g.beginPath();
-      g.arc(x, y, 5 + (1 - a) * 8, 0, Math.PI * 2);
-      g.fill();
-    }
-    g.globalAlpha = 1;
   }
 
   /** 近战打击特效：突刺 = 十字星，挥砍 = 弧光，重砸 = 扩散尘环 + 碎屑。 */
@@ -1142,6 +1108,166 @@ export class BattleRenderer {
         g.beginPath();
         g.ellipse(cx, cy + 6, r, r * 0.32, 0, 0, Math.PI * 2);
         g.stroke();
+      }
+      g.globalAlpha = 1;
+      return;
+    }
+
+    if (kind === 'proj') {
+      // ① 投射（§11.2 模板 1）：命中点 2px 亮芯 + 沿入射方向 3 帧拖尾。
+      // 弹体本身由 `arrow` 演（飞行占前 60% 时长），这里只画"命中的最后一下"。
+      // 拖尾方向取 `to`（施法方所在格）：**没有 to 时不许自己编方向** ——
+      // 固定朝右上会在施法者在右半场时把拖尾画到弹体前面，读成"两个弹体"。
+      if (fx.to) {
+        const o = hexCenter(fx.to);
+        const dx = cx - (o.x + PAD);
+        const dy = cy - (o.y + PAD);
+        const len = Math.max(1, Math.hypot(dx, dy));
+        const ux = dx / len;
+        const uy = dy / len;
+        for (let i = 1; i <= 3; i++) {
+          const k = i * 7 * (1 - p * 0.35);
+          g.globalAlpha = a * (0.6 - i * 0.13);
+          g.fillStyle = fx.color;
+          g.beginPath();
+          g.arc(cx - ux * k, cy - uy * k, Math.max(0.6, 2.2 - i * 0.45), 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      g.globalAlpha = a;
+      g.fillStyle = fx.color;
+      g.beginPath();
+      g.arc(cx, cy, 2.2, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = fx.color;
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.arc(cx, cy, 4 + p * 7, 0, Math.PI * 2);
+      g.stroke();
+      g.globalAlpha = 1;
+      return;
+    }
+
+    if (kind === 'burst') {
+      // ② 爆发（模板 2）：落点三圈扩散（6→22/31/34）+ 8 片碎屑。
+      // 三圈**必须错相位**：同时出生会糊成一个 3px 粗环（S4e 烈焰返工同一条）。
+      // 碎屑用 2px 方块：1px 在土/石地上会被地纹吃掉（地砖那批的实测）。
+      for (let i = 0; i < 3; i++) {
+        const k = Math.max(0, Math.min(1, (p - i * 0.12) / 0.76));
+        if (k <= 0) continue;
+        g.globalAlpha = a * (0.9 - i * 0.2);
+        g.strokeStyle = fx.color;
+        g.lineWidth = 2;
+        g.beginPath();
+        g.arc(cx, cy, 6 + k * (16 + i * 9), 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.fillStyle = fx.color;
+      for (let i = 0; i < 8; i++) {
+        const ang = (i / 8) * Math.PI * 2 + 0.4;
+        // 碎屑必须**飞得比最外圈更远**（10 → 44，最外圈终值 40）：
+        // 首版只飞 26px，全程压在环内 ⇒ 三圈之间那点碎屑根本看不见，读成"水波纹"。
+        const d = 10 + p * 34;
+        g.globalAlpha = a * (0.95 - p * 0.35);
+        g.fillRect(Math.round(cx + Math.cos(ang) * d) - 1, Math.round(cy + Math.sin(ang) * d * 0.72) - 1, 2, 2);
+      }
+      g.globalAlpha = 1;
+      return;
+    }
+
+    if (kind === 'chain') {
+      // ③ 链（模板 3）：折线主干（段长 12/10/8/6 递减）+ 2 道分叉 + 亮芯。
+      // 与旧 `drawBolt` 同源 —— 那段被**搬进这里并删掉**：两处各画一份就是第二真值来源。
+      const segs: [number, number][] = [
+        [0, -46],
+        [-5, -34],
+        [4, -22],
+        [-3, -10],
+        [0, 0],
+      ];
+      g.globalAlpha = Math.max(0.2, a);
+      for (const [w, color] of [
+        [2, fx.color],
+        [1, '#f4f0ff'], // 亮芯：闪电的"电"在亮芯上，颜色只作第二线索
+      ] as const) {
+        g.strokeStyle = color;
+        g.lineWidth = w;
+        g.beginPath();
+        g.moveTo(cx + segs[0][0], cy + segs[0][1]);
+        for (let i = 1; i < segs.length; i++) g.lineTo(cx + segs[i][0], cy + segs[i][1]);
+        g.stroke();
+      }
+      g.strokeStyle = fx.color;
+      g.lineWidth = 1.5;
+      for (const [i, dx, dy] of [
+        [1, -8, -4],
+        [2, 7, -5],
+      ] as const) {
+        g.beginPath();
+        g.moveTo(cx + segs[i][0], cy + segs[i][1]);
+        g.lineTo(cx + segs[i][0] + dx, cy + segs[i][1] + dy);
+        g.stroke();
+      }
+      if (p < 0.45) {
+        // 命中闪光：2px 亮芯 + 四道短芒。
+        // 首版画的是半径 4~12 的**白色实心圆**，图纸上读成"闪电下挂了个雪球"——
+        // 命中闪光必须是**放射状**的，不能是球体。
+        g.globalAlpha = (1 - p / 0.45) * 0.9;
+        g.fillStyle = '#ffffff';
+        g.fillRect(cx - 1, cy - 1, 3, 3);
+        g.fillRect(cx - 6, cy, 4, 1);
+        g.fillRect(cx + 3, cy, 4, 1);
+        g.fillRect(cx, cy - 6, 1, 4);
+        g.fillRect(cx, cy + 3, 1, 4);
+      }
+      g.globalAlpha = 1;
+      return;
+    }
+
+    if (kind === 'buff') {
+      // ④ 增益（模板 4）：脚下 3 个菱形符文**上浮** + 1px 光柱。
+      // 方向是唯一的类别信号：增/减益都画环时，玩家分不清"被帮"还是"被打"（§11.2）。
+      g.globalAlpha = a * 0.85;
+      g.strokeStyle = fx.color;
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(cx + 0.5, cy + 8);
+      g.lineTo(cx + 0.5, cy + 8 - 22 * Math.min(1, p * 1.5));
+      g.stroke();
+      g.fillStyle = fx.color;
+      for (let i = 0; i < 3; i++) {
+        const x = cx + (i - 1) * 8;
+        const y = cy + 6 - (p * 22 + i * 4);
+        const s = 3 - i * 0.2;
+        g.globalAlpha = a * (0.95 - i * 0.18);
+        g.beginPath();
+        g.moveTo(x, y - s);
+        g.lineTo(x + s, y);
+        g.lineTo(x, y + s);
+        g.lineTo(x - s, y);
+        g.closePath();
+        g.fill();
+      }
+      g.globalAlpha = 1;
+      return;
+    }
+
+    if (kind === 'debuff') {
+      // ⑤ 减益（模板 5）：脚下**两道**暗环下沉 + 3 片碎屑下落。
+      // 与 `dread`（威压）形似但不是同一个：威压单环、减益双环 —— 像素掩膜不同，
+      // `probe:spellfx` 的 A3 才分得开；做成一样这条会红（有意）。
+      for (let i = 0; i < 2; i++) {
+        g.globalAlpha = a * (0.85 - i * 0.2);
+        g.strokeStyle = fx.color;
+        g.lineWidth = 2;
+        g.beginPath();
+        g.ellipse(cx, cy + 3 + p * (7 + i * 3), 11 + p * 3 - i * 3, 4 + p * 2, 0, 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.fillStyle = fx.color;
+      for (let i = 0; i < 3; i++) {
+        g.globalAlpha = a * (0.75 - i * 0.15);
+        g.fillRect(cx + (i - 1) * 7, cy - 6 + p * 18 + i * 2, 2, 2);
       }
       g.globalAlpha = 1;
       return;
