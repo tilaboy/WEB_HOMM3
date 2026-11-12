@@ -79,6 +79,7 @@
 
 | `probe:spellfx` | `probes/spellfx.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` + 自带 server | — | **S4g 新增（2026-11-12）**。§11.2 六类施法模板 **13 条**：**[A1] 覆盖闸按 `SPELLS` 表算**（12 个 `combat:true` 全部有模板，不写死数量）/ [A2] 六类都被用到且无第七类 / [A3] 未知法术返回 `null` / **[B1]–[B7] 调真 `drawSpellFx` 读掩膜**：增益重心上移 ≥12px、减益下沉 ≥4px、爆发增宽 ≥15px、链上伸 ≥30px 且横向 ≤26px、复活中轴墨 ≥35% 且高 ≥20px、投射拖尾朝 `to`（有 to 比无 to 多 ≥6px，**方向不许编**）/ **[C1] 六类同相位两两 IoU < 0.5**（45 对，最像 burst↔debuff@0.9 = 0.29）/ **[D1][D2] 负向对照**：缺省 `ring` 跑"增益上移"必须失败（实测 Δ0.2px）。⚠️ 判据阈值取自 §11.2 的**名义几何**（上浮 22 / 下沉 10 / 半径 6→34 / 主干 46），不取自本次读数 |
 
+| `probe:castbeat` | `probes/castbeat.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` + 自带 server | — | **S4h 新增（2026-11-12）**。§11.2 施法时序 **16 条**：**[A0]–[A4]** 读 `ui/castTimeline.ts` 的 `castFrame()`（三段 180/420/200 = 800；边界 179/180、599/600、799/800；演出进度单调；NaN/越界钳住）/ **[A5] 负向对照**：压成一段的假实现在同一条判据上必红 / **[B0]–[B7] 真开一场战斗、真点施法**，读 `window.__castTrace`（`BattleScreen` 在跨段那一帧记 `{phase, at, ms}`）：顺序五段不跳、边界 show@180±25 / settle@600±25 / end≥800、**伤害与特效不抢跑**（`settled.at ≥595`、`fx.at ≥175`）、点一下后 ≤120ms 结束且**当帧就结算**（不跳过伤害）、演完 `cast`/`arrow` 清空、前摇采到描边与 `lunge`（抬手）。⚠️ 边界看 `at`（演出毫秒，已乘倍率），"点了多快结束"看 `ms`（墙钟）—— 两者不能混用 |
 > ★ **表外**（不判过否）：`build`（`tsc` + `postbuild.mjs`）、`typecheck`、`start`/`serve.mjs`、`watch`、`dev`、`assets:mobile`、`mobile:sync`。
 
 

@@ -55,6 +55,7 @@ import {
 import { hexCenter, hexEq, hexKey, inField, isAdjacent, pickHex, FIELD_H, FIELD_W, type Hex } from '../core/combat/hex.js';
 import { STRUCTURE_NAME, structureAt, structureById, type SiegeStructure } from '../core/combat/siege.js';
 import { getSpell, spellTemplate } from '../core/data/spells.js';
+import { CAST_TOTAL_MS, castFrame } from './castTimeline.js';
 import { BattleRenderer, BASE_H, BASE_W, PAD } from '../render/BattleRenderer.js';
 import type { BattleFx, BattleFxKind, FloatText } from '../render/BattleRenderer.js';
 import type { BattleBg } from '../render/battleBg.js';
@@ -129,6 +130,11 @@ interface Anim {
   dur: number;
   step(p: number): void;
   end?(): void;
+  /**
+   * §11.2「点击可跳到结算，**不跳过伤害**」：有 `skip` 的演出才能在点按中被截断。
+   * 实现必须**先结算再跳**（不是把 `t` 一设就完），否则快点的玩家会看不到伤害数字。
+   */
+  skip?(): void;
 }
 
 let openRef: { close: () => void } | null = null;
@@ -303,6 +309,10 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   })();
   let hover: Hex | null = null;
   let lunge: { unitId: string; dx: number; dy: number; sx?: number; sy?: number } | null = null;
+  /** §11.2 前摇：目标格描边 + 施法方抬手（只在 180ms 内非空）。 */
+  let cast: { hex: Hex; from: Hex | null; p: number } | null = null;
+  /** 施法时序轨迹（只给探针看）：每跨一段记一笔，含 `skip` / `end`。 */
+  const castTrace: { phase: string; at: number; ms: number }[] = [];
   let arrow: { x: number; y: number; tx: number; ty: number; color?: string } | null = null;
   const floats: FloatText[] = [];
   const posOverride: Record<string, { x: number; y: number }> = {};
@@ -322,7 +332,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     spellFx.push({ hex, life: 1, color, kind, ...extra });
   }
   /** 近战打击特效（纯表演，p 走到头就移除）。 */
-  const impacts: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number; dur: number; unitId?: string }[] = [];
+  const impacts: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash' | 'cast'; p: number; dur: number; unitId?: string }[] = [];
 
   function fit(): void {
     // 宽到放得下"两侧名单 + 战场"才显示名单（桌面窄窗/竖屏时自动隐藏，观感与旧版一致）
@@ -946,65 +956,103 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
         const kind = spellTemplate(e.spellId) ?? 'ring';
         const originUnit = aliveOf(battle, e.side)[0];
         const originHex = originUnit?.hex ?? null;
-        const hitFx = (): void => {
-          sfx.spell();
-          if (e.damage) addFloat(`-${e.damage}`, hex, color);
-          if (e.killed) addFloat(`-${e.killed}`, hex, '#ffdcd2');
+        const originPos = originUnit
+          ? hexCenter(originUnit.hex)
+          : { x: e.side === 0 ? 10 : BASE_W - 30, y: BASE_H / 2 };
+        // 弹体只在投射/爆发两类里飞；链是"从天上劈下来"，增益/减益/复活没有弹体
+        const flight = kind === 'proj' || kind === 'burst';
+
+        const mark = (phase: string): void => {
+          // `at` = 演出时间（已乘倍率，边界判据看它）；`ms` = 墙钟（"点了之后多久结束"看它）
+          castTrace.push({ phase, at: Math.round(anim ? anim.t : 0), ms: Math.round(performance.now()) });
+          if (castTrace.length > 40) castTrace.shift();
+        };
+
+        let shownFx = false;
+        let settled = false;
+        /** 演出段：模板起演（弹体则等价于"落地"）。只许一次。 */
+        const showFx = (): void => {
+          if (shownFx) return;
+          shownFx = true;
+          mark('fx');
           // `to` = 施法方所在格：投射的拖尾方向靠它（见 drawSpellFx 的 `proj`）。
           spellFx.push({ hex, life: 1, color, splash: e.splash, kind, to: originHex ?? undefined });
         };
-        if (kind === 'chain') {
-          // 链（闪电）：从目标头顶劈下，命中瞬间闪白 + 伤害浮字。
-          // 折线本身由 `drawSpellFx` 的 `chain` 模板画 —— 原来这里是独立的 `bolt` 状态，
-          // 那次"一道雷永远钉在战场上"就是它漏了衰减。
-          let hit = false;
-          anim = {
-            t: 0,
-            dur: 520,
-            step: (p) => {
-              if (!hit && p >= 0.3) {
-                hit = true;
-                hitFx();
-              }
-            },
-          };
-        } else if (kind === 'proj' || kind === 'burst') {
-          // 飞行道具：从施法方第一支部队飞向目标（英雄本尊不在战场上）。
-          // 火球也走这条飞行，但落点是 `burst`（三圈 + 碎屑），不是小而尖的命中点。
-          const o = originUnit ? hexCenter(originUnit.hex) : { x: e.side === 0 ? 10 : BASE_W - 30, y: BASE_H / 2 };
-          let hit = false;
-          anim = {
-            t: 0,
-            dur: 460,
-            step: (p) => {
-              if (p < 0.6) {
-                const k = p / 0.6;
+        /**
+         * 结算段：伤害浮字 + 目标抖动 —— 与"演出"分开，是为了让**点击跳过**只能跳到
+         * 这一段，而不能把这一段一起跳掉（§11.2「可点击跳到结算，不跳过伤害」）。
+         * 幂等：`skip` 与 `step` 都会调用它。
+         */
+        const settle = (): void => {
+          if (settled) return;
+          settled = true;
+          mark('settled');
+          sfx.spell();
+          if (e.damage) {
+            addFloat(`-${e.damage}`, hex, color);
+            // 抖动借 `impacts` 的 unitId（drawImpact 的 'cast' 分支不画形状，只挤一下）
+            if (e.targetId) impacts.push({ x: b.x, y: b.y, kind: 'cast', p: 0, dur: 320, unitId: e.targetId });
+          }
+          if (e.killed) addFloat(`-${e.killed}`, hex, '#ffdcd2');
+          if (e.revived) addFloat(`+${e.revived}`, hex, '#9ef0a8');
+          if (!e.damage && !e.revived) addFloat(getSpell(e.spellId).name, hex, color);
+        };
+        let lastPhase = '';
+        const timeline: Anim = {
+          t: 0,
+          dur: CAST_TOTAL_MS,
+          step: (p) => {
+            const f = castFrame(p * CAST_TOTAL_MS);
+            if (f.phase !== lastPhase) {
+              lastPhase = f.phase;
+              mark(f.phase);
+            }
+            // 前摇：目标格描边 + 施法方抬手（atk 帧由 lunge 驱动）
+            cast = f.windup ? { hex, from: originHex, p: f.local } : null;
+            if (f.windup) {
+              if (originUnit) lunge = { unitId: originUnit.id, dx: 0, dy: 0 };
+              return;
+            }
+            lunge = null;
+            if (flight) {
+              if (f.phase === 'show') {
+                // 飞行占满演出段：k=1 时正好落在目标格，落地即结算
+                const k = f.show;
                 arrow = {
-                  x: o.x + (b.x - o.x) * k,
-                  y: o.y + (b.y - o.y) * k - Math.sin(k * Math.PI) * 10,
+                  x: originPos.x + (b.x - originPos.x) * k,
+                  y: originPos.y + (b.y - originPos.y) * k - Math.sin(k * Math.PI) * 10,
                   tx: b.x,
                   ty: b.y,
                   color,
                 };
               } else {
+                // 落地：弹体消失、模板起演 —— 顺序不能反，反了会"弹体停在终点等爆炸"
                 arrow = null;
-                if (!hit) {
-                  hit = true;
-                  hitFx();
-                }
+                showFx();
               }
-            },
-            end: () => {
-              arrow = null;
-            },
-          };
-        } else {
-          // 增益（符文上浮）/ 减益（暗环下沉）/ 复活（金柱）：目标格立即起演
-          spellFx.push({ hex, life: 1, color, kind });
-          if (e.revived) addFloat(`+${e.revived}`, hex, '#9ef0a8');
-          if (!e.damage && !e.revived) addFloat(getSpell(e.spellId).name, hex, color);
-          anim = { t: 0, dur: 420, step: () => undefined };
-        }
+            } else {
+              showFx();
+            }
+            if (f.settle) settle();
+          },
+          end: () => {
+            mark('end');
+            arrow = null;
+            cast = null;
+            lunge = null;
+            // 兜底：任何路径走到头都保证结算过（宁可重复一次也绝不少一次）
+            settle();
+          },
+          skip: () => {
+            mark('skip');
+            // 先让模板起演（飞行中的弹体这一刻落地），**再结算**再跳：
+            // 点了跳过的人也要看到"爆炸 + 伤害数字"，不能只飘一个数字（§11.2 括注）
+            showFx();
+            settle();
+            timeline.t = CAST_TOTAL_MS;
+          },
+        };
+        anim = timeline;
         break;
       }
       case 'bounce': {
@@ -1366,6 +1414,13 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
   });
 
   canvas.addEventListener('click', (e) => {
+    /* §11.2「点击可跳到结算，不跳过伤害」：只有带 `skip` 的演出（施法时序）响应。
+       必须排在 `busy()` 之前 —— 演出中 `busy()` 恒真，排后面这一点就永远走不到。
+       跳过后这一下**被消耗掉**（`return`），不然同一个点击会顺手下一道移动令。 */
+    if (anim?.skip) {
+      anim.skip();
+      return;
+    }
     if (busy()) return;
     const u = currentUnit(battle);
     if (!u || u.side !== 0) return;
@@ -1587,6 +1642,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       floats,
       spellTargets,
       spellFx,
+      cast,
       impacts,
       time: now,
     });
@@ -1669,6 +1725,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
       const actU = currentUnit(battle);
       const actId = actU && actU.side === 0 ? actU.id : null;
       const actHex = actId ? unitById(battle, actId)?.hex : undefined;
+      // ③ `__castTrace`：施法时序的段边界（探针只看时间，不看形状）
+      w['__castTrace'] = castTrace.map((m) => ({ phase: m.phase, at: m.at, ms: m.ms }));
       w['__battleScene'] = {
         /* 场坐标系的画布尺寸。**探针必须读这三个数，不许再写死 603/388**（E1 缩格后
          * 正是这个写死值让 `probe:touchtap` 的点击坐标整体偏出格子、点敌方弹不出牌）。
@@ -1696,6 +1754,8 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
           ...(effHover ? [hexKey(effHover)] : []),
         ],
         activeHex: actHex ? [actHex.col, actHex.row] : null,
+        arrow: arrow ? [arrow.x, arrow.y] : null,
+        cast: cast ? { hex: [cast.hex.col, cast.hex.row], p: Math.round(cast.p * 100) / 100 } : null,
         floats: floats.map((f) => [f.x, f.y]),
         impacts: impacts.map((im) => [im.x, im.y, Math.round(im.p * 100) / 100, im.unitId ?? null]),
       };

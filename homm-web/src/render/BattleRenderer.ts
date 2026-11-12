@@ -9,7 +9,7 @@ import { getUnit } from '../core/data/units.js';
 import { FIELD_H, FIELD_PX_H, FIELD_PX_W, FIELD_W, HEX_STEP_Y, hexCenter, hexKey, type Hex } from '../core/combat/hex.js';
 import { MOAT_COL, WALL_COL, type SiegeStructure } from '../core/combat/siege.js';
 import { hash2 } from './pixel.js';
-import { getCombatAtlas } from './combatAtlas.js';
+import { getCombatAtlas, HEX_R } from './combatAtlas.js';
 import type { CombatAtlas } from './combatAtlas.js';
 import { quality } from './quality.js';
 import { unitCombatFrame } from './unitFrames.js';
@@ -92,9 +92,15 @@ export interface BattleDraw {
   spellTargets?: Set<string> | null;
   /** 施法/能力特效。`life` 从 1 衰减到 0，`kind` 决定画什么（见 `BattleFxKind`）。 */
   spellFx?: BattleFx[];
+  /**
+   * §11.2 前摇（180ms）：目标格 1px 描边 + 施法方抬手。
+   * `p` 是**前摇段**进度 0→1（描边淡入用）；前摇一结束就置 null。
+   * 只画描边不画伤害 —— 结算（浮字 + 抖动）在后两段。
+   */
+  cast?: { hex: Hex; from: Hex | null; p: number } | null;
   /** 闪电：从目标头顶劈下来（p: 剩余生命 1 → 0）。 */
   /** 近战打击特效（p: 0 → 1 播放进度）。`unitId` = 受击方，供 H5 受击位移用。 */
-  impacts?: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number; unitId?: string }[];
+  impacts?: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash' | 'cast'; p: number; unitId?: string }[];
   time: number;
 }
 
@@ -205,6 +211,10 @@ export class BattleRenderer {
     this.drawSiege(g, d);
     this.drawHighlights(g, d);
     this.drawUnits(g, d);
+    /* 前摇描边画在**单位之后**：目标格上正好站着人，画在下面就被躯干盖掉大半，
+     * 只剩几段碎线（首版实测：狼只露出左右两截"金虚线"）。它是"这一格被锁定了"
+     * 的指示器，不是地面装饰 —— 1px 压在脚/身侧才读得出来。 */
+    if (d.cast) this.drawCastWindup(g, d.cast);
     // 器械画在最后：它不是单位，但必须永远可见，不能被部队盖住
     this.drawWarMachines(g, d);
 
@@ -230,13 +240,20 @@ export class BattleRenderer {
   /** 近战打击特效：突刺 = 十字星，挥砍 = 弧光，重砸 = 扩散尘环 + 碎屑。 */
   private drawImpact(
     g: CanvasRenderingContext2D,
-    im: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash'; p: number },
+    im: { x: number; y: number; kind: 'thrust' | 'slash' | 'smash' | 'cast'; p: number },
   ): void {
     const x = im.x + PAD;
     const y = im.y + PAD;
     const p = Math.max(0, Math.min(1, im.p));
     const a = 1 - p;
     g.globalAlpha = a;
+    /* `cast` = 施法的"受击抖动"：**不画任何形状**，只借 `impacts` 的 `unitId` 让
+     * drawUnit 把目标挤一下（结算段"伤害数字 + 目标抖动"里的后半句）。
+     * 不复用 smash/thrust 的理由：那两个会带星芒/尘环，法术结算的画面上已经有模板特效了。 */
+    if (im.kind === 'cast') {
+      g.globalAlpha = 1;
+      return;
+    }
     if (im.kind === 'thrust') {
       // 十字星：命中瞬间的白光
       const r = 2 + p * 7;
@@ -820,6 +837,59 @@ export class BattleRenderer {
       this.blit(g, 'chi_sel', active.hex.col, active.hex.row);
       g.globalAlpha = 1;
     }
+  }
+
+  /**
+   * §11.2 前摇（180ms）：**目标格 1px 描边** + 施法方"H 抬手"。
+   *
+   * 星点必须画在单位**之前**：它只是"这一格被锁定了"的提示，盖住部队就变成新特效了。
+   * 半径取 `HEX_R`（与地砖同源）—— 两边各写一个 17.5，换格尺寸时必有一处漏改。
+   *
+   * 六边形顶点另加 3 枚 1px 亮钉：浅色地形（雪原）上单圈 1px 金线只有 ~40% 的像素
+   * 能压过地纹，读成"描边断断续续"；亮钉钉在顶点上，方向感不丢。
+   */
+  private drawCastWindup(g: CanvasRenderingContext2D, c: { hex: Hex; from: Hex | null; p: number }): void {
+    const p = Math.max(0, Math.min(1, c.p));
+    const h = hexCenter(c.hex);
+    const cx = h.x + PAD;
+    const cy = h.y + PAD;
+    const w = (Math.sqrt(3) / 2) * HEX_R;
+    // 淡入放在前 60%：演出段开始那一刻最亮，读作"锁定了 → 放"
+    const a = 0.25 + 0.75 * Math.min(1, p / 0.6);
+    const path = (): void => {
+      g.beginPath();
+      g.moveTo(cx, cy - HEX_R);
+      g.lineTo(cx + w, cy - HEX_R / 2);
+      g.lineTo(cx + w, cy + HEX_R / 2);
+      g.lineTo(cx, cy + HEX_R);
+      g.lineTo(cx - w, cy + HEX_R / 2);
+      g.lineTo(cx - w, cy - HEX_R / 2);
+      g.closePath();
+    };
+    /* **先铺墨再压亮**：这是美术总纲里反复付学费的一条。描边要压在两种底上——
+     * 左边深绿草、右边浅褐土，还要压在狼的灰身体上。只画一条奶白线，浅底上直接消失；
+     * 先描 3px 半透明墨（左右各溢 1px）再压 1px 奶白，两种底上都读得出来。 */
+    g.globalAlpha = a * 0.55;
+    g.strokeStyle = '#140e08';
+    g.lineWidth = 3;
+    path();
+    g.stroke();
+    g.globalAlpha = a;
+    g.strokeStyle = '#ffe9a8';
+    g.lineWidth = 1;
+    path();
+    g.stroke();
+    g.fillStyle = '#fff6d8';
+    for (const [vx, vy] of [
+      [cx, cy - HEX_R],
+      [cx + w, cy - HEX_R / 2],
+      [cx - w, cy - HEX_R / 2],
+    ] as const) {
+      g.fillRect(Math.round(vx), Math.round(vy), 1, 1);
+    }
+    /* 施法方的"抬手"不在这里画：它由 `lunge` 驱动 atk 帧（同一个 `from` 单位），
+     * 额外再点一颗亮星会和"这一格被锁定"抢注意力 —— 首版画过，看起来像单位头上有个 bug。 */
+    g.globalAlpha = 1;
   }
 
   private drawUnits(g: CanvasRenderingContext2D, d: BattleDraw): void {

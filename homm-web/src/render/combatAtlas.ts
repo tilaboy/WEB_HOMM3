@@ -208,7 +208,11 @@ function hexPts(cx: number, cy: number, r: number, inset = 0): [number, number][
   ];
 }
 
-const HEX_PTS = hexPts(HEX_CX, HEX_CY, 17.5);
+/** 格的外接圆半径。**渲染器画"目标格描边"也要用这个数** —— 两边各写一个 17.5，
+ *  换格尺寸时必有一处漏改（表现为描边比地砖大一圈或小一圈）。 */
+export const HEX_R = 17.5;
+
+const HEX_PTS = hexPts(HEX_CX, HEX_CY, HEX_R);
 
 function strokePoly(pb: PixBuf, pts: [number, number][], color: string): void {
   for (let i = 0; i < pts.length; i++) {
