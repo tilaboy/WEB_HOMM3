@@ -101,20 +101,99 @@ const CLOSE_TOP = `(() => {
   return 'none';
 })()`;
 
-/** 过一天：点「结束一天」，等演出结束（按钮重新可点）。 */
-async function endDay(evaluate) {
-  for (let i = 0; i < 40; i++) {
-    const st = await evaluate(`(() => {
-      const b = [...document.querySelectorAll('#thumb .tb-btn')].find((x) => /结束一天/.test(x.textContent || ''));
-      if (!b) return 'missing';
-      if (b.disabled) return 'disabled';
-      b.click();
-      return 'clicked';
-    })()`);
-    if (st === 'clicked') return true;
-    await sleep(200);
+/**
+ * 过一天：点「结束一天」，**等到字幕真的换成下一天**再返回。
+ *
+ * ⚠️ 这里必须返回"过没过成"，不能点完就 `sleep(2400)` 然后读屏：
+ * 2026-11-12 全量跑时 `devreport` 臂读到 `模态=false`，而同一个门单跑全过 ——
+ * 根因是按钮还在演出里 `disabled`、40 次重试全落空，点没点成与"没弹窗"
+ * 在读数上**长得一模一样**（铁律 2：要分「没有对象」与「有对象量不到」）。
+ * 现在返回 `{ ok, from, to }`：`ok=false` 时判据直接红并写明"这一天没过去"。
+ */
+async function nextDay(evaluate) {
+  const hintNow = async () =>
+    await evaluate(`(() => { const e = document.querySelector('#hint'); return e ? (e.textContent||'').trim() : ''; })()`);
+  const from = await hintNow();
+  let clicked = 0;
+  /* 点一次不够：`doEndDay` 开头有 `if (isModalOpen() || anim || isBattleOpen()) return;` ——
+     上一次的模态/演出还没收干净时，**点击被静默吞掉**，按钮也不是 disabled。
+     所以"点了"不等于"过了一天"：没翻页就再点，最多 3 次。 */
+  for (let attempt = 0; attempt < 3; attempt++) {
+    for (let i = 0; i < 40; i++) {
+      const st = await evaluate(`(() => {
+        const b = [...document.querySelectorAll('#thumb .tb-btn')].find((x) => /结束一天/.test(x.textContent || ''));
+        if (!b) return 'missing';
+        if (b.disabled) return 'disabled';
+        b.click();
+        return 'clicked';
+      })()`);
+      if (st === 'clicked') {
+        clicked++;
+        break;
+      }
+      await sleep(200);
+    }
+    if (!clicked) return { ok: false, from, to: from, why: '按钮一直不可点（演出没结束 / 被遮）' };
+    for (let i = 0; i < 22; i++) {
+      /* 两条都算"这天过去了"：
+         ① 字幕换了；
+         ② **「对手动向」弹出来**了 —— `showAiDayReport()` 故意把收尾 hint 交给关闭回调
+            （否则 toast 会在模态背后 2 秒蒸发），所以弹着的时候字幕**仍然停在前一天**。
+            首版只认 ①，devreport 臂因此把"弹窗已经出来了"读成"点了 3 次没换天"（2026-11-12 踩到）。 */
+      const snap = await evaluate(`(() => {
+        const e = document.querySelector('#hint');
+        const h = document.querySelector('.modal h2, .modal h3, .modal .m-title, .modal .h');
+        return {
+          hint: e ? (e.textContent || '').trim() : '',
+          modal: !!document.querySelector('.modal'),
+          title: h ? (h.textContent || '').trim() : '',
+        };
+      })()`);
+      if (snap.hint && snap.hint !== from) {
+        await sleep(260);
+        return { ok: true, from, to: snap.hint, via: 'hint', clicks: clicked };
+      }
+      if (snap.modal && /对手动向/.test(snap.title)) {
+        await sleep(260);
+        return { ok: true, from, to: snap.hint, via: 'report', clicks: clicked };
+      }
+      await sleep(120);
+    }
   }
-  return false;
+  return { ok: false, from, to: await hintNow(), why: `点了 ${clicked} 次，字幕一直没换天` };
+}
+
+/** 轮询直到「对手动向」弹出来（最长 `ms`），返回最后一次读数。 */
+async function waitReport(evaluate, ms = 6000) {
+  const t0 = Date.now();
+  let last = null;
+  while (Date.now() - t0 < ms) {
+    last = await evaluate(STATE);
+    if (last && last.hasModal && /对手动向/.test(last.modalTitle || '')) return last;
+    await sleep(150);
+  }
+  return last;
+}
+
+/**
+ * 把当前所有模态关掉。
+ * `openMenu()` 开头 `if (isModalOpen()) return;` —— 过完一天若有 vsPlayer 事件，
+ * `showAiDayReport()` 会先弹一屏；此时读菜单会拿到 `items: []`，读成"菜单不见了"。
+ * 这不是功能问题，是**读数被挡**，所以先清场再量。
+ */
+async function clearModals(evaluate) {
+  for (let i = 0; i < 6; i++) {
+    const had = await evaluate(`(() => {
+      if (!document.querySelector('.modal')) return false;
+      const b = [...document.querySelectorAll('button, .btn')].find((x) => /^(关闭|返回|继续)$/.test((x.textContent || '').trim()));
+      if (b) b.click();
+      else { const m = [...document.querySelectorAll('.modal')]; if (m.length) m[m.length - 1].click(); }
+      return true;
+    })()`);
+    if (!had) return true;
+    await sleep(220);
+  }
+  return !(await evaluate(`!!document.querySelector('.modal')`));
 }
 
 async function boot(send, evaluate, query) {
@@ -154,30 +233,32 @@ try {
       // ---- ① 默认：连过 3 天，不许弹「对手动向」 ----
       await boot(send, evaluate, '');
       const days = [];
+      const advances = [];
       for (let d = 0; d < 3; d++) {
-        await endDay(evaluate);
-        await sleep(2400);
+        const adv = await nextDay(evaluate);
+        advances.push(adv);
         days.push(await evaluate(STATE));
       }
       const daily = days.filter((s) => s.hasModal && /对手动向/.test(s.modalTitle));
+      // 三条都要：天真的翻过去了（否则"没弹窗"是假的）、字幕是第 N 天、弹窗 0 次
+      const dayOk = advances.every((a) => a.ok);
       const hintOk = days.every((s) => /第 \d+ 天/.test(s.hint));
       check(
         'no-daily',
         '连过 3 天不弹「对手动向」，但字幕仍是「第 N 天」（去掉了噪音、没丢"现在是第几天"）',
-        daily.length === 0 && hintOk,
-        `弹窗 ${daily.length}/3 次 · 字幕 ${days.map((s) => `「${s.hint}」`).join(' ')}`,
+        dayOk && daily.length === 0 && hintOk,
+        `${dayOk ? '' : `⚠ 没量到：${advances.find((a) => !a.ok).why}｜`}弹窗 ${daily.length}/3 次 · 字幕 ${days.map((s) => `「${s.hint}」`).join(' ')}`,
       );
 
       // ---- ② 对照臂：?devreport=1 必须弹得出来 ----
       await boot(send, evaluate, '&devreport=1');
-      await endDay(evaluate);
-      await sleep(2400);
-      const rep = await evaluate(STATE);
+      const advRep = await nextDay(evaluate);
+      const rep = await waitReport(evaluate);
       check(
         'devreport',
         '?devreport=1 时同一弹窗照样出现（证 no-daily 不是"弹窗坏了"）',
-        rep.hasModal && /对手动向/.test(rep.modalTitle),
-        `模态=${rep.hasModal} · 标题「${rep.modalTitle}」`,
+        advRep.ok && !!rep && rep.hasModal && /对手动向/.test(rep.modalTitle),
+        `${advRep.ok ? '' : `⚠ 没量到：${advRep.why}｜`}模态=${rep && rep.hasModal} · 标题「${rep ? rep.modalTitle : ''}」`,
       );
 
       // ---- ③ 未读条数：拇指带无角标，菜单那一行带条数，读完归零 ----
@@ -185,8 +266,9 @@ try {
          在 `isModalOpen()` 上直接返回（首版就栽在这里：读到 `items: []`，看起来像"菜单没了"）。
          新页只过一天 —— 有 AI 事件进日志，又没有 vsPlayer 事件要弹窗，状态最干净。 */
       await boot(send, evaluate, '');
-      await endDay(evaluate);
-      await sleep(2800);
+      const advLog = await nextDay(evaluate);
+      await sleep(600);
+      await clearModals(evaluate); // 有 vsPlayer 事件时先弹了「对手动向」，不清场 openMenu 会直接返回
       const before = await evaluate(menuRead(true));
       await sleep(900);
       await evaluate(CLOSE_TOP);
@@ -196,15 +278,16 @@ try {
         'logcount',
         '拇指带无数字角标 · 菜单行「事件日志」右侧一枚 N 胶囊（不折行 · 完整句子在 aria-label）· 读过后归零',
         beforeOk(before) && after && after.text === '事件日志' && after.count === null,
-        `拇指带角标=${before && before.hasBadgeInThumb} · 读前「${before && before.text}」+胶囊 ${before && before.count} 折行=${before && before.wrap} · aria「${before && before.aria}」· 读后「${after && after.text}」胶囊=${after && after.count}`,
+        `${advLog.ok ? '' : `⚠ 没量到：${advLog.why}｜`}拇指带角标=${before && before.hasBadgeInThumb} · 读前「${before && before.text}」+胶囊 ${before && before.count} 折行=${before && before.wrap} · aria「${before && before.aria}」· 读后「${after && after.text}」胶囊=${after && after.count}`,
       );
 
       if (SELFCHECK) {
         /* 负向对照 · 角标那半：把 `.tb-badge` 塞回拇指带的「菜单」按钮，再读一次。
            判据必须**当场翻红** —— 否则 `hasBadgeInThumb === false` 可能只是"页面上根本没有这个类"。
            （条数那半不需要造：`after` 就是"读完之后"的真实状态，`beforeOk(after)` 天然是 false。） */
-        await endDay(evaluate);
-        await sleep(2600);
+        await nextDay(evaluate);
+        await sleep(600);
+        await clearModals(evaluate);
         await evaluate(`(() => {
           const b = [...document.querySelectorAll('#thumb .tb-btn')].find((x) => /菜单/.test(x.textContent || ''));
           if (!b) return 0;

@@ -300,6 +300,15 @@ export interface MonsterPayload {
   tier: 'weak' | 'mid' | 'strong';
   /** 守财：击败后发放 */
   guard?: GuardReward;
+  /**
+   * §19.3 爆发怪（EV2）。`true` ⇒ 本周爆发生成、打死才消失、**不给赏金**（`guard` 必为 undefined）。
+   *
+   * 这个标记是落点/计数/角标的**唯一真相**：`outbreakStacks(state)` 数它，
+   * `MapRenderer` 据此画 6×6 红角标，地图生成器产出的野怪永远不带它。
+   */
+  outbreak?: boolean;
+  /** 第几周爆发的（只用于日志/调试，不参与判定）。 */
+  outbreakWeek?: number;
 }
 export interface ArtifactPayload {
   artifactId: string;
@@ -519,6 +528,14 @@ export interface GameState {
    * 读档后玩家看到"池子比上周多 5 个"却没有任何解释 —— 那会被当成 bug。
    */
   weekEvent?: WeekEvent;
+  /**
+   * 地图爆发状态（spec §19.3 / EV2）。`endDay` 在周首写预告、在爆发日落地。
+   *
+   * **为什么进 `GameState`（而不是 UI 内存）**：`lastDay` 是补结算的唯一闸门
+   * （离线三天回来必须补上、且只补一次），`spawned` 是"W6 起不再刷"的累计凭证；
+   * 两者都没法从地图反推 ⇒ 不存就丢。
+   */
+  outbreak?: OutbreakState;
 }
 
 /**
@@ -535,6 +552,39 @@ export interface WeekEvent {
   add?: number;
   mult: number;
   text: string;
+}
+
+/**
+ * 本周的地图爆发预告（spec §19.3 / EV2）。周首掷出、写在日志里、到 `day` 才落地。
+ *
+ * `armies` 在**周首**就生成好：预告文案说"狼群过境"，到那天再抽兵种就会出现
+ * "说好的狼来了猪" —— 所以兵种与文案必须同一批产物。
+ */
+export interface OutbreakNotice {
+  week: number;
+  /** 预告的绝对天数（`(week-1)*7 + 3` = 本周三）。 */
+  day: number;
+  /** 预告栈数（已按上限夹过）；到那天按**当时**余量落地，不足不补发。 */
+  count: number;
+  armies: Army[];
+  /** 群名用的兵种（= `armies[0][0]`），只影响文案。 */
+  unitTypeId: string;
+  name: string;
+  text: string;
+}
+
+/**
+ * 地图爆发的持久状态（spec §19.3.4）。**必须进存档**：
+ *   · `lastDay` —— 补结算的唯一闸（`lastDay >= notice.day` ⇒ 已落过，不重复）；
+ *   · `spawned` —— 累计落地栈数（被清掉的也算；W6 起必须停住）；
+ *   · `live` —— 当前在图栈数快照（每次 `endDay` 与 `outbreakStacks()` 刷新）。
+ *     判定**永远只数地图**（`outbreakStacks`），`live` 只给存档/UI 看，不参与决策。
+ */
+export interface OutbreakState {
+  lastDay: number;
+  spawned: number;
+  live: number;
+  notice?: OutbreakNotice;
 }
 
 export interface LogEntry {

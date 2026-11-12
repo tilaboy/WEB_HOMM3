@@ -24,7 +24,7 @@
 > | 装备页 U2 | 760×352 三栏（240/256/240）· 纸娃娃 6 槽 + 背包 4×3 + 部队 5 行；`probe:arts` **29/29** | ✅ U2 |
 > | 存档 U4 | **1 自动 + 8 手动 + 1 救援**；外壳 `{shell:1,savedAt,state}`；`probe:save` **45/45**（P0–P9） | ✅ U4 |
 > | 城堡外形 S6 | 地图城堡按城防 **0 / 1 / 3 塔**；`audit:townart` 8 条、`probe:castle` 7 条（本底 0/108 格） | ✅ S6 |
-> | 门控 | **60 门**（50 + `probe:arts`/`probe:save`/`audit:townart`/`probe:castle`/`probe:innate`/`probe:battlebg`/`probe:spellfx`/`probe:castbeat`/`probe:weekevent`/`probe:upgrade`）。`probe:pockets` / `probe:outbreak` 已落地：前者是**报表**（恒 0，量"封闭块里有没有东西"），后者是门（必经格 ≥8 且小口袋门 ≥2） | ✅ |
+> | 门控 | **60 门**（50 + `probe:arts`/`probe:save`/`audit:townart`/`probe:castle`/`probe:innate`/`probe:battlebg`/`probe:spellfx`/`probe:castbeat`/`probe:weekevent`/`probe:outbreak`/`probe:upgrade`）。`probe:pockets` 是**报表**（恒 0，量"封闭块里有没有东西"）；`probe:outbreak` 是门（地形门槛 + 28 条规则断言） | ✅ |
 >
 > **一句话结论**：**M0–M4 全绿**（最近一批 M4 = U2 装备页 / U4 存档 / S6 城堡外形，2026-11-06）。
 > **M5 代码侧 4/4 全收：S3a–S3d 四批立绘已收（11-06 → 11-08），20 兵 / 60 帧 / 20 张兵牌全部直画、`FRAME_ALIAS` 空表；
@@ -38,7 +38,10 @@
 > 且不跳过伤害（`probe:castbeat` 16 条）。**U3 与 §11 全部收口，M5 代码侧 5/5。**
 > M5 只剩**人工盲测**（S2 五人 + p1–p3 命名，人做，不是代码）。
 > **M6 已开工（11-12）：EV1 周生长事件收口**（`probe:weekevent` 18 条；25/8/67 实测
-> 24.8/7.0/68.2；同批把 A5 单栈 60% 写进 AI）。P0 / EV2 / H2–H6 未动。
+> 24.8/7.0/68.2；同批把 A5 单栈 60% 写进 AI）；**EV2 地图爆发收口**（`probe:outbreak`
+> 28 条：预告/落地/上限 8/补结算/无赏金/6×6 角标，三条负向对照全红过）。P0 / H2–H6 未动。
+> ⚠️ EV2 有一处**待确认的规格偏离**：§19.3.2 的"距英雄 ≥1 天"在 wild 小图只有 3 个合规关口
+> （中图 0 个），W3 要 4 栈 ⇒ 改成分档 `[1800, 1350, 900]`，只退距离。
 > 两条留给 B5 的**平衡**欠账：`p3` / `p4` 的 T5 稀有资源造价（2 宝石 / 4 水晶），
 > 以及 AI 编队闸改动后 **B4 基线需重跑**（读数照打，不作为通过）。
 
@@ -672,12 +675,17 @@
 
 ### 8.3 EV2 · 地图爆发（§19.3）
 
-- [ ] 预告 → 当日生成 4~6 栈，只落在 `lost ≤ 40` 的小口袋门
-- [ ] **只掷 3 次**：W3 = 4 / W4 = 5 / W5 = 6（决策 65）
-- [ ] 全图上限 **8 栈**；打死才消失；**不给金币赏金**
-- [ ] `lastOutbreakDay` 与爆发栈计数**必须进 `GameState`**
-- [ ] 跨天补结算：读档/上线时若 `lastOutbreakDay < day` ⇒ 补生成 + 周报卡片
-- [ ] 机检：`probe:outbreak`；W5 之后不再生成（负向对照：改成每周掷 ⇒ 必须红）
+- [x] 预告 → 当日生成 4~6 栈，只落在 `lost ≤ 40` 的小口袋门 — `probe:outbreak` B1/B3/B5
+- [x] **只掷 3 次**：W3 = 4 / W4 = 5 / W5 = 6（决策 65）— B9/B13；W6 不刷（负向对照 C2：表里加 W6 就能落）
+- [x] 全图上限 **8 栈**；打死才消失；**不给金币赏金** — B10/B11/C3（cap=∞ ⇒ 15 栈）、D1（金币 +0）、D5
+- [x] `lastOutbreakDay` 与爆发栈计数**必须进 `GameState`** — `state.outbreak = {lastDay, spawned, live, notice?}`；判定只数地图（`outbreakStacks`），`live` 只作快照
+- [x] 跨天补结算：读档/上线时若 `lastOutbreakDay < day` ⇒ 补生成 + 周报卡片 — B8（`lastDay` 闸）；日志 + 顶部横幅
+- [x] 机检：`probe:outbreak`；W5 之后不再生成（负向对照：改成每周掷 ⇒ 必须红）— 28 条全绿
+
+> 落地记录：`production/m6-ev2-outbreak-2026-11-12.md`。
+> ⚠️ 一处**偏离规格**已写进文档待确认：§19.3.2 的"距英雄 ≥1 天"在 wild 小/中图上
+> 只有 3 / **0** 个合规关口（W3 要 4 栈），照字面实现等于死规则 ⇒ 改成
+> `OUTBREAK_HOME_STEPS = [1800, 1350, 900]`（只退距离，`lost ≤ 40` 与"口袋里无城"不退）。
 
 ### 8.4 H2–H6 · 英雄成长（§21）
 

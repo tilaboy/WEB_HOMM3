@@ -1823,9 +1823,19 @@ function doEndDay(): void {
   endDay(state);
   sfx.day();
   /* §19.2：周界刚掷出的事件要在**第一次招募之前**被看到。
-     判据用 `isNewWeek`（只有周首日成立），否则整周每次结束一天都会重播。 */
-  if (isNewWeek(state.day) && state.weekEvent && state.weekEvent.kind !== 'calm') {
+     判据用 `isNewWeek`（只有周首日成立），否则整周每次结束一天都会重播。
+
+     §19.3：同一天还可能掷出爆发预告。两条都进日志，横幅只放**一条** ——
+     横幅是 68% 宽的胶囊，塞两句会挤成两行小字。优先给爆发（它带着"本周三"这个期限，
+     错过就没了），生物周/瘟疫在日志里照样看得到。 */
+  const ob = state.outbreak;
+  if (isNewWeek(state.day) && ob?.notice && ob.notice.week === weekOf(state.day)) {
+    showWeekBanner(ob.notice.text);
+  } else if (isNewWeek(state.day) && state.weekEvent && state.weekEvent.kind !== 'calm') {
     showWeekBanner(state.weekEvent.text);
+  } else if (ob && ob.lastDay === state.day) {
+    // 落地日：预告过的事真的发生了，得让玩家知道"地图上多出来的怪从哪来"
+    showWeekBanner(`爆发落地：地图上 ${ob.live} 栈挡在必经之路`);
   }
   lastStepFrom = null;
   recomputeField();
@@ -2227,9 +2237,10 @@ function updateHover(e: PointerEvent): void {
 function objectLabel(obj: MapObject): string {
   switch (obj.kind) {
     case 'wanderingMonster': {
-      const p = obj.payload as { army: Army; guard?: GuardReward };
+      const p = obj.payload as { army: Army; guard?: GuardReward; outbreak?: boolean };
       const g = p.guard ? `（看守 ${describeGuard(p.guard)}）` : '';
-      return `野怪：${describeArmy(p.army)}${g}`;
+      // §19.3.4 C3：悬停文字也要能分出"能绕的"和"挡路的"（角标只有 6×6）
+      return `${p.outbreak ? '爆发野怪（挡路，打死才能过）' : '野怪'}：${describeArmy(p.army)}${g}`;
     }
     case 'treasureChest':
       return '宝箱';
@@ -2270,9 +2281,10 @@ function showTileInfo(sx: number, sy: number): void {
 function describeObject(obj: MapObject): string {
   switch (obj.kind) {
     case 'wanderingMonster': {
-      const p = obj.payload as { army: Army; guard?: GuardReward };
+      const p = obj.payload as { army: Army; guard?: GuardReward; outbreak?: boolean };
       const g = p.guard ? `\n看守着：${describeGuard(p.guard)}，只有取胜才能拿到` : '';
-      return `守卫：${describeArmy(p.army)}${g}`;
+      const head = p.outbreak ? '本周爆发的兽群，堵在必经之路上 —— 不打完过不去，也没有赏金。' : '';
+      return `${head}${head ? '\n' : ''}守卫：${describeArmy(p.army)}${g}`;
     }
     case 'treasureChest':
       return '一只落满灰尘的箱子，也许装着金币。';

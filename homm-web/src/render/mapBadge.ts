@@ -109,6 +109,38 @@ export function toCanonicalUnitId(id: string): string | null {
   return /^p[1-4]_[a-z]+$/.test(id) ? id : null;
 }
 
+/* ---------------- §19.3.4 C3：爆发怪角标 ---------------- */
+
+/** 角标边长（世界 px，6×6，§19.3.4 C3 定值）。 */
+export const OUTBREAK_MARK_SIZE = 6;
+
+/** 外圈墨边宽度：6×6 在土色/雪地上必须先铺墨再压亮，否则红点会糊进地面。 */
+export const OUTBREAK_MARK_RIM = 1;
+
+/** 对象是不是爆发怪（唯一判据 = `payload.outbreak`，与 `outbreakStacks()` 同源）。 */
+export function isOutbreakObject(obj: { kind: string; payload: unknown }): boolean {
+  if (obj.kind !== 'wanderingMonster') return false;
+  return (obj.payload as { outbreak?: boolean } | null)?.outbreak === true;
+}
+
+/**
+ * 角标落点：贴在精灵**可见剪影的右上角**（`sil` 是世界像素包围盒，含端点）。
+ * 没有剪影（图集缺帧）时退回本格右上角 —— 角标本身是信息，不能因为缺帧就不画。
+ *
+ * 返回**红面**的包围盒（墨边由渲染层再外扩 `OUTBREAK_MARK_RIM`）；纯几何，探针可直接断言。
+ */
+export function outbreakMarkRect(sil: BBox | null, tx: number, ty: number): BBox {
+  const s = OUTBREAK_MARK_SIZE;
+  if (!sil) {
+    const x0 = tx * TILE + TILE - s - 2;
+    const y0 = ty * TILE + 2;
+    return { x0, y0, x1: x0 + s - 1, y1: y0 + s - 1 };
+  }
+  const x0 = sil.x1 - s + 1;
+  const y0 = sil.y0 - 1;
+  return { x0, y0, x1: x0 + s - 1, y1: y0 + s - 1 };
+}
+
 /**
  * §13.4：代表兵种 = **max(tier ↓, count ↓, canonical id ↑)** 的那一项。
  * 返回 canonical id，或 `null`（队里没有可解析的兵种）。

@@ -14,8 +14,12 @@ import type { LightTint } from './lightLayer.js';
 import { quality, syncAmbientBaseline } from './quality.js';
 import {
   chooseBadgeSide,
+  isOutbreakObject,
+  outbreakMarkRect,
   pickRepresentativeUnit,
   sideCell,
+  OUTBREAK_MARK_RIM,
+  OUTBREAK_MARK_SIZE,
   type BadgeFrame,
   type BBox,
 } from './mapBadge.js';
@@ -1156,9 +1160,35 @@ export class MapRenderer {
     ctx.stroke();
   }
 
+  /**
+   * 爆发怪的 6×6 红角标（§19.3.4 C3）。
+   *
+   * 三条画法上的理由：
+   *   ① **先铺墨再压亮** —— 纯红 6×6 落在土色/雪地上几乎与地面同明度，
+   *      必须先画 1px 墨边把它从地上"抠"出来（铁律：暗底吃亮芯、亮底吃暗边）；
+   *   ② 贴**剪影右上角**而不是格角 —— 物件精灵的 `ay` 是负的（站得比格高），
+   *      按格角画会跟 32×44 的狼头错开，读成"地上一个红点"；
+   *   ③ 只多点 1px 高光，不画感叹号/骷髅 —— 6px 里塞第二层符号会变成噪点。
+   * 位置由 `outbreakMarkRect()` 给（与探针同源），本函数只管落笔。
+   */
+  private drawOutbreakMark(sprite: string, gx: number, gy: number): void {
+    const bb = this.silBBoxAt(sprite, gx, gy);
+    const r = outbreakMarkRect(bb, gx, gy);
+    const ctx = this.ctx;
+    const pad = OUTBREAK_MARK_RIM;
+    ctx.fillStyle = '#2a1a12';
+    ctx.fillRect(
+      r.x0 - pad, r.y0 - pad,
+      OUTBREAK_MARK_SIZE + pad * 2, OUTBREAK_MARK_SIZE + pad * 2,
+    );
+    ctx.fillStyle = '#d4362a';
+    ctx.fillRect(r.x0, r.y0, OUTBREAK_MARK_SIZE, OUTBREAK_MARK_SIZE);
+    ctx.fillStyle = '#ffc9b8';
+    ctx.fillRect(r.x0 + 1, r.y0 + 1, 1, 1);
+  }
+
   /** 懒建软椭圆影贴图（见字段注释）。 */
-  private shadowSprite(): HTMLCanvasElement {
-    if (this.shadowCv) return this.shadowCv;
+  private shadowSprite(): HTMLCanvasElement {    if (this.shadowCv) return this.shadowCv;
     const w = 96;
     const h = 32;
     const cv = document.createElement('canvas');
@@ -2392,6 +2422,11 @@ export class MapRenderer {
           const bb = this.silBBoxAt(sprite, d.x, d.y);
           if (bb) this.drawContactShadow(bb);
           this.blit(sprite, d.x, d.y);
+          // §19.3.4 C3：爆发怪 = 普通野怪图标 + 6×6 红角标（不改图集）。
+          // 分不出"能绕的"和"挡路的"，玩家会以为所有野怪都必须打、全程绕路。
+          if (isOutbreakObject(d.obj)) {
+            this.drawOutbreakMark(sprite, d.x, d.y);
+          }
           // §14.3 G5 的验收把手：记下真正画出去的帧名与屏幕矩形（仅 ?devcastle=1）
           if (this.devTownDrawn && d.obj.kind === 'town') {
             const f = this.atlas.get(sprite);

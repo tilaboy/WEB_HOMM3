@@ -74,7 +74,8 @@
     "probe:battlebg": "node tools/probes/battlebg.mjs",
     "probe:spellfx": "node tools/probes/spellfx.mjs",
     "probe:castbeat": "node tools/probes/castbeat.mjs",
-    "probe:weekevent": "node tools/probes/weekevent.mjs"
+    "probe:weekevent": "node tools/probes/weekevent.mjs",
+    "probe:outbreak": "node tools/probes/outbreak.mjs"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",

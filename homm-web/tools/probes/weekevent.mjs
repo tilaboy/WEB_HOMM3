@@ -326,7 +326,7 @@ HEAD('F. 回归：旧调用 == 平静周的新调用');
         .map((t) => [t.id, t.growthPool, t.growthRemainder])
         .sort(),
     );
-  PASS(dump(a) === dump(b), 'F1 不传事件时，增长池与改动前逐位相同（现有 59 门读数不受影响）');
+  PASS(dump(a) === dump(b), 'F1 不传事件时，增长池与改动前逐位相同（其它门的读数不受影响）');
 }
 
 console.log('');

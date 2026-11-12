@@ -4,6 +4,7 @@ import { addResources, dailyGoldBonus, manaMaxOf, maxMovePoints } from './hero.j
 import { applyWeeklyGrowth, mineIncome, ownedTowns, townDailyIncome } from './town.js';
 import { isNewWeek } from './calendar.js';
 import { eventAddOf, rollWeekEvent } from './week.js';
+import { outbreakCount, planOutbreak, settleOutbreak } from './outbreak.js';
 import { pushLog } from './log.js';
 import { runAiTurn } from './ai.js';
 import { resetAiEvents } from './aiReport.js';
@@ -91,9 +92,17 @@ export function endDay(state: GameState): void {
     const ev = rollWeekEvent(state);
     applyWeeklyGrowth(state, ev.mult, eventAddOf(ev));
     pushLog(state, `第 ${Math.floor((state.day - 1) / 7) + 1} 周开始，各城兵力增长`);
+    /* §19.3：爆发**预告**与周生长同一个周首入口（第 3 周起）。
+       预告必须早于落地两天：玩家要先看到"本周三：狼群过境"才有备战的机会。 */
+    planOutbreak(state);
   }
 
   pushLog(state, `第 ${state.day} 天开始，${parts.join('；')}，移动力已恢复`);
+
+  /* §19.3.2：爆发日落地（含离线补结算，§19.3.4 C4）。
+     放在 AI 行动之前 —— 新落的怪会改变 AI 当天的选路，先摆后走才是一局里发生的事。 */
+  settleOutbreak(state);
+  if (state.outbreak) state.outbreak.live = outbreakCount(state);
 
   // 无城宽限期：每天推进一次。放在 AI 行动之前，这样"撑满 7 天"当天就生效，
   // 当天的 evaluateOutcome 就能把"所有对手出局"翻成胜利。

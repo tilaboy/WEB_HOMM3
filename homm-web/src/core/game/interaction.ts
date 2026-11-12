@@ -134,20 +134,27 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
 
   switch (obj.kind) {
     case 'wanderingMonster': {
-      const payload = obj.payload as { army: Army; tier: string; guard?: GuardReward };
+      const payload = obj.payload as { army: Army; tier: string; guard?: GuardReward; outbreak?: boolean };
       const { attacker, defender } = sides(state, heroId, obj);
       const outcome = quickBattle(attacker, defender, battleSeed(state, obj));
       const ratio = lossRatio(outcome);
       const grade = lossGrade(ratio);
       const tierName = { weak: '零星散兵', mid: '成群野兽', strong: '强悍守卫' }[payload.tier] ?? '未知';
       const guardText = describeGuard(payload.guard);
+      /* §19.3.4 C3：爆发怪与普通野怪必须**在文字上**也能分开。
+         图标只多一个 6×6 角标，玩家扫一眼不一定看见；遭遇框是决定"打还是绕"的地方，
+         这里必须直说"挡在必经之路上" —— 否则玩家会以为所有野怪都能绕。 */
+      const head = payload.outbreak
+        ? `途中爆发的${tierName}挡在必经之路上，不打完过不去。\n`
+        : '';
       // 两行（③ 遭遇框瘦身）：① 是什么 + 守什么 ② 打不打得过 + 一句代价。
       // 不再列「我方兵力 / 敌方兵力」——自己的队伍玩家自己清楚，逐队损失表挪出对话框。
       return {
         objId,
         kind: 'battle',
-        title: `遭遇${tierName}`,
+        title: payload.outbreak ? `爆发·${tierName}` : `遭遇${tierName}`,
         message:
+          head +
           `${describeArmy(payload.army)}${guardText ? `，看守 ${guardText}` : ''}` +
           `\n${outcome.win ? '可以取胜' : '难以攻克'} · ${grade.text}（约损失 ${Math.round(ratio * 100)}% 兵力）` +
           accidentNotice(outcome),
