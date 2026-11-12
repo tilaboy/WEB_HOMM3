@@ -13,6 +13,7 @@ import { getCombatAtlas } from './combatAtlas.js';
 import type { CombatAtlas } from './combatAtlas.js';
 import { quality } from './quality.js';
 import { unitCombatFrame } from './unitFrames.js';
+import { BATTLE_BG_SPECS, type BattleBg } from './battleBg.js';
 
 const PAD = 6;
 export { PAD };
@@ -74,6 +75,8 @@ export interface BattleFx {
 
 export interface BattleDraw {
   battle: BattleState;
+  /** 地形背景套（§11.1）。缺省 `grass` —— 旧调用点不用改。 */
+  bg?: BattleBg;
   activeId: string | null;
   reachable: Set<string> | null;
   attackable: Set<string> | null;
@@ -187,13 +190,17 @@ export class BattleRenderer {
     g.imageSmoothingEnabled = false;
     g.clearRect(0, 0, BASE_W, BASE_H);
 
-    // 背景：战场外的深色土地
-    g.fillStyle = '#2a2417';
+    // 背景：战场外的土地 + 远景剪影带（§11.1，按 `d.bg` 换套）
+    const bg = d.bg ?? 'grass';
+    const pal = BATTLE_BG_SPECS[bg];
+    g.fillStyle = pal.outer;
     g.fillRect(0, 0, BASE_W, BASE_H);
-    g.fillStyle = '#3b321f';
+    g.fillStyle = pal.rim;
     g.fillRect(PAD - 3, PAD - 3, BASE_W - (PAD - 3) * 2, BASE_H - (PAD - 3) * 2);
 
-    this.drawFloor(g);
+    this.drawBackdrop(g, bg);
+    this.drawFloor(g, bg);
+    this.drawForeground(g, bg);
     this.drawSiege(g, d);
     this.drawHighlights(g, d);
     this.drawUnits(g, d);
@@ -300,11 +307,144 @@ export class BattleRenderer {
     g.globalAlpha = 1;
   }
 
-  private drawFloor(g: CanvasRenderingContext2D): void {
+  /**
+   * 远景剪影带（§11.1 第 1 条）。画在**战场矩形之外**的顶边外边距里，
+   * 形状在下半截被地砖盖住 —— 所以"不压格"是**几何保证**，不靠肉眼检查：
+   * 这个方法在 `drawFloor` 之前调用，任何超过 `PAD` 的部分都会被地面遮掉。
+   *
+   * 五套的形状不同（树冠 / 枯树 / 雪松 / 岩柱 / 城垛），这是"一眼看出地形"的主线索；
+   * 颜色只是第二线索。位置用 `hash2(i, 11, 77)` 抖动 ⇒ 同一套每次截图逐像素一致
+   * （§11.1 第 3 条：同一 seed，不每帧随机）。
+   */
+  private drawBackdrop(g: CanvasRenderingContext2D, bg: BattleBg): void {
+    const pal = BATTLE_BG_SPECS[bg];
+    const top = PAD; // 战场顶边 = 剪影的"地平线"
+
+    g.save();
+    // α 从 §11.1 写的 .55 提到 .85：那条是按「带高 12」定的，而这里带高只有 6px
+    // （见文件头对 PAD 的说明）。同透明度下 6px 的中间调几乎读不出来（实拍两轮），
+    // 颜色同时压深一档 —— 读出来的是"远端一条锯齿状的暗边"，这正是要的语义。
+    g.globalAlpha = 0.85;
+    g.fillStyle = pal.far;
+    g.strokeStyle = pal.far;
+    g.lineWidth = 1;
+
+    // 形状一律压在 y ∈ [0, PAD] 之内（最高 5~6px）：顶到画布边缘会被硬切成平头，
+    // 那不像"远处的树"，像"一张纸把画面切了"。
+    for (let i = 0, x = 4; x < BASE_W - 4; i++, x += 19) {
+      const j = hash2(i, 11, 77); // 0..1 稳定抖动（§11.1 第 3 条：同一 seed）
+      if (bg === 'grass') {
+        // 阔叶树冠：两团高低不一的圆
+        const r = 3.5 + j * 1.6;
+        g.beginPath();
+        g.arc(x, top + 1.5, r, 0, Math.PI * 2);
+        g.fill();
+        g.beginPath();
+        g.arc(x + r * 0.9, top + 2, r * 0.65, 0, Math.PI * 2);
+        g.fill();
+      } else if (bg === 'dirt') {
+        // 枯树：1px 细干 + 两根斜枝
+        const hh = 4.5 + j * 1.5;
+        g.fillRect(x, top - hh, 1, hh + 1);
+        g.beginPath();
+        g.moveTo(x + 0.5, top - hh * 0.55);
+        g.lineTo(x + 3.5, top - hh - 0.5);
+        g.moveTo(x + 0.5, top - hh * 0.4);
+        g.lineTo(x - 2.5, top - hh + 0.5);
+        g.stroke();
+      } else if (bg === 'snow') {
+        // 雪松：一个三角（两层三角在 6px 里会糊成梯形）
+        const hh = 5 + j * 1;
+        g.beginPath();
+        g.moveTo(x, top - hh);
+        g.lineTo(x + 3, top + 1.5);
+        g.lineTo(x - 3, top + 1.5);
+        g.closePath();
+        g.fill();
+      } else if (bg === 'swamp') {
+        // 岩柱 + 枯枝：竖直块、高度参差（沼泽的辨识点是"参差"不是"尖"）
+        const hh = 3.5 + j * 2.5;
+        g.fillRect(x, top - hh, 2, hh + 1.5);
+        if (j > 0.6) g.fillRect(x + 3, top - hh * 0.6, 1, hh * 0.6 + 1.5);
+      } else {
+        // 城垛：等宽垛口 + 每隔 4 格一座方塔（塔最多 6px，加屋顶就顶到画布边了）
+        if (i % 4 === 2) g.fillRect(x - 2, top - 6, 7, 7.5);
+        else g.fillRect(x, top - 3, 4, 4.5);
+      }
+    }
+    g.restore();
+  }
+
+  /**
+   * 前景剪影（§11.1）。画在**地面之上、单位之下**，只占底边两角、
+   * 左右各内缩 **16px** —— 这个内缩不是审美：它保证剪影碰不到第一/最后一列
+   * 单位的脚（脚在格心，横向最近的那格离场边 0px，16px 内缩正好让开一格）。
+   */
+  private drawForeground(g: CanvasRenderingContext2D, bg: BattleBg): void {
+    const pal = BATTLE_BG_SPECS[bg];
+    const bottom = BASE_H - PAD;
+    const W = 26; // 每侧剪影的宽度
+
+    g.save();
+    g.fillStyle = pal.fore;
+    g.strokeStyle = pal.fore;
+
+    for (const side of [-1, 1] as const) {
+      const x0 = side < 0 ? PAD + 16 : BASE_W - PAD - 16 - W;
+      if (bg === 'grass') {
+        // 草叶：四根，高矮交替（等高会读成栅栏）
+        for (let i = 0; i < 4; i++) {
+          const x = x0 + i * 6;
+          const hh = i % 2 ? 5 : 8;
+          g.beginPath();
+          g.moveTo(x, bottom + 2);
+          g.lineTo(x + 2, bottom + 2 - hh);
+          g.lineTo(x + 3, bottom + 2);
+          g.closePath();
+          g.fill();
+        }
+      } else if (bg === 'dirt') {
+        // 石堆：三块石头，中间最大
+        for (let i = 0; i < 3; i++) {
+          const r = i === 1 ? 4 : 2.5;
+          g.beginPath();
+          g.arc(x0 + 5 + i * 8, bottom + 1, r, Math.PI, 0);
+          g.fill();
+        }
+      } else if (bg === 'snow') {
+        // 雪堆：一条低缓的弧（尖的会读成石头）
+        g.beginPath();
+        g.ellipse(x0 + W / 2, bottom + 2, W / 2, 5, 0, Math.PI, 0);
+        g.fill();
+      } else if (bg === 'swamp') {
+        // 芦苇：三根细杆 + 顶端小穗
+        for (let i = 0; i < 3; i++) {
+          const x = x0 + 6 + i * 8;
+          const hh = 7 + (i % 2) * 2;
+          g.fillRect(x, bottom + 2 - hh, 1, hh);
+          g.fillRect(x - 1, bottom + 2 - hh, 3, 2);
+        }
+      } else {
+        // 木栅：三根削尖的桩
+        for (let i = 0; i < 3; i++) {
+          const x = x0 + 5 + i * 8;
+          g.beginPath();
+          g.moveTo(x - 2, bottom + 2);
+          g.lineTo(x, bottom + 2 - 8);
+          g.lineTo(x + 2, bottom + 2);
+          g.closePath();
+          g.fill();
+        }
+      }
+    }
+    g.restore();
+  }
+
+  private drawFloor(g: CanvasRenderingContext2D, bg: BattleBg = 'grass'): void {
     for (let row = 0; row < FIELD_H; row++) {
       for (let col = 0; col < FIELD_W; col++) {
         const v = Math.floor(hash2(col, row, 4242) * 4);
-        this.blit(g, `cf_${v}`, col, row);
+        this.blit(g, `cf_${bg}_${v}`, col, row);
       }
     }
   }

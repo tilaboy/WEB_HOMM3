@@ -7,8 +7,9 @@
  *
  * 依然全部程序化绘制：零外部素材，启动一次性烘焙，之后只做 drawImage。
  */
-import { PixBuf, hash2, shade } from './pixel.js';
+import { PixBuf, hash2, mix, shade } from './pixel.js';
 import { UNIT_FRAMES, buildB0Frame } from './unitArt.js';
+import { BATTLE_BG_ORDER, BATTLE_BG_SPECS, floorRamp, type BattleBg } from './battleBg.js';
 // 打包规则与冒险图集共用同一份（#24）：换行/行高/2px 间隙只有一处实现，
 // 审计脚本 `tools/atlasaudit.mjs` 复算容量时拿到的就是运行时这套规则。
 import { shelfAdvance, packMetrics, warnOverflow, type PackItem, type PackMetrics, type ShelfCursor } from './atlas.js';
@@ -123,7 +124,16 @@ export class CombatAtlas {
 
     // 地砖锚点 = 格心在像素盒里的位置取负；与 HW/HH/HEX_CX/HEX_CY 同源，
     // 换格尺寸时不许只改一边（否则地砖整体相对单位偏移）。
-    for (let v = 0; v < 4; v++) put(`cf_${v}`, hexFloor(v), -HEX_CX, -HEX_CY);
+    //
+    // §11.1：五套地形各 4 块（`cf_<bg>_<v>` = 20 帧）。**同一份几何、只换颜色** ——
+    // 斑点位置由 `hash2(variant, …)` 决定，与套无关，所以两套之间可以逐像素对照
+    // （只有 RGB 不同、alpha 通道完全相同），这正是"0 新图集"能成立的原因。
+    // `cf_<v>` 保留为 grass 的别名：历史探针/截图脚本按旧名取帧，改名会让它们
+    // 静默拿到 undefined（`need()` 才抛，而它们直接读 frames）。
+    for (const bg of BATTLE_BG_ORDER) {
+      for (let v = 0; v < 4; v++) put(`cf_${bg}_${v}`, hexFloor(v, bg), -HEX_CX, -HEX_CY);
+    }
+    for (let v = 0; v < 4; v++) frames.set(`cf_${v}`, frames.get(`cf_grass_${v}`)!);
     put('chi_move', hexOverlay('#4a86d8', 0.34, '#9fd0ff', '#dff0ff'), -HEX_CX, -HEX_CY);
     put('chi_atk', hexOverlay('#c0392b', 0.36, '#ff8f7a', '#ffd9cf'), -HEX_CX, -HEX_CY);
     put('chi_sel', hexOverlay('#e8be5a', 0.18, '#ffdf8a', '#fff3c8'), -HEX_CX, -HEX_CY);
@@ -208,34 +218,177 @@ function strokePoly(pb: PixBuf, pts: [number, number][], color: string): void {
   }
 }
 
-function hexFloor(variant: number): PixBuf {
+function hexFloor(variant: number, bg: BattleBg = 'grass'): PixBuf {
   const pb = new PixBuf(HW, HH);
-  const ramp = ['#3f6630', '#4b7538', '#578441', '#64944b', '#71a455'];
+  const ramp = floorRamp(bg);
   const base = rampPick(ramp, 0.5 + hash2(variant, 7, 11) * 0.2);
   pb.poly(HEX_PTS, base);
   const seed = variant * 977 + 13;
-  // 逐像素噪声：让每块地砖都不一样，但同 variant 的砖拼起来完全一致
+  // 逐像素噪声：让每块地砖都不一样，但同 variant 的砖拼起来完全一致。
+  // ⚠️ 幅度**必须小于地纹**（`groundMarks` 用 ±0.3~0.45）：噪声一旦压过地纹，
+  //    地纹就变成"斑点里的杂色"，读不出形状（首轮实测：雪原的冰裂整条消失在噪点里，
+  //    沼泽的水洼反倒是全砖最亮的一条 —— 因为噪声没给后面的形状留余量）。
   for (let y = 0; y < HH; y++) {
     for (let x = 0; x < HW; x++) {
       if (pb.alphaAt(x, y) < 200) continue;
       const n = hash2(x + variant * 31, y, seed);
-      if (n < 0.12) pb.set(x, y, shade(base, -0.22));
-      else if (n > 0.9) pb.set(x, y, shade(base, 0.18));
+      // 雪原的颗粒要更细更浅：同一个 9% 的暗点在浅蓝白底上比在草地上显眼一倍，
+      // 首轮直接读成"雪地脏了"（雪是五套里唯一不能靠"脏"来表达质感的一套）
+      const pDark = bg === 'snow' ? 0.045 : 0.09;
+      const amtDark = bg === 'snow' ? -0.1 : -0.16;
+      if (n < pDark) pb.set(x, y, shade(base, amtDark));
+      else if (n > 0.93) pb.set(x, y, shade(base, 0.13));
     }
   }
   // 碎石：位置按新盒收（旧值 34/38 是按 40×46 算的，照搬会全落到格角外）
-  for (let i = 0; i < 10; i++) {
-    const x = 2 + Math.floor(hash2(i, 3, seed) * 27);
-    const y = 3 + Math.floor(hash2(i, 5, seed) * 30);
-    if (pb.alphaAt(x, y) > 200) {
-      pb.set(x, y, shade(base, -0.3));
-      pb.set(x, y - 1, shade(base, 0.25));
+  // 雪原不铺碎石：`shade(base,-0.3)` 在浅蓝白底上会读成"雪地上的脏点"，
+  // 雪原的碎屑由 `groundMarks()` 用**亮**的冰屑画（方向相反）。
+  if (bg !== 'snow') {
+    for (let i = 0; i < 6; i++) {
+      const x = 2 + Math.floor(hash2(i, 3, seed) * 27);
+      const y = 3 + Math.floor(hash2(i, 5, seed) * 30);
+      if (pb.alphaAt(x, y) > 200) {
+        pb.set(x, y, shade(base, -0.3));
+        pb.set(x, y - 1, shade(base, 0.25));
+      }
     }
   }
+  // 地纹：见 `groundMarks()` 头注（规格 §11.1 表第 4 列）。
+  groundMarks(pb, bg, base, seed, variant);
   // 内侧描一圈暗边，格子之间才有"格子感"（要足够深，否则绿底上一片糊）
-  strokePoly(pb, HEX_PTS, '#16260f');
+  //
+  // ⚠️ 暗边颜色**不能**按 base 派生：雪原的 base 是浅蓝白，`shade(base, -0.5)` 仍然
+  //    比草地暗边亮 20 L*，格缝会在雪地上消失（整片雪地连成一块）。
+  //    ⇒ 每套自带 `ink`（规格给的底色 / 我对暗部的手调）。内侧那圈亮边照旧派生。
+  strokePoly(pb, HEX_PTS, BATTLE_BG_SPECS[bg].ink);
   strokePoly(pb, hexPts(HEX_CX, HEX_CY, 17.5, 1.2), shade(base, 0.22));
   return pb;
+}
+
+/**
+ * 地纹（§11.1 表第 4 列）—— **同一块六边形，地上要长不同的东西**。
+ *
+ * 为什么非要有这一层：只换调色板时，×1 下读到的永远是"同一个场地换了五种颜色"
+ * （三块砖并排看，噪声斑点、碎石位置逐像素相同）。§11.1 的判据（色相差 / 明度差）
+ * 只保证"五套不一样"，保证不了"这是五个地方"—— 地点感靠的是**地上有什么**：
+ * 草的草簇与小白花、土路的车辙与干草、雪原的冰裂与雪堆、沼泽的水洼与骨片、
+ * 城战的石板缝与缝里的草。
+ *
+ * 三条纪律（都是本仓踩过的坑）：
+ * ① 锚点一律落在**内切圆 r ≤ 12**（六边形外接半径 17.5）：贴到格边就会被格缝裁掉，
+ *    读成"格缝上的杂色"；
+ * ② **幅度要压过噪声**：逐像素噪声是 ±0.16，地纹取 ±0.3~0.45 —— 首轮把地纹也放在
+ *    0.2 档，结果雪原的冰裂整条消失在噪点里、沼泽的水洼成了砖上最亮的一条横杠。
+ *    地砖是**地面**不是贴纸，但"看不出形状的纹理"等于没有；
+ * ③ 全部由 `variant + seed` 决定 ⇒ 同一块砖每帧一致，不同砖不同（§11.1 硬约束 3）。
+ */
+function groundMarks(pb: PixBuf, bg: BattleBg, base: string, seed: number, variant: number): void {
+  /** 第 i 个锚点：极坐标 + 稳定抖动，限制在内切圆里。 */
+  const A = (i: number): [number, number] => {
+    const a = hash2(i, 21, seed) * Math.PI * 2;
+    const r = 4 + hash2(i, 23, seed) * 7.5;
+    return [Math.round(HEX_CX + Math.cos(a) * r), Math.round(HEX_CY + Math.sin(a) * r * 0.88)];
+  };
+  const inside = (x: number, y: number): boolean => pb.alphaAt(x, y) > 200;
+
+  if (bg === 'grass') {
+    // 草簇：三根草叶，间距 2px、中间最高 —— 挨着画会糊成一根柱子，等高会读成栅栏。
+    // 顶端 1px 提亮 = "叶尖",否则整簇读成一团压暗的污渍（首轮实测）。
+    // ⚠️ 四块砖里只长三块：每块都长一簇，×3 放大后是**等距圆点壁纸**（实测），
+    //    地面感靠"疏密不均"，不靠"每格都有"。
+    if (variant !== 3) {
+      const [x, y] = A(0);
+      const tip = variant % 2 ? 1 : -1; // 每块砖往不同方向歪，破"一模一样的草"
+      for (let i = -1; i <= 1; i++) {
+        const bx = x + i * 2;
+        const hh = i === 0 ? 5 : i === tip ? 4 : 3;
+        for (let k = 0; k < hh; k++) {
+          // 越往上越往外斜 ⇒ 一簇"张开的草"，不是三根平行的竖线（首轮读成了 ılı）
+          const px = bx + Math.round((k / Math.max(1, hh - 1)) * i);
+          if (!inside(px, y - k)) continue;
+          pb.set(px, y - k, k === hh - 1 ? shade(base, 0.22) : shade(base, -0.42));
+        }
+      }
+    }
+    // 土斑：3×2 压暗（草没长满的地方）—— 幅度必须低于草簇，否则两者抢
+    const [sx, sy] = A(1);
+    pb.rect(sx, sy, 3, 2, shade(base, -0.14));
+    // 小白花：四块砖只有一块长，颜色压到米白（纯白 1px 会读成坏点）
+    if (variant === 1) {
+      const [fx, fy] = A(2);
+      if (inside(fx, fy)) {
+        pb.set(fx, fy, '#d8d3a6');
+        pb.set(fx, fy + 1, shade(base, -0.42));
+      }
+    }
+  } else if (bg === 'dirt') {
+    // 车辙：两条**一样长、一样斜**的线，间距 2px —— 5px 太短会读成划痕，这里拉到 9px
+    const [x, y] = A(0);
+    const rut = shade(base, -0.36);
+    pb.line(x - 4, y + 2, x + 4, y - 1, rut);
+    pb.line(x - 4, y + 4, x + 4, y + 1, rut);
+    // 干草：两根 3px 短线，暖色（与土同族但更亮、更黄）
+    const [gx, gy] = A(1);
+    const straw = mix('#d0a860', base, 0.4);
+    pb.line(gx, gy, gx + 2, gy - 1, straw);
+    pb.line(gx + 2, gy + 2, gx + 4, gy + 1, straw);
+    // 一块有体积的石头：1px 的碎石读不出体积，2×2 + 亮顶才可以
+    const [rx, ry] = A(2);
+    pb.set(rx, ry, shade(base, -0.42));
+    pb.set(rx + 1, ry, shade(base, -0.42));
+    pb.set(rx, ry - 1, shade(base, 0.26));
+    pb.set(rx + 1, ry - 1, shade(base, 0.26));
+  } else if (bg === 'snow') {
+    // 冰裂：五段折线、拉到 9px、**冷蓝**（灰会混进噪点里）—— 雪原唯一"硬边"的东西
+    const [x, y] = A(0);
+    const crack = mix('#7c93b0', base, 0.26);
+    pb.line(x - 4, y - 1, x - 2, y, crack);
+    pb.line(x - 2, y, x, y - 2, crack);
+    pb.line(x, y - 2, x + 2, y - 1, crack);
+    pb.line(x + 2, y - 1, x + 4, y - 3, crack);
+    // 雪堆：3px 亮顶 + 下缘 1px 压暗（有体积才不像脏点）
+    const [sx, sy] = A(1);
+    pb.hline(sx, sx + 2, sy, '#f4f8fc');
+    pb.hline(sx, sx + 2, sy + 1, shade(base, -0.16));
+    // 蓝影：两段错开 1px 的冷灰（整块矩形会读成一条贴上去的横杠）
+    const [bx2, by2] = A(2);
+    const shadow = mix('#a9bdd4', base, 0.28);
+    pb.hline(bx2, bx2 + 2, by2, shadow);
+    pb.hline(bx2 + 1, bx2 + 3, by2 + 1, shadow);
+  } else if (bg === 'swamp') {
+    // 水洼：4 宽 × 2 高、上下两行错开 1px（对称椭圆会读成"一条 UI 横杠"）
+    const [x, y] = A(0);
+    const wet = shade(base, -0.45);
+    pb.hline(x - 1, x + 2, y, wet);
+    pb.hline(x - 2, x + 1, y + 1, wet);
+    pb.set(x, y, mix('#7d97a0', base, 0.3)); // 一点反光就够，画成整条会抢眼
+    // 苔斑：2×2 亮绿（湿地上的浮萍色）
+    const [mx, my] = A(1);
+    pb.rect(mx, my, 2, 2, mix('#5f7e2e', base, 0.65));
+    // 骨片：每三块砖才有一块（满地骨头就变成墓地了）；横条 + 1px 折角，不画成十字
+    if (variant % 3 === 1) {
+      const [bx, by] = A(2);
+      pb.hline(bx, bx + 2, by, '#bdb795');
+      pb.set(bx + 2, by - 1, '#bdb795');
+    }
+  } else {
+    // 城战：石板缝 = 一条 9px 折线（1px，跨过砖心）+ 一条 3px 支缝。
+    // 首轮画成"7px 横 + 4px 竖"的 T 形 ⇒ 读成砖心浮着一个 T 字，不像缝：
+    // 缝必须**长、细、带折**，而且要接到靠近格边的位置。
+    const [x, y] = A(0);
+    const seam = shade(base, -0.38);
+    pb.line(x - 4, y + 1, x - 1, y, seam);
+    pb.line(x - 1, y, x + 4, y - 1, seam);
+    pb.line(x, y - 1, x + 1, y - 3, seam);
+    // 泥：2×2 压暗（车马踩出来的）
+    const [mx, my] = A(1);
+    pb.rect(mx, my, 2, 2, shade(base, -0.16));
+    // 缝里长的草：两点，低饱和
+    const [wx, wy] = A(2);
+    const weed = mix('#5b6b33', base, 0.45);
+    pb.set(wx, wy, weed);
+    pb.set(wx + 1, wy - 1, weed);
+  }
 }
 
 function hexOverlay(fill: string, alpha: number, ring: string, inner: string): PixBuf {

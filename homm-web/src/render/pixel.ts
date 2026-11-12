@@ -47,6 +47,36 @@ export function mix(a: string, b: string, t: number): string {
   return `#${((1 << 24) | (m(r1, r2) << 16) | (m(g1, g2) << 8) | m(b1, b2)).toString(16).slice(1)}`;
 }
 
+/**
+ * CIE L*（明度）。**判据与实现共用这一份**：`battleBg.bgSeparation()` 用它算五套地形的
+ * 明度差，门（`tools/probes/battlebg.mjs`）调的是同一个函数 —— 断言里再抄一遍公式，
+ * 就会出现"改了一边、门还在按旧尺子量"的静默过期（本项目踩过：`probe:pathday` 的相位）。
+ */
+export function lstar(c: string): number {
+  const [r, g, b] = rgbOf(c);
+  const f = (v: number): number => {
+    const x = v / 255;
+    return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+  };
+  const y = 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  return y <= 0 ? 0 : 116 * Math.cbrt(y) - 16;
+}
+
+/** HSL 色相（度）。低饱和也照样给色相 —— 判据看的是"是否同色系"。 */
+export function hueOf(c: string): number {
+  const [r, g, b] = rgbOf(c);
+  const mx = Math.max(r, g, b);
+  const mn = Math.min(r, g, b);
+  const d = mx - mn;
+  if (d === 0) return 0;
+  let h: number;
+  if (mx === r) h = ((g - b) / d) % 6;
+  else if (mx === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  h *= 60;
+  return h < 0 ? h + 360 : h;
+}
+
 /** 整数哈希 → [0,1)。用于"看起来随机但可复现"的细节。
  *  注意必须用 Math.imul：普通乘法在 JS 里超出 2^53 会丢精度，
  *  那样这个哈希会退化成近似常数（我们就踩过这个坑——满地图都是同一种装饰）。 */

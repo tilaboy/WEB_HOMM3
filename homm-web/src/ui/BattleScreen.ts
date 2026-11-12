@@ -57,6 +57,7 @@ import { STRUCTURE_NAME, structureAt, structureById, type SiegeStructure } from 
 import { getSpell } from '../core/data/spells.js';
 import { BattleRenderer, BASE_H, BASE_W, PAD } from '../render/BattleRenderer.js';
 import type { BattleFx, BattleFxKind, FloatText } from '../render/BattleRenderer.js';
+import type { BattleBg } from '../render/battleBg.js';
 import { getAtlas } from '../render/atlas.js';
 import { unitPortraitFrame, warnMissingFrame } from '../render/unitFrames.js';
 // TP-3：战斗场景曲（audio-direction.md §10.1 接线③）。开关都在屏内 ——
@@ -105,6 +106,12 @@ export interface BattleOptions {
   seed: number;
   /** 攻城战：守方城墙等级 1/2/3（0 或省略 = 野战）。 */
   siegeLevel?: number;
+  /**
+   * 战场背景套（§11.1）。由 `main.ts` 按**发起格地形**算好传进来
+   * （`battleBgOf(terrain, siegeLevel)`）—— core 一行不改，31 门闸不受影响。
+   * 省略 = `grass`（旧调用点、探针、截图脚本都还能跑）。
+   */
+  bg?: BattleBg;
   /** 调试/演示用：进场后立刻交给 AI 自动打完。 */
   autoStart?: boolean;
   /** 调试用：跳过全部动画，直接结算（配合无头截图）。 */
@@ -1566,6 +1573,7 @@ export function openBattleScreen(parent: HTMLElement, opts: BattleOptions): void
     // 悬停残留是个纯视觉 bug，截图看不出来，只能这样断言。
     renderer.draw({
       battle,
+      bg: opts.bg ?? (opts.siegeLevel ? 'siege' : 'grass'),
       activeId: u && u.side === 0 ? u.id : null,
       reachable: reachableSet,
       attackable: attackableSet,

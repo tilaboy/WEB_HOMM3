@@ -70,7 +70,8 @@
     "probe:card": "node tools/probes/card.mjs",
     "probe:save": "node tools/probes/save.mjs",
     "probe:upgrade": "node tools/probes/upgrade.mjs",
-    "probe:innate": "node tools/probes/innate.mjs"
+    "probe:innate": "node tools/probes/innate.mjs",
+    "probe:battlebg": "node tools/probes/battlebg.mjs"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",

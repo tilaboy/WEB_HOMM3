@@ -4,7 +4,7 @@ import { HERO_SIGHT, createGame } from './core/map/generator.js';
 import { buildPath, computePaths, stepCost } from './core/map/pathfinding.js';
 import type { PathField } from './core/map/pathfinding.js';
 import { revealAround, isRevealed } from './core/map/fog.js';
-import { idx, inBounds } from './core/map/grid.js';
+import { idx, inBounds, tileAt } from './core/map/grid.js';
 import { TERRAIN } from './core/data/terrains.js';
 import { DEFAULT_CONFIG, factionIds, factionName, viewerOf } from './core/data/factions.js';
 import {
@@ -19,6 +19,7 @@ import {
   previewInteraction,
 } from './core/game/interaction.js';
 import { openBattleScreen, isBattleOpen } from './ui/BattleScreen.js';
+import { battleBgOf, type BattleBg } from './render/battleBg.js';
 import { ExchangeDialog } from './ui/ExchangeDialog.js';
 import { ArtifactDialog } from './ui/ArtifactDialog.js';
 import { canMeet, friendlyHeroAt, totalCount } from './core/game/exchange.js';
@@ -1263,6 +1264,9 @@ function startBattle(heroId: string, obj: MapObject, title: string): void {
     defender: setup.defender,
     seed: setup.seed,
     siegeLevel: setup.siegeLevel ?? 0,
+    // 背景套 = **发起格地形**（§11.1）。攻城由 `battleBgOf` 强制成 siege —— 墙在战场上，
+    // 地面就该是城里的石板，而不是发起格那片草。
+    bg: battleBgOf(tileAt(state.map, obj.pos.x, obj.pos.y)?.terrain, setup.siegeLevel ?? 0),
     onDone: (outcome: BattleOutcome) => resolve(heroId, obj, true, outcome),
   });
 }
@@ -1463,6 +1467,7 @@ function startHeroEncounter(attackerId: string, defenderId: string): void {
   const defender = state.heroes[defenderId];
   const setup = heroBattleSetup(state, attackerId, defenderId);
   if (!defender || !setup) return;
+  const at = state.heroes[attackerId]?.pos;
   openBattleScreen(stage, {
     state,
     heroId: attackerId,
@@ -1470,6 +1475,7 @@ function startHeroEncounter(attackerId: string, defenderId: string): void {
     attacker: setup.attacker,
     defender: setup.defender,
     seed: setup.seed,
+    bg: at ? battleBgOf(tileAt(state.map, at.x, at.y)?.terrain) : undefined,
     onDone: (outcome: BattleOutcome) => {
       const res = applyHeroBattle(state, attackerId, defenderId, outcome);
       afterWorldChange();
@@ -2857,10 +2863,16 @@ if (bootParams.has('devbattle') && selected && state.heroes[selected]) {
      「木栅/石墙/堡垒」在战场上真的长出了墙、门、塔。攻方自动带投石车，
      否则拍出来的图看不出「投石车优先砸门」这条设计。 */
   const siegeLv = Math.max(0, Math.min(3, Number.parseInt(bootParams.get('devsiege') ?? '0', 10) || 0));
+  /* `?devbg=grass|dirt|snow|swamp|siege`：强制某一套地形背景（§11.1 的"5 套逐套截图"
+     需要可复现的输入 —— 靠在地图上找五种地形再点一格开战是做不到每日回归的）。
+     缺省仍走发起格地形，与真实战斗同一条路径。 */
+  const forcedBg = bootParams.get('devbg') as BattleBg | null;
+  const devHeroPos = state.heroes[selected]?.pos;
   openBattleScreen(stage, {
     state,
     heroId: selected,
     title: siegeLv ? `调试战斗 · 城防 ${siegeLv} 级` : t5 ? '调试战斗 · T5 顶点兵' : full ? '调试战斗 · 满编 7 队' : '调试战斗',
+    bg: forcedBg ?? (devHeroPos ? battleBgOf(tileAt(state.map, devHeroPos.x, devHeroPos.y)?.terrain, siegeLv) : undefined),
     attacker: {
       army: t5
         ? [
