@@ -1,8 +1,8 @@
 {
   "meta": {
-    "batch": "B5（含 B3b / B5′ / B3c 增量）",
+    "batch": "B5（含 B3b / B5′ / B3c / D1 增量）",
     "date": "2026-11-13",
-    "status": "b3c-confirmed",
+    "status": "d1-confirmed",
     "dist": "/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist",
     "distMd5": "58fba8677f28a16366a7e18eb456e702",
     "gateTier": "normal",
@@ -16,7 +16,8 @@
       "audit:econ": "G-E1~G-E7（造价从 buildings.ts 累加，收入只在这里算）",
       "probe:aiscale": "A1–A6，按难度分键；A3 只在 normal 判（阈值是普通档预算）",
       "probe:homegold": "G-M1（四族 20×T2 打自家守卫）",
-      "probe:wallgate": "G1–G7（单向挡线 / 守方闸 / 破城门槛）+ W1–W4（AI 墙估值表与实测同源、且被 townNeedForAI 消费），4 族 × 4 档 × 120 种子"
+      "probe:wallgate": "G1–G7（单向挡线 / 守方闸 / 破城门槛）+ W1–W4（AI 墙估值表与实测同源、且被 townNeedForAI 消费），4 族 × 4 档 × 120 种子",
+      "probe:t5lag": "V4（T5 采购滞后）：[L1] 覆盖 / [L2] 中位 ≤6 天 / [L3] 最长 ≤14 天 / [L4] 未买到 ≤25% / [L5] 度量有效；16 局 × 60 天，四族全 AI"
     },
     "reproduce": [
       "npm run -s build",
@@ -27,7 +28,8 @@
       "node tools/probes/aiscale.mjs --difficulty=hard --json=tools/baseline/after-b5.json",
       "node tools/probes/homegold.mjs --json=tools/baseline/after-b5.json",
       "node tools/probes/wallgate.mjs --seeds=120 --cal-seeds=40 --json=tools/baseline/after-b5.json --gate",
-      "node tools/probes/wallgate.mjs --gate --json=tools/baseline/after-b5.json"
+      "node tools/probes/wallgate.mjs --gate --json=tools/baseline/after-b5.json",
+      "node tools/probes/t5lag.mjs --gate --json=tools/baseline/after-b5.json"
     ],
     "b3b": {
       "date": "2026-11-13",
@@ -39,7 +41,8 @@
     },
     "distCoreMd5": {
       "core/game/ai.js": "697f6af344ba08dc119c287bd777fab6",
-      "core/combat/siege.js": "d2c92d6414314b7b5474e84557560f46"
+      "core/combat/siege.js": "d2c92d6414314b7b5474e84557560f46",
+      "core/data/units.js": "7f080ffc372db0c4196116b272675117"
     },
     "b3c": {
       "date": "2026-11-13",
@@ -61,6 +64,28 @@
         "note": "battles +5.1% vs 基线、+1.2% vs B3b；D28 0.0% ⇒ 变的是目标选择，不是强度"
       },
       "doc": "production/m7-b3c-wall-ai-2026-11-13.md"
+    },
+    "d1": {
+      "date": "2026-11-13",
+      "outcome": "T5 稀有需求 2→1 / 4→1；V4 从「名义每金」改判「采购滞后」",
+      "prices": "p3 绿龙 gem 2→1；p4 摄魂怪 crystal 4→1",
+      "v4": "probe:t5lag（[L1]–[L5]，中位 ≤6 天 / 最长 ≤14 天 / 未买到 ≤25%）",
+      "readings": "采购滞后中位 2/2/4/3 天（旧价 2/2/7/7.5）；上阵滞后 12/14/10/1 天只读不判（D4 不做）",
+      "negativeControls": [
+        "旧造价 ⇒ 翠林 7 / 紫晶 7.5 天（[L2] 红）",
+        "rare=20 ⇒ 19 / 15.5 天（[L2]+[L3] 红）",
+        "rare=200 ⇒ 落成 13 局 0 买到（[L1]+[L4] 红）"
+      ],
+      "aiscale": {
+        "battles": 39.875,
+        "captures": 25.75,
+        "perGold": 0.5714,
+        "d28": 795,
+        "t5D28": 7,
+        "note": "battles −3.6% vs B3c、D28 0.0%；T5 D28 前 5/8→7/8，族-局 16/16 买到"
+      },
+      "v4Note": "audit:balance 的 V4 已撤下，每金 25.5% 只剩读数",
+      "doc": "production/m7-d1-rare-v4-2026-11-13.md"
     }
   },
   "balance": {
@@ -1096,30 +1121,30 @@
       "days": 60,
       "distMd5": "58fba8677f28a16366a7e18eb456e702",
       "firstBattleDayMedian": 1,
-      "battlesMean": 41.375,
-      "capturesMean": 26.5,
+      "battlesMean": 39.875,
+      "capturesMean": 25.75,
       "lostAll": 0,
-      "t5GamesD28": 5,
+      "t5GamesD28": 7,
       "t5GamesD35": 8,
       "t5GamesAll": 8,
-      "t5ShareD28": 0.625,
+      "t5ShareD28": 0.875,
       "t5ShareD35": 1,
       "t5ShareAll": 1,
-      "t5Games": 5,
-      "t5Share": 0.625,
-      "perGold": 0.5534194738349638,
+      "t5Games": 7,
+      "t5Share": 0.875,
+      "perGold": 0.5709323488325685,
       "heroValueD28Median": 795,
       "games": [
         {
           "seed": 4242,
           "firstBattleDay": 1,
           "battles": 47,
-          "captures": 27,
+          "captures": 30,
           "lostAll": 0,
           "firstT5Day": 28,
           "t5Structure": {
             "stacks": 5,
-            "maxShare": 0.3537571803970733,
+            "maxShare": 0.3053157636822658,
             "screen": true,
             "holder": "阿尔文"
           },
@@ -1137,11 +1162,11 @@
             },
             "p4": {
               "d5": 21,
-              "t5": 31
+              "t5": 28
             }
           },
-          "recruitValue": 69078.96000000005,
-          "recruitGold": 123635,
+          "recruitValue": 90185.92,
+          "recruitGold": 155620,
           "heroValueD28": 763,
           "townCountD28": 4,
           "a6Kind": "garrison",
@@ -1151,13 +1176,13 @@
         {
           "seed": 5219,
           "firstBattleDay": 1,
-          "battles": 47,
-          "captures": 34,
+          "battles": 45,
+          "captures": 36,
           "lostAll": 0,
           "firstT5Day": 22,
           "t5Structure": {
             "stacks": 5,
-            "maxShare": 0.3673789653687222,
+            "maxShare": 0.5163196546550499,
             "screen": true,
             "holder": "阿尔文"
           },
@@ -1175,11 +1200,11 @@
             },
             "p4": {
               "d5": 33,
-              "t5": 39
+              "t5": 36
             }
           },
-          "recruitValue": 83523.18999999997,
-          "recruitGold": 138005,
+          "recruitValue": 79165.15999999997,
+          "recruitGold": 133610,
           "heroValueD28": 827,
           "townCountD28": 3,
           "a6Kind": "garrison",
@@ -1192,9 +1217,9 @@
           "battles": 14,
           "captures": 14,
           "lostAll": 0,
-          "firstT5Day": 31,
+          "firstT5Day": 29,
           "t5Structure": null,
-          "garrisonAtT5": 10026.449999999999,
+          "garrisonAtT5": 8378.64,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
@@ -1204,15 +1229,15 @@
             },
             "p3": {
               "d5": 27,
-              "t5": 31
+              "t5": 29
             },
             "p4": {
               "d5": null,
               "t5": null
             }
           },
-          "recruitValue": 68897.90000000004,
-          "recruitGold": 129020,
+          "recruitValue": 70161.12000000005,
+          "recruitGold": 130430,
           "heroValueD28": 403,
           "townCountD28": 3,
           "a6Kind": "garrison",
@@ -1222,17 +1247,17 @@
         {
           "seed": 7173,
           "firstBattleDay": 2,
-          "battles": 43,
-          "captures": 23,
+          "battles": 49,
+          "captures": 33,
           "lostAll": 0,
           "firstT5Day": 21,
           "t5Structure": {
             "stacks": 5,
-            "maxShare": 0.5033797308533242,
+            "maxShare": 0.36551756265722546,
             "screen": true,
             "holder": "紫晶秘法师"
           },
-          "garrisonAtT5": 3576.29,
+          "garrisonAtT5": 4197.85,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
@@ -1246,12 +1271,12 @@
             },
             "p4": {
               "d5": 19,
-              "t5": 29
+              "t5": 21
             }
           },
-          "recruitValue": 96738.40000000005,
-          "recruitGold": 160725,
-          "heroValueD28": 852,
+          "recruitValue": 98221.99000000003,
+          "recruitGold": 155995,
+          "heroValueD28": 859,
           "townCountD28": 5,
           "a6Kind": "garrison",
           "heroAtT5": 0,
@@ -1260,15 +1285,15 @@
         {
           "seed": 8150,
           "firstBattleDay": 1,
-          "battles": 67,
-          "captures": 35,
+          "battles": 46,
+          "captures": 19,
           "lostAll": 0,
           "firstT5Day": 21,
           "t5Structure": {
-            "stacks": 5,
-            "maxShare": 0.4135190992411007,
+            "stacks": 4,
+            "maxShare": 0.4833497485874242,
             "screen": true,
-            "holder": "赤焰领主"
+            "holder": "紫晶秘法师"
           },
           "garrisonAtT5": 5790.71,
           "t5Ready": null,
@@ -1287,8 +1312,8 @@
               "t5": 28
             }
           },
-          "recruitValue": 89361.36000000002,
-          "recruitGold": 163330,
+          "recruitValue": 93867.63999999997,
+          "recruitGold": 162050,
           "heroValueD28": 507,
           "townCountD28": 3,
           "a6Kind": "garrison",
@@ -1298,12 +1323,17 @@
         {
           "seed": 9127,
           "firstBattleDay": 1,
-          "battles": 39,
+          "battles": 42,
           "captures": 26,
           "lostAll": 0,
-          "firstT5Day": 33,
-          "t5Structure": null,
-          "garrisonAtT5": 9128.72,
+          "firstT5Day": 28,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.422969523676686,
+            "screen": true,
+            "holder": "艾莉亚"
+          },
+          "garrisonAtT5": 1442.57,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
@@ -1313,20 +1343,20 @@
             },
             "p3": {
               "d5": 26,
-              "t5": 33
+              "t5": 30
             },
             "p4": {
               "d5": 25,
-              "t5": 53
+              "t5": 28
             }
           },
-          "recruitValue": 89600.72999999995,
-          "recruitGold": 175410,
-          "heroValueD28": 1445,
+          "recruitValue": 83916.03000000001,
+          "recruitGold": 155360,
+          "heroValueD28": 1535,
           "townCountD28": 5,
           "a6Kind": "garrison",
           "heroAtT5": 0,
-          "nakedTowns": 0
+          "nakedTowns": 1
         },
         {
           "seed": 10104,
@@ -1364,17 +1394,17 @@
         {
           "seed": 11081,
           "firstBattleDay": 1,
-          "battles": 53,
-          "captures": 37,
+          "battles": 55,
+          "captures": 32,
           "lostAll": 0,
-          "firstT5Day": 35,
+          "firstT5Day": 23,
           "t5Structure": {
             "stacks": 5,
-            "maxShare": 0.41054641176558376,
+            "maxShare": 0.4146814054316051,
             "screen": true,
             "holder": "艾莉亚"
           },
-          "garrisonAtT5": 7663.160000000001,
+          "garrisonAtT5": 6184.110000000001,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
@@ -1388,16 +1418,16 @@
             },
             "p4": {
               "d5": 20,
-              "t5": 35
+              "t5": 23
             }
           },
-          "recruitValue": 68161.31999999996,
-          "recruitGold": 133730,
+          "recruitValue": 84565.26000000004,
+          "recruitGold": 156265,
           "heroValueD28": 906,
           "townCountD28": 4,
           "a6Kind": "garrison",
           "heroAtT5": 0,
-          "nakedTowns": 2
+          "nakedTowns": 0
         }
       ]
     },
@@ -2435,5 +2465,214 @@
         }
       }
     }
+  },
+  "t5lag": {
+    "date": "2026-11-13",
+    "batch": "D1",
+    "seeds": 16,
+    "days": 60,
+    "distMd5": "58fba8677f28a16366a7e18eb456e702",
+    "perFaction": {
+      "p1": {
+        "dwellSamples": 15,
+        "buySamples": 15,
+        "buyLagMedian": 2,
+        "buyLagMax": 12,
+        "neverBuy": 0,
+        "noDwell": 1,
+        "fieldLagMedian": 12,
+        "buyLags": [
+          4,
+          2,
+          2,
+          10,
+          1,
+          2,
+          1,
+          8,
+          5,
+          1,
+          5,
+          2,
+          12,
+          2,
+          7
+        ],
+        "fieldLags": [
+          22,
+          0,
+          11,
+          13
+        ]
+      },
+      "p2": {
+        "dwellSamples": 7,
+        "buySamples": 7,
+        "buyLagMedian": 2,
+        "buyLagMax": 7,
+        "neverBuy": 0,
+        "noDwell": 9,
+        "fieldLagMedian": 14,
+        "buyLags": [
+          2,
+          7,
+          2,
+          1,
+          2,
+          3,
+          7
+        ],
+        "fieldLags": [
+          14
+        ]
+      },
+      "p3": {
+        "dwellSamples": 13,
+        "buySamples": 13,
+        "buyLagMedian": 4,
+        "buyLagMax": 11,
+        "neverBuy": 0,
+        "noDwell": 3,
+        "fieldLagMedian": 10,
+        "buyLags": [
+          7,
+          2,
+          2,
+          4,
+          2,
+          8,
+          3,
+          4,
+          7,
+          3,
+          7,
+          7,
+          11
+        ],
+        "fieldLags": [
+          10
+        ]
+      },
+      "p4": {
+        "dwellSamples": 4,
+        "buySamples": 4,
+        "buyLagMedian": 3,
+        "buyLagMax": 7,
+        "neverBuy": 0,
+        "noDwell": 12,
+        "fieldLagMedian": 1,
+        "buyLags": [
+          7,
+          2,
+          2,
+          4
+        ],
+        "fieldLags": [
+          0,
+          7,
+          2,
+          0
+        ]
+      }
+    },
+    "nominalPerGold": {
+      "p1": 0.9285714285714286,
+      "p2": 1.000421052631579,
+      "p3": 1.0583838383838384,
+      "p4": 1.1655405405405406
+    },
+    "criteria": {
+      "medianMax": 6,
+      "tailMax": 14,
+      "neverBuyShareMax": 25,
+      "sampleMin": 3
+    },
+    "verdict": [
+      {
+        "name": "[L1] 晨曦 覆盖 ≥3 个样本（落成 15 / 买到 15）",
+        "ok": true,
+        "detail": "ok"
+      },
+      {
+        "name": "[L2] 晨曦 采购滞后中位 ≤6 天",
+        "ok": true,
+        "detail": "2 天"
+      },
+      {
+        "name": "[L3] 晨曦 最长 ≤14 天（只防死锁）",
+        "ok": true,
+        "detail": "12 天"
+      },
+      {
+        "name": "[L4] 晨曦 建了居所却没买到的比例 ≤25%",
+        "ok": true,
+        "detail": "0/15 = 0%"
+      },
+      {
+        "name": "[L1] 赤焰 覆盖 ≥3 个样本（落成 7 / 买到 7）",
+        "ok": true,
+        "detail": "ok"
+      },
+      {
+        "name": "[L2] 赤焰 采购滞后中位 ≤6 天",
+        "ok": true,
+        "detail": "2 天"
+      },
+      {
+        "name": "[L3] 赤焰 最长 ≤14 天（只防死锁）",
+        "ok": true,
+        "detail": "7 天"
+      },
+      {
+        "name": "[L4] 赤焰 建了居所却没买到的比例 ≤25%",
+        "ok": true,
+        "detail": "0/7 = 0%"
+      },
+      {
+        "name": "[L1] 翠林 覆盖 ≥3 个样本（落成 13 / 买到 13）",
+        "ok": true,
+        "detail": "ok"
+      },
+      {
+        "name": "[L2] 翠林 采购滞后中位 ≤6 天",
+        "ok": true,
+        "detail": "4 天"
+      },
+      {
+        "name": "[L3] 翠林 最长 ≤14 天（只防死锁）",
+        "ok": true,
+        "detail": "11 天"
+      },
+      {
+        "name": "[L4] 翠林 建了居所却没买到的比例 ≤25%",
+        "ok": true,
+        "detail": "0/13 = 0%"
+      },
+      {
+        "name": "[L1] 紫晶 覆盖 ≥3 个样本（落成 4 / 买到 4）",
+        "ok": true,
+        "detail": "ok"
+      },
+      {
+        "name": "[L2] 紫晶 采购滞后中位 ≤6 天",
+        "ok": true,
+        "detail": "3 天"
+      },
+      {
+        "name": "[L3] 紫晶 最长 ≤14 天（只防死锁）",
+        "ok": true,
+        "detail": "7 天"
+      },
+      {
+        "name": "[L4] 紫晶 建了居所却没买到的比例 ≤25%",
+        "ok": true,
+        "detail": "0/4 = 0%"
+      },
+      {
+        "name": "[L5] 度量有效：至少一族中位 >0（全 0 = 夹具失效）",
+        "ok": true,
+        "detail": "ok"
+      }
+    ]
   }
 }

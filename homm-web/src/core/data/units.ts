@@ -205,7 +205,9 @@ export const UNITS: Record<string, UnitType> = {
   p3_greendragon: {
     id: 'p3_greendragon', name: '绿龙', tier: 5,
     attack: 11, defense: 9, damageMin: 11, damageMax: 15, hp: 62, speed: 7,
-    expValue: EXP_BY_TIER[4], growthPerWeek: 2, cost: { gold: 1100, gem: 2, wood: 5 },
+    // 稀有需求 = 1（M7 · D1）：宝石 2 会让「城里有龙 → 英雄带得上」滞后 5.5 天、
+    // 尾部 28 天；砍到 1 后中位 3 天。判据见 `probe:t5lag`（V4 已改读 lag，不读每金）。
+    expValue: EXP_BY_TIER[4], growthPerWeek: 2, cost: { gold: 1100, gem: 1, wood: 5 },
     anim: 'slash',
     // 飞行 + 自带魔法「龙威」：光环，每回合开始让邻格敌军攻击 −1（无限次）。
     canFly: true,
@@ -254,7 +256,9 @@ export const UNITS: Record<string, UnitType> = {
   p4_wraith: {
     id: 'p4_wraith', name: '摄魂怪', tier: 5,
     attack: 10, defense: 8, damageMin: 10, damageMax: 13, hp: 60, speed: 9,
-    expValue: EXP_BY_TIER[4], growthPerWeek: 2, cost: { gold: 800, crystal: 4 },
+    // 水晶 4 → 1（M7 · D1）：4 个水晶是 3,200 金（名义价 800 的 4 倍），
+    // 实测把 p4 的 T5 上阵滞后拉到中位 10 天、尾部 28 天。见 `probe:t5lag`。
+    expValue: EXP_BY_TIER[4], growthPerWeek: 2, cost: { gold: 800, crystal: 1 },
     // 飞行 + 吸血 30% + 招牌能力「威压」（§16.3，命中让目标速度 −2）。
     canFly: true,
     drain: 0.3,

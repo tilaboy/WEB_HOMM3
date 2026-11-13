@@ -13,6 +13,11 @@
  *    `import` 自 `dist/core/combat/damage.js`。脚本里只有 `--a` 的 A 口径是本地函数 ——
  *    它是**负向对照**，不是生产公式，允许重复一次（并且必须读出 小孩 4.5）。
  * ③ **表值来自规格**：`TARGET` 就是 §16.2 那张表。规格改了就改这里，**两边只留一份差**。
+ * ④ **V4 不在本文件**（M7 · D1，2026-11-13 重登记）：它已从「名义每金」改成
+ *    「**T5 采购滞后（天）**」，执行版是 `tools/probes/t5lag.mjs`（`probe:t5lag`）。
+ *    原因：`cost.gold` 不是任何人付的价（p3 宝石 / p4 水晶按 `MARKET_RATES` 折是名义的 2.5~5 倍）。
+ *    旧 V4 读 25.5% 全绿的那批数据里，紫晶的采购滞后中位是 **10 天**（新价 2~3 天）。
+ *    本文件仍打印每金，但只是**读数**。
  *
  * ## 退出码
  * `0` 全过 · `1` 有 Δ>2% 或某条闸红 · `2` 前置缺失（`dist` 没构建）
@@ -271,7 +276,10 @@ console.log(
 console.log(`  T1 周产战力 ${t1Weekly.map((x) => x.toFixed(1)).join(' / ')} 极差 ${spread(t1Weekly).toFixed(1)}%（目标 15.5%）`);
 console.log(`  T1 周产 aiValue ${t1Ai.map((x) => x.toFixed(1)).join(' / ')} 极差 ${spread(t1Ai).toFixed(1)}%（目标 30.7%）`);
 console.log(`  T5 战力 ${t5Power.map(n1).join(' / ')} 极差 ${((Math.max(...t5Power) / Math.min(...t5Power) - 1) * 100).toFixed(1)}%（目标 49.4% = 1.49×）`);
-console.log(`  T5 每金 ${t5PerGold.map((x) => x.toFixed(3)).join(' / ')} 极差 ${spread(t5PerGold).toFixed(1)}%（目标 25.5%）`);
+console.log(
+  `  T5 每金 ${t5PerGold.map((x) => x.toFixed(3)).join(' / ')} 极差 ${spread(t5PerGold).toFixed(1)}%` +
+    `（**读数**，判据已改成采购滞后：\`probe:t5lag\`）`,
+);
 
 const verdict = [];
 const chk = (name, ok, detail) => verdict.push({ name, ok, detail });
@@ -280,8 +288,7 @@ chk('V1 族级周产战力极差 ≤8%', spread(famWeekly) <= 8, `${spread(famWe
 chk('V2 周账单极差 ≤12%', spread(famBill) <= 12, `${spread(famBill).toFixed(1)}%`);
 const v3 = Math.max(...t5Power) / Math.min(...t5Power);
 chk('V3 T5 战力极差 ∈[1.40,1.60]×', v3 >= 1.4 && v3 <= 1.6, `${v3.toFixed(2)}×`);
-const mono = t5PerGold.every((v, i) => i === 0 || v >= t5PerGold[i - 1]);
-chk('V4 T5 每金单调 + 极差 20~30%', mono && spread(t5PerGold) >= 20 && spread(t5PerGold) <= 30, `单调=${mono} 极差 ${spread(t5PerGold).toFixed(1)}%`);
+/* V4 不在这里：它已改成「T5 采购滞后（天）」，执行版是 `probe:t5lag`（见文件头 ④）。 */
 const v5a = spread(t1Weekly) <= 30;
 const t2 = byTier(2);
 const t2m = t2.filter((r) => !r.t.remote).map((r) => r.cPower);

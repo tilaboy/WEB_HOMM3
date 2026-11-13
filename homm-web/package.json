@@ -77,7 +77,8 @@
     "probe:weekevent": "node tools/probes/weekevent.mjs",
     "probe:herogrowth": "node tools/probes/herogrowth.mjs",
     "probe:heroskills": "node tools/probes/heroskills.mjs",
-    "probe:wallgate": "node tools/probes/wallgate.mjs --gate"
+    "probe:wallgate": "node tools/probes/wallgate.mjs --gate",
+    "probe:t5lag": "node tools/probes/t5lag.mjs --gate"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
