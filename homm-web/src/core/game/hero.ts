@@ -3,6 +3,8 @@ import { ARTIFACTS } from '../data/artifacts.js';
 import { getUnit } from '../data/units.js';
 import { BASE_MOVE_POINTS } from '../map/generator.js';
 import { DIFFICULTIES } from '../data/factions.js';
+import { EXP_CURVE_K, h3ExpStep } from '../data/balance.js';
+import { CLASS_GROWTH, classIdOf } from '../data/heroes.js';
 import { deriveSeed, mulberry32 } from '../rng.js';
 import { equippedOf } from './equip.js';
 
@@ -54,31 +56,56 @@ export function dailyGoldBonus(hero: Hero): number {
   return g;
 }
 
-/** 升到下一级所需经验（本级到下一级之间的跨度）。 */
+/**
+ * 升到下一级所需经验（**本级到下一级之间的跨度**，不是累计阈值）。
+ *
+ * §21.6：旧 `100 × level^1.8` 的形状是反的（2 级只要 100，L2→L10 涨 195×），
+ * 前期暴富后期停滞。改成 H3 的 20 行累计表差分 × `EXP_CURVE_K`（默认 0.5）。
+ * 表与 k 都在 `data/balance.ts`，这里是唯一消费点。
+ */
 export function expToNext(level: number): number {
-  return Math.round(100 * Math.pow(level, 1.8));
+  return Math.max(1, Math.round(h3ExpStep(level) * EXP_CURVE_K));
 }
 
+const PRIMARY_KEYS = ['attack', 'defense', 'spellPower', 'knowledge'] as const;
+const PRIMARY_TEXT: Record<(typeof PRIMARY_KEYS)[number], string> = {
+  attack: '攻击',
+  defense: '防御',
+  spellPower: '魔力',
+  knowledge: '知识',
+};
+
+/**
+ * §21.5：按职业查概率表，2~9 级用身份表、10 级后趋同（防止早期偏科变永久）。
+ *
+ * ⚠️ `gainExp` 是**先 `level += 1` 再调本函数**，所以 `hero.level >= 10`
+ * 恰好表示"这次升到 10 级或更高"，与规格的「10 级以上用趋同表」对齐。
+ */
 function levelUp(hero: Hero, seed: number): string {
-  const rng = mulberry32(seed);
-  const r = rng();
-  if (r < 0.4) {
-    hero.primary.attack += 1;
-    return '攻击 +1';
+  const growth = CLASS_GROWTH[classIdOf(hero.heroClass)];
+  const w = hero.level >= 10 ? growth.late : growth.early;
+  const r = mulberry32(seed)();
+  let acc = 0;
+  for (let i = 0; i < PRIMARY_KEYS.length; i++) {
+    acc += w[i]! / 100;
+    if (r < acc) {
+      const key = PRIMARY_KEYS[i]!;
+      hero.primary[key] += 1;
+      return `${PRIMARY_TEXT[key]} +1`;
+    }
   }
-  if (r < 0.8) {
-    hero.primary.defense += 1;
-    return '防御 +1';
-  }
-  if (r < 0.9) {
-    hero.primary.spellPower += 1;
-    return '魔力 +1';
-  }
+  // 权重合计恰好 100，只有浮点误差会让 r=1 落到这里；兜底给知识，绝不丢一次升级。
   hero.primary.knowledge += 1;
   return '知识 +1';
 }
 
 export function gainExp(state: GameState, hero: Hero, amount: number): string[] {
+  /**
+   * ⚠️ H3 换了曲线 ⇒ `hero.exp` 的余量整体变了，而升级 rng 的种子里含 `hero.exp`
+   * （`deriveSeed(seed, level, exp, day)`）⇒ 同一场战斗的升级属性序列会重排。
+   * 这是**读数该变**，不是回归：升级随机流本来就按每局的实时状态取种子，
+   * 不是别人借来量平衡的那条流（铁律 7 指的是"别改别人的测量流"）。
+   */
   hero.exp += amount;
   const notes: string[] = [];
   let guard = 0;

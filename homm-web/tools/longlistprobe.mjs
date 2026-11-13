@@ -81,12 +81,26 @@ const CLICK_WAIT = `(() => {
 const BASE =
   `http://127.0.0.1:${PORT}/index.html?devquick=1&devreveal=1&devprobe=1&devbandstats=1&devbattle=full`;
 
-/** 一臂：导航 → 等战斗挂载 → 连点「等待」并逐次采样。 */
+/**
+ * 夹具就绪条件：**两列都真的有行**，不只是 `.bt-side-list` 容器挂上了。
+ *
+ * ★ 2026-11-13 全量门里 `reveal-ctl` 偶发读成「0 次读数 · 窗外 0 次」：
+ * 第二臂（同页二次导航）的名单容器先于单位行出现，`arm()` 只等容器就采样，
+ * 于是负向对照**没有对象可量**；单独复跑 6 次读数 / 窗外 4 次，与 P0 基线逐位一致，
+ * 证明不是渲染回归。修法是**钉住未受控变量（挂载完成）**，判据与阈值一字不动；
+ * 同时给 `reveal-ctl` 加 `ctl.length >= 5` 的覆盖闸，把「没量到」明确判红而不是记 0。
+ */
+const LIST_READY = `(() => {
+  const ls = [...document.querySelectorAll('.bt-side-list')];
+  return ls.length >= 2 && ls.every((l) => l.querySelectorAll('.bt-side-row').length > 0);
+})()`;
+
+/** 一臂：导航 → 等战斗挂载（含单位行）→ 连点「等待」并逐次采样。 */
 async function arm(send, evaluate, query, label, tag) {
   await send('Page.navigate', { url: BASE + query });
   for (let i = 0; i < 200; i++) {
     try {
-      if (await evaluate(`!!document.querySelector('.bt-side-list')`)) break;
+      if (await evaluate(LIST_READY)) break;
     } catch {
       /* 导航中 */
     }
@@ -178,7 +192,7 @@ try {
       check(
         'reveal-ctl',
         '关掉自动带入后，同一序列里轮到的那张卡会落在窗外（证判据有分辨力）',
-        ctlOut.length >= 1,
+        ctl.length >= 5 && ctlOut.length >= 1,
         `${ctl.length} 次读数 · 窗外 ${ctlOut.length} 次 · ` +
           ctl
             .slice(0, 6)

@@ -1,6 +1,41 @@
 import type { FactionId, HeroPrimary, Stack } from '../types.js';
 import { unitIdForTier } from './units.js';
 
+/**
+ * §21.4 / §21.5 · 四职业成长表（M6/H2）。
+ *
+ * H3 的极端初始值是**故意的**：职业身份靠「缺陷」表达，不靠全能。
+ * 野蛮人 0 防之所以不送死，前提是 H1 已把伤害曲线换成非对称
+ * （`damage.ts` 的 5% / 2.5%）；H2 严禁排在 H1 之前。
+ *
+ * 升级权重是**百分比**（合计 100），`hero.ts` 用累计权重落点。
+ * 两条从表里读出来的设计（§21.5）：
+ *  ① 2~9 级是身份，10 级后趋同，防止早期偏科变成永久偏科；
+ *  ② **骑士与游侠的升级表在 H3 里逐位相同**，所以 p1/p3 不能靠四维区分，
+ *     要靠初始值（2/2/1/1 vs 1/3/1/1）和 H6 的特长。
+ */
+export type HeroClassId = 'knight' | 'barbarian' | 'ranger' | 'cleric';
+
+export interface ClassGrowth {
+  /** 升到 2~9 级时：攻 / 防 / 力 / 知（%） */
+  early: readonly [number, number, number, number];
+  /** 升到 10 级及以上时 */
+  late: readonly [number, number, number, number];
+}
+
+export const CLASS_GROWTH: Record<HeroClassId, ClassGrowth> = {
+  knight: { early: [35, 45, 10, 10], late: [30, 30, 20, 20] },
+  ranger: { early: [35, 45, 10, 10], late: [30, 30, 20, 20] },
+  barbarian: { early: [55, 35, 5, 5], late: [30, 30, 20, 20] },
+  cleric: { early: [20, 15, 30, 35], late: [20, 20, 30, 30] },
+};
+
+/** 旧档 / showcase 里的 `heroClass` 是中文 className；未知职业退骑士（与建英雄时的兜底一致）。 */
+export function classIdOf(heroClass: string): HeroClassId {
+  const t = HERO_TEMPLATES.find((x) => x.className === heroClass);
+  return (t?.id as HeroClassId) ?? 'knight';
+}
+
 export const HERO_TEMPLATES: {
   id: string;
   name: string;
@@ -19,7 +54,7 @@ export const HERO_TEMPLATES: {
     name: '阿尔文',
     className: '骑士',
     portrait: '#4a7fb5',
-    primary: { attack: 1, defense: 2, spellPower: 1, knowledge: 1 },
+    primary: { attack: 2, defense: 2, spellPower: 1, knowledge: 1 }, // §21.4 骑士 2/2/1/1
     startArmyCount: 20,
   },
   {
@@ -27,7 +62,7 @@ export const HERO_TEMPLATES: {
     name: '艾莉亚',
     className: '游侠',
     portrait: '#3f8f5a',
-    primary: { attack: 2, defense: 1, spellPower: 1, knowledge: 1 },
+    primary: { attack: 1, defense: 3, spellPower: 1, knowledge: 1 }, // §21.4 游侠 1/3/1/1
     startArmyCount: 8,
   },
   {
@@ -35,7 +70,7 @@ export const HERO_TEMPLATES: {
     name: '塞拉菲',
     className: '牧师',
     portrait: '#8a6fbf',
-    primary: { attack: 1, defense: 1, spellPower: 2, knowledge: 2 },
+    primary: { attack: 1, defense: 0, spellPower: 2, knowledge: 2 }, // §21.4 牧师 1/0/2/2
     startArmyCount: 8,
   },
   {
@@ -43,7 +78,7 @@ export const HERO_TEMPLATES: {
     name: '格罗姆',
     className: '野蛮人',
     portrait: '#b06a3a',
-    primary: { attack: 2, defense: 2, spellPower: 1, knowledge: 1 },
+    primary: { attack: 4, defense: 0, spellPower: 1, knowledge: 1 }, // §21.4 野蛮人 4/0/1/1
     startArmyCount: 8,
   },
 ];
