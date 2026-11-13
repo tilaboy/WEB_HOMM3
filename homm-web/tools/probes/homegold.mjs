@@ -26,6 +26,9 @@
  * 用法：`node tools/probes/homegold.mjs [--orphan] [--strong]`
  * 退出码：0 全过 · 1 有判据红 · 2 没有构建
  */
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { distDir, distUrl, printHeader, requireFile } from '../_dist.mjs';
 
 const DIST = distDir();
@@ -232,7 +235,15 @@ for (const f of FACTION_ORDER) {
   }
   const winPct = (win / trials) * 100;
   const avg = win ? (lossSum / win) * 100 : 100;
-  gmLoss.push({ f, winPct, avg });
+  gmLoss.push({
+    f,
+    band: { min: band.min, max: band.max },
+    trials,
+    winPct,
+    lossPct: avg,
+    lossMinPct: min * 100,
+    lossMaxPct: max * 100,
+  });
   const name = `${f} 狼 ${band.min}~${band.max}`;
   if (winPct < 100) bad(`G-M1 ${name}：胜率 ${winPct.toFixed(0)}%（要求 100%）`);
   else if (avg < 18 || avg > 32) bad(`G-M1 ${name}：平均战损 ${avg.toFixed(0)}%（要求 18~32%，目标 20~30）`);
@@ -249,5 +260,41 @@ console.log(
 );
 if (ORPHAN) console.log('  ★ --orphan：已复刻"先 addMine 再叠怪"，上面必须看到 1 个孤儿矿');
 if (STRONG) console.log('  ★ --strong：守卫规模已 ×1.6，G-M1 必须红');
+
+/* `--json=<file>`：与 `balance-p2` / `econ-check` / `aiscale` 同一种写法，
+ * 把 G-M1 的读数写进批次基线。**不手抄进 md** —— 手抄的那一份一定会在下次改表后过期。 */
+const jsonArg = process.argv.find((x) => x.startsWith('--json='));
+if (jsonArg) {
+  const out = jsonArg.slice('--json='.length);
+  let cur = {};
+  if (existsSync(out)) {
+    try {
+      cur = JSON.parse(readFileSync(out, 'utf8'));
+    } catch {
+      cur = {};
+    }
+  }
+  cur.homegold = {
+    distMd5: (() => {
+      try {
+        return createHash('md5').update(readFileSync(path.join(DIST, 'main.js'))).digest('hex');
+      } catch {
+        return null;
+      }
+    })(),
+    orphanNegative: ORPHAN,
+    strongNegative: STRONG,
+    maps: cases.length,
+    townsChecked,
+    guardsChecked,
+    guardDistance: distAll.length ? { min: Math.min(...distAll), max: Math.max(...distAll) } : null,
+    orphanMines: orphanCount,
+    gm1: gmLoss,
+  };
+  mkdirSync(path.dirname(out), { recursive: true });
+  writeFileSync(out, JSON.stringify(cur, null, 2));
+  console.log(`  已写入基线：${out}（section: homegold）`);
+}
+
 console.log(fails === 0 ? '\nPASS' : `\nFAIL（${fails} 条）`);
 process.exit(fails === 0 ? 0 : 1);

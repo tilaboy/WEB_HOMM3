@@ -1,0 +1,2041 @@
+{
+  "meta": {
+    "batch": "B5",
+    "date": "2026-11-13",
+    "status": "provisional",
+    "provisionalReason": "墙价仍是 B2 的暂定值（wall1 2500 / wall3 4000，B3b 未做）。G-E1/G-E2/G-E4/G-E5 与 V1/V2 的分母都可能随 B3b 变动，B5′ 必须重跑这几条",
+    "dist": "/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist",
+    "distMd5": "58fba8677f28a16366a7e18eb456e702",
+    "gateTier": "normal",
+    "tiersRecorded": [
+      "normal",
+      "easy",
+      "hard"
+    ],
+    "scaleReadings": {
+      "audit:balance": "20 兵逐字段 + V1–V6（V1–V6 都读代码，不读表）",
+      "audit:econ": "G-E1~G-E7（造价从 buildings.ts 累加，收入只在这里算）",
+      "probe:aiscale": "A1–A6，按难度分键；A3 只在 normal 判（阈值是普通档预算）",
+      "probe:homegold": "G-M1（四族 20×T2 打自家守卫）"
+    },
+    "reproduce": [
+      "npm run -s build",
+      "node tools/balance-p2.mjs --json=tools/baseline/after-b5.json",
+      "node tools/econ-check.mjs --json=tools/baseline/after-b5.json",
+      "node tools/probes/aiscale.mjs --baseline=tools/baseline/ai-b4.json --save=tools/baseline/ai-b5.json --json=tools/baseline/after-b5.json",
+      "node tools/probes/aiscale.mjs --difficulty=easy --json=tools/baseline/after-b5.json",
+      "node tools/probes/aiscale.mjs --difficulty=hard --json=tools/baseline/after-b5.json",
+      "node tools/probes/homegold.mjs --json=tools/baseline/after-b5.json"
+    ]
+  },
+  "balance": {
+    "caliber": "B",
+    "dist": "/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist",
+    "distMd5": "58fba8677f28a16366a7e18eb456e702",
+    "printedPowerDriftPct": 0.83,
+    "rows": [
+      {
+        "fam": "p1",
+        "tier": 1,
+        "id": "p1_child",
+        "name": "小孩",
+        "target": {
+          "attack": 1,
+          "defense": 1,
+          "damageMin": 1,
+          "damageMax": 2,
+          "hp": 3,
+          "speed": 2,
+          "shots": 0,
+          "growthPerWeek": 16,
+          "gold": 20,
+          "remote": false
+        },
+        "code": {
+          "attack": 1,
+          "defense": 1,
+          "damageMin": 1,
+          "damageMax": 2,
+          "hp": 3,
+          "speed": 2,
+          "shots": 0,
+          "growthPerWeek": 16,
+          "cost": {
+            "gold": 20
+          },
+          "aiValue": 3.27
+        },
+        "targetPower": 3.27,
+        "codePower": 3.27,
+        "weeklyCode": 52.4,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p1",
+        "tier": 2,
+        "id": "p1_crossbow",
+        "name": "弩手",
+        "target": {
+          "attack": 4,
+          "defense": 2,
+          "damageMin": 2,
+          "damageMax": 4,
+          "hp": 10,
+          "speed": 4,
+          "shots": 14,
+          "growthPerWeek": 5,
+          "gold": 110,
+          "remote": true
+        },
+        "code": {
+          "attack": 4,
+          "defense": 2,
+          "damageMin": 2,
+          "damageMax": 4,
+          "hp": 10,
+          "speed": 4,
+          "shots": 14,
+          "growthPerWeek": 5,
+          "cost": {
+            "gold": 110
+          },
+          "aiValue": 33.14
+        },
+        "targetPower": 26.51,
+        "codePower": 26.51,
+        "weeklyCode": 132.6,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p1",
+        "tier": 3,
+        "id": "p1_eagle",
+        "name": "鹰",
+        "target": {
+          "attack": 6,
+          "defense": 3,
+          "damageMin": 4,
+          "damageMax": 6,
+          "hp": 14,
+          "speed": 9,
+          "shots": 0,
+          "growthPerWeek": 4,
+          "gold": 240,
+          "remote": false
+        },
+        "code": {
+          "attack": 6,
+          "defense": 3,
+          "damageMin": 4,
+          "damageMax": 6,
+          "hp": 14,
+          "speed": 9,
+          "shots": 0,
+          "growthPerWeek": 4,
+          "cost": {
+            "gold": 240
+          },
+          "aiValue": 70
+        },
+        "targetPower": 70,
+        "codePower": 70,
+        "weeklyCode": 280,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p1",
+        "tier": 4,
+        "id": "p1_knight",
+        "name": "骑士",
+        "target": {
+          "attack": 7,
+          "defense": 8,
+          "damageMin": 7,
+          "damageMax": 9,
+          "hp": 36,
+          "speed": 7,
+          "shots": 0,
+          "growthPerWeek": 3,
+          "gold": 520,
+          "remote": false
+        },
+        "code": {
+          "attack": 7,
+          "defense": 8,
+          "damageMin": 7,
+          "damageMax": 9,
+          "hp": 36,
+          "speed": 7,
+          "shots": 0,
+          "growthPerWeek": 3,
+          "cost": {
+            "gold": 520,
+            "ore": 3
+          },
+          "aiValue": 342.49
+        },
+        "targetPower": 342.49,
+        "codePower": 342.49,
+        "weeklyCode": 1027.5,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p1",
+        "tier": 5,
+        "id": "p1_angel",
+        "name": "天使",
+        "target": {
+          "attack": 10,
+          "defense": 10,
+          "damageMin": 13,
+          "damageMax": 17,
+          "hp": 65,
+          "speed": 8,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "gold": 1500,
+          "remote": false
+        },
+        "code": {
+          "attack": 10,
+          "defense": 10,
+          "damageMin": 13,
+          "damageMax": 17,
+          "hp": 65,
+          "speed": 8,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "cost": {
+            "gold": 1500,
+            "ore": 5,
+            "wood": 5
+          },
+          "aiValue": 1392.86
+        },
+        "targetPower": 1392.86,
+        "codePower": 1392.86,
+        "weeklyCode": 2785.7,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p2",
+        "tier": 1,
+        "id": "p2_matchman",
+        "name": "火柴人",
+        "target": {
+          "attack": 2,
+          "defense": 1,
+          "damageMin": 1,
+          "damageMax": 3,
+          "hp": 3,
+          "speed": 4,
+          "shots": 8,
+          "growthPerWeek": 12,
+          "gold": 30,
+          "remote": true
+        },
+        "code": {
+          "attack": 2,
+          "defense": 1,
+          "damageMin": 1,
+          "damageMax": 3,
+          "hp": 3,
+          "speed": 4,
+          "shots": 8,
+          "growthPerWeek": 12,
+          "cost": {
+            "gold": 30
+          },
+          "aiValue": 5.8
+        },
+        "targetPower": 4.64,
+        "codePower": 4.64,
+        "weeklyCode": 55.6,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p2",
+        "tier": 2,
+        "id": "p2_bronze",
+        "name": "铜人",
+        "target": {
+          "attack": 3,
+          "defense": 9,
+          "damageMin": 2,
+          "damageMax": 3,
+          "hp": 15,
+          "speed": 2,
+          "shots": 0,
+          "growthPerWeek": 5,
+          "gold": 120,
+          "remote": false
+        },
+        "code": {
+          "attack": 3,
+          "defense": 9,
+          "damageMin": 2,
+          "damageMax": 3,
+          "hp": 15,
+          "speed": 2,
+          "shots": 0,
+          "growthPerWeek": 5,
+          "cost": {
+            "gold": 120,
+            "wood": 2
+          },
+          "aiValue": 37.5
+        },
+        "targetPower": 37.5,
+        "codePower": 37.5,
+        "weeklyCode": 187.5,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p2",
+        "tier": 3,
+        "id": "p2_threewolf",
+        "name": "三头狼",
+        "target": {
+          "attack": 7,
+          "defense": 3,
+          "damageMin": 3,
+          "damageMax": 8,
+          "hp": 13,
+          "speed": 7,
+          "shots": 0,
+          "growthPerWeek": 4,
+          "gold": 230,
+          "remote": false
+        },
+        "code": {
+          "attack": 7,
+          "defense": 3,
+          "damageMin": 3,
+          "damageMax": 8,
+          "hp": 13,
+          "speed": 7,
+          "shots": 0,
+          "growthPerWeek": 4,
+          "cost": {
+            "gold": 230
+          },
+          "aiValue": 74.9
+        },
+        "targetPower": 74.9,
+        "codePower": 74.9,
+        "weeklyCode": 299.6,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p2",
+        "tier": 4,
+        "id": "p2_lavagiant",
+        "name": "熔岩巨人",
+        "target": {
+          "attack": 9,
+          "defense": 7,
+          "damageMin": 6,
+          "damageMax": 9,
+          "hp": 34,
+          "speed": 4,
+          "shots": 0,
+          "growthPerWeek": 3,
+          "gold": 520,
+          "remote": false
+        },
+        "code": {
+          "attack": 9,
+          "defense": 7,
+          "damageMin": 6,
+          "damageMax": 9,
+          "hp": 34,
+          "speed": 4,
+          "shots": 0,
+          "growthPerWeek": 3,
+          "cost": {
+            "gold": 520,
+            "ore": 4
+          },
+          "aiValue": 322.11
+        },
+        "targetPower": 322.11,
+        "codePower": 322.11,
+        "weeklyCode": 966.3,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p2",
+        "tier": 5,
+        "id": "p2_devil",
+        "name": "恶魔",
+        "target": {
+          "attack": 12,
+          "defense": 7,
+          "damageMin": 14,
+          "damageMax": 18,
+          "hp": 55,
+          "speed": 9,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "gold": 1250,
+          "remote": false
+        },
+        "code": {
+          "attack": 12,
+          "defense": 7,
+          "damageMin": 14,
+          "damageMax": 18,
+          "hp": 55,
+          "speed": 9,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "cost": {
+            "gold": 1250,
+            "ore": 5
+          },
+          "aiValue": 1250.53
+        },
+        "targetPower": 1250.53,
+        "codePower": 1250.53,
+        "weeklyCode": 2501.1,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p3",
+        "tier": 1,
+        "id": "p3_dwarf",
+        "name": "矮人",
+        "target": {
+          "attack": 2,
+          "defense": 3,
+          "damageMin": 1,
+          "damageMax": 2,
+          "hp": 5,
+          "speed": 3,
+          "shots": 0,
+          "growthPerWeek": 10,
+          "gold": 25,
+          "remote": false
+        },
+        "code": {
+          "attack": 2,
+          "defense": 3,
+          "damageMin": 1,
+          "damageMax": 2,
+          "hp": 5,
+          "speed": 3,
+          "shots": 0,
+          "growthPerWeek": 10,
+          "cost": {
+            "gold": 25
+          },
+          "aiValue": 6.07
+        },
+        "targetPower": 6.07,
+        "codePower": 6.07,
+        "weeklyCode": 60.7,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p3",
+        "tier": 2,
+        "id": "p3_junglearcher",
+        "name": "丛林射手",
+        "target": {
+          "attack": 4,
+          "defense": 3,
+          "damageMin": 2,
+          "damageMax": 3,
+          "hp": 11,
+          "speed": 4,
+          "shots": 16,
+          "growthPerWeek": 5,
+          "gold": 115,
+          "remote": true
+        },
+        "code": {
+          "attack": 4,
+          "defense": 3,
+          "damageMin": 2,
+          "damageMax": 3,
+          "hp": 11,
+          "speed": 4,
+          "shots": 16,
+          "growthPerWeek": 5,
+          "cost": {
+            "gold": 115
+          },
+          "aiValue": 31.1
+        },
+        "targetPower": 24.88,
+        "codePower": 24.88,
+        "weeklyCode": 124.4,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p3",
+        "tier": 3,
+        "id": "p3_treant",
+        "name": "树人",
+        "target": {
+          "attack": 4,
+          "defense": 10,
+          "damageMin": 3,
+          "damageMax": 5,
+          "hp": 20,
+          "speed": 2,
+          "shots": 0,
+          "growthPerWeek": 4,
+          "gold": 260,
+          "remote": false
+        },
+        "code": {
+          "attack": 4,
+          "defense": 10,
+          "damageMin": 3,
+          "damageMax": 5,
+          "hp": 20,
+          "speed": 2,
+          "shots": 0,
+          "growthPerWeek": 4,
+          "cost": {
+            "gold": 260,
+            "wood": 3
+          },
+          "aiValue": 86.86
+        },
+        "targetPower": 86.86,
+        "codePower": 86.86,
+        "weeklyCode": 347.4,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p3",
+        "tier": 4,
+        "id": "p3_ape",
+        "name": "猿人",
+        "target": {
+          "attack": 8,
+          "defense": 4,
+          "damageMin": 7,
+          "damageMax": 10,
+          "hp": 30,
+          "speed": 5,
+          "shots": 10,
+          "growthPerWeek": 4,
+          "gold": 540,
+          "remote": true
+        },
+        "code": {
+          "attack": 8,
+          "defense": 4,
+          "damageMin": 7,
+          "damageMax": 10,
+          "hp": 30,
+          "speed": 5,
+          "shots": 10,
+          "growthPerWeek": 4,
+          "cost": {
+            "gold": 540,
+            "wood": 2
+          },
+          "aiValue": 357.62
+        },
+        "targetPower": 286.1,
+        "codePower": 286.1,
+        "weeklyCode": 1144.4,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p3",
+        "tier": 5,
+        "id": "p3_greendragon",
+        "name": "绿龙",
+        "target": {
+          "attack": 11,
+          "defense": 9,
+          "damageMin": 11,
+          "damageMax": 15,
+          "hp": 62,
+          "speed": 7,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "gold": 1100,
+          "remote": false
+        },
+        "code": {
+          "attack": 11,
+          "defense": 9,
+          "damageMin": 11,
+          "damageMax": 15,
+          "hp": 62,
+          "speed": 7,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "cost": {
+            "gold": 1100,
+            "gem": 2,
+            "wood": 5
+          },
+          "aiValue": 1164.22
+        },
+        "targetPower": 1164.22,
+        "codePower": 1164.22,
+        "weeklyCode": 2328.4,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p4",
+        "tier": 1,
+        "id": "p4_skeleton",
+        "name": "骷髅",
+        "target": {
+          "attack": 2,
+          "defense": 1,
+          "damageMin": 1,
+          "damageMax": 3,
+          "hp": 4,
+          "speed": 4,
+          "shots": 0,
+          "growthPerWeek": 9,
+          "gold": 25,
+          "remote": false
+        },
+        "code": {
+          "attack": 2,
+          "defense": 1,
+          "damageMin": 1,
+          "damageMax": 3,
+          "hp": 4,
+          "speed": 4,
+          "shots": 0,
+          "growthPerWeek": 9,
+          "cost": {
+            "gold": 25
+          },
+          "aiValue": 6.18
+        },
+        "targetPower": 6.18,
+        "codePower": 6.18,
+        "weeklyCode": 55.6,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p4",
+        "tier": 2,
+        "id": "p4_zombie",
+        "name": "僵尸",
+        "target": {
+          "attack": 2,
+          "defense": 8,
+          "damageMin": 2,
+          "damageMax": 3,
+          "hp": 15,
+          "speed": 2,
+          "shots": 0,
+          "growthPerWeek": 5,
+          "gold": 115,
+          "remote": false
+        },
+        "code": {
+          "attack": 2,
+          "defense": 8,
+          "damageMin": 2,
+          "damageMax": 3,
+          "hp": 15,
+          "speed": 2,
+          "shots": 0,
+          "growthPerWeek": 5,
+          "cost": {
+            "gold": 115
+          },
+          "aiValue": 34.46
+        },
+        "targetPower": 34.46,
+        "codePower": 34.46,
+        "weeklyCode": 172.3,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p4",
+        "tier": 3,
+        "id": "p4_vampire",
+        "name": "吸血鬼",
+        "target": {
+          "attack": 7,
+          "defense": 4,
+          "damageMin": 3,
+          "damageMax": 6,
+          "hp": 15,
+          "speed": 8,
+          "shots": 0,
+          "growthPerWeek": 5,
+          "gold": 250,
+          "remote": false
+        },
+        "code": {
+          "attack": 7,
+          "defense": 4,
+          "damageMin": 3,
+          "damageMax": 6,
+          "hp": 15,
+          "speed": 8,
+          "shots": 0,
+          "growthPerWeek": 5,
+          "cost": {
+            "gold": 250,
+            "crystal": 1
+          },
+          "aiValue": 72.44
+        },
+        "targetPower": 72.44,
+        "codePower": 72.44,
+        "weeklyCode": 362.2,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p4",
+        "tier": 4,
+        "id": "p4_minotaur",
+        "name": "牛头怪",
+        "target": {
+          "attack": 9,
+          "defense": 6,
+          "damageMin": 7,
+          "damageMax": 10,
+          "hp": 30,
+          "speed": 6,
+          "shots": 10,
+          "growthPerWeek": 5,
+          "gold": 540,
+          "remote": true
+        },
+        "code": {
+          "attack": 9,
+          "defense": 6,
+          "damageMin": 7,
+          "damageMax": 10,
+          "hp": 30,
+          "speed": 6,
+          "shots": 10,
+          "growthPerWeek": 5,
+          "cost": {
+            "gold": 540,
+            "ore": 3
+          },
+          "aiValue": 392.31
+        },
+        "targetPower": 313.85,
+        "codePower": 313.85,
+        "weeklyCode": 1569.2,
+        "deltaPct": 0
+      },
+      {
+        "fam": "p4",
+        "tier": 5,
+        "id": "p4_wraith",
+        "name": "摄魂怪",
+        "target": {
+          "attack": 10,
+          "defense": 8,
+          "damageMin": 10,
+          "damageMax": 13,
+          "hp": 60,
+          "speed": 9,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "gold": 800,
+          "remote": false
+        },
+        "code": {
+          "attack": 10,
+          "defense": 8,
+          "damageMin": 10,
+          "damageMax": 13,
+          "hp": 60,
+          "speed": 9,
+          "shots": 0,
+          "growthPerWeek": 2,
+          "cost": {
+            "gold": 800,
+            "crystal": 4
+          },
+          "aiValue": 932.43
+        },
+        "targetPower": 932.43,
+        "codePower": 932.43,
+        "weeklyCode": 1864.9,
+        "deltaPct": 0
+      }
+    ],
+    "family": {
+      "p1": {
+        "weeklyPower": 4278.1,
+        "weeklyBill": 6870,
+        "weeklyAi": 4311.2
+      },
+      "p2": {
+        "weeklyPower": 4010.1,
+        "weeklyBill": 6400,
+        "weeklyAi": 4024.1
+      },
+      "p3": {
+        "weeklyPower": 4005.4,
+        "weeklyBill": 6745,
+        "weeklyAi": 4322.6
+      },
+      "p4": {
+        "weeklyPower": 4024.2,
+        "weeklyBill": 6975,
+        "weeklyAi": 4416.5
+      }
+    },
+    "gates": [
+      {
+        "name": "V1 族级周产战力极差 ≤8%",
+        "ok": true,
+        "detail": "6.8%"
+      },
+      {
+        "name": "V2 周账单极差 ≤12%",
+        "ok": true,
+        "detail": "9.0%"
+      },
+      {
+        "name": "V3 T5 战力极差 ∈[1.40,1.60]×",
+        "ok": true,
+        "detail": "1.49×"
+      },
+      {
+        "name": "V4 T5 每金单调 + 极差 20~30%",
+        "ok": true,
+        "detail": "单调=true 极差 25.5%"
+      },
+      {
+        "name": "V5 同档（T1 周产 ≤30%）",
+        "ok": true,
+        "detail": "15.9%"
+      },
+      {
+        "name": "V5 口径 T1 单只应读 88.9%",
+        "ok": true,
+        "detail": "88.9%"
+      },
+      {
+        "name": "V5 同档（T2 近战 ≤10%）",
+        "ok": true,
+        "detail": "8.8%"
+      },
+      {
+        "name": "V5 同档（T2 远程 ≤10%）",
+        "ok": true,
+        "detail": "6.6%"
+      },
+      {
+        "name": "V5 同档（T3 ≤40%）",
+        "ok": true,
+        "detail": "24.1%"
+      },
+      {
+        "name": "V5 同档（T4 ≤40%）",
+        "ok": true,
+        "detail": "19.7%"
+      },
+      {
+        "name": "V6 族级 aiValue 极差 ≤12%",
+        "ok": true,
+        "detail": "9.8%"
+      },
+      {
+        "name": "V6 T1 aiValue 极差 ≤40%",
+        "ok": true,
+        "detail": "33.0%"
+      },
+      {
+        "name": "V6 aiValue 与 §25.3 一致",
+        "ok": true,
+        "detail": "20/20"
+      }
+    ]
+  },
+  "econ": {
+    "dist": "/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist",
+    "noMine": false,
+    "noBanner": false,
+    "buildings": {
+      "tavern": {
+        "gold": 0,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "tierGrowthBoost": null,
+        "growth": null
+      },
+      "market": {
+        "gold": 500,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "tierGrowthBoost": null,
+        "growth": null
+      },
+      "townhall": {
+        "gold": 1500,
+        "dailyGold": 450,
+        "growthBonus": 0,
+        "tierGrowthBoost": null,
+        "growth": null
+      },
+      "workshop": {
+        "gold": 2000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "tierGrowthBoost": null,
+        "growth": null
+      },
+      "wall1": {
+        "gold": 1000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "tierGrowthBoost": null,
+        "growth": null
+      },
+      "wall2": {
+        "gold": 2500,
+        "dailyGold": 0,
+        "growthBonus": 0.25,
+        "tierGrowthBoost": null,
+        "growth": null
+      },
+      "wall3": {
+        "gold": 5000,
+        "dailyGold": 0,
+        "growthBonus": 0.25,
+        "tierGrowthBoost": null,
+        "growth": null
+      },
+      "dwell1": {
+        "gold": 300,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "tierGrowthBoost": null,
+        "growth": {
+          "tier": 1
+        }
+      },
+      "dwell2": {
+        "gold": 1000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "tierGrowthBoost": null,
+        "growth": {
+          "tier": 2
+        }
+      },
+      "dwell3": {
+        "gold": 2500,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "tierGrowthBoost": null,
+        "growth": {
+          "tier": 3
+        }
+      },
+      "dwell4": {
+        "gold": 5000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "tierGrowthBoost": null,
+        "growth": {
+          "tier": 4
+        }
+      },
+      "dwell5": {
+        "gold": 9000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "tierGrowthBoost": null,
+        "growth": {
+          "tier": 5
+        }
+      },
+      "banner": {
+        "gold": 1000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "tierGrowthBoost": {
+          "tier": 3,
+          "mult": 1.5
+        },
+        "growth": null
+      },
+      "guild1": {
+        "gold": 2000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "tierGrowthBoost": null,
+        "growth": null
+      },
+      "guild2": {
+        "gold": 3000,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "tierGrowthBoost": null,
+        "growth": null
+      },
+      "guild3": {
+        "gold": 4500,
+        "dailyGold": 0,
+        "growthBonus": 0,
+        "tierGrowthBoost": null,
+        "growth": null
+      }
+    },
+    "bannerPresent": true,
+    "tree": 40800,
+    "income": {
+      "base": 600,
+      "townhall": 450,
+      "mine": 400,
+      "wallDaily": 0
+    },
+    "weeks": [
+      6200,
+      9250,
+      10150,
+      10150,
+      10150
+    ],
+    "budget": 45900,
+    "budgetSlow": 41650,
+    "bills": {
+      "W1 dwell1+2": 870,
+      "W2 +dwell3": 1830,
+      "W3 +dwell4": 3390,
+      "W4 +主力营": 3870,
+      "W5 全开（T5 起售）": 6870,
+      "满建（+50% 增长）": 10305
+    },
+    "recruit5w": 16830,
+    "cashEnd": 8770,
+    "gates": [
+      {
+        "name": "G-E1 预算 ÷ 全树 ∈[1.00,1.20]",
+        "ok": true,
+        "detail": "1.125（目标 1.125）"
+      },
+      {
+        "name": "G-E2 W5 账单占比 ∈[55%,75%]",
+        "ok": true,
+        "detail": "68%（目标 68%）"
+      },
+      {
+        "name": "G-E3 城防线日金合计 = 0",
+        "ok": true,
+        "detail": "0"
+      },
+      {
+        "name": "G-E4 满建名义账单 ≤110%",
+        "ok": true,
+        "detail": "102%（目标 102%）"
+      },
+      {
+        "name": "G-E5 (预算−招募) ÷ 全树 ∈[0.65,0.80]",
+        "ok": true,
+        "detail": "0.713（目标 0.71）"
+      },
+      {
+        "name": "G-E6 §27.10 加算/乘算（1.5×0.5=0.75；1.0×0.5=0.50）",
+        "ok": true,
+        "detail": "满墙+瘟疫 0.75（错法 1.00）｜无墙+瘟疫 0.50（错法 0.25）"
+      },
+      {
+        "name": "G-E7 城防线 +50%、满建 T3 = 2.25×",
+        "ok": true,
+        "detail": "城防线 +50% × banner(T3) 1.50 = 2.25×"
+      }
+    ]
+  },
+  "aiscale": {
+    "normal": {
+      "difficulty": "normal",
+      "seeds": 8,
+      "days": 60,
+      "distMd5": "58fba8677f28a16366a7e18eb456e702",
+      "firstBattleDayMedian": 1,
+      "battlesMean": 39.375,
+      "capturesMean": 25.625,
+      "lostAll": 0,
+      "t5GamesD28": 5,
+      "t5GamesD35": 8,
+      "t5GamesAll": 8,
+      "t5ShareD28": 0.625,
+      "t5ShareD35": 1,
+      "t5ShareAll": 1,
+      "t5Games": 5,
+      "t5Share": 0.625,
+      "perGold": 0.549476420205356,
+      "heroValueD28Median": 795,
+      "games": [
+        {
+          "seed": 4242,
+          "firstBattleDay": 1,
+          "battles": 47,
+          "captures": 27,
+          "lostAll": 0,
+          "firstT5Day": 28,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.3537571803970733,
+            "screen": true,
+            "holder": "阿尔文"
+          },
+          "garrisonAtT5": 4844.53,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": 21,
+              "t5": 28
+            },
+            "p4": {
+              "d5": 21,
+              "t5": 31
+            }
+          },
+          "recruitValue": 69078.96000000005,
+          "recruitGold": 123635,
+          "heroValueD28": 763,
+          "townCountD28": 4,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 1
+        },
+        {
+          "seed": 5219,
+          "firstBattleDay": 1,
+          "battles": 43,
+          "captures": 35,
+          "lostAll": 0,
+          "firstT5Day": 22,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.3673789653687222,
+            "screen": true,
+            "holder": "阿尔文"
+          },
+          "garrisonAtT5": 4260.17,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 17,
+              "t5": 22
+            },
+            "p3": {
+              "d5": null,
+              "t5": null
+            },
+            "p4": {
+              "d5": 33,
+              "t5": 39
+            }
+          },
+          "recruitValue": 77181.11999999998,
+          "recruitGold": 134780,
+          "heroValueD28": 827,
+          "townCountD28": 3,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 6196,
+          "firstBattleDay": 1,
+          "battles": 14,
+          "captures": 14,
+          "lostAll": 0,
+          "firstT5Day": 31,
+          "t5Structure": null,
+          "garrisonAtT5": 10026.449999999999,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 40,
+              "t5": 42
+            },
+            "p3": {
+              "d5": 27,
+              "t5": 31
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 68897.90000000004,
+          "recruitGold": 129020,
+          "heroValueD28": 403,
+          "townCountD28": 3,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 7173,
+          "firstBattleDay": 2,
+          "battles": 43,
+          "captures": 23,
+          "lostAll": 0,
+          "firstT5Day": 21,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.5033797308533242,
+            "screen": true,
+            "holder": "紫晶秘法师"
+          },
+          "garrisonAtT5": 3576.29,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": 19,
+              "t5": 21
+            },
+            "p4": {
+              "d5": 19,
+              "t5": 29
+            }
+          },
+          "recruitValue": 96738.40000000005,
+          "recruitGold": 160725,
+          "heroValueD28": 852,
+          "townCountD28": 5,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 1
+        },
+        {
+          "seed": 8150,
+          "firstBattleDay": 1,
+          "battles": 67,
+          "captures": 35,
+          "lostAll": 0,
+          "firstT5Day": 21,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.4135190992411007,
+            "screen": true,
+            "holder": "赤焰领主"
+          },
+          "garrisonAtT5": 5790.71,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 14,
+              "t5": 21
+            },
+            "p3": {
+              "d5": null,
+              "t5": null
+            },
+            "p4": {
+              "d5": 27,
+              "t5": 28
+            }
+          },
+          "recruitValue": 89126.29000000001,
+          "recruitGold": 162870,
+          "heroValueD28": 507,
+          "townCountD28": 3,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 9127,
+          "firstBattleDay": 1,
+          "battles": 39,
+          "captures": 26,
+          "lostAll": 0,
+          "firstT5Day": 33,
+          "t5Structure": null,
+          "garrisonAtT5": 9128.72,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": 26,
+              "t5": 33
+            },
+            "p4": {
+              "d5": 25,
+              "t5": 53
+            }
+          },
+          "recruitValue": 89600.72999999995,
+          "recruitGold": 175410,
+          "heroValueD28": 1445,
+          "townCountD28": 5,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 10104,
+          "firstBattleDay": 1,
+          "battles": 21,
+          "captures": 16,
+          "lostAll": 0,
+          "firstT5Day": 28,
+          "t5Structure": null,
+          "garrisonAtT5": 3812.87,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 26,
+              "t5": 28
+            },
+            "p3": {
+              "d5": 33,
+              "t5": 35
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 72238.25000000007,
+          "recruitGold": 128255,
+          "heroValueD28": 488,
+          "townCountD28": 3,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 11081,
+          "firstBattleDay": 1,
+          "battles": 41,
+          "captures": 29,
+          "lostAll": 0,
+          "firstT5Day": 35,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.41054641176558376,
+            "screen": true,
+            "holder": "艾莉亚"
+          },
+          "garrisonAtT5": 7663.160000000001,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": 28,
+              "t5": 35
+            },
+            "p4": {
+              "d5": 20,
+              "t5": 35
+            }
+          },
+          "recruitValue": 76102.50000000003,
+          "recruitGold": 148165,
+          "heroValueD28": 906,
+          "townCountD28": 4,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 2
+        }
+      ]
+    },
+    "easy": {
+      "difficulty": "easy",
+      "seeds": 8,
+      "days": 60,
+      "distMd5": "58fba8677f28a16366a7e18eb456e702",
+      "firstBattleDayMedian": 1,
+      "battlesMean": 50.25,
+      "capturesMean": 43,
+      "lostAll": 0,
+      "t5GamesD28": 2,
+      "t5GamesD35": 4,
+      "t5GamesAll": 8,
+      "t5ShareD28": 0.25,
+      "t5ShareD35": 0.5,
+      "t5ShareAll": 1,
+      "t5Games": 2,
+      "t5Share": 0.25,
+      "perGold": 0.5120430125007487,
+      "heroValueD28Median": 664.5,
+      "games": [
+        {
+          "seed": 4242,
+          "firstBattleDay": 1,
+          "battles": 46,
+          "captures": 37,
+          "lostAll": 0,
+          "firstT5Day": 35,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.3295951124629033,
+            "screen": true,
+            "holder": "格罗姆"
+          },
+          "garrisonAtT5": null,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 33,
+              "t5": 35
+            },
+            "p3": {
+              "d5": 34,
+              "t5": 37
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 85108.63,
+          "recruitGold": 165805,
+          "heroValueD28": 399,
+          "townCountD28": 4,
+          "a6Kind": "field",
+          "heroAtT5": null,
+          "fieldT5Value": 3794.1400000000003,
+          "nakedTowns": 1
+        },
+        {
+          "seed": 5219,
+          "firstBattleDay": 1,
+          "battles": 62,
+          "captures": 40,
+          "lostAll": 0,
+          "firstT5Day": 21,
+          "t5Structure": {
+            "stacks": 4,
+            "maxShare": 0.4142147535070273,
+            "screen": true,
+            "holder": "翠林守誓者"
+          },
+          "garrisonAtT5": 2600.77,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 24,
+              "t5": 31
+            },
+            "p3": {
+              "d5": 19,
+              "t5": 21
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 104573.25000000007,
+          "recruitGold": 188190,
+          "heroValueD28": 1109,
+          "townCountD28": 6,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 1
+        },
+        {
+          "seed": 6196,
+          "firstBattleDay": 1,
+          "battles": 39,
+          "captures": 41,
+          "lostAll": 0,
+          "firstT5Day": 36,
+          "t5Structure": null,
+          "garrisonAtT5": 6102.46,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 32,
+              "t5": 36
+            },
+            "p3": {
+              "d5": 47,
+              "t5": 52
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 60222.920000000035,
+          "recruitGold": 127495,
+          "heroValueD28": 737,
+          "townCountD28": 4,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 2
+        },
+        {
+          "seed": 7173,
+          "firstBattleDay": 2,
+          "battles": 55,
+          "captures": 35,
+          "lostAll": 0,
+          "firstT5Day": 28,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.5020154324542209,
+            "screen": true,
+            "holder": "紫晶秘法师"
+          },
+          "garrisonAtT5": 2646.48,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": 21,
+              "t5": 30
+            },
+            "p4": {
+              "d5": 21,
+              "t5": 28
+            }
+          },
+          "recruitValue": 79579.70999999992,
+          "recruitGold": 141440,
+          "heroValueD28": 592,
+          "townCountD28": 5,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 1
+        },
+        {
+          "seed": 8150,
+          "firstBattleDay": 1,
+          "battles": 38,
+          "captures": 47,
+          "lostAll": 0,
+          "firstT5Day": 40,
+          "t5Structure": null,
+          "garrisonAtT5": 11468.55,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": null,
+              "t5": null
+            },
+            "p4": {
+              "d5": 34,
+              "t5": 40
+            }
+          },
+          "recruitValue": 60713.07000000002,
+          "recruitGold": 128140,
+          "heroValueD28": 451,
+          "townCountD28": 4,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 9127,
+          "firstBattleDay": 1,
+          "battles": 47,
+          "captures": 54,
+          "lostAll": 0,
+          "firstT5Day": 38,
+          "t5Structure": null,
+          "garrisonAtT5": 4566.6,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": null,
+              "t5": null
+            },
+            "p4": {
+              "d5": 25,
+              "t5": 38
+            }
+          },
+          "recruitValue": 85599.15999999999,
+          "recruitGold": 167675,
+          "heroValueD28": 1369,
+          "townCountD28": 6,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 2
+        },
+        {
+          "seed": 10104,
+          "firstBattleDay": 1,
+          "battles": 65,
+          "captures": 36,
+          "lostAll": 0,
+          "firstT5Day": 35,
+          "t5Structure": {
+            "stacks": 4,
+            "maxShare": 0.3704985288632879,
+            "screen": true,
+            "holder": "阿尔文"
+          },
+          "garrisonAtT5": 2477.94,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 48,
+              "t5": null
+            },
+            "p3": {
+              "d5": 33,
+              "t5": 35
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 59198.01000000003,
+          "recruitGold": 116615,
+          "heroValueD28": 810,
+          "townCountD28": 4,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 1
+        },
+        {
+          "seed": 11081,
+          "firstBattleDay": 1,
+          "battles": 50,
+          "captures": 54,
+          "lostAll": 0,
+          "firstT5Day": 36,
+          "t5Structure": null,
+          "garrisonAtT5": 6396.83,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": 28,
+              "t5": 36
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 63445.280000000006,
+          "recruitGold": 133370,
+          "heroValueD28": 149,
+          "townCountD28": 3,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 1
+        }
+      ]
+    },
+    "hard": {
+      "difficulty": "hard",
+      "seeds": 8,
+      "days": 60,
+      "distMd5": "58fba8677f28a16366a7e18eb456e702",
+      "firstBattleDayMedian": 1,
+      "battlesMean": 23.625,
+      "capturesMean": 19.5,
+      "lostAll": 0,
+      "t5GamesD28": 5,
+      "t5GamesD35": 8,
+      "t5GamesAll": 8,
+      "t5ShareD28": 0.625,
+      "t5ShareD35": 1,
+      "t5ShareAll": 1,
+      "t5Games": 5,
+      "t5Share": 0.625,
+      "perGold": 0.5436368667675165,
+      "heroValueD28Median": 470,
+      "games": [
+        {
+          "seed": 4242,
+          "firstBattleDay": 1,
+          "battles": 43,
+          "captures": 39,
+          "lostAll": 0,
+          "firstT5Day": 29,
+          "t5Structure": {
+            "stacks": 4,
+            "maxShare": 0.3888224646151585,
+            "screen": true,
+            "holder": "艾莉亚"
+          },
+          "garrisonAtT5": 4703.5,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": 25,
+              "t5": 29
+            },
+            "p4": {
+              "d5": 14,
+              "t5": 33
+            }
+          },
+          "recruitValue": 88772.94999999995,
+          "recruitGold": 164090,
+          "heroValueD28": 916,
+          "townCountD28": 5,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 5219,
+          "firstBattleDay": 1,
+          "battles": 11,
+          "captures": 13,
+          "lostAll": 0,
+          "firstT5Day": 22,
+          "t5Structure": null,
+          "garrisonAtT5": 4961.87,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 20,
+              "t5": 22
+            },
+            "p3": {
+              "d5": 21,
+              "t5": 28
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 69688.73000000007,
+          "recruitGold": 117700,
+          "heroValueD28": 328,
+          "townCountD28": 3,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 6196,
+          "firstBattleDay": 1,
+          "battles": 13,
+          "captures": 11,
+          "lostAll": 0,
+          "firstT5Day": 28,
+          "t5Structure": null,
+          "garrisonAtT5": 6386.8,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 27,
+              "t5": 28
+            },
+            "p3": {
+              "d5": 27,
+              "t5": 31
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 75588.61000000007,
+          "recruitGold": 135415,
+          "heroValueD28": 421,
+          "townCountD28": 3,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 7173,
+          "firstBattleDay": 2,
+          "battles": 8,
+          "captures": 17,
+          "lostAll": 0,
+          "firstT5Day": 22,
+          "t5Structure": null,
+          "garrisonAtT5": 6022.610000000001,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": 20,
+              "t5": 22
+            },
+            "p4": {
+              "d5": 27,
+              "t5": 35
+            }
+          },
+          "recruitValue": 70943.83,
+          "recruitGold": 119225,
+          "heroValueD28": 519,
+          "townCountD28": 3,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 8150,
+          "firstBattleDay": 1,
+          "battles": 28,
+          "captures": 24,
+          "lostAll": 0,
+          "firstT5Day": 29,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.42554947034661667,
+            "screen": true,
+            "holder": "格罗姆"
+          },
+          "garrisonAtT5": 5251.2,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 26,
+              "t5": 29
+            },
+            "p3": {
+              "d5": null,
+              "t5": null
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 74791.16000000006,
+          "recruitGold": 152460,
+          "heroValueD28": 360,
+          "townCountD28": 4,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 1
+        },
+        {
+          "seed": 9127,
+          "firstBattleDay": 1,
+          "battles": 35,
+          "captures": 24,
+          "lostAll": 0,
+          "firstT5Day": 24,
+          "t5Structure": null,
+          "garrisonAtT5": 4862.75,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 20,
+              "t5": 24
+            },
+            "p3": {
+              "d5": 35,
+              "t5": 42
+            },
+            "p4": {
+              "d5": 17,
+              "t5": 34
+            }
+          },
+          "recruitValue": 99465.11999999991,
+          "recruitGold": 182385,
+          "heroValueD28": 1503,
+          "townCountD28": 6,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 10104,
+          "firstBattleDay": 1,
+          "battles": 27,
+          "captures": 20,
+          "lostAll": 0,
+          "firstT5Day": 35,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.4031687667478949,
+            "screen": true,
+            "holder": "艾莉亚"
+          },
+          "garrisonAtT5": 2601.33,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": 31,
+              "t5": 35
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 49228.50999999999,
+          "recruitGold": 97085,
+          "heroValueD28": 546,
+          "townCountD28": 3,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 11081,
+          "firstBattleDay": 1,
+          "battles": 24,
+          "captures": 8,
+          "lostAll": 0,
+          "firstT5Day": 28,
+          "t5Structure": null,
+          "garrisonAtT5": 8944.44,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": 27,
+              "t5": 28
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 60888.69000000004,
+          "recruitGold": 115760,
+          "heroValueD28": 291,
+          "townCountD28": 3,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        }
+      ]
+    }
+  },
+  "homegold": {
+    "distMd5": "58fba8677f28a16366a7e18eb456e702",
+    "orphanNegative": false,
+    "strongNegative": false,
+    "maps": 9,
+    "townsChecked": 31,
+    "guardsChecked": 28,
+    "guardDistance": {
+      "min": 3,
+      "max": 7
+    },
+    "orphanMines": 0,
+    "gm1": [
+      {
+        "f": "p1",
+        "band": {
+          "min": 31,
+          "max": 34
+        },
+        "trials": 32,
+        "winPct": 100,
+        "lossPct": 20.937499999999996,
+        "lossMinPct": 5.000000000000004,
+        "lossMaxPct": 55.00000000000001
+      },
+      {
+        "f": "p2",
+        "band": {
+          "min": 19,
+          "max": 22
+        },
+        "trials": 32,
+        "winPct": 100,
+        "lossPct": 25.468749999999996,
+        "lossMinPct": 15.000000000000002,
+        "lossMaxPct": 35
+      },
+      {
+        "f": "p3",
+        "band": {
+          "min": 30,
+          "max": 32
+        },
+        "trials": 24,
+        "winPct": 100,
+        "lossPct": 25.416666666666664,
+        "lossMinPct": 9.999999999999998,
+        "lossMaxPct": 50
+      },
+      {
+        "f": "p4",
+        "band": {
+          "min": 18,
+          "max": 20
+        },
+        "trials": 24,
+        "winPct": 100,
+        "lossPct": 24.999999999999996,
+        "lossMinPct": 15.000000000000002,
+        "lossMaxPct": 35
+      }
+    ]
+  }
+}

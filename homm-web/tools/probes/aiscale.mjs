@@ -13,7 +13,7 @@
  * |---|---|---|---|
  * | A1 | 对基线：首攻日中位 ±1 天、场均战斗数 ±10%、D28 英雄战力 ±10% | 见左 | 只换 `aiValue`、常数不换 ⇒ 首攻日提前 3~5 天 |
  * | A2 | 8 种子 × 60 天，AI **丢光全部城镇**的局数 | ≤ 1 | `GARRISON_KEEP_VALUE = 400` ⇒ 回到"7/8 局丢光" |
- * | A3 | 五周一局（35 天）内出现 T5 的局占比 | ≥ 60% | 还原成 `Object.keys()` 建造序 / 去掉稀有资源补货 ⇒ 掉到 ~0 |
+ * | A3 | 五周一局（35 天）内出现 T5 的局占比（**仅 normal 档判**，见下"档位边界"） | ≥ 60% | 还原成 `Object.keys()` 建造序 / 去掉稀有资源补货 ⇒ 掉到 ~0 |
  * | A4 | 每金战力 = Σ 招募 `aiValue` ÷ Σ 招募金币 | 与基线差 ≤ 10% | 只改排序不改 `poolValue` ⇒ 回城次数 +30%、掉 >15% |
  * | A5 | 有 T5 时：栈数 ≥ 3、单栈 ≤ 全军 60%、至少 1 队 T1/T2 当屏 | 全部局 | 允许"一栈流" ⇒ 单栈冲到 85% |
  * | A6 | 买到 T5 那天，**招募城**（驻军 + 英雄部队）≥ 1,200；T5 在野外英雄身上时无「招募城」，另作读数 | 违反 0 局 | `GARRISON_KEEP_VALUE = 400` ⇒ 3+ 局被偷城；**脚本内**：把一局驻军抹成 0 ⇒ 必报违规 |
@@ -33,13 +33,23 @@
  * ```
  * node tools/probes/aiscale.mjs                                  # 8 种子 × 60 天（normal）
  * node tools/probes/aiscale.mjs --seeds=2 --days=30              # 快跑（调试）
- * node tools/probes/aiscale.mjs --save=tools/baseline/ai-b4.json # 存成本批基线
+ * node tools/probes/aiscale.mjs --save=tools/baseline/ai-b4.json # 存成独立基线（可被 --baseline 读）
  * node tools/probes/aiscale.mjs --baseline=tools/baseline/ai-b4.json  # 与基线对 A1/A4
+ * node tools/probes/aiscale.mjs --json=tools/baseline/after-b5.json   # 合并进同一份批次基线（按难度分键）
+ * node tools/probes/aiscale.mjs --difficulty=easy                # 另两档只打读数
  * node tools/probes/aiscale.mjs --dist=/tmp/old/homm-web/dist    # 对旧构建跑（同一份代码量两边）
  * ```
+ *
+ * ## 档位边界（2026-11-13 补）
+ * A1–A6 的阈值全部在 **normal** 上标定：
+ * - `--difficulty=easy|hard` 时 **A3 不判**（"五周一局内有 T5"是普通档的预算；
+ *   轻松档的 AI 起始 ×0.7、周增长 +0，本来就该更慢 —— 拿普通档阈值判它 =
+ *   要求"轻松档的电脑和普通档一样快"，那不是回归而是**违反设计**）。读数照样打印。
+ * - `--baseline` 的档位与本次不一致时 **A1/A4 不判**（跨档比较没有归因），并明确说出来。
+ * - 空集仍然判红：一局都没建成 `dwell5` 是"没有对象"，不是"量到 0"。
  * 退出码：0 全过 · 1 有判据红 · 2 没有构建
  */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { distDir, distUrl, printHeader, requireFile, argOf } from '../_dist.mjs';
@@ -67,6 +77,10 @@ const SAVE = argOf('save', '');
 const BASE = argOf('baseline', '');
 /** W4 的最后一天（第 4 周 = D22~D28）。 */
 const W4_END = 28;
+/** 设计口径的"一局"：五周 = 35 天（§27.7）。A3 判的是这一天，不是 D28。 */
+const SESSION_DAYS = 35;
+/** A1–A6 的阈值都是在这一档上标定的；另两档只打读数。 */
+const GATE_TIER = 'normal';
 /** A3 的判据：五周一局（35 天）内出现 T5 的局占比。 */
 const T5_SESSION_SHARE_MIN = 0.6;
 /** A2 的容忍：8 种子里最多 1 局。 */
@@ -319,6 +333,9 @@ for (const g of games) {
   );
 }
 
+/** 到第 `day` 天为止已有 T5 的局数。A3 的三个口径都要用它，必须先于 summary 定义。 */
+const t5By = (day) => games.filter((g) => g.firstT5Day !== null && g.firstT5Day <= day).length;
+
 const summary = {
   difficulty: DIFFICULTY,
   seeds: SEEDS,
@@ -334,8 +351,20 @@ const summary = {
   battlesMean: mean(games.map((g) => g.battles)),
   capturesMean: mean(games.map((g) => g.captures)),
   lostAll: games.filter((g) => g.lostAll).length,
-  t5Games: games.filter((g) => g.firstT5Day !== null && g.firstT5Day <= W4_END).length,
-  t5Share: games.filter((g) => g.firstT5Day !== null && g.firstT5Day <= W4_END).length / SEEDS,
+  /* ⚠️ 三个日期口径必须**分开写**。旧字段 `t5Games` / `t5Share` 只读 D28（W4_END），
+   * 但 B4 的文档里把它当成"五周（35 天）"引用过一次 —— 文档写 5/8、基线里是 4/8，
+   * 差的正好是 D29~D35 那一周（见 `production/m6-*` 之后的 B5 记录）。
+   * 现在把 D28 / D35 / 全程三个都存进基线，`t5Games`/`t5Share` 只作为 D28 的旧名保留，
+   * 让老基线 `ai-b4.json` 还能被 `--baseline` 读。 */
+  t5GamesD28: t5By(W4_END),
+  t5GamesD35: t5By(SESSION_DAYS),
+  t5GamesAll: t5By(DAYS),
+  t5ShareD28: t5By(W4_END) / SEEDS,
+  t5ShareD35: t5By(SESSION_DAYS) / SEEDS,
+  t5ShareAll: t5By(DAYS) / SEEDS,
+  /** 旧名 = D28（不是五周！）。只读不写，新代码请用 `t5ShareD28/D35/All`。 */
+  t5Games: t5By(W4_END),
+  t5Share: t5By(W4_END) / SEEDS,
   perGold: (() => {
     const v = games.reduce((a, g) => a + g.recruitValue, 0);
     const c = games.reduce((a, g) => a + g.recruitGold, 0);
@@ -357,8 +386,6 @@ for (const g of games) {
     if (r.d5 !== null) built.push({ seed: g.seed, f, d5: r.d5, t5: r.t5 });
   }
 }
-const t5By = (day) => games.filter((g) => g.firstT5Day !== null && g.firstT5Day <= day).length;
-const SESSION_DAYS = 35; // 设计口径：五周 = 35 天（§27.7）
 console.log(
   `  建成 dwell5 的阵营：${built.length} 个` +
     `　买到 T5 的阵营：${built.filter((b) => b.t5 !== null).length} 个`,
@@ -367,13 +394,25 @@ console.log(
   `  读数：D28 前有 T5 的局 ${t5By(W4_END)}/${SEEDS}` +
     `　D${SESSION_DAYS} 前 ${t5By(SESSION_DAYS)}/${SEEDS}　D${DAYS} 前 ${t5By(DAYS)}/${SEEDS}`,
 );
-if (t5By(SESSION_DAYS) / SEEDS >= T5_SESSION_SHARE_MIN)
-  ok(`${pct(t5By(SESSION_DAYS) / SEEDS)} 的局在 ${SESSION_DAYS} 天内买到 T5（要求 ≥${pct(T5_SESSION_SHARE_MIN)}）`);
-else
-  bad(
-    `只有 ${pct(t5By(SESSION_DAYS) / SEEDS)} 的局在 ${SESSION_DAYS} 天内买到 T5` +
-      `（要求 ≥${pct(T5_SESSION_SHARE_MIN)}）—— 先看 dwell5 落成日，再看稀有资源`,
+/* ⚠️ A3 的 60% 是**普通档**的预算（"五周一局内玩家能看见 T5"）。
+ * easy / hard 的 AI 起始资源与周增长按设计更低 / 更高（`DIFFICULTIES`），
+ * 拿普通档的阈值去判另外两档，等于要求"轻松档的 AI 和普通档一样快"——
+ * 那不是回归，是设计要求。所以另两档**只打读数、不判**，
+ * 并且把"本档不判"写出来（安静的跳过会被读成"通过"）。 */
+if (DIFFICULTY === GATE_TIER) {
+  if (t5By(SESSION_DAYS) / SEEDS >= T5_SESSION_SHARE_MIN)
+    ok(`${pct(t5By(SESSION_DAYS) / SEEDS)} 的局在 ${SESSION_DAYS} 天内买到 T5（要求 ≥${pct(T5_SESSION_SHARE_MIN)}）`);
+  else
+    bad(
+      `只有 ${pct(t5By(SESSION_DAYS) / SEEDS)} 的局在 ${SESSION_DAYS} 天内买到 T5` +
+        `（要求 ≥${pct(T5_SESSION_SHARE_MIN)}）—— 先看 dwell5 落成日，再看稀有资源`,
+    );
+} else {
+  console.log(
+    `  · 本档不判 A3：${pct(t5By(SESSION_DAYS) / SEEDS)} 只是读数，阈值 ${pct(T5_SESSION_SHARE_MIN)}` +
+      ` 是 ${GATE_TIER} 档的预算（${DIFFICULTY} 档的 AI 起始/增长按设计不同）`,
   );
+}
 if (!built.length) bad('一局都没有阵营建成 dwell5 ⇒ A3 无法评估（不是通过）');
 else {
   const lags = built.map((b) => ({ ...b, lag: b.t5 === null ? Infinity : b.t5 - b.d5 }));
@@ -454,6 +493,14 @@ if (!judgeable.length) {
 /* ---------------- A1 / A4：与基线比 ---------------- */
 if (BASE) {
   const base = JSON.parse(readFileSync(BASE, 'utf8'));
+  /* 拿另一档的基线来比 = 两个变量一起变，比出来的差没有归因。
+   * 这里**明确跳过**并说出来，不要让它静默 PASS。 */
+  if (base.difficulty !== DIFFICULTY) {
+    console.log(
+      `\n  · A1/A4 未判：基线 ${path.basename(BASE)} 是 ${base.difficulty} 档，` +
+        `本次是 ${DIFFICULTY} 档 —— 跨档比较没有归因（要么换同档基线，要么别给 --baseline）`,
+    );
+  } else {
   console.log(`\n=== A1/A4. 对基线 ${path.basename(BASE)}（${base.difficulty} · ${base.seeds} 种子 · ${base.days} 天）===`);
   const cmp = (label, now, was, tol, unit = '%') => {
     const rel = was === 0 ? (now === 0 ? 0 : Infinity) : (now - was) / was;
@@ -482,6 +529,7 @@ if (BASE) {
   };
   floor('D28 英雄兵力（中位·血）', summary.heroValueD28Median, base.heroValueD28Median, -0.1, 0.6);
   floor('每金战力', summary.perGold, base.perGold, -0.1);
+  }
 } else {
   console.log('\n  提示：没给 `--baseline` ⇒ A1/A4 未判（首攻日 / 每金战力只打印，不比）');
 }
@@ -496,6 +544,26 @@ if (SAVE) {
   mkdirSync(path.dirname(SAVE), { recursive: true });
   writeFileSync(SAVE, JSON.stringify(summary, null, 2));
   console.log(`  已存基线：${SAVE}`);
+}
+
+/* `--json=<file>`：与 `balance-p2` / `econ-check` 同一种写法，把所有批次的读数
+ * 堆进**同一份**基线。按难度分键，避免"拿 easy 的数当 normal 的基线"。
+ * `--save` 留给"单独一份、能被 `--baseline` 读"的用途。 */
+const jsonArg = process.argv.find((x) => x.startsWith('--json='));
+if (jsonArg) {
+  const out = jsonArg.slice('--json='.length);
+  let cur = {};
+  if (existsSync(out)) {
+    try {
+      cur = JSON.parse(readFileSync(out, 'utf8'));
+    } catch {
+      cur = {};
+    }
+  }
+  cur.aiscale = { ...(cur.aiscale ?? {}), [DIFFICULTY]: summary };
+  mkdirSync(path.dirname(out), { recursive: true });
+  writeFileSync(out, JSON.stringify(cur, null, 2));
+  console.log(`  已写入基线：${out}（section: aiscale.${DIFFICULTY}）`);
 }
 
 console.log(fails === 0 ? '\nPASS' : `\nFAIL（${fails} 条）`);
