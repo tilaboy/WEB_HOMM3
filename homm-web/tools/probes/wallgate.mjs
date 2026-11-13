@@ -16,22 +16,32 @@
  *   [2] **守方胜率**：在"不建墙时正好五五开"的攻方兵力上，四档城防各自的守方胜率。
  *       → 回答"墙有没有用"（决策 61 的验收）。**这一列会被天花板截断**（守方 100% 就量不出更多）。
  *
- * ## 判据（[G1]–[G6]）
+ * ## 判据（[G1]–[G7] + [W1]–[W4]）
  *   [G1] 结构：墙完好时 `blocksLine(城外→城内)` = true，`blocksLine(城内→城外)` = false。
  *        （负向对照的锚：改回双向 ⇒ 这一条立刻红）
- *   [G2] 校准有效：每族都要找到"不建墙守方胜率 40%~60%"的攻方倍率，否则量不到对象。
+ *   [G2] 校准有效：每族都要找到"不建墙守方胜率 30%~70%"的攻方倍率，否则量不到对象。
+ *        （只排除天花板/地板，**不要求正好 50%**：胜负是台阶曲线，多 1 个兵就掉 25pt。）
  *   [G3] 守方闸：同一倍率下 `wall1` 的守方胜率 **≥ 不建墙**（决策 61 的全部要求）。
  *   [G4] 层级不倒退：`wall2` / `wall3` 的守方胜率 ≥ `wall1` − 3pt（噪声容差）。
  *   [G5] 破城门槛单调：L1 ≤ L2 ≤ L3（+5% 容差）—— 更贵的墙必须更难攻。
  *   [G6] 门槛不失控：L1 的所需优势 ≤ +30%、L3 ≤ +100%（= 攻方不超过守军两倍；超过就是卡死）。
  *   [G7] 覆盖：四族 × 每格种子数 > 0，且守方真的射出过箭。
+ *   [W1]–[W4] AI 墙估值表 `WALL_NEED` 与实测一致、单调、且真的被 `townNeedForAI` 消费（见下）。
  *
- * ## 规格里那条 "0~30%" 的去向（必须读）
- * §14.4 的原文是"建 wall1 的守方胜率必须上升 0%~30%"。**实测是 +45~55pt**，
- * 因为预期值写在没有攻城读数的 2026-10-28。阈值上限按实测无法成立，
- * 所以本探针**只把 ≥0 放进退出码**，把上限打印成 `⚠️` 并在
- * `production/m7-b3b-wall-2026-11-13.md` §3 写明"需要主理人重新登记"。
- * 这不是放宽阈值：真正被机检守住的是 [G3] 方向 + [G5]/[G6] 的破城门槛。
+ * ## 规格 §14.4 的 "+0~30pt" 已被替换（A 案，主理人 2026-11-13 拍板）
+ * 原文把"建 wall1 的守方胜率上升 0%~30%"当验收线。但**价格不改变"墙已建好那一局"的胜率**
+ * （价格只改变有多少城会建墙）⇒ 拿价格永远修不绿；实测也不是 0~30，而是 **+13~+51pt**。
+ * 现判据换成两条与价格无关、可执行的：
+ *   [G3] 建 `wall1` 的守方胜率 **不下降**（方向闸；曲线无关的锚另有 `k1 ≥ k0 − 0.01`）
+ *   [G6] **破城门槛**：L1 所需优势 ≤ +30%、L3 ≤ +100%
+ * 合起来是"墙必须有用，但不能贵到打不下"。30pt 这个数**作废**，不再以 `⚠️` 形式保留。
+ *
+ * ## AI 墙估值（[W]，B3c）
+ * `pickTarget` 原来用 `守军 + townDefenseBonus × 24`：L1 只加 48 战力，而实测墙值 ≈ 守军的 9%
+ * ⇒ 低估一到两个数量级，AI 会带明显不够的兵去啃有墙的城。
+ * 现在改成 `守军 × WALL_NEED[守方族][城防级]`，倍率就是本探针的 `k_level / k_0`。
+ * [W2] 是**防表静默过期**：改了塔数/墙厚/护城河而没重跑本探针，比值一动这张表就红。
+ * [W4] 是接线检查：表对了但 AI 没消费（有人把公式改回去）也必须红。
  *
  * ## 用法
  *   node tools/probes/wallgate.mjs                       # 报告模式，永远 exit 0
@@ -40,6 +50,7 @@
  *   node tools/probes/wallgate.mjs --cal-seeds=40        # 校准/二分样本（默认 40）
  *   node tools/probes/wallgate.mjs --json=tools/baseline/after-b5.json
  *   node tools/probes/wallgate.mjs --dist=/tmp/dist-bidir --gate   # 负向对照（双向）
+ *   node tools/probes/wallgate.mjs --dist=/tmp/dist-oldai --gate   # 负向对照（旧 AI 估值）
  *
  * ## 负向对照（2026-11-13 实测）
  * 把 `dist/core/combat/siege.js` 的 `blocksLine` 改回双向（删掉 `isInsideCity(from)` 的早退），
@@ -61,13 +72,17 @@ const DIST = distDir();
 printHeader(DIST, 'probe=wallgate');
 requireFile(DIST, 'core/combat/battle.js');
 requireFile(DIST, 'core/combat/siege.js');
+requireFile(DIST, 'core/game/ai.js');
 
 const { aiAct, createBattle, currentUnit, endActivation } = await import(
   distUrl('core/combat/battle.js', DIST)
 );
-const { blocksLine, isInsideCity, WALL_COL } = await import(distUrl('core/combat/siege.js', DIST));
+const { blocksLine, isInsideCity, WALL_COL, WALL_NEED, wallNeedMultiplier } = await import(
+  distUrl('core/combat/siege.js', DIST)
+);
+const { townNeedForAI } = await import(distUrl('core/game/ai.js', DIST));
 const { FACTION_UNITS, UNITS } = await import(distUrl('core/data/units.js', DIST));
-const { MARKET_RATES } = await import(distUrl('core/game/town.js', DIST));
+const { MARKET_RATES, garrisonStrength } = await import(distUrl('core/game/town.js', DIST));
 
 const args = process.argv.slice(2);
 const GATE = args.includes('--gate');
@@ -272,6 +287,36 @@ for (const f of F) {
   }
 }
 
+/* ---------------------------------------------------------------- [W] AI 墙估值 */
+// 旧公式（B3b 之前）：`守军 + townDefenseBonus × 24`。城墙的 defenseBonus 是 2/4/6，
+// 于是 L1/L2/L3 只折 48/96/144 战力 —— 一个常数，与守军规模无关。
+// 新公式：`守军 × WALL_NEED[守方族][级]`，倍率取上面 [1] 的 k_level / k_0。
+const WALL_BONUS = { 1: 2, 2: 4, 3: 6 };
+const wallRows = {};
+console.log('\n[W] AI 墙估值：旧公式 vs 实测倍率（守军 = 3 周产量）');
+console.log('  族    城防   实测 k/ k0   表内倍率   墙值占守军   旧折战力   新折战力   低估倍数');
+for (const f of F) {
+  wallRows[f] = {};
+  const garrison = baseArmy(f);
+  const gs = garrisonStrength(garrison);
+  for (const level of LEVELS) {
+    const ratio = kTh[f][level].k / kTh[f][0].k;
+    const tableMul = WALL_NEED[f]?.[level] ?? WALL_NEED.neutral[level];
+    const newNeed = townNeedForAI({ owner: f, buildings: level ? [`wall${level}`] : [], garrison });
+    const oldNeed = gs + (WALL_BONUS[level] ?? 0) * 24;
+    const wallShare = newNeed / gs - 1;
+    const under = level ? (newNeed - gs) / Math.max(1e-9, oldNeed - gs) : 1;
+    const underTxt = level === 0 ? '—' : under >= 1 ? `×${under.toFixed(0)}` : under < 0.01 ? '—（实测 +0%）' : `÷${(1 / under).toFixed(0)}`;
+    wallRows[f][level] = { ratio, tableMul, oldNeed, newNeed, wallShare, under };
+    console.log(
+      `  ${FNAME[f]}  L${level}    ${pad(ratio.toFixed(3), 9)}   ${pad(tableMul.toFixed(2), 9)}   ` +
+        `${pad(`${(wallShare * 100).toFixed(0)}%`, 11)}   ${pad(Math.round(oldNeed), 9)}   ` +
+        `${pad(Math.round(newNeed), 9)}   ${pad(underTxt, 8)}`,
+    );
+  }
+}
+console.log('  （低估倍数 = 旧公式给墙折算的战力 ÷ 实测应该折算的；L1 中位约 ×35，四族 L1~L3 跨 12~88）');
+
 /* ---------------------------------------------------------------- 闸 */
 let fail = 0;
 const chk = (cond, msg) => {
@@ -333,11 +378,64 @@ if (GATE) {
   const totalShots = F.reduce((n, f) => n + LEVELS.reduce((m, l) => m + table[f][l].defShots, 0), 0);
   fail += chk(totalShots > 0, `守方真的射出过箭（${totalShots} 次，> 0）`);
 
-  // 规格 §14.4 的 0~30pt 上限：只报不判，理由见文件头。
+  // 规格 §14.4 的 "+0~30pt" 已按 A 案作废（价格改不了已建墙那一局的胜率）。
+  // 现在守方闸 = [G3] 方向 + 上面那条 k1 ≥ k0 − 0.01，上限由 [G6] 的破城门槛接管。
   const lifts = F.map((f) => (table[f][1].defWin - table[f][0].defWin) * 100);
   console.log(
-    `  ⚠️ 规格 §14.4 的 "+0~30pt"：实测 ${lifts.map((x) => `${x >= 0 ? '+' : ''}${x.toFixed(0)}`).join(' / ')}pt` +
-      ` —— 上限按实测不成立，只把 ≥0 放进退出码（见文件头与文档 §3）`,
+    `  §14.4 现判据（A 案）：L1 守方胜率 ${lifts.map((x) => `${x >= 0 ? '+' : ''}${x.toFixed(0)}`).join(' / ')}pt ≥ 0` +
+      ` + 破城门槛 L1 ≤ 30% / L3 ≤ 100%（旧的 "+0~30pt" 上限已作废，见文件头）`,
+  );
+
+  /* ---- [W] AI 墙估值：表与实测同源、单调、且真的被消费 ---- */
+  console.log('\n[W] AI 墙估值表');
+  for (const f of F) {
+    const row = WALL_NEED[f];
+    fail += chk(
+      Array.isArray(row) && row.length === 4 && row[0] === 1 && row[1] <= row[2] && row[2] <= row[3],
+      `${FNAME[f]} WALL_NEED 单调且 L0 = 1（${row.join(' / ')}）`,
+    );
+  }
+  // [W2] 防表静默过期：改塔数/墙厚/护城河后不重跑本探针，这一条会红。
+  // 容差 5%：k 的二分粒度是 0.01，比值本身带 ~1% 量化误差。
+  let driftMax = 0;
+  let driftAt = '';
+  for (const f of F) {
+    for (const level of [1, 2, 3]) {
+      const { ratio, tableMul } = wallRows[f][level];
+      const dev = Math.abs(tableMul / ratio - 1);
+      if (dev > driftMax) {
+        driftMax = dev;
+        driftAt = `${FNAME[f]} L${level}`;
+      }
+    }
+  }
+  fail += chk(
+    driftMax <= 0.05,
+    `WALL_NEED 与实测同源（最大偏差 ${(driftMax * 100).toFixed(1)}% @ ${driftAt}，容差 5%）`,
+  );
+  // [W3] 中立行必须是四族中位：中立城没有"阵营兵种构成"，只能用中位。
+  let medMax = 0;
+  for (const level of [1, 2, 3]) {
+    const med = median(F.map((f) => wallRows[f][level].ratio));
+    medMax = Math.max(medMax, Math.abs(med - WALL_NEED.neutral[level]));
+  }
+  fail += chk(medMax <= 0.02, `neutral 行 = 四族中位（最大偏差 ${medMax.toFixed(3)}，容差 0.02）`);
+
+  // [W4] 接线检查：表对了但 AI 没消费也必须红。
+  // 负向对照：把 ai.ts 改回 `守军 + defenseBonus × 24` ⇒ L3 比值落到 ~1.01 ⇒ 这条红。
+  for (const f of F) {
+    const mk = (level) => ({ owner: f, buildings: level ? [`wall${level}`] : [], garrison: baseArmy(f) });
+    const ratio = townNeedForAI(mk(3)) / townNeedForAI(mk(0));
+    fail += chk(
+      Math.abs(ratio - WALL_NEED[f][3]) < 1e-9 && ratio >= 1.4,
+      `${FNAME[f]} AI 用上了表：L3/L0 = ×${ratio.toFixed(2)}（表内 ×${WALL_NEED[f][3]}，且 ≥1.4）`,
+    );
+  }
+  fail += chk(
+    wallNeedMultiplier('neutral', 3) === WALL_NEED.neutral[3] &&
+      wallNeedMultiplier('nobody', 9) === WALL_NEED.neutral[3] &&
+      wallNeedMultiplier('p2', -1) === 1,
+    'wallNeedMultiplier 兜底正确（中立/未知阵营 → 中位行；越界等级夹到 0~3）',
   );
 
   console.log(`\n  ${fail === 0 ? '✅ 守方闸达标' : `❌ ${fail} 条断言失败`}`);
@@ -347,7 +445,7 @@ if (GATE) {
 if (JSON_OUT) {
   const out = {
     date: '2026-11-13',
-    batch: 'B3b',
+    batch: 'B3b+B3c',
     seeds: SEEDS,
     calSeeds: CAL_SEEDS,
     weeks: WEEKS,
@@ -373,6 +471,20 @@ if (JSON_OUT) {
       ]),
     ),
     liftL1pt: Object.fromEntries(F.map((f) => [f, (table[f][1].defWin - table[f][0].defWin) * 100])),
+    // B3c：AI 墙估值。`table` = 代码里的常量（`siege.ts:WALL_NEED`），
+    // `measuredRatio` = 本轮实测 k_level/k_0；两者偏差 > 5% ⇒ [W2] 红。
+    wallNeed: {
+      table: WALL_NEED,
+      measuredRatio: Object.fromEntries(
+        F.map((f) => [f, Object.fromEntries([1, 2, 3].map((l) => [l, Math.round(wallRows[f][l].ratio * 1000) / 1000]))]),
+      ),
+      wallSharePct: Object.fromEntries(
+        F.map((f) => [f, Object.fromEntries([1, 2, 3].map((l) => [l, Math.round(wallRows[f][l].wallShare * 1000) / 10]))]),
+      ),
+      underEstimateOld: Object.fromEntries(
+        F.map((f) => [f, Object.fromEntries([1, 2, 3].map((l) => [l, Math.round(wallRows[f][l].under)]))]),
+      ),
+    },
   };
   let base = {};
   try {

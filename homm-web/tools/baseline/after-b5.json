@@ -1,8 +1,8 @@
 {
   "meta": {
-    "batch": "B5",
+    "batch": "B5（含 B3b / B5′ / B3c 增量）",
     "date": "2026-11-13",
-    "status": "b3b-confirmed",
+    "status": "b3c-confirmed",
     "dist": "/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist",
     "distMd5": "58fba8677f28a16366a7e18eb456e702",
     "gateTier": "normal",
@@ -16,7 +16,7 @@
       "audit:econ": "G-E1~G-E7（造价从 buildings.ts 累加，收入只在这里算）",
       "probe:aiscale": "A1–A6，按难度分键；A3 只在 normal 判（阈值是普通档预算）",
       "probe:homegold": "G-M1（四族 20×T2 打自家守卫）",
-      "probe:wallgate": "G1–G7（单向挡线 / 守方闸 / 破城门槛），4 族 × 4 档 × 120 种子"
+      "probe:wallgate": "G1–G7（单向挡线 / 守方闸 / 破城门槛）+ W1–W4（AI 墙估值表与实测同源、且被 townNeedForAI 消费），4 族 × 4 档 × 120 种子"
     },
     "reproduce": [
       "npm run -s build",
@@ -26,7 +26,8 @@
       "node tools/probes/aiscale.mjs --difficulty=easy --json=tools/baseline/after-b5.json",
       "node tools/probes/aiscale.mjs --difficulty=hard --json=tools/baseline/after-b5.json",
       "node tools/probes/homegold.mjs --json=tools/baseline/after-b5.json",
-      "node tools/probes/wallgate.mjs --seeds=120 --cal-seeds=40 --json=tools/baseline/after-b5.json --gate"
+      "node tools/probes/wallgate.mjs --seeds=120 --cal-seeds=40 --json=tools/baseline/after-b5.json --gate",
+      "node tools/probes/wallgate.mjs --gate --json=tools/baseline/after-b5.json"
     ],
     "b3b": {
       "date": "2026-11-13",
@@ -35,6 +36,31 @@
       "corrected": "旧 meta 曾写「wall1 2500 / wall3 4000」—— 与代码（1000 / 2500 / 5000）不符，已更正",
       "gates": "V1 6.8% / V2 9.0% / G-E1 1.125 / G-E2 68% / G-E4 102% / G-E5 0.713 —— 与 B5 逐位相同（价格没动，符合预期）",
       "doc": "production/m7-b3b-wall-2026-11-13.md"
+    },
+    "distCoreMd5": {
+      "core/game/ai.js": "697f6af344ba08dc119c287bd777fab6",
+      "core/combat/siege.js": "d2c92d6414314b7b5474e84557560f46"
+    },
+    "b3c": {
+      "date": "2026-11-13",
+      "outcome": "§14.4 按 A 案重登记（+0~30pt 作废，改判破城门槛）+ AI 墙估值改乘法",
+      "wallNeed": "守军 × WALL_NEED[守方族][级]；neutral 1/1.09/1.24/1.57",
+      "underEstimateOld": "L1 ×13~58 / L2 ×22~87 / L3 ×44~78（p1 L1 = 0%）",
+      "negativeControls": [
+        "双向挡线 ⇒ p1 L1 55.0%→1.7%",
+        "旧 AI 公式 ⇒ [W4] 四族全红（L3/L0=×1.01）",
+        "坏表 ⇒ [W1]/[W2] 红"
+      ],
+      "aiscale": {
+        "battles": 41.375,
+        "d28": 795,
+        "perGold": 0.5534,
+        "captures": 26.5,
+        "lostAll": 0,
+        "t5D35": 8,
+        "note": "battles +5.1% vs 基线、+1.2% vs B3b；D28 0.0% ⇒ 变的是目标选择，不是强度"
+      },
+      "doc": "production/m7-b3c-wall-ai-2026-11-13.md"
     }
   },
   "balance": {
@@ -1070,8 +1096,8 @@
       "days": 60,
       "distMd5": "58fba8677f28a16366a7e18eb456e702",
       "firstBattleDayMedian": 1,
-      "battlesMean": 39.375,
-      "capturesMean": 25.625,
+      "battlesMean": 41.375,
+      "capturesMean": 26.5,
       "lostAll": 0,
       "t5GamesD28": 5,
       "t5GamesD35": 8,
@@ -1081,7 +1107,7 @@
       "t5ShareAll": 1,
       "t5Games": 5,
       "t5Share": 0.625,
-      "perGold": 0.549476420205356,
+      "perGold": 0.5534194738349638,
       "heroValueD28Median": 795,
       "games": [
         {
@@ -1125,8 +1151,8 @@
         {
           "seed": 5219,
           "firstBattleDay": 1,
-          "battles": 43,
-          "captures": 35,
+          "battles": 47,
+          "captures": 34,
           "lostAll": 0,
           "firstT5Day": 22,
           "t5Structure": {
@@ -1152,8 +1178,8 @@
               "t5": 39
             }
           },
-          "recruitValue": 77181.11999999998,
-          "recruitGold": 134780,
+          "recruitValue": 83523.18999999997,
+          "recruitGold": 138005,
           "heroValueD28": 827,
           "townCountD28": 3,
           "a6Kind": "garrison",
@@ -1261,8 +1287,8 @@
               "t5": 28
             }
           },
-          "recruitValue": 89126.29000000001,
-          "recruitGold": 162870,
+          "recruitValue": 89361.36000000002,
+          "recruitGold": 163330,
           "heroValueD28": 507,
           "townCountD28": 3,
           "a6Kind": "garrison",
@@ -1338,8 +1364,8 @@
         {
           "seed": 11081,
           "firstBattleDay": 1,
-          "battles": 41,
-          "captures": 29,
+          "battles": 53,
+          "captures": 37,
           "lostAll": 0,
           "firstT5Day": 35,
           "t5Structure": {
@@ -1365,8 +1391,8 @@
               "t5": 35
             }
           },
-          "recruitValue": 76102.50000000003,
-          "recruitGold": 148165,
+          "recruitValue": 68161.31999999996,
+          "recruitGold": 133730,
           "heroValueD28": 906,
           "townCountD28": 4,
           "a6Kind": "garrison",
@@ -2049,7 +2075,7 @@
   },
   "wallgate": {
     "date": "2026-11-13",
-    "batch": "B3b",
+    "batch": "B3b+B3c",
     "seeds": 120,
     "calSeeds": 40,
     "weeks": 3,
@@ -2308,6 +2334,106 @@
       "p2": 32.49999999999999,
       "p3": 50.83333333333333,
       "p4": 44.99999999999999
+    },
+    "wallNeed": {
+      "table": {
+        "neutral": [
+          1,
+          1.09,
+          1.24,
+          1.57
+        ],
+        "p1": [
+          1,
+          1,
+          1.16,
+          1.6
+        ],
+        "p2": [
+          1,
+          1.05,
+          1.25,
+          1.52
+        ],
+        "p3": [
+          1,
+          1.13,
+          1.23,
+          1.54
+        ],
+        "p4": [
+          1,
+          1.21,
+          1.63,
+          1.85
+        ]
+      },
+      "measuredRatio": {
+        "p1": {
+          "1": 1,
+          "2": 1.16,
+          "3": 1.596
+        },
+        "p2": {
+          "1": 1.048,
+          "2": 1.25,
+          "3": 1.519
+        },
+        "p3": {
+          "1": 1.13,
+          "2": 1.228,
+          "3": 1.543
+        },
+        "p4": {
+          "1": 1.202,
+          "2": 1.635,
+          "3": 1.846
+        }
+      },
+      "wallSharePct": {
+        "p1": {
+          "1": 0,
+          "2": 16,
+          "3": 60
+        },
+        "p2": {
+          "1": 5,
+          "2": 25,
+          "3": 52
+        },
+        "p3": {
+          "1": 13,
+          "2": 23,
+          "3": 54
+        },
+        "p4": {
+          "1": 21,
+          "2": 63,
+          "3": 85
+        }
+      },
+      "underEstimateOld": {
+        "p1": {
+          "1": 0,
+          "2": 22,
+          "3": 54
+        },
+        "p2": {
+          "1": 13,
+          "2": 31,
+          "3": 44
+        },
+        "p3": {
+          "1": 35,
+          "2": 31,
+          "3": 49
+        },
+        "p4": {
+          "1": 58,
+          "2": 87,
+          "3": 78
+        }
+      }
     }
   }
 }

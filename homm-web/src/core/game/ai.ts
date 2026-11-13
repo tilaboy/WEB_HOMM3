@@ -35,8 +35,8 @@ import {
   hasBuilding,
   hasWarMachine,
   teachGuildSpells,
-  townDefenseBonus,
 } from './town.js';
+import { wallLevelOf, wallNeedMultiplier } from '../combat/siege.js';
 import { pushLog } from './log.js';
 import { noteAiEvent } from './aiReport.js';
 import type { AiEvent } from './aiReport.js';
@@ -70,7 +70,7 @@ import { SCENARIO_BY_ID } from '../data/scenarios.js';
  * 而 §16.2 给四族各配了一只 T5，**AI 一辈子看不到自己的顶级兵**。
  * 魔法线与城防属于"有余钱再补"，`dwell5` 才是 T5 的唯一入口。
  * `workshop` 也一起排到 `dwell5` 之后：它 2,000 金，只换来"攻城器械能造"，
- * 而 AI 在兵力不足时本来就不该去啃有墙的城（`pickTarget` 会算 `townDefenseBonus`）。
+ * 而 AI 在兵力不足时本来就不该去啃有墙的城（`pickTarget` 走 `townNeedForAI`，墙按实测倍率折兵）。
  * 排在前面等于用 1.4 天的收入换一个中期才用得上的能力。
  */
 const BUILD_ORDER = [
@@ -629,6 +629,23 @@ function hasSeenAnyAssetOf(state: GameState, ai: FactionId, foe: FactionId, seen
   return false;
 }
 
+/**
+ * 打下一座城"需要多少战力" —— **算上城墙**。
+ *
+ * `garrisonStrength` 只读守军，完全看不见墙；把它乘上 `WALL_NEED[守方][城防级]`
+ * 才是实测的破城门槛（买墙之前 vs 之后，攻方要多带几成兵）。
+ * 提出来单独一份，是因为它现在有**两个**消费者：`pickTarget` 的门槛
+ * 与 `probe:wallgate` 的 `[W]` 接线检查（探针不许另抄一份公式，见铁律 13）。
+ *
+ * 空城（`garrison` 为空 / 只有 0 兵）返回 0 —— 城墙挡不住"走进去"，
+ * 门槛由调用方的 `max(120, …)` 地板负责。
+ */
+export function townNeedForAI(town: Town): number {
+  const g = garrisonStrength(town.garrison);
+  if (g <= 0) return 0;
+  return g * wallNeedMultiplier(town.owner, wallLevelOf(town));
+}
+
 function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate | null {
   const field = computePaths(state, hero.pos, Infinity);
   const m = state.map;
@@ -659,9 +676,12 @@ function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate 
       // ★ 出击门槛（`aggression`）：打**有主**的城算开战，兵力不到 `commit` 就不进候选表。
       //   中立城不算（那是扩张，不是开战），否则轻松档 AI 连发育都不会。
       if (town.owner !== 'neutral' && power < commit) continue;
-      // 城防折成"战力"：`townDefenseBonus × 24`（B4 前是 ×12，量纲从血换战力后同步翻倍）。
-      // 分母地板 `max(120, …)` 同理 —— 空城也要有守卫成本，否则任何一支小队都算"稳赢"。
-      const need = garrisonStrength(town.garrison) + townDefenseBonus(town) * 24;
+      // 城防折成"要带多少兵"：**守军战力 × `WALL_NEED[守方族][城防级]`**（B3c）。
+      // 倍率来自 `probe:wallgate` 的破城门槛实测（k_level / k_0），查表轴是**守方**阵营。
+      // 旧写法是 `+ townDefenseBonus × 24`（L1 只加 48 战力，实测墙值 ≈ 守军的 9%）
+      // ⇒ 低估 12~88 倍，AI 会带一支明显不够的兵去啃有墙的城。
+      // 分母地板 `max(120, …)` 保留 —— 空城也要有守卫成本，否则任何一支小队都算"稳赢"。
+      const need = townNeedForAI(town);
       const odds = power / Math.max(120, need * 1.15);
       if (odds < 0.85) continue; // 打不过就别去
       const value = town.owner === 'neutral' ? 620 : 760;

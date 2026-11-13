@@ -209,6 +209,42 @@ export function wallLevelOf(town: Town): number {
   return lv;
 }
 
+/**
+ * 城墙对"要带多少兵才敢来"的倍率 —— **实测值，不是拍的**。
+ *
+ * 口径：`probe:wallgate` 的**破城门槛** k（攻方兵力 / 同编成守军，取 50% 胜率的那个倍数），
+ * 同一族同一守军在 L0（无墙）与 L1/L2/L3 各扫一遍，取 `k_level / k_0`。
+ * 这里写的是四族**中位**（`neutral` 行），另附四族的实测行 ——
+ * 差异来自**守方兵种构成**（弓手多 / T1 便宜的族，同一道墙的边际更大），
+ * 所以查表轴是**守城那一方的阵营**（`town.owner`），不是攻方的。
+ *
+ * 为什么必须按阵营查而不是一张全局表：同一道 L3，p1 守军只需要攻方多带 60%、
+ * p4 守军要 85% —— 差 25 个百分点。用中位数会系统性高估 p1 城墙、低估 p4 城墙。
+ *
+ * ⚠️ 改城墙数值（塔数、墙厚、护城河、`defenseBonus`）而**不重跑 `probe:wallgate`**，
+ * 这张表就静默过期。`probe:wallgate` 的 `[W]` 段会拿实测比值反查这张表（±10%），
+ * 所以后置闸是"表跟着墙走"，不是"墙跟着表走"。
+ */
+export const WALL_NEED: Record<'neutral' | 'p1' | 'p2' | 'p3' | 'p4', readonly [number, number, number, number]> = {
+  neutral: [1.0, 1.09, 1.24, 1.57],
+  p1: [1.0, 1.0, 1.16, 1.6],
+  p2: [1.0, 1.05, 1.25, 1.52],
+  p3: [1.0, 1.13, 1.23, 1.54],
+  p4: [1.0, 1.21, 1.63, 1.85],
+};
+
+/**
+ * 某座城"算上城墙"需要多少倍守军兵力。
+ *
+ * 查表轴是**守方**阵营：`owner` 是 `neutral` 或未收录值时落到中位行。
+ * 等级夹在 0~3（`wallLevelOf` 已保证，这里防手工构造的存档）。
+ */
+export function wallNeedMultiplier(owner: string | null | undefined, level: number): number {
+  const row = WALL_NEED[(owner ?? 'neutral') as keyof typeof WALL_NEED] ?? WALL_NEED.neutral;
+  const lv = Math.max(0, Math.min(3, Math.round(level)));
+  return row[lv] ?? 1;
+}
+
 /* ---------------- 查询 ---------------- */
 
 /** 该格上还立着的结构（被砸掉的 hp ≤ 0，视同不存在）。 */
