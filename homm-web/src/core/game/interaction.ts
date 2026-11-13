@@ -23,6 +23,7 @@ import { wallLevelOf } from '../combat/siege.js';
 import { WAR_MACHINES } from '../data/warmachines.js';
 import { deriveSeed } from '../rng.js';
 import { addResources, effectivePrimary, expToNext, gainExp, maxMovePoints } from './hero.js';
+import { fieldHospital, skillLevelMap, specialtyOf } from './skills.js';
 import { townDefenseBonus, captureTown } from './town.js';
 import { pushLog } from './log.js';
 
@@ -103,28 +104,67 @@ function battleSeed(state: GameState, obj: MapObject): number {
 
 function sides(state: GameState, heroId: string, obj: MapObject) {
   const hero = state.heroes[heroId];
-  const p = effectivePrimary(hero);
   const monster = obj.payload as { army: Army };
   return {
-    attacker: {
-      army: hero.army,
-      attack: p.attack,
-      defense: p.defense,
-      // ⚠️ `faction` 不能省：族动词（冲锋 / 加班 / 缠根 / 事故 / 弹跳）全靠它开关。
-      // 2026-10-20 发现漏了这一个字段 ⇒ 野怪与宝库的**战前预估**跑的是"无族"规则，
-      // 而 `battleSetup` 传给实战的是带族的一侧 —— 同一场仗两套规则。
-      // 探针 `factionverbs [G]` 用"预估 === 实战"这一条把这个洞钉住。
-      faction: hero.owner,
-      caster: { spells: hero.spells, spellPower: p.spellPower, mana: hero.mana },
-      warMachines: hero.warMachines,
-    },
+    attacker: heroSide(state, hero),
     defender: { army: monster.army, attack: 0, defense: 0 },
   };
 }
 
-/** 把战斗中消耗的魔力写回世界层（施法过的那场才有 casterMana）。 */
-function syncMana(hero: Hero, outcome: BattleOutcome): void {
+/**
+ * 英雄作为一方参战的**唯一构造入口**（H5 副技能 / H6 特长）。
+ *
+ * ⚠️ 把技能 / 特长 / 等级 / 免蓝首法全塞在这里，是因为这个项目已经踩过一次
+ * "预估走一条路、实战走另一条路"（2026-10-20 的 `faction` 字段，见 `sides` 原注释）。
+ * 新增任何"英雄带进战场"的东西，只改这一处 —— 三处构造（野怪 / 攻城 / 遭遇战）
+ * 全部经过它，预估与实战就不可能分叉。
+ */
+function heroSide(state: GameState, hero: Hero, army: Army = hero.army): BattleSide {
+  const p = effectivePrimary(hero);
+  return {
+    army,
+    attack: p.attack,
+    defense: p.defense,
+    // ⚠️ `faction` 不能省：族动词（冲锋 / 加班 / 缠根 / 事故 / 弹跳）全靠它开关。
+    faction: hero.owner,
+    caster: { spells: hero.spells, spellPower: p.spellPower, mana: hero.mana },
+    warMachines: hero.warMachines,
+    skills: skillLevelMap(hero),
+    specialty: specialtyOf(hero),
+    heroLevel: hero.level,
+    // 「祷言」按"今天还没用过"算 —— 进战斗本身不消耗，真放出去才记（见 syncBattle）
+    freeFirstCast: specialtyOf(hero) === 'prayer' && hero.freeCastDay !== state.day,
+  };
+}
+
+/**
+ * 把战斗里产生的**持久后果**写回世界层：法力余量 + 「祷言」用掉的那一天。
+ *
+ * ⚠️ 只有 `outcome.casterMana !== undefined` 才写 —— 那是"这一侧真的有施法者"
+ * 的标记（野怪侧没有）。`freeCastUsed` 同理：只有真放出去才记，
+ * 进战斗不施法不该消耗这一天的免蓝资格。
+ */
+function syncBattle(hero: Hero, outcome: BattleOutcome, day: number): void {
   if (outcome.casterMana !== undefined) hero.mana = Math.max(0, outcome.casterMana);
+  if (outcome.freeCastUsed) hero.freeCastDay = day;
+}
+
+/**
+ * 「急救」（H5）：把战后阵亡的一部分补回来。返回补了几个（0 = 没触发）。
+ * 必须在 `hero.army = outcome.survivors` **之后**调用 —— 它读的是 `outcome.losses`
+ * （战前/战后同源），写的是 `hero.army` 里的 count。
+ */
+function applyFieldHospital(hero: Hero, outcome: BattleOutcome): number {
+  const back = fieldHospital(hero, outcome.losses);
+  if (!back.length) return 0;
+  let total = 0;
+  for (const b of back) {
+    const st = hero.army.find((x) => x.unitTypeId === b.unitTypeId);
+    if (st) st.count += b.count;
+    else hero.army.push({ unitTypeId: b.unitTypeId, count: b.count });
+    total += b.count;
+  }
+  return total;
 }
 
 /** 英雄站上物件所在格时调用，返回需要展示给玩家的内容（战斗需要二次确认）。 */
@@ -354,12 +394,13 @@ export function applyInteraction(
 
     const { attacker, defender } = sides(state, heroId, obj);
     const outcome = opts.outcome ?? quickBattle(attacker, defender, battleSeed(state, obj));
-    syncMana(hero, outcome);
+    syncBattle(hero, outcome, state.day);
     hero.army = outcome.survivors;
 
     if (outcome.win) {
       removeObject(state, obj);
       const notes = gainExp(state, hero, outcome.expGained);
+      const aid = applyFieldHospital(hero, outcome);
       const loot =
         obj.kind === 'vault' && payload.reward
           ? grantVault(state, heroId, payload.reward)
@@ -370,6 +411,7 @@ export function applyInteraction(
         message:
           `敌军被全歼，获得 ${outcome.expGained} 点经验。` +
           (loot ? `\n缴获：${loot}。` : '') +
+          (aid ? `\n急救：救回 ${aid} 名阵亡士兵。` : '') +
           `\n剩余兵力：${describeArmy(hero.army)}。`,
         levelUps: notes,
         heroDefeated: false,
@@ -412,32 +454,29 @@ export function applyInteraction(
     const outcome =
       opts.outcome ??
       quickBattle(
-        {
-          army: hero.army,
-          attack: effectivePrimary(hero).attack,
-          defense: effectivePrimary(hero).defense,
-          caster: { spells: hero.spells, spellPower: effectivePrimary(hero).spellPower, mana: hero.mana },
-          // 攻城器械同样要带进来：AI 结算走过的就是这条兜底路径
-          warMachines: hero.warMachines,
-          // 族动词（赤焰冲锋）必须与预估那一次用同一份输入，否则预估与实战分裂
-          faction: hero.owner,
-        },
+        // 攻城器械 / 族动词 / 副技能全部由 `heroSide` 一处给出：
+        // 这是 AI 结算真正走的兜底路径，必须与预估用同一份输入。
+        heroSide(state, hero),
         { army: garrison, attack: 0, defense: townDefenseBonus(town), faction: town.owner },
         battleSeed(state, obj),
         // 这里是 AI 攻城真正结算的地方（AI 不开战术界面），必须带上城墙等级，
         // 否则预估说"打不下来"、实际却按野战打 —— AI 会去送死。
         wallLevelOf(town),
       );
-    syncMana(hero, outcome);
+    syncBattle(hero, outcome, state.day);
     hero.army = outcome.survivors;
 
     if (outcome.win) {
       captureTown(state, town, hero.owner);
       const notes = gainExp(state, hero, outcome.expGained);
+      const aid = applyFieldHospital(hero, outcome);
       pushLog(state, `${hero.name} 攻陷了 ${town.name}`);
       return {
         title: '攻陷城镇',
-        message: `守军被击溃，${town.name} 归我方所有。获得 ${outcome.expGained} 点经验，剩余兵力：${describeArmy(hero.army)}。`,
+        message:
+          `守军被击溃，${town.name} 归我方所有。获得 ${outcome.expGained} 点经验` +
+          (aid ? `，急救救回 ${aid} 人` : '') +
+          `，剩余兵力：${describeArmy(hero.army)}。`,
         levelUps: notes,
         heroDefeated: false,
       };
@@ -632,17 +671,9 @@ export function battleSetup(
 ): { attacker: BattleSide; defender: BattleSide; seed: number; siegeLevel?: number } | null {
   const hero = state.heroes[heroId];
   if (!hero || !obj) return null;
-  const p = effectivePrimary(hero);
-  const attacker: BattleSide = {
-    army: hero.army,
-    attack: p.attack,
-    defense: p.defense,
-    faction: hero.owner,
-    // 英雄带进战场：法术表 + 魔力 + 剩余法力
-    caster: { spells: hero.spells, spellPower: p.spellPower, mana: hero.mana },
-    // 工坊装配的攻城器械（M6）：只有攻方用得上，守方的城防是建筑自带的
-    warMachines: hero.warMachines,
-  };
+  // 英雄带进战场的一切（法术表 / 魔力 / 器械 / 副技能 / 特长）都由 `heroSide` 给：
+  // 工坊装配的攻城器械只有攻方用得上，守方的城防是建筑自带的。
+  const attacker: BattleSide = heroSide(state, hero);
 
   // 宝库区的守卫和野怪走同一套战斗规则，只是不掉"看守物"、改成开库拿钱
   if (obj.kind === 'wanderingMonster' || obj.kind === 'vault') {
@@ -699,15 +730,8 @@ export function enemyHeroAt(state: GameState, x: number, y: number, except: Play
   return null;
 }
 
-function sideOf(hero: Hero): BattleSide {
-  const p = effectivePrimary(hero);
-  return {
-    army: hero.army,
-    attack: p.attack,
-    defense: p.defense,
-    faction: hero.owner,
-    caster: { spells: hero.spells, spellPower: p.spellPower, mana: hero.mana },
-  };
+function sideOf(state: GameState, hero: Hero): BattleSide {
+  return heroSide(state, hero);
 }
 
 /** 遭遇战的双方参数；种子由双方 id 与天数派生，同一天同一对英雄结果一致。 */
@@ -720,8 +744,8 @@ export function heroBattleSetup(
   const d = state.heroes[defenderId];
   if (!a || !d || a.owner === d.owner) return null;
   return {
-    attacker: sideOf(a),
-    defender: sideOf(d),
+    attacker: sideOf(state, a),
+    defender: sideOf(state, d),
     seed: deriveSeed(state.seed, hashId(attackerId), hashId(defenderId), state.day),
   };
 }
@@ -739,18 +763,20 @@ export function applyHeroBattle(
   if (!a || !d) return empty;
 
   const spot = { x: d.pos.x, y: d.pos.y };
-  syncMana(a, outcome);
+  syncBattle(a, outcome, state.day);
 
   if (outcome.win) {
     a.army = outcome.survivors;
     a.pos = spot;
     const notes = gainExp(state, a, outcome.expGained);
+    const aid = applyFieldHospital(a, outcome);
     removeHero(state, defenderId);
     pushLog(state, `${a.name} 击败了 ${d.name}`);
     return {
       title: '遭遇战胜利',
       message:
         `${d.name} 的部队被击溃，我方接管了他的位置。获得 ${outcome.expGained} 点经验。` +
+        (aid ? `\n急救：救回 ${aid} 名阵亡士兵。` : '') +
         `\n剩余兵力：${describeArmy(a.army)}。`,
       levelUps: notes,
       heroDefeated: false,

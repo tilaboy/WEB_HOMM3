@@ -7,6 +7,9 @@ import { EXP_CURVE_K, h3ExpStep } from '../data/balance.js';
 import { CLASS_GROWTH, classIdOf } from '../data/heroes.js';
 import { deriveSeed, mulberry32 } from '../rng.js';
 import { equippedOf } from './equip.js';
+import { grantSkillPicks, skillLevel, specialtyOf } from './skills.js';
+import { WOODLAND_GRASS_MUL } from '../data/specialties.js';
+import { LOGISTICS_MOVE, curveAt } from '../data/skills.js';
 
 /** 身上真正**穿着**的宝物（U2）：背包里的不加属性，否则"卸下"没有意义。 */
 function wornArtifacts(hero: Hero): string[] {
@@ -38,11 +41,27 @@ export function effectivePrimary(hero: Hero): HeroPrimary {
 export function maxMovePoints(hero: Hero, state?: GameState): number {
   let m = BASE_MOVE_POINTS;
   for (const id of wornArtifacts(hero)) m += ARTIFACTS[id]?.moveBonus ?? 0;
+  /* 副技能「后勤」（H5 · §21.9）：移动力 +10 / 20 / 30%。
+   * 放在宝物与难度**之间**：先加装备的绝对值，再按百分比放大，最后吃难度惩罚 ——
+   * 这样困难档的 `playerMoveMul` 仍然作用在"最终值"上，不会被后勤抵消
+   * （"被罚移动力"是难度定义，不该被一条副技能买回去）。 */
+  const logi = skillLevel(hero, 'logistics');
+  if (logi > 0) m = Math.round(m * (1 + curveAt(LOGISTICS_MOVE, logi)));
   if (state && hero.owner === 'p1') {
     const diff = DIFFICULTIES[state.config?.difficulty ?? 'normal'];
     m = Math.round(m * (diff.playerMoveMul ?? 1));
   }
   return m;
+}
+
+/**
+ * H6「林地」（p3 艾莉亚）：草地移动消耗乘数（1 = 无减免）。
+ *
+ * 放在英雄这一侧而不是寻路里，是因为寻路只该知道"一个乘数"，
+ * 而"谁有这个特长"是英雄的属性（`specialtyOf` 跟职业走）。
+ */
+export function grassMoveMul(hero: Hero): number {
+  return specialtyOf(hero) === 'woodland' ? WOODLAND_GRASS_MUL : 1;
 }
 
 /** 法力上限 = 有效知识 × 10（含宝物加成）。 */
@@ -113,6 +132,10 @@ export function gainExp(state: GameState, hero: Hero, amount: number): string[] 
     hero.exp -= expToNext(hero.level);
     hero.level += 1;
     notes.push(levelUp(hero, deriveSeed(state.seed, hero.level, hero.exp, state.day)));
+    /* H5 · §21.9：2/4/6/8/10 级各发 1 点副技能点。
+     * 发点放在**升级同一处**（而不是 UI 里）：AI 的英雄也升级，也得学技能，
+     * 而 AI 没有弹窗 —— 由 `grantSkillPicks` 内部按 `isHuman` 分流。 */
+    if (grantSkillPicks(state, hero, hero.level)) notes.push('可以选副技能');
   }
   return notes;
 }

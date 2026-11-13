@@ -9,6 +9,9 @@ import { factionStanding } from '../core/game/victory.js';
 import { SCENARIO_BY_ID } from '../core/data/scenarios.js';
 import { ownedMines } from '../core/game/town.js';
 import { getAtlas } from '../render/atlas.js';
+import { SKILLS } from '../core/data/skills.js';
+import { SPECIALTIES } from '../core/data/specialties.js';
+import { heroSkills, pendingPicks, specialtyOf } from '../core/game/skills.js';
 
 /**
  * 面板永远从**人类玩家**的视角看（迷雾、城池列表都按这个来）。
@@ -87,6 +90,8 @@ export class HeroPanel {
     private onObjectivesComplete?: () => void,
     /** §9.1 U2：打开装备页（760×352 纸娃娃 + 背包）。侧栏放不下纸娃娃，只能开弹窗。 */
     private onOpenArts?: (heroId: string) => void,
+    /** §21.9 H5：打开副技能二选一弹窗（面板只显示已学与未花点数，选择在弹窗里）。 */
+    private onSkillPick?: (heroId: string) => void,
   ) {
     // 调试：?devarts=1 直接展开宝物格（与 devbattle 同一套调试约定）
     this.showArtifacts = new URLSearchParams(location.search).has('devarts');
@@ -254,13 +259,48 @@ export class HeroPanel {
 
   private statSection(hero: Hero): HTMLElement {
     const p = effectivePrimary(hero);
-    const wrap = div('sec hp-stats');
-    wrap.append(
+    const wrap = div('sec');
+    const grid = div('hp-stats');
+    grid.append(
       stat('攻', p.attack),
       stat('防', p.defense),
       stat('魔', p.spellPower),
       stat('知', p.knowledge),
     );
+    wrap.appendChild(grid);
+
+    /* H5 副技能（§21.9）：面板只做**显示 + 入口**，选择在弹窗里 ——
+     * 844×390 上 184px 宽的这一栏放不下"两条候选 + 效果说明"。
+     * 未花点数用按钮上的数字表达（否则玩家会以为升级没给东西）。 */
+    const picks = pendingPicks(hero);
+    const head = div('hp-sk-head');
+    const h3 = document.createElement('h3');
+    h3.textContent = '副技能';
+    head.appendChild(h3);
+    if (this.onSkillPick && picks > 0) {
+      const b = document.createElement('button');
+      b.className = 'btn tiny hp-sk-pick';
+      b.textContent = `选点 ${picks}`;
+      b.title = `还有 ${picks} 点副技能没花`;
+      b.addEventListener('click', () => this.onSkillPick?.(hero.id));
+      head.appendChild(b);
+    }
+    wrap.appendChild(head);
+
+    const learned = heroSkills(hero);
+    const line = div('hp-sk-list');
+    line.textContent = learned.length
+      ? learned
+          .map((s) => `${SKILLS[s.id as keyof typeof SKILLS]?.name ?? s.id} ${['基础', '高级', '专家'][s.level - 1]}`)
+          .join(' · ')
+      : '（还没学）升级到 2/4/6/8/10 级各得 1 点';
+    wrap.appendChild(line);
+
+    /* H6 特长（§21.10）：一行文字即可 —— 它不是可操作的，读一次就够。 */
+    const sp = SPECIALTIES[specialtyOf(hero)];
+    const spec = div('hp-spec');
+    spec.textContent = `特长 · ${sp.name}：${sp.text}`;
+    wrap.appendChild(spec);
     return wrap;
   }
 

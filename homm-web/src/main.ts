@@ -27,7 +27,9 @@ import { backpackOf, equippedOf } from './core/game/equip.js';
 import { castAdventure, canAdventureCast, type AdventureTarget } from './core/game/spells.js';
 import { getSpell } from './core/data/spells.js';
 import { STAT_BOOSTS } from './core/data/statBoosts.js';
-import { effectivePrimary, manaMaxOf, maxMovePoints } from './core/game/hero.js';
+import { effectivePrimary, grassMoveMul, manaMaxOf, maxMovePoints } from './core/game/hero.js';
+import { pendingPicks } from './core/game/skills.js';
+import { openSkillPick } from './ui/SkillDialog.js';
 import type { BattleOutcome } from './core/combat/battle.js';
 import { LAYOUTS } from './core/data/layouts.js';
 import type { ScenarioObjective } from './core/data/scenarios.js';
@@ -949,6 +951,7 @@ const panel = new HeroPanel(
   () => goShowcase(),
   () => showObjBanner(),
   (id) => openArts(id),
+  (id) => openSkillPickFor(id),
 );
 
 const hud = new HUD(topbar);
@@ -966,6 +969,20 @@ function openArts(heroId: string): void {
   if (isBattleOpen()) return;
   if (!state.heroes[heroId]) return;
   artsDialog.open(state, heroId, () => {
+    refresh();
+    saveResume();
+  });
+}
+
+/**
+ * §21.9 H5：打开副技能二选一。**不消耗任何东西**，点还在英雄身上
+ * （关掉弹窗不会丢点，所以"稍后再说"是安全的）。
+ */
+function openSkillPickFor(heroId: string): void {
+  if (isBattleOpen()) return;
+  const h = state.heroes[heroId];
+  if (!h || pendingPicks(h) <= 0) return;
+  openSkillPick(stage, state, h, () => {
     refresh();
     saveResume();
   });
@@ -1027,8 +1044,11 @@ function recomputeField(): void {
     previewPath = null;
     return;
   }
-  fieldFull = computePaths(state, hero.pos, Infinity);
-  fieldTurn = computePaths(state, hero.pos, hero.movePoints);
+  // H6「林地」：p3 游侠的草地消耗 −25%。两个场必须用同一个乘数，
+  // 否则"今日可达"与"全图距离"会各算一套（刻痕/天数文案就会对不上）。
+  const grassMul = grassMoveMul(hero);
+  fieldFull = computePaths(state, hero.pos, Infinity, grassMul);
+  fieldTurn = computePaths(state, hero.pos, hero.movePoints, grassMul);
   for (const id of state.heroOrder) {
     const h = state.heroes[id];
     if (h && !anim) heroRender[id] = { x: h.pos.x, y: h.pos.y };
@@ -1144,7 +1164,7 @@ function tickAnim(dt: number): void {
   while (anim.i < anim.path.length && anim.t >= STEP_MS) {
     anim.t -= STEP_MS;
     const to = anim.path[anim.i];
-    const cost = stepCost(state, hero.pos, to);
+    const cost = stepCost(state, hero.pos, to, grassMoveMul(hero));
     if (cost > hero.movePoints) {
       anim = null;
       hint(pendingDest ? '移动力耗尽，明天按 M 继续行程' : '移动力不足，剩余行程明日再走');
@@ -1326,14 +1346,27 @@ function resolve(heroId: string, obj: MapObject, accept: boolean, outcome?: Batt
     if (town && town.owner === 'p1') {
       const lines: (Node | string)[] = [res.message];
       if (res.levelUps.length) lines.push(`升级！${res.levelUps.join('、')}`);
+      /* H5：升级给了点就当场给入口。**不强制**（点不会丢），
+       * 但"刚打完仗升了级"是玩家唯一会看升级说明的时刻，错过就得自己去属性段找。 */
+      const picks = state.heroes[heroId] ? pendingPicks(state.heroes[heroId]!) : 0;
       showModal(stage, {
         title: res.title,
         body: lines,
         actions: [
+          ...(picks > 0
+            ? [{
+                label: `选副技能 ${picks}`,
+                primary: true,
+                onClick: (c: () => void) => {
+                  c();
+                  openSkillPickFor(heroId);
+                },
+              }]
+            : []),
           { label: '关闭', onClick: (c) => c() },
           {
             label: '进城管理',
-            primary: true,
+            primary: picks <= 0,
             onClick: (c) => {
               c();
               openTownById(townId);
@@ -1347,10 +1380,23 @@ function resolve(heroId: string, obj: MapObject, accept: boolean, outcome?: Batt
 
   const body: (Node | string)[] = [res.message];
   if (res.levelUps.length) body.push(`升级！${res.levelUps.join('、')}`);
+  const picks = state.heroes[heroId] ? pendingPicks(state.heroes[heroId]!) : 0;
   showModal(stage, {
     title: res.title,
     body,
-    actions: [{ label: '继续', primary: true, onClick: (c) => c() }],
+    actions: [
+      ...(picks > 0
+        ? [{
+            label: `选副技能 ${picks}`,
+            primary: true,
+            onClick: (c: () => void) => {
+              c();
+              openSkillPickFor(heroId);
+            },
+          }]
+        : []),
+      { label: '继续', primary: picks <= 0, onClick: (c) => c() },
+    ],
   });
 }
 

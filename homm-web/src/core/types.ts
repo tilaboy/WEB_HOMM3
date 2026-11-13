@@ -220,6 +220,17 @@ export interface HeroPrimary {
   knowledge: number;
 }
 
+/**
+ * 一条已学的副技能（H5）。**用 string 而不是 `SkillId` 联合**：
+ * 存档里可能带着旧版本 / 未来的技能 id，读的时候要能容忍未知条目
+ * （`game/skills.ts` 查表时直接忽略查不到的 id），而不是让整档读不进来。
+ */
+export interface HeroSkill {
+  id: string;
+  /** 1 基础 / 2 高级 / 3 专家 */
+  level: number;
+}
+
 export type ArtifactSlot = 'weapon' | 'shield' | 'helm' | 'armor' | 'ring' | 'boots' | 'misc';
 
 export interface ArtifactDef {
@@ -255,6 +266,25 @@ export interface Hero {
   equipped?: Partial<Record<ArtifactSlot, string>>;
   /** 已学会的法术 id（M4）。 */
   spells: string[];
+  /**
+   * 副技能（H5 · §21.9）：最多 3 槽、每条最高 3 级。
+   *
+   * ⚠️ **旧档没有这个字段**（与 `equipped` 同款）⇒ 读时一律 `hero.skills ?? []`，
+   * 不需要迁移器；`level` 越界由 `game/skills.ts` 夹回 1~3。
+   */
+  skills?: HeroSkill[];
+  /**
+   * 还没花掉的技能点。`gainExp` 在升到 2/4/6/8/10 级时 +1（共 5 次）。
+   * 人类玩家攒着等弹窗；AI 在 `gainExp` 里当场花掉（它没有 UI，攒着等于永远不学）。
+   */
+  skillPicks?: number;
+  /**
+   * 「祷言」（p4 牧师特长）：上一次**免蓝首法**发生在哪一天。
+   *
+   * 存"哪一天"而不是"今天有没有"，是因为它必须跨存档成立 ——
+   * 存布尔量会遇到"读档后又是新的一天"的 bug（当日判断的真值源是 `state.day`）。
+   */
+  freeCastDay?: number;
   /** 携带的攻城器械（M6）：在带「工坊」的己方城镇花钱装配。 */
   warMachines?: WarMachineId[];
   pos: GridPos;

@@ -16,6 +16,23 @@ import { WAR_MACHINES } from '../data/warmachines.js';
 import { mulberry32, randInt } from '../rng.js';
 import { damageMultiplier, rollDamage } from './damage.js';
 import {
+  ARCHERY_MUL,
+  DEFENSE_REDUCE,
+  OFFENSE_MUL,
+  SORCERY_MUL,
+  curveAt,
+  type SkillId,
+} from '../data/skills.js';
+import {
+  DISCIPLINE_ATK,
+  DISCIPLINE_ATK_ELITE,
+  DISCIPLINE_ELITE_LEVEL,
+  FEROCITY_CAP,
+  FEROCITY_PER_STEP,
+  FEROCITY_STEP_LEVELS,
+  type SpecialtyId,
+} from '../data/specialties.js';
+import {
   FIELD_H,
   FIELD_W,
   bfs,
@@ -60,6 +77,19 @@ export interface BattleSide {
   caster?: BattleCaster;
   /** 携带的攻城器械：每回合开始自动开火，不受指挥。 */
   warMachines?: WarMachineId[];
+  /**
+   * 英雄的副技能等级表（H5 · §21.9）。**省略 = 一条都没学**。
+   *
+   * 传等级而不是传"已算好的乘数"：预估与实战必须用同一个数，
+   * 而乘数在 `estimateDamage` / `actMelee` 两处都要算，传等级只有一个来源。
+   */
+  skills?: Partial<Record<SkillId, number>>;
+  /** 英雄特长（H6 · §21.10）。野怪 / 中立守军没有。 */
+  specialty?: SpecialtyId | null;
+  /** 英雄等级（「纪律」「蛮勇」按等级取值）。缺省按 1 级。 */
+  heroLevel?: number;
+  /** 「祷言」：这一场的第一发法术免蓝（由 `interaction.ts` 按"今天还没用过"算出来）。 */
+  freeFirstCast?: boolean;
 }
 
 /** 战场上的英雄施法者：带法术表、魔力和魔力的实时余量（引擎直接扣）。 */
@@ -94,6 +124,12 @@ export interface BattleOutcome {
   fled?: boolean;
   /** 战后剩余法力（side 0 的施法者）。世界层据此写回英雄。 */
   casterMana?: number;
+  /**
+   * 「祷言」本场**真的用掉了**免蓝首法（H6 · p4）。
+   * 世界层据此把 `hero.freeCastDay` 记成"今天用过了" ——
+   * 只有真用过才记，进战斗不施法不该消耗这一天的资格。
+   */
+  freeCastUsed?: boolean;
   /**
    * 这场仗的「实验事故」（紫晶参战才有）。
    * 带在 outcome 上是为了**战前公示**：预估与实战同一个种子 ⇒ 同一条事故。
@@ -190,6 +226,18 @@ export interface BattleState {
    * canonical id 之外的旧 id，且未来可能出现"借兵"玩法。
    */
   factions: [string | null, string | null];
+  /* ---------- 英雄培养（H5 副技能 / H6 特长） ---------- */
+
+  /** 两侧的副技能等级（0 = 没学）。键查不到就是 0，不需要到处判空。 */
+  skills: [Partial<Record<SkillId, number>>, Partial<Record<SkillId, number>>];
+  /** 两侧的英雄特长；野怪 / 中立守军为 null。 */
+  specialties: [SpecialtyId | null, SpecialtyId | null];
+  /** 两侧英雄等级（纪律 / 蛮勇按它取值）。 */
+  heroLevels: [number, number];
+  /** 「祷言」本场是否持有免蓝首法（开场算好，用掉就置 false）。 */
+  freeCast: [boolean, boolean];
+  /** 本场是否**真的用掉了**免蓝首法 —— 只用来回写 `hero.freeCastDay`。 */
+  freeCastUsed: [boolean, boolean];
   over: boolean;
   winner: 0 | 1 | null;
   fled: boolean;
@@ -461,6 +509,11 @@ export function createBattle(
     atkBonus: [attacker.attack, defender.attack],
     defBonus: [attacker.defense, defender.defense],
     factions: [attacker.faction ?? null, defender.faction ?? null],
+    skills: [{ ...(attacker.skills ?? {}) }, { ...(defender.skills ?? {}) }],
+    specialties: [attacker.specialty ?? null, defender.specialty ?? null],
+    heroLevels: [attacker.heroLevel ?? 1, defender.heroLevel ?? 1],
+    freeCast: [!!attacker.freeFirstCast, !!defender.freeFirstCast],
+    freeCastUsed: [false, false],
     over: false,
     winner: null,
     fled: false,
@@ -654,6 +707,78 @@ export function effDefBonus(u: BattleUnit): number {
   return hasEffect(u, 'stoneSkin') ? 3 : 0;
 }
 
+/* ---------------- 英雄培养：副技能（H5）与特长（H6） ----------------
+ *
+ * 三条规矩，写在这里只写一次：
+ *  ① **加攻**（纪律）走 `strikeAtkBonus` / `retaliationAtkBonus` —— 那是"本单位出手"
+ *     的两个唯一入口，漏一处就会出现"预估多 1、实战没吃到"；
+ *  ② **改伤害**（进攻 / 箭术 / 蛮勇 / 巫术）在 `rollDamage` 之后乘一个系数，
+ *     并且预估必须乘同一个系数；
+ *  ③ **减伤**（防御）只作用于近战 / 反击 / 射击 —— 与 H3 的 Armorer 同口径，
+ *     **不减免法术伤害**（法术走 `applyDamage` 时不经过这里）。
+ */
+
+function skillLv(s: BattleState, side: 0 | 1, id: SkillId): number {
+  return s.skills?.[side]?.[id] ?? 0;
+}
+
+/** 「防御」：这一侧受近战/远程伤害时的乘数（1 = 不减伤）。 */
+export function defenseTakenMul(s: BattleState, side: 0 | 1): number {
+  const lv = skillLv(s, side, 'defense');
+  return lv > 0 ? 1 - curveAt(DEFENSE_REDUCE, lv) : 1;
+}
+
+/** 「进攻」×「蛮勇」：这一侧**近战出手**的伤害乘数。 */
+export function meleeDamageMul(s: BattleState, side: 0 | 1): number {
+  let m = 1;
+  const off = skillLv(s, side, 'offense');
+  if (off > 0) m *= curveAt(OFFENSE_MUL, off);
+  if (s.specialties?.[side] === 'ferocity') {
+    const lv = s.heroLevels?.[side] ?? 1;
+    m *= 1 + Math.min(FEROCITY_CAP, Math.floor(lv / FEROCITY_STEP_LEVELS) * FEROCITY_PER_STEP);
+  }
+  return m;
+}
+
+/** 「箭术」：这一侧**远程出手**的伤害乘数。 */
+export function rangedDamageMul(s: BattleState, side: 0 | 1): number {
+  const lv = skillLv(s, side, 'archery');
+  return lv > 0 ? curveAt(ARCHERY_MUL, lv) : 1;
+}
+
+/** 「巫术」：这一侧法术伤害的乘数。 */
+export function spellDamageMul(s: BattleState, side: 0 | 1): number {
+  const lv = skillLv(s, side, 'sorcery');
+  return lv > 0 ? curveAt(SORCERY_MUL, lv) : 1;
+}
+
+/**
+ * 「纪律」（p1 阿尔文）：战斗第 1 回合全军攻 +1，5 级起 +2。
+ *
+ * 加在**攻击力**上而不是伤害上：这是"第一回合压上去"的收益，
+ * 要能被 `damageMultiplier` 的差额式放大/削弱，才和 H3 的手感一致。
+ */
+export function disciplineAtk(s: BattleState, side: 0 | 1): number {
+  if (s.specialties?.[side] !== 'discipline') return 0;
+  if (s.round !== 1) return 0;
+  const lv = s.heroLevels?.[side] ?? 1;
+  return lv >= DISCIPLINE_ELITE_LEVEL ? DISCIPLINE_ATK_ELITE : DISCIPLINE_ATK;
+}
+
+/**
+ * 把「进攻 / 箭术 / 蛮勇」与对方的「防御」乘进一次物理伤害的**唯一入口**。
+ *
+ * 实战（`actMelee` / `actShoot` / 反击）与预估（`estimateDamage` / `estimateRetaliation`）
+ * 都必须经过它 —— 否则"提示 20、实际 24"这类分裂没有任何断言会响
+ * （本项目已经踩过一次：`estimateDamage` 漏 `au.attack`）。
+ */
+function skillDamage(s: BattleState, atkSide: 0 | 1, defSide: 0 | 1, base: number, melee: boolean): number {
+  let d = base * (melee ? meleeDamageMul(s, atkSide) : rangedDamageMul(s, atkSide));
+  const red = defenseTakenMul(s, defSide);
+  if (red !== 1) d *= red;
+  return Math.max(1, Math.round(d));
+}
+
 /* ---------------- 族动词（2026-10-20） ----------------
  *
  * 四族差异此前只有数值纹理（见 `production/faction-gameplay-review-2026-10-20.md`）。
@@ -790,7 +915,8 @@ export function strikeAtkBonus(
     s.atkBonus[u.side] +
     effAtkBonus(u, melee) +
     chargeAtkBonus(s, u, melee, assumeMoveDist) +
-    overtimeAtkBonus(s, u.side) -
+    overtimeAtkBonus(s, u.side) +
+    disciplineAtk(s, u.side) -
     (u.feared ? FEAR_ATK : 0)
   );
 }
@@ -802,7 +928,13 @@ export function strikeAtkBonus(
  * 的预估。以前这两处各写一遍，改一处就会分裂（"提示说 40、实际挨 60"）。
  */
 function retaliationAtkBonus(s: BattleState, u: BattleUnit): number {
-  return s.atkBonus[u.side] + effAtkBonus(u, true) + overtimeAtkBonus(s, u.side) - (u.feared ? FEAR_ATK : 0);
+  return (
+    s.atkBonus[u.side] +
+    effAtkBonus(u, true) +
+    overtimeAtkBonus(s, u.side) +
+    disciplineAtk(s, u.side) -
+    (u.feared ? FEAR_ATK : 0)
+  );
 }
 
 /* ---------------- 族动词 · 翠林「缠根」（2026-10-20） ----------------
@@ -1114,7 +1246,11 @@ export function estimateDamage(
   // 「誓约」是**守方侧**的减伤，不能糊进 `damageMultiplier`（那是攻方侧的式子）。
   // 预估必须和 `actMelee` 的 `applyOath` 同源，否则提示说 20、实际 19。
   const guarded = !ranged && oathGuard(s, def) ? OATH_REDUCE : 0;
-  return Math.max(1, Math.round(avg * mod) - guarded);
+  // H5/H6：进攻 / 箭术 / 蛮勇（攻方）与防御（受方）。与 `skillDamage()` 同一串乘数，
+  // 只是这里从**期望值**出发而不是从骰点出发。
+  const atkMul = ranged ? rangedDamageMul(s, atk.side) : meleeDamageMul(s, atk.side);
+  const red = defenseTakenMul(s, def.side);
+  return Math.max(1, Math.round(avg * mod * atkMul * red) - guarded);
 }
 
 /**
@@ -1273,13 +1409,19 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
   const oath = applyOath(
     s,
     target,
-    rollDamage(
-      s.rng,
-      getUnit(u.unitTypeId),
-      u.count,
-      strikeAtkBonus(s, u, true),
-      getUnit(target.unitTypeId),
-      defBonusOf(s, target),
+    skillDamage(
+      s,
+      u.side,
+      target.side,
+      rollDamage(
+        s.rng,
+        getUnit(u.unitTypeId),
+        u.count,
+        strikeAtkBonus(s, u, true),
+        getUnit(target.unitTypeId),
+        defBonusOf(s, target),
+      ),
+      true,
     ),
   );
   const dmg = oath.dmg;
@@ -1345,13 +1487,19 @@ export function actMelee(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
     const oathBack = applyOath(
       s,
       u,
-      rollDamage(
-        s.rng,
-        getUnit(target.unitTypeId),
-        target.count,
-        retaliationAtkBonus(s, target),
-        getUnit(u.unitTypeId),
-        defBonusOf(s, u),
+      skillDamage(
+        s,
+        target.side,
+        u.side,
+        rollDamage(
+          s.rng,
+          getUnit(target.unitTypeId),
+          target.count,
+          retaliationAtkBonus(s, target),
+          getUnit(u.unitTypeId),
+          defBonusOf(s, u),
+        ),
+        true,
       ),
     );
     ev.push(...oathBack.ev);
@@ -1400,7 +1548,12 @@ export function estimateRetaliation(
     Math.max(0, du.attack + retaliationAtkBonus(s, def)),
     getUnit(atk.unitTypeId).defense + defBonusOf(s, atk),
   );
-  return Math.max(1, Math.round(avg * mod));
+  return Math.max(
+    1,
+    Math.round(
+      avg * mod * meleeDamageMul(s, def.side) * defenseTakenMul(s, atk.side),
+    ),
+  );
 }
 
 /** 挨 `dmg` 之后还剩几个 —— `applyDamage` 的只读版（预估不能改状态）。 */
@@ -1429,13 +1582,19 @@ export function actShoot(s: BattleState, u: BattleUnit, target: BattleUnit): Bat
   const to = { ...target.hex };
   const blocked = shotBlocked(s, u, target);
   const longRange = distance(u.hex, target.hex) > LONG_RANGE;
-  let dmg = rollDamage(
-    s.rng,
-    getUnit(u.unitTypeId),
-    u.count,
-    strikeAtkBonus(s, u, false),
-    getUnit(target.unitTypeId),
-    defBonusOf(s, target),
+  let dmg = skillDamage(
+    s,
+    u.side,
+    target.side,
+    rollDamage(
+      s.rng,
+      getUnit(u.unitTypeId),
+      u.count,
+      strikeAtkBonus(s, u, false),
+      getUnit(target.unitTypeId),
+      defBonusOf(s, target),
+    ),
+    false,
   );
   if (blocked) dmg = Math.max(1, Math.round(dmg * 0.5));
   if (longRange) dmg = Math.max(1, Math.round(dmg * 0.5));
@@ -1675,6 +1834,8 @@ export function canCast(s: BattleState, side: 0 | 1, spellId: string): boolean {
   const c = s.casters[side];
   if (!c || s.over || s.castUsed[side]) return false;
   if (!c.spells.includes(spellId)) return false;
+  // 「祷言」：本场还留着免蓝首法 ⇒ 法力不够也能放（这正是这条特长的用处）
+  if (s.freeCast?.[side] && !s.freeCastUsed?.[side]) return true;
   return c.mana >= getSpell(spellId).manaCost;
 }
 
@@ -1708,15 +1869,26 @@ export function castSpell(
     if (!h || !inField(h)) return [];
   }
 
-  c.mana -= spell.manaCost;
+  /* 「祷言」（H6 · p4 塞拉菲）：本场还留着免蓝首法时，这一发不扣蓝。
+   * 用掉要记两笔：`freeCast` = 这场不再享有；`freeCastUsed` = 回写英雄的「今天用过了」。 */
+  const usedFree = s.freeCast[side] === true;
+  if (usedFree) {
+    s.freeCast[side] = false;
+    s.freeCastUsed[side] = true;
+  } else {
+    c.mana -= spell.manaCost;
+  }
   s.castUsed[side] = true;
+  /* 「巫术」（H5）：法术伤害 ×1.05 / 1.10 / 1.15。只乘**伤害**，不乘复活量 ——
+   * 巫术是"打得更疼"，不是"治愈更多"；急救管的是战后，不是这里。 */
+  const spMul = spellDamageMul(s, side);
 
   switch (spellId) {
     case 'magicArrow':
     case 'iceBolt':
     case 'lightningBolt': {
       const t = tgt!;
-      const dmg = spellDamage(spellId, sp);
+      const dmg = Math.max(1, Math.round(spellDamage(spellId, sp) * spMul));
       const killed = applyDamage(t, dmg);
       ev.push({ t: 'cast', side, spellId, targetId: t.id, hex: { ...t.hex }, damage: dmg, killed });
       ev.push(...afterHit(s, t));
@@ -1724,7 +1896,7 @@ export function castSpell(
     }
     case 'fireball': {
       const h = (target as Hex) ?? tgt!.hex;
-      const dmg = spellDamage('fireball', sp);
+      const dmg = Math.max(1, Math.round(spellDamage('fireball', sp) * spMul));
       const area = [h, ...neighbors(h)];
       for (const cell of area) {
         const v = unitAt(s, cell);
@@ -1754,8 +1926,15 @@ export function castSpell(
       const lost = Math.max(0, t.startCount - t.count);
       const revived = Math.min(maxRevive, lost);
       if (revived <= 0) {
-        // 没人可复活就退回法力，不让玩家白白损失一回合的施法机会
-        c.mana += spell.manaCost;
+        // 没人可复活就退回法力，不让玩家白白损失一回合的施法机会。
+        // ⚠️ 免蓝那一发要**退回"免蓝资格"**而不是加法力 —— 否则祷言会被
+        //    "点空一次复活"白送 10 点蓝（净收益，且没人会发现）。
+        if (usedFree) {
+          s.freeCast[side] = true;
+          s.freeCastUsed[side] = false;
+        } else {
+          c.mana += spell.manaCost;
+        }
         s.castUsed[side] = false;
         return [];
       }
@@ -2150,6 +2329,7 @@ export function toOutcome(s: BattleState): BattleOutcome {
     enemySurvivors: survivorsOf(1),
     fled: s.fled || undefined,
     casterMana: s.casters[0]?.mana,
+    freeCastUsed: s.freeCastUsed?.[0] || undefined,
     // 战前预估也要把它带回去：事故会把胜负摆动几十个百分点，
     // 玩家必须在**按下开战之前**看到（详见 ACCIDENT_TABLE 上面那段读数）。
     accident: s.accident ?? null,

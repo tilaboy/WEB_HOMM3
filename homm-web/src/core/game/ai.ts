@@ -19,7 +19,7 @@ import {
   pendingObjectAt,
   previewInteraction,
 } from './interaction.js';
-import { armyValue, heroPower, manaMaxOf } from './hero.js';
+import { armyValue, grassMoveMul, heroPower, manaMaxOf } from './hero.js';
 import {
   build,
   canBuildToday,
@@ -910,11 +910,13 @@ function pickTarget(state: GameState, hero: Hero, player: FactionId): Candidate 
 
 function aiMarch(state: GameState, hero: Hero, target: GridPos): void {
   const player = hero.owner as FactionId;
-  const field = computePaths(state, hero.pos, Infinity);
+  // H6「林地」：AI 走同一条规则（不做弊，也不吃亏）
+  const grassMul = grassMoveMul(hero);
+  const field = computePaths(state, hero.pos, Infinity, grassMul);
   const path = buildPath(state, field, hero.pos, target);
 
   for (const step of path) {
-    const cost = stepCost(state, hero.pos, step);
+    const cost = stepCost(state, hero.pos, step, grassMul);
     if (!isFinite(cost) || cost > hero.movePoints) return;
 
     // 敌方英雄挡路：改成打遭遇战

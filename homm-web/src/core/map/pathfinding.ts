@@ -64,9 +64,14 @@ class MinHeap {
   }
 }
 
-/** 进入 (x,y) 一格所需的移动力；不可通行返回 Infinity。 */
-export function stepCost(state: GameState, from: GridPos, to: GridPos): number {
-  return stepCostOn(state.map, from, to);
+/**
+ * 进入 (x,y) 一格所需的移动力；不可通行返回 Infinity。
+ *
+ * `grassMul` = 草地地形消耗乘数（H6「林地」：p3 游侠的草地 −25%）。
+ * 缺省 1 ⇒ 所有既有调用逐位不变。
+ */
+export function stepCost(state: GameState, from: GridPos, to: GridPos, grassMul = 1): number {
+  return stepCostOn(state.map, from, to, grassMul);
 }
 
 /**
@@ -77,10 +82,14 @@ export function stepCost(state: GameState, from: GridPos, to: GridPos): number {
  * 同一份代价规则（地形 moveCost / 斜向 ×1.4 / 禁止贴角）⇒ 生成期约束与
  * 运行时探针/玩家移动是**同一个数**（一天 = `BASE_MOVE_POINTS` = 1800）。
  */
-export function stepCostOn(m: GameMap, from: GridPos, to: GridPos): number {
+export function stepCostOn(m: GameMap, from: GridPos, to: GridPos, grassMul = 1): number {
   if (to.x < 0 || to.y < 0 || to.x >= m.width || to.y >= m.height) return Infinity;
   if (!isPassable(m, to.x, to.y)) return Infinity;
-  const base = TERRAIN[m.tiles[idx(m, to.x, to.y)].terrain].moveCost;
+  const terrain = m.tiles[idx(m, to.x, to.y)].terrain;
+  const raw = TERRAIN[terrain].moveCost;
+  // ⚠️ 只改**草地**：林地的卖点是"在草地上跑得快"，不是全地形加速。
+  //    地形表本身不动（`TERRAIN` 是全局常量，改它等于改地图生成与所有 AI 的距离口径）。
+  const base = terrain === 'grass' && grassMul !== 1 ? Math.round(raw * grassMul) : raw;
   const diagonal = from.x !== to.x && from.y !== to.y;
   // 不允许贴角穿越：两侧正交格都必须能走
   if (diagonal) {
@@ -94,8 +103,8 @@ export function stepCostOn(m: GameMap, from: GridPos, to: GridPos): number {
  * 以 from 为源点的 Dijkstra。maxCost 用于只展开当日移动力内的格子
  * （传 Infinity 则全图展开，用于"移动力不够时先走一段"）。
  */
-export function computePaths(state: GameState, from: GridPos, maxCost = Infinity): PathField {
-  return costFieldFromMap(state.map, from, maxCost);
+export function computePaths(state: GameState, from: GridPos, maxCost = Infinity, grassMul = 1): PathField {
+  return costFieldFromMap(state.map, from, maxCost, grassMul);
 }
 
 /**
@@ -103,7 +112,7 @@ export function computePaths(state: GameState, from: GridPos, maxCost = Infinity
  * 算法与 `computePaths` 逐行相同（重复入堆 + 松弛时比较），只是源从 `state.map`
  * 改成直接传 `map` ⇒ 两者的输出**逐格一致**。
  */
-export function costFieldFromMap(map: GameMap, from: GridPos, maxCost = Infinity): PathField {
+export function costFieldFromMap(map: GameMap, from: GridPos, maxCost = Infinity, grassMul = 1): PathField {
   const n = map.width * map.height;
   const cost = new Float64Array(n).fill(Infinity);
   const prev = new Int32Array(n).fill(-1);
@@ -121,7 +130,7 @@ export function costFieldFromMap(map: GameMap, from: GridPos, maxCost = Infinity
       const nx = cx + dx;
       const ny = cy + dy;
       if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
-      const c = stepCostOn(map, { x: cx, y: cy }, { x: nx, y: ny });
+      const c = stepCostOn(map, { x: cx, y: cy }, { x: nx, y: ny }, grassMul);
       if (!isFinite(c)) continue;
       const ni = idx(map, nx, ny);
       const nc = curCost + c;
