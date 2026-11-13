@@ -663,7 +663,8 @@ export function meleeTargets(s: BattleState, u: BattleUnit): BattleUnit[] {
 }
 
 export function shootTargets(s: BattleState, u: BattleUnit): BattleUnit[] {
-  // 完整的城墙挡视线：隔着墙既打不到城里的人，城里的人也打不出来
+  // 城墙**单向**挡视线（决策 61）：攻方隔着墙打不到城里的人；守方从城里射出去不受限。
+  // 否则 L1（0 塔）会出现"建墙反而更弱"—— 守方弓手被自己的墙封住。
   return aliveOf(s, u.side === 0 ? 1 : 0).filter((f) => !blocksLine(s.siege, u.hex, f.hex));
 }
 

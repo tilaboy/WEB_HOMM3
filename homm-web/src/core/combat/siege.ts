@@ -8,12 +8,17 @@
  *   - **城门**在城墙列正中，最硬，是攻方最想砸开的那一段；
  *   - **护城河**在城墙前一列，站上去的攻方防御 -2。
  *
- * 城墙**同时挡视线**：隔着完整的城墙，谁也打不到谁。守军躲在墙后是安全的，
- * 攻方在破墙之前也不会被城里点名 —— 第一目标清晰：先把墙砸开。
+ * 城墙**只单向挡视线**（决策 61）：攻方从城外打城内被挡，守方从城里射出去不受限。
+ * 守军躲在墙后是安全的，攻方在破墙之前也打不到守军 —— 第一目标清晰：先把墙砸开。
  *
  * 为什么最后选了"挡视线"而不是 HOMM3 的"只挡人不挡箭"：那个版本实测下来是灾难 ——
  * 弓箭手隔着墙对射，攻方步兵永远在挨打、永远打不到人，2 星城防以上就是 100% 团灭，
  * 没有决策只有送死。挡视线之后节奏反而清楚：破墙前互不损耗，破墙后才真正开打。
+ *
+ * **但"挡视线"必须是单向的**（决策 61，2026-11-13 落地）：双向挡 + 塔数曲线 0/1/3
+ * 会让 L1（0 塔）变成"建墙反而更弱"—— 守方弓手被自己的墙封住，攻方却只多等两轮。
+ * 改单向后守方弓手在墙后能输出，塔是**额外**火力而不是唯一火力，
+ * 与「城防线卖防御」的文案一致。守方闸：`probe:wallgate`。
  *
  * 这里只放**纯几何与结构数据**（不认识 BattleState），
  * 所有涉及部队的逻辑都在 battle.ts 里，避免出现循环依赖。
@@ -225,9 +230,24 @@ export function blocksMove(siege: SiegeState | null | undefined, h: Hex): boolea
   return structureAt(siege, h) !== null;
 }
 
-/** 连线中途有没有立着的结构 —— 城墙挡视线的依据。端点本身不算遮挡。 */
+/** 城里：城墙列的右手边（守方部署列 14 / 主楼 13 都在城里）。 */
+export function isInsideCity(h: Hex): boolean {
+  return h.col > WALL_COL;
+}
+
+/**
+ * 连线中途有没有立着的结构 —— 城墙挡视线的依据。端点本身不算遮挡。
+ *
+ * **单向**（决策 61）：只有「起点在城外、终点在城内」才断线。
+ *   - 城内 → 城外（守方弓手射出去）：恒通；
+ *   - 同侧连线（城打城 / 野打野）：不判墙；
+ *   - 打城墙列本身（col = WALL_COL）：端点不算遮挡 ⇒ 攻方可以隔着一列砸墙/塔。
+ * 负向对照：改回双向 ⇒ `probe:wallgate` 的守方闸必须红（L1 建墙反而更弱）。
+ */
 export function blocksLine(siege: SiegeState | null | undefined, from: Hex, to: Hex): boolean {
   if (!siege) return false;
+  if (isInsideCity(from)) return false;
+  if (!isInsideCity(to)) return false;
   const line = hexLine(from, to);
   for (let i = 1; i < line.length - 1; i++) {
     if (structureAt(siege, line[i])) return true;

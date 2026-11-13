@@ -76,7 +76,8 @@
     "probe:castbeat": "node tools/probes/castbeat.mjs",
     "probe:weekevent": "node tools/probes/weekevent.mjs",
     "probe:herogrowth": "node tools/probes/herogrowth.mjs",
-    "probe:heroskills": "node tools/probes/heroskills.mjs"
+    "probe:heroskills": "node tools/probes/heroskills.mjs",
+    "probe:wallgate": "node tools/probes/wallgate.mjs --gate"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
