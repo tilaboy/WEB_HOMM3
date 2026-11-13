@@ -16,7 +16,7 @@
  * | A3 | 五周一局（35 天）内出现 T5 的局占比 | ≥ 60% | 还原成 `Object.keys()` 建造序 / 去掉稀有资源补货 ⇒ 掉到 ~0 |
  * | A4 | 每金战力 = Σ 招募 `aiValue` ÷ Σ 招募金币 | 与基线差 ≤ 10% | 只改排序不改 `poolValue` ⇒ 回城次数 +30%、掉 >15% |
  * | A5 | 有 T5 时：栈数 ≥ 3、单栈 ≤ 全军 60%、至少 1 队 T1/T2 当屏 | 全部局 | 允许"一栈流" ⇒ 单栈冲到 85% |
- * | A6 | 买到 T5 那天，**招募城**（驻军 + 英雄部队）≥ 1,200 | 违反 0 局 | `GARRISON_KEEP_VALUE = 400` ⇒ 3+ 局被偷城 |
+ * | A6 | 买到 T5 那天，**招募城**（驻军 + 英雄部队）≥ 1,200；T5 在野外英雄身上时无「招募城」，另作读数 | 违反 0 局 | `GARRISON_KEEP_VALUE = 400` ⇒ 3+ 局被偷城；**脚本内**：把一局驻军抹成 0 ⇒ 必报违规 |
  *
  * ## 两个口径必须写死，否则读数没法比
  * - **"招募量"只数增加**：`Σ max(0, 今日兵数 − 昨日兵数)`。兵数只可能因招募而上升、
@@ -24,6 +24,10 @@
  *   直接数终局兵力会把"打得凶的局"读成"买得多"。
  * - **A6 的量纲是 `garrisonStrength()`（战力）**，与 `GARRISON_KEEP_VALUE` 同一个数。
  *   不许为买兵另开一个阈值 —— 两个阈值一定会在某天打架（§25.5）。
+ * - **「没有对象」不许读成「量到 0」**（P0 / 2026-11-13）：封闭宝地让 AI 更爱出城，
+ *   T5 会先出现在野外英雄身上（seed 5219）。这时 `here === null` 不是"招募城被抽空"，
+ *   而是**根本没有招募城**；把它记 0 ⇒ A6 假红。判定集只收驻军局，空集显式判红，
+ *   野外局另打读数，并配一条脚本内可执行的负向对照（驻军抹 0 必红）。
  *
  * ## 用法
  * ```
@@ -123,6 +127,9 @@ const games = [];for (let s = 0; s < SEEDS; s++) {
     opponents: OPPONENTS,
     difficulty: DIFFICULTY,
     playerName: '指挥官',
+    /** A/B 诊断臂：`AISCALE_POCKETS=0` 关掉封闭宝地，用来分辨"AI 变化是不是 P0 带来的"。
+     *  默认不传 ⇒ 与正式对局一致（宝地开）。 */
+    ...(process.env.AISCALE_POCKETS === '0' ? { pockets: false } : {}),
   });
   const ais = Object.values(state.players)
     .filter((p) => !p.isHuman)
@@ -226,6 +233,13 @@ const games = [];for (let s = 0; s < SEEDS; s++) {
       const holder = findT5Holder(state, ais);
       if (holder) {
         g.firstT5Day = d;
+        /**
+         * ★ P0 之后 T5 可能**先出现在野外英雄身上**（实测 seed 5219 / 阿尔文 @ (26,23)）。
+         *   A6 的判据对象是"招募城"——英雄带兵时这座城**根本不存在**：`here = null`
+         *   ⇒ 旧代码把 `0 + 0` 记成"招募城被抽空"，把「没有对象」读成了「量到 0」。
+         *   这里分开记：驻军局才进判定集，英雄局只作读数；判定集为空时显式判红（不是通过）。
+         */
+        g.a6Kind = holder.town ? 'garrison' : 'field';
         // A6：**招募 T5 的那座城**守没守住。
         // 口径：城里有人（英雄）时，防御 = 驻军 + 英雄部队；英雄不在就是裸城。
         // 为什么不取"每座城的最小值"：AI 刚打下来的城普遍是 0 驻军（实测
@@ -247,6 +261,21 @@ const games = [];for (let s = 0; s < SEEDS; s++) {
         }
         g.garrisonAtT5 = here ? garrisonStrength(here.garrison) : 0;
         g.heroAtT5 = here && holder.hero ? armyValue(holder.hero.army) : 0;
+        if (g.a6Kind === 'field') {
+          g.fieldT5Value = armyValue(holder.hero.army);
+          g.garrisonAtT5 = null;
+          g.heroAtT5 = null;
+        }
+        if (process.env.AISCALE_DEBUG) {
+          console.error('[aiscale T5]', {
+            seed, day: d, owner: holder.owner,
+            holderKind: holder.hero ? 'hero' : 'garrison',
+            holderName: holder.label,
+            here: here ? { name: here.name, pos: here.pos, garrison: here.garrison } : null,
+            heroAt: holder.hero?.pos ?? null,
+            owned: owned.map((t) => ({ name: t.name, pos: t.pos, g: garrisonStrength(t.garrison) })),
+          });
+        }
         g.nakedTowns = owned.filter(
           (t) => t !== here && garrisonStrength(t.garrison) < GARRISON_MIN,
         ).length;
@@ -385,15 +414,22 @@ if (!structGames.length) {
 }
 
 console.log('\n=== A6. 买到 T5 那天，招募城守住了吗（驻军 + 英雄 ≥ 1,200）===');
-const garrisonGames = games.filter((g) => g.garrisonAtT5 !== null);
-if (!garrisonGames.length) {
-  bad('一局都没买到 T5 ⇒ A6 无法评估（不是通过）');
+/** 判据对象 = **驻军局**（T5 在城里）。纯函数，好做可执行的负向对照。 */
+const a6Verdict = (rows) => {
+  const judgeable = rows.filter((g) => g.a6Kind === 'garrison' && g.garrisonAtT5 !== null);
+  const violations = judgeable.filter((g) => g.garrisonAtT5 + (g.heroAtT5 ?? 0) < GARRISON_MIN);
+  return { judgeable, violations };
+};
+for (const g of games.filter((x) => x.a6Kind === 'field')) {
+  ok(`seed ${g.seed}：T5 先出现在野外英雄身上（该部队战力 ${Math.round(g.fieldT5Value ?? 0)}）—— 没有「招募城」，不进 A6 判定集（读数，非通过）`);
+}
+const { judgeable, violations } = a6Verdict(games);
+if (!judgeable.length) {
+  bad('一局都没有「驻军里的 T5」⇒ A6 无法评估（不是通过）');
 } else {
-  let violations = 0;
-  for (const g of garrisonGames) {
+  for (const g of judgeable) {
     const total = g.garrisonAtT5 + (g.heroAtT5 ?? 0);
     if (total < GARRISON_MIN) {
-      violations++;
       bad(
         `seed ${g.seed}：招募城 驻军 ${Math.round(g.garrisonAtT5)} + 英雄 ${Math.round(g.heroAtT5 ?? 0)}` +
           ` = ${Math.round(total)}（< ${GARRISON_MIN}）`,
@@ -405,7 +441,14 @@ if (!garrisonGames.length) {
       );
     }
   }
-  if (!violations) ok(`${garrisonGames.length} 局全部达标`);
+  if (!violations.length) ok(`${judgeable.length} 局全部达标`);
+}
+/** 可执行的负向对照：把一局驻军抹成 0，同一条判据必须立刻报违规。 */
+{
+  const cloned = judgeable.map((g, i) => (i === 0 ? { ...g, garrisonAtT5: 0, heroAtT5: 0 } : g));
+  const ctl = a6Verdict(cloned);
+  if (!ctl.violations.length) bad('A6 负向对照失效：驻军抹成 0 仍不报违规');
+  else ok(`A6 负向对照：把 seed ${judgeable[0].seed} 的驻军抹成 0 ⇒ 同一判据报 ${ctl.violations.length} 条违规`);
 }
 
 /* ---------------- A1 / A4：与基线比 ---------------- */

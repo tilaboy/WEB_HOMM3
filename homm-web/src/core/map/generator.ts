@@ -11,6 +11,7 @@ import type {
   PlayerState,
   ResourceBag,
   ResourceKind,
+  PocketTier,
   TerrainKind,
   Town,
 } from '../types.js';
@@ -30,14 +31,25 @@ import {
 import { heroTemplateFor, startArmyFor } from '../data/heroes.js';
 import { FACTION_UNITS } from '../data/units.js';
 import { DEFAULT_CONFIG, DIFFICULTIES, FACTIONS, FACTION_ORDER } from '../data/factions.js';
-import { mulberry32, randInt, shuffle, pick } from '../rng.js';
+import { mulberry32, randInt, shuffle, pick, deriveSeed } from '../rng.js';
 import { maxMovePoints } from '../game/hero.js';
 import { castleCells, idx, isPassable } from './grid.js';
+import { POCKET_TIERS, POCKET_TIER_ORDER, rollPocketReward } from '../data/pocketRewards.js';
+import { deepestCell, findPocketShell, shellIndexSet, type PocketShell } from './pockets.js';
 import { costFieldFromMap } from './pathfinding.js';
 import { revealAround } from './fog.js';
 // 试玩场景的生成期覆盖 / 生成后盖章。**无 scenario 时不参与任何分支** ⇒ 自由对局零变化。
 // （本模块 ↔ scenarios.ts 只有**类型**上的引用，编译后被擦除，不构成运行时循环依赖。）
 import { SCENARIO_BY_ID } from '../data/scenarios.js';
+
+/**
+ * 口袋排障开关（Node 侧 `POCKET_DEBUG=1` 打印每档的候选/拒绝读数）。
+ *
+ * ★ 浏览器里**没有 `process`**：直接写 `process.env.POCKET_DEBUG` 会在建图那一刻
+ *   抛 `ReferenceError`，整局初始化被打断 —— 表现是"开始页起不来 / 面板打不开"，
+ *   九道浏览器门一起红，看起来完全不像生成器的错（2026-11-13 实测）。
+ */
+const POCKET_DEBUG = typeof process !== 'undefined' && !!process.env?.POCKET_DEBUG;
 
 export const BASE_MOVE_POINTS = 1800;
 export const HERO_SIGHT = 5;
@@ -452,6 +464,55 @@ function reachableFrom(map: GameMap, start: GridPos): Uint8Array {
   return seen;
 }
 
+/** 每个可通行格的连通块编号（-1 = 不可通行）。用于"加墙前后有没有把谁切开"。 */
+function componentLabels(map: GameMap): Int32Array {
+  const n = map.width * map.height;
+  const lab = new Int32Array(n).fill(-1);
+  const q = new Int32Array(n);
+  let cur = 0;
+  for (let s = 0; s < n; s++) {
+    if (lab[s] !== -1) continue;
+    if (!isPassable(map, s % map.width, (s / map.width) | 0)) continue;
+    lab[s] = cur;
+    q[0] = s;
+    let head = 0;
+    let tail = 1;
+    while (head < tail) {
+      const c = q[head++];
+      const cx = c % map.width;
+      const cy = (c / map.width) | 0;
+      for (const [nx, ny] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]] as const) {
+        if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
+        const ni = ny * map.width + nx;
+        if (lab[ni] !== -1) continue;
+        if (!isPassable(map, nx, ny)) continue;
+        lab[ni] = cur;
+        q[tail++] = ni;
+      }
+    }
+    cur += 1;
+  }
+  return lab;
+}
+
+/**
+ * 加墙有没有把**某个原有连通块切成两半**。
+ *
+ * 为什么不写"所有城/英雄仍能从 heroSpots[0] 走到"：分岛/多陆块地图上那命题天然为假
+ * （实测 lanes 图本来就有两块 1417 格的大陆），会把每一个合法候选都判死。
+ * 真正要守的是"我没有新增割裂" ⇒ 同一个 before 标签只允许映到同一个 after 标签。
+ */
+function keepsComponents(before: Int32Array, after: Int32Array): boolean {
+  const only = new Map<number, number>();
+  for (let i = 0; i < before.length; i++) {
+    if (before[i] < 0 || after[i] < 0) continue; // 变成墙的格子不参与
+    const was = only.get(before[i]);
+    if (was === undefined) only.set(before[i], after[i]);
+    else if (was !== after[i]) return false;
+  }
+  return true;
+}
+
 /**
  * 多张代价场逐格取最小（= "到最近那个源点要多少移动力"）。
  * Infinity 安全：所有源都不可达的格子仍是 Infinity（比较时天然最大）。
@@ -753,6 +814,7 @@ function normalizeConfig(opts: number | GenOptions): GameConfig {
   // 试玩场景 id **只在有值时**挂上：自由对局的 config 因此没有这个键 ⇒ 与引入场景前
   // **逐字节一致**（A1 回滚底线；若是无条件写 `scenario: undefined`，`toEqual` 类比较会多一个键）。
   if (o.scenario) cfg.scenario = o.scenario;
+  if (o.pockets !== undefined) cfg.pockets = o.pockets;
   return cfg;
 }
 
@@ -906,6 +968,281 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
     }
   }
 
+  /** 到最近一座主城的距离，用来给野怪分档：每个阵营身边都该有自己的新手区。 */
+  const dNearestHome = (p: GridPos) =>
+    Math.min(...homeSpots.map((hp) => Math.abs(hp.x - p.x) + Math.abs(hp.y - p.y)));
+
+  /** 口袋搜索用的可达面：**只按地形算**（此时还没有障碍/野怪），见下面的重排说明。 */
+  const reachBare = new Uint8Array(w * h);
+  for (const hp of heroSpots) {
+    const r = reachableFrom(map, hp);
+    for (let i = 0; i < reachBare.length; i++) if (r[i]) reachBare[i] = 1;
+  }
+
+  const addMine = (p: GridPos, resource: ResourceKind, pocket?: PocketTier): void => {
+    placer.add({
+      kind: 'mine',
+      pos: p,
+      // 独立矿场开局归"中立"：谁先走到就是谁的，和 HOMM 一致
+      payload: { resource, perDay: MINE_PER_DAY[resource], owner: 'neutral' as const, pocket },
+      once: false,
+      blocking: false,
+      visitedBy: [],
+    });
+  };
+
+  /* ---------------- P0 · 封闭宝地（§18.1） ----------------
+   *
+   * 结构：8~20 格连通面 + 一圈树石 + **恰好 1 个入口**，入口站一只守卫，
+   * 口袋内部恰好 1 件奖励（D1/D2/D3 各一块，奖励池见 `data/pocketRewards.ts`）。
+   *
+   * 五个决定（踩过才知道的）：
+   *   ① **奖励放在里面、守卫不背 `guard`**。规格 §18.1 第 5 步写"打完入口守卫 →
+   *      那处矿直接归你（复用 grantGuard）"，但 `grantGuard` 的 `mine` 分支是
+   *      **在守卫脚下新建一座矿**，不是"接管口袋里那座" ⇒ 同一片地方会出现两座矿，
+   *      正是决策 46 记过的孤儿矿坑。所以守卫只管开门，矿/宝物自己走进去拿。
+   *   ② **围完必须重算连通性**。判据是「加墙没有把任何**原有**连通块切开」
+   *      （`keepsComponents`），不是"所有城都能从 heroSpots[0] 走到"——分岛图上前者
+   *      天然为假（实测 lanes 本来就有两块 1417 格的大陆），会把每个合法候选都判死。
+   *   ③ **口袋必须排在障碍物之前**。8~20 格空地 + 一圈干净外圈，在一张已经铺满
+   *      `130·k` 棵树的小图上是找不到的（实测 24×24 从 3 块掉到 0~1 块）。
+   *      墙先落，后面的障碍/野怪/宝箱自然绕开 ⇒ G2「块内恰好 1 件」不靠补丁成立。
+   *   ④ 反过来，外圈**可以**落障碍物：树/石本身 blocking，就是现成的墙。真正堵不上的
+   *      只有"可通行 + 已挂物件"的格子，而这一相位之前只有**城堡城门**算这种格，
+   *      所以不是"发现再否掉"，是**一开始就躲开城门四邻**（`avoidNear`）。
+   *   ⑤ 随机流单独开：`deriveSeed(seed, 'pock', minDist)` ⇒ 主 `rng` 的调用序列不动。
+   *      ⚠ 但物件 id 与障碍落点会变（墙先占格）——"与上一批逐字节一致"只对**地形**成立。
+   */
+  const wantPockets = gen?.pockets ?? cfg.pockets ?? !cfg.scenario;
+  if (wantPockets) {
+    const pocketBlocked = new Set<number>([
+      ...homeSpots.map((p) => idx(map, p.x, p.y)),
+      ...heroSpots.map((p) => idx(map, p.x, p.y)),
+      ...neutralSpots.map((p) => idx(map, p.x, p.y)),
+    ]);
+    const usedBoosts = new Set<string>();
+    /** 各档**实测**深度；浅档用它封顶，保证 D1 ≤ D2 ≤ D3（见下方 cap） */
+    const placedDist: Partial<Record<PocketTier, number>> = {};
+    /** 城门格：口袋不许长得贴着它（详见 `FindPocketOpts.avoidNear`） */
+    const townGates = new Set<number>([...homeSpots, ...neutralSpots].map((p) => idx(map, p.x, p.y)));
+    /** 本次生成里"墙还没加"的连通块快照（每次成功围好一块后刷新） */
+    let comps = componentLabels(map);
+
+    /** 从 start 洪水，但**踩不进** ban 那一格（用来量"拿掉门之后门后还剩什么"）。 */
+    const floodBan = (start: GridPos, ban: number): Uint8Array => {
+      const seen = new Uint8Array(w * h);
+      const s = idx(map, start.x, start.y);
+      if (s === ban || !isPassable(map, start.x, start.y)) return seen;
+      seen[s] = 1;
+      const q = [s];
+      // ⚠ 循环变量别叫 h：函数外 h = 地图高，`ny >= h` 会拿队列下标当地图高，
+      //   第一轮 h=0 ⇒ 所有邻居都判越界 ⇒ 每次测得"1 格"，看起来像"门后没东西"。
+      for (let qi = 0; qi < q.length; qi++) {
+        const c = q[qi];
+        const cx = c % w;
+        const cy = (c / w) | 0;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const ni = ny * w + nx;
+          if (ni === ban || seen[ni] || !isPassable(map, nx, ny)) continue;
+          seen[ni] = 1;
+          q.push(ni);
+        }
+      }
+      return seen;
+    };
+    const maskCount = (m: Uint8Array): number => {
+      let n = 0;
+      for (let i = 0; i < m.length; i++) if (m[i]) n += 1;
+      return n;
+    };
+    const addPocketVault = (p: GridPos, vt: 'mid' | 'strong', pocketRng: () => number, tag: PocketTier): void => {
+      const def = VAULTS[vt];
+      const army: Army = def.army.map((s) => ({
+        unitTypeId: s.unitTypeId,
+        // 与生成器里宝库同口径：倍率施加在 randInt 之后
+        count: Math.max(1, Math.round(randInt(pocketRng, s.count[0], s.count[1]) * diff.monsterMul)),
+      }));
+      const reward = {
+        gold: randInt(pocketRng, def.reward.gold[0], def.reward.gold[1]),
+        resources: vaultRareBundle(pocketRng, def.reward.rare),
+        artifactId: pocketRng() < def.reward.artifactChance ? pick(pocketRng, Object.keys(ARTIFACTS)) : undefined,
+      };
+      placer.add({
+        kind: 'vault', pos: p, payload: { army, tier: vt, reward, pocket: tag },
+        once: true, blocking: false, visitedBy: [],
+      });
+    };
+
+    /**
+     * 从深到浅分配，而不是 D1→D2→D3。
+     *
+     * 小图上"深"是稀缺资源：24×24 四家时距最近主城 ≥10 的空格只有个位数。
+     * D2（10~15）先把那一片吃掉，D3 就再没有"更深"的地方可去（实测 ring small
+     * 的 D3 空转）。深档先挑，近档格子多，天然够用。
+     * ⚠️ 每档的随机流按 `minDist` 生成，与遍历顺序无关 ⇒ 换顺序不改奖励。
+     */
+    for (const tier of [...POCKET_TIER_ORDER].reverse()) {
+      const band = POCKET_TIERS[tier];
+      /**
+       * ★ 深档先挑完，浅档的**上限**就被钉在深档实测深度上。
+       *
+       * 血债：islands/small/9100 上 D3 的 16+ 带落空、退到 14，随后 D2 在
+       * 10~15 带里随手挑了 15 ⇒ `D2 > D3`，阶梯直接反过来（[G4] 红）。
+       * 这是"先挑 ≠ 一定更深"的经典陷阱：D3 的候选面可能刚好围不住，
+       * 而 D2 的候选面围得住。只靠排序保证不了单调，必须用**上一档的实测值**封顶。
+       */
+      const deeper = POCKET_TIER_ORDER[POCKET_TIER_ORDER.indexOf(tier) + 1];
+      const cap = deeper ? placedDist[deeper] : undefined;
+      const maxOf = (m: number): number => (cap == null ? m : Math.min(m, cap));
+      // ④ 单开流（同一张图同档必得同一块）
+      const pocketRng = mulberry32(deriveSeed(seed, 0x706f636b, band.minDist));
+      /**
+       * 档位下限在**小图上会落空**：24×24、四家分居四角时，"距最近主城 16 格"
+       * 在整个地图上只有 0~2 格（实测 wild/ring/islands small 的 max 只有 14~15）。
+       * 规格要的是"近/中/深"三级阶梯，所以退两步：
+       *   ① 近一档：D1 退到 5~9（城门外的矿区之外，仍然比主城远）；D2/D3 退到上一档 +3；
+       *   ② 还不行就按 D2 下限、**由深到浅**试（先试全图最深的那格）。
+       * ⚠️ 只退**距离**：8~20 格与"恰好一个口"一步不退；实际距离随块返回
+       *   （`PocketShell.dist`），探针会把三档真实深度打出来。
+       */
+      const bands: Array<{ min: number; max: number; deepest?: boolean }> = [
+        { min: band.minDist, max: maxOf(band.maxDist) },
+      ];
+      if (tier === 'D1') {
+        bands.push({ min: 5, max: maxOf(band.maxDist), deepest: true });
+      } else {
+        const prev = POCKET_TIERS[POCKET_TIER_ORDER[POCKET_TIER_ORDER.indexOf(tier) - 1]];
+        bands.push({ min: prev.minDist + 3, max: maxOf(band.maxDist) });
+        bands.push({ min: POCKET_TIERS.D2.minDist, max: maxOf(Number.MAX_SAFE_INTEGER), deepest: true });
+      }
+      // 空带（min > 深档实测上限）不是"找不到"，别浪费 8 次尝试
+      const usable = bands.filter((bd) => bd.min <= bd.max);
+      let shell: PocketShell | null = null;
+      // 探针用：区分"图上真的没有可围的面"与"围了但被连通性判据否掉"
+      const trace: Record<string, number> = {};
+      for (const bd of usable) {
+        if (shell) break;
+        for (let attempt = 0; attempt < 8 && !shell; attempt++) {
+          const cand = findPocketShell(map, {
+            reachable: reachBare,
+            distance: (p) => dNearestHome(p),
+            minDist: bd.min,
+            maxDist: bd.max,
+            blocked: pocketBlocked,
+            avoidNear: townGates,
+            // 第三档"由深到浅"：不打乱，直接按距主城降序（同距按格索引，确定性）
+            order: bd.deepest
+              ? freeTiles(map, pocketBlocked).sort((a, b) => {
+                  const pa = { x: a % w, y: (a / w) | 0 };
+                  const pb = { x: b % w, y: (b / w) | 0 };
+                  return dNearestHome(pb) - dNearestHome(pa) || a - b;
+                })
+              : shuffle(pocketRng, freeTiles(map, pocketBlocked)),
+            rng: pocketRng,
+            trace,
+          });
+          if (!cand) break;
+          // 试围：先种树，再验连通；不通过就全拆
+          const walls: string[] = [];
+          for (const w of cand.walls) {
+            const r = pocketRng();
+            const obj = placer.add({
+              kind: 'obstacle', pos: w,
+              payload: { variant: r < 0.7 ? 'tree' : r < 0.9 ? 'rock' : 'mountain' },
+              once: false, blocking: true, visitedBy: [],
+            });
+            walls.push(obj.id);
+          }
+          const compsAfter = componentLabels(map);
+          const townsOk = keepsComponents(comps, compsAfter);
+          /**
+           * 门后必须**不漏**。
+           *
+           * 判据不是"从门的四个邻居分别洪水、看有几个 8~20 格的块"——那个数法会
+           * 把「门边另有一个空壁龛」也算成一个口袋（实测 `BAD(18/20/770)`：18 格壁龛
+           * 是口袋生成之后、障碍物相位顺手圈出来的，与我们的口袋无关）。
+           *
+           * 真正要守的不变量是：**拿掉门那一格，口袋内部与外界不连通**。
+           * 所以从内部最深一格洪水（禁走门），水量必须**正好等于**内部格数。
+           * 多一格 = 有第二个洞漏出去了。
+           */
+          const gateIdx = idx(map, cand.gate.x, cand.gate.y);
+          const innerAt = deepestCell(cand, (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y));
+          const inside = floodBan(innerAt, gateIdx);
+          const oneDoor = maskCount(inside) === cand.cells.length &&
+            cand.cells.every((c) => inside[idx(map, c.x, c.y)] === 1);
+          const compSizes: number[] = [maskCount(inside)];
+          if (!townsOk || !oneDoor) {
+            if (POCKET_DEBUG) {
+              const cellSet = new Set(cand.cells.map((c) => idx(map, c.x, c.y)));
+              console.error('[pocket] reject', tier, {
+                townsOk, oneDoor, compSizes,
+                cells: cand.cells.length, walls: cand.walls.length, gate: cand.gate,
+                nb: [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => {
+                  const x = cand.gate.x + dx;
+                  const y = cand.gate.y + dy;
+                  const i = idx(map, x, y);
+                  return { x, y, pass: isPassable(map, x, y), inCells: cellSet.has(i), obj: map.tiles[i]?.objectId ?? null };
+                }),
+                passCells: cand.cells.filter((c) => isPassable(map, c.x, c.y)).length,
+              });
+            }
+            for (const id of walls) detachObject(map, id);
+            for (const i of shellIndexSet(map, cand)) pocketBlocked.add(i);
+            continue;
+          }
+          shell = cand;
+          comps = compsAfter;
+          // ③ 占格登记：墙 + 内部 + 入口全进 `taken`
+          //    ⇒ 后面的障碍/野怪/宝箱/矿都绕开这块，G2「块内恰好 1 件」不靠补丁成立。
+          for (const i of shellIndexSet(map, cand)) {
+            pocketBlocked.add(i);
+            taken.add(i);
+          }
+          // 入口守卫：只管开门，**不背 guard**（见 ① ）
+          placer.add({
+            kind: 'wanderingMonster', pos: cand.gate,
+            payload: {
+              army: monsterArmy(pocketRng, band.guard, diff.monsterMul),
+              tier: band.guard,
+              pocket: tier,
+              pocketDist: cand.dist,
+            },
+            once: true, blocking: false, visitedBy: [],
+          });
+          // 口袋内部：恰好 1 件奖励
+          const reward = rollPocketReward(tier, pocketRng, usedBoosts);
+          const at = deepestCell(cand, (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y));
+          if (reward.kind === 'mine') addMine(at, reward.resource, tier);
+          else if (reward.kind === 'statBoost') {
+            usedBoosts.add(reward.boostId);
+            placer.add({
+              kind: 'statBoost', pos: at, payload: { boostId: reward.boostId, pocket: tier },
+              once: false, blocking: false, visitedBy: [],
+            });
+          } else if (reward.kind === 'vault') addPocketVault(at, reward.tier, pocketRng, tier);
+          else {
+            placer.add({
+              kind: 'artifact', pos: at,
+              payload: { artifactId: pick(pocketRng, Object.keys(ARTIFACTS)), pocket: tier },
+              once: true, blocking: false, visitedBy: [],
+            });
+          }
+        }
+      }
+      if (shell) placedDist[tier] = shell.dist;
+      if (POCKET_DEBUG) {
+        console.error(
+          '[pocket]', cfg.layout, cfg.size, seed, tier,
+          shell ? `ok@${shell.dist}` : 'MISS', cap == null ? '' : `cap<=${cap}`, trace,
+        );
+      }
+    }
+  }
+
   // 4. 障碍物（先放，之后只在仍连通的格子上放可交互物）
   const reserved = [
     ...homeSpots.map((p) => idx(map, p.x, p.y)),
@@ -951,9 +1288,6 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
     return null;
   };
 
-  /** 到最近一座主城的距离，用来给野怪分档：每个阵营身边都该有自己的新手区。 */
-  const dNearestHome = (p: GridPos) =>
-    Math.min(...homeSpots.map((hp) => Math.abs(hp.x - p.x) + Math.abs(hp.y - p.y)));
 
   /**
    * "深处"的度量。旷野/双子岛/三路走廊都是"离所有主城都远"，
@@ -1025,18 +1359,6 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
       return p;
     }
     return null;
-  };
-
-  const addMine = (p: GridPos, resource: ResourceKind): void => {
-    placer.add({
-      kind: 'mine',
-      pos: p,
-      // 独立矿场开局归"中立"：谁先走到就是谁的，和 HOMM 一致
-      payload: { resource, perDay: MINE_PER_DAY[resource], owner: 'neutral' as const },
-      once: false,
-      blocking: false,
-      visitedBy: [],
-    });
   };
 
   // 1) **每座城**（含中立城）保底一座锯木场 + 一座采石场，摆在 3~7 格外。
@@ -1188,7 +1510,9 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
         const y = target.y + dy;
         if (!walkable(x, y)) continue;
         const cell = idx(map, x, y);
-        if (map.tiles[cell].objectId || reach[cell] !== 1) continue;
+        // `taken` 里有口袋占的格：口袋里只许有那 1 件奖励（G2），
+        // 隘口守卫若落在里面就是第二只怪 / 第二份收益（实测 wild small 撞过）。
+        if (map.tiles[cell].objectId || taken.has(cell) || reach[cell] !== 1) continue;
         // 守卫必须比它守的东西更靠近主城，这样才是"进谷口先挨一仗"
         if (dNearestHome({ x, y }) >= targetD) continue;
         // 距家下限：强档守卫与任何玩家起点（英雄出生点）至少隔一天路程（0 = 不约束）。

@@ -26,6 +26,7 @@ import { canMeet, friendlyHeroAt, totalCount } from './core/game/exchange.js';
 import { backpackOf, equippedOf } from './core/game/equip.js';
 import { castAdventure, canAdventureCast, type AdventureTarget } from './core/game/spells.js';
 import { getSpell } from './core/data/spells.js';
+import { STAT_BOOSTS } from './core/data/statBoosts.js';
 import { effectivePrimary, manaMaxOf, maxMovePoints } from './core/game/hero.js';
 import type { BattleOutcome } from './core/combat/battle.js';
 import { LAYOUTS } from './core/data/layouts.js';
@@ -2254,6 +2255,12 @@ function objectLabel(obj: MapObject): string {
       const p = obj.payload as MinePayload;
       return `${RESOURCE_TEXT[p.resource] ?? p.resource}矿 · 每日 +${p.perDay}`;
     }
+    case 'vault':
+      return '宝库（重兵把守）';
+    case 'statBoost': {
+      const def = STAT_BOOSTS[(obj.payload as { boostId: string }).boostId];
+      return def ? `${def.name} · ${def.effect}` : '属性祭坛';
+    }
     case 'town':
       return state.towns[(obj.payload as { townId: string }).townId]?.name ?? '城镇';
     default:
@@ -2297,6 +2304,14 @@ function describeObject(obj: MapObject): string {
     case 'mine': {
       const p = obj.payload as MinePayload;
       return `一座${RESOURCE_TEXT[p.resource] ?? p.resource}矿，每日产出 +${p.perDay}。`;
+    }
+    case 'vault':
+      return '一座堆满财物的宝库，守军不弱 —— 打赢才拿得到。';
+    case 'statBoost': {
+      const def = STAT_BOOSTS[(obj.payload as { boostId: string }).boostId];
+      if (!def) return '一座看不懂的祭坛。';
+      const gate = def.requireLevel ? `需 ${def.requireLevel} 级` : def.cost?.gold ? `学费 ${def.cost.gold} 金` : '';
+      return `${def.effect}${gate ? `（${gate}）` : ''}。每位英雄一次。`;
     }
     case 'town':
       return '一处据点，占领后可以建设与征兵。';
@@ -2554,6 +2569,16 @@ if (bootParams.has('devquick')) {
     ...(lyt && lyt in LAYOUTS ? { layout: lyt as GameConfig['layout'] } : {}),
     opponents: Number.isFinite(n) ? Math.max(0, Math.min(3, n)) : 1,
     seed: Number.parseInt(bootParams.get('devseed') ?? '', 10) || loadConfig()?.seed || Math.floor(Math.random() * 1e9),
+    /**
+     * 夹具变量：`?devpockets=0` 关掉封闭宝地。
+     *
+     * 路径/接地影这类**像素**探针钉死了 seed，量的是"这一层画得对不对"，不是地图内容。
+     * P0 往同一颗 seed 的图里加了 3 块口袋的墙/守卫/奖励 ⇒ 代价场、落点地形全变，
+     * `offClean` / `pathday` 的夹具随之失效（阈值一字没动，红的是"没有可测的场景"）。
+     * 与 `?devlight=` / `?devflowphase=` 同一套规矩：**钉住未受控变量，不放宽阈值**。
+     * 不传 ⇒ 正常对局（宝地开）。
+     */
+    ...(bootParams.get('devpockets') === '0' ? { pockets: false } : {}),
   });
 } else if (!bootParams.has('devshowcase') && !devScenario) {
   /* ★ 首次启动**直接进教学模式**（用户 2026-10-12 裁定：「第一次进入直接进入教学场景，

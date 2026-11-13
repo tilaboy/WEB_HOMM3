@@ -70,7 +70,13 @@ const EXTRA = opt('extra', '');
 const FLOW_PIN = EXTRA || '&devflowphase=0.5';
 const BASE =
   `http://127.0.0.1:${PORT}/index.html?devquick=1&devreveal=1&devprobe=1&devbandstats=1` +
-  `&devreachprobe=1&devseed=${SEED}&devlight=${LIGHT}${FLOW_PIN}`;
+  `&devreachprobe=1&devseed=${SEED}&devlight=${LIGHT}${FLOW_PIN}` +
+  /* ★ 钉死"地图内容"这个未受控变量（2026-11-13 / P0）：封闭宝地会往同一颗 seed 的图里
+   *   加 3 圈墙 + 守卫 + 奖励，代价场随之改变 ⇒ `mp=200` 的默认臂从"今天 2 格 / 明天 2 格"
+   *   变成"今天 0 格 / 明天 0 格"，判据没量到对象就红。本门量的是**路径层的画法**，
+   *   不是地图生成；其余臂（满移动力 / 跨三天 / 边缘指示）在宝地开着时照样全过，
+   *   也印证了"红的是夹具、不是渲染"。阈值与判据一字未动。 */
+  `&devpockets=0`;
 
 const rows = [];
 const check = (id, label, ok, detail) => {

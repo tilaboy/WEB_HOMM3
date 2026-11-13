@@ -71,6 +71,15 @@ export interface GameConfig {
    * `VERSION` 不动（§1.3 #6，与 difficulty 那次同一判断）。
    */
   scenario?: string;
+  /**
+   * 是否生成**封闭宝地**（§18）。缺省 = 自由对局开、场景关
+   * （生成器里是 `gen?.pockets ?? cfg.pockets ?? !cfg.scenario`）。
+   *
+   * 这个字段存在的唯一理由是**负向对照**：`pockets:false` 必须让地图上
+   * `payload.pocket` 的物件回到 0，否则"口袋真的生效了"无法证明。
+   * 同样只在显式传入时写进 config（老对局没有这个键）。
+   */
+  pockets?: boolean;
 }
 
 export const MAP_SIZES: Record<MapSize, { width: number; height: number; name: string }> = {
@@ -275,7 +284,9 @@ export type MapObjectKind =
   | 'town'
   | 'mine'
   | 'vault'
-  | 'obstacle';
+  | 'obstacle'
+  /** §21.8 / P0：地图上的永久加属性物件（每英雄一次） */
+  | 'statBoost';
 
 export interface ResourcePilePayload {
   resource: ResourceKind;
@@ -309,9 +320,20 @@ export interface MonsterPayload {
   outbreak?: boolean;
   /** 第几周爆发的（只用于日志/调试，不参与判定）。 */
   outbreakWeek?: number;
+  /** P0：口袋入口守卫（值 = 该口袋的成长档）；普通野怪不带。 */
+  pocket?: PocketTier;
+  /**
+   * P0：这块口袋**实际**落在距最近主城多少格。
+   *
+   * 规格的 D1/D2/D3 是 6~9 / 10~15 / 16+，但小图（24×24 四家）全图最远的空格只有
+   * 14~16 格 ⇒ 深档只能退到"这张图能给的最深处"。探针靠这个字段把**真实深度**
+   * 打出来，避免"闸绿了但其实没有深档"。
+   */
+  pocketDist?: number;
 }
 export interface ArtifactPayload {
   artifactId: string;
+  pocket?: PocketTier;
 }
 export interface TownPayload {
   townId: string;
@@ -324,6 +346,7 @@ export interface MinePayload {
   resource: ResourceKind;
   perDay: number;
   owner: PlayerId;
+  pocket?: PocketTier;
 }
 /**
  * 宝库区：一群重兵守着的金库，打赢才拿得到，拿完就没了（once）。
@@ -333,6 +356,17 @@ export interface VaultPayload {
   army: Army;
   tier: 'mid' | 'strong';
   reward: { gold: number; resources: ResourceBag; artifactId?: string };
+  pocket?: PocketTier;
+}
+/** §18.3 口袋成长阶梯（D1 近 / D2 中 / D3 深）。 */
+export type PocketTier = 'D1' | 'D2' | 'D3';
+
+/** §21.8 / P0：永久加属性物件。只存 `boostId` —— 效果、代价、门槛全在
+ * `data/statBoosts.ts` 一张表里（生成期就定死，读档不会重抽，§18.3 第 5 条）。
+ * `pocket` 只是**产地标记**（供探针/调试判断"这件是不是口袋奖励"），不参与结算。 */
+export interface StatBoostPayload {
+  boostId: string;
+  pocket?: PocketTier;
 }
 export type ObjectPayload =
   | ResourcePilePayload
@@ -344,6 +378,7 @@ export type ObjectPayload =
   | ArtifactPayload
   | MinePayload
   | VaultPayload
+  | StatBoostPayload
   | null;
 
 export interface MapObject {
@@ -365,7 +400,14 @@ export interface MapObject {
   payload: ObjectPayload;
   once: boolean;
   blocking: boolean;
-  visitedBy: PlayerId[];
+  /**
+   * 谁来过了。**两种口径并存，按物件类型各自解释**：
+   *   · 清泉等"每玩家一次" ⇒ 存 `PlayerId`；
+   *   · `statBoost`（§21.8）"每英雄一次" ⇒ 存 `Hero.id`。
+   * 二者不会混在同一个物件上，所以放宽成 `string[]` 不会串味；
+   * 存 hero.id 是必须的 —— 只看 owner 的话，同一玩家的第二个英雄就领不到了。
+   */
+  visitedBy: string[];
 }
 
 export interface Tile {

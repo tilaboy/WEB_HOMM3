@@ -111,7 +111,7 @@ const CLEAR = 2;
  * 且多个 `fits` 锚点（如"路边有障碍物"）**依赖**附近有障碍物。把障碍纳入净距 = 自相矛盾。
  */
 const TARGET_KINDS: readonly MapObjectKind[] = [
-  'resourcePile', 'treasureChest', 'artifact', 'fountain', 'town', 'mine', 'vault',
+  'resourcePile', 'treasureChest', 'artifact', 'fountain', 'town', 'mine', 'vault', 'statBoost',
 ];
 
 /* ---------------------------------------------------------------- 道具绘制 */

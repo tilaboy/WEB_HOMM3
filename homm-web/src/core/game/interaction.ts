@@ -8,9 +8,11 @@ import type {
   MinePayload,
   PlayerId,
   ResourceBag,
+  StatBoostPayload,
   VaultPayload,
 } from '../types.js';
 import { ARTIFACTS } from '../data/artifacts.js';
+import { STAT_BOOSTS } from '../data/statBoosts.js';
 import { MINE_NAME } from '../data/mines.js';
 import { getUnit } from '../data/units.js';
 import { factionName } from '../data/factions.js';
@@ -20,7 +22,7 @@ import type { BattleOutcome, BattleSide } from '../combat/battle.js';
 import { wallLevelOf } from '../combat/siege.js';
 import { WAR_MACHINES } from '../data/warmachines.js';
 import { deriveSeed } from '../rng.js';
-import { addResources, effectivePrimary, gainExp, maxMovePoints } from './hero.js';
+import { addResources, effectivePrimary, expToNext, gainExp, maxMovePoints } from './hero.js';
 import { townDefenseBonus, captureTown } from './town.js';
 import { pushLog } from './log.js';
 
@@ -191,6 +193,30 @@ export function previewInteraction(state: GameState, heroId: string, objId: stri
       return {
         objId, kind: 'pickup', title: '清泉',
         message: '饮下清冽的泉水，今日移动力恢复一半。',
+      };
+    }
+    case 'statBoost': {
+      const p = obj.payload as StatBoostPayload;
+      const def = STAT_BOOSTS[p.boostId];
+      if (!def) return null;
+      // 每英雄一次：来过的英雄连框都不弹（图标照旧在，玩家自己记得）
+      if (obj.visitedBy.includes(heroId)) return null;
+      const lack: string[] = [];
+      if (def.requireLevel && hero.level < def.requireLevel) {
+        lack.push(`需要 ${def.requireLevel} 级（当前 ${hero.level} 级）`);
+      }
+      const gold = def.cost?.gold ?? 0;
+      if (gold > 0) {
+        const own = state.players[hero.owner]?.resources.gold ?? 0;
+        if (own < gold) lack.push(`需要 ${gold} 金（现有 ${own}）`);
+      }
+      return {
+        objId,
+        kind: 'pickup',
+        title: def.name,
+        message:
+          `${def.effect}。` +
+          (lack.length ? `\n${lack.join('；')}，现在还拿不到。` : '\n每位英雄只能领一次。'),
       };
     }
     case 'vault': {
@@ -481,6 +507,52 @@ export function applyInteraction(
       pushLog(state, `饮下泉水，移动力 +${gain}`);
       return { title: '清泉', message: `移动力 +${gain}。`, levelUps: [], heroDefeated: false };
     }
+    case 'statBoost': {
+      const p = obj.payload as StatBoostPayload;
+      const def = STAT_BOOSTS[p.boostId];
+      if (!def) return empty;
+      // 每英雄一次（§21.8）：第二次走上来什么都不发生，物件也**不移除**
+      if (obj.visitedBy.includes(hero.id)) {
+        return { title: def.name, message: '这位英雄已经领过了。', levelUps: [], heroDefeated: false };
+      }
+      if (def.requireLevel && hero.level < def.requireLevel) {
+        return {
+          title: def.name,
+          message: `需要 ${def.requireLevel} 级才能领（当前 ${hero.level} 级）。`,
+          levelUps: [], heroDefeated: false,
+        };
+      }
+      const gold = def.cost?.gold ?? 0;
+      if (gold > 0) {
+        const bag = state.players[hero.owner]?.resources;
+        const own = bag?.gold ?? 0;
+        if (!bag || own < gold) {
+          return {
+            title: def.name,
+            message: `学费 ${gold} 金，现有 ${own}，付不起。`,
+            levelUps: [], heroDefeated: false,
+          };
+        }
+        bag.gold = own - gold;
+      }
+      const parts: string[] = [];
+      if (def.stats) {
+        for (const [k, v] of Object.entries(def.stats) as [keyof typeof hero.primary, number][]) {
+          hero.primary[k] += v;
+        }
+        parts.push(def.effect);
+      }
+      let levelUps: string[] = [];
+      if (def.levelUp) {
+        // 直接 +1 级：喂刚好够升级的经验，走现有升级路径（属性同样是掷出来的）
+        levelUps = gainExp(state, hero, Math.max(0, expToNext(hero.level) - hero.exp));
+        parts.push(`等级 +1（现 ${hero.level} 级）`);
+      }
+      obj.visitedBy.push(hero.id);
+      const text = `${def.name}：${parts.join('，')}${gold > 0 ? `（-${gold} 金）` : ''}`;
+      pushLog(state, `${hero.name} ${text}`);
+      return { title: def.name, message: text, levelUps, heroDefeated: false };
+    }
     default:
       return empty;
   }
@@ -599,6 +671,8 @@ export function pendingObjectAt(state: GameState, heroId: string): MapObject | n
   if (!obj) return null;
   if (obj.blocking) return null;
   if (obj.kind === 'fountain' && obj.visitedBy.includes(hero.owner)) return null;
+  // §21.8：属性物件每英雄一次 —— 来过的英雄不再弹框（物件本身不消失）
+  if (obj.kind === 'statBoost' && obj.visitedBy.includes(hero.id)) return null;
   // 自家矿场只是地标，不必每次路过都弹窗
   if (obj.kind === 'mine' && (obj.payload as MinePayload).owner === hero.owner) return null;
   return obj;

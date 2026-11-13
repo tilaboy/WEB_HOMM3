@@ -405,9 +405,13 @@ HEAD('C. 负向对照（把阈值改坏必须立刻红）');
 
 // C1：红线阈值放开 ⇒ 候选里出现 lost > 40
 {
-  // ring large / seed 20261112：这张图有 5 个"切得断、但口袋里没有城"的大切断，
+  // ring huge / seed 20261112：这张图有 8 个"切得断、但口袋里没有城"的大切断
+  // （strict 85 个候选里 lost>40 为 0，放开 maxLost ⇒ 93 个里有 8 个越界，最大 84），
   // 正好能把 `lost ≤ 40` 这条线单独拎出来验（wild 图上根本不存在大切断）。
-  const st = createGame({ seed: 20261112, layout: 'ring', size: 'large', opponents: 3 });
+  // ★ 2026-11-13：原来用的是 ring **large**，P0 封闭宝地的墙把那张图的大切断抹平了
+  //   （`maxLost=∞` 时最大 lost 只有 38 ⇒ 负向对照**没有对象可量**，恒 0 不是门）。
+  //   重新扫 4 布局 × 4 尺寸 × 12 种子，挑出越界候选最多的一张；判据与阈值一字未动。
+  const st = createGame({ seed: 20261112, layout: 'ring', size: 'huge', opponents: 3 });
   st.day = 15;
   // 两臂只差 `maxLost` 这一项（距离档固定在同一档，否则量到的是别的过滤器）。
   const strict = O.outbreakCandidates(st, { minHomeCost: 900 });

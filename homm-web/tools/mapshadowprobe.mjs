@@ -78,8 +78,11 @@ async function measure(send, evaluate) {
     /* 钉种子（2026-10-27）：`offClean` 是**地形敏感**判据 —— "关影时脚边与影外持平"
        要求那一格地形本身明度接近。随机图偶尔抽到"英雄站在路/草地上、影外正好是暗沼泽"，
        差值就到 16，判据假红（本轮真发生过一次，重跑又绿）。
-       钉死 seed ⇒ 同一张图、可复现；这不是放宽阈值（阈值仍 12），是把变量去掉。 */
-    url: `${base}?devquick=1&devreveal=1&devprobe=1&devshadowprobe=1&devshadowstats=1&devseed=20260913`,
+       钉死 seed ⇒ 同一张图、可复现；这不是放宽阈值（阈值仍 12），是把变量去掉。
+       ★ 2026-11-13 再加一个 `devpockets=0`：P0 的口袋墙/物件会换掉这一格的地形，
+       关影时的脚边差值从 7.9 跳到 13.2 ⇒ `offClean` 假红。`grounded`（开影净效果 -19.3）
+       在两臂都过，说明影本身没坏，坏的是"这张图"；本门量的是影层，钉住地图即可。 */
+    url: `${base}?devquick=1&devreveal=1&devprobe=1&devshadowprobe=1&devshadowstats=1&devseed=20260913&devpockets=0`,
   });
 
   // 等相机停稳：初始会有一段缩放缓动，量到中途的画面会让两次取样对不上。

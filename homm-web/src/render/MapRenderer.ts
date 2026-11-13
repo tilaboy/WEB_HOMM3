@@ -1,5 +1,6 @@
 import type { GameState, GridPos, MapObject, PlayerId } from '../core/types.js';
 import { factionColor } from '../core/data/factions.js';
+import { STAT_BOOSTS } from '../core/data/statBoosts.js';
 import { computeVisible, isRevealed } from '../core/map/fog.js';
 import { drawAnchor, footprintOf, idx } from '../core/map/grid.js';
 import { Camera } from './camera.js';
@@ -112,6 +113,11 @@ function objSprite(state: GameState, obj: MapObject, hash: number): string | nul
       return 'fountain';
     case 'artifact':
       return 'artifact';
+    case 'statBoost': {
+      const def = STAT_BOOSTS[(obj.payload as { boostId: string }).boostId];
+      // 未知 id 宁可不出图（§13.4 ③「宁可缺不可错」），也别随便给一个台子
+      return def ? `stat_${def.iconStat}_${def.pips}` : null;
+    }
     default:
       return null;
   }
@@ -2418,10 +2424,26 @@ export class MapRenderer {
         }
         const sprite = objSprite(state, d.obj, hash2(d.x, d.y, 91));
         if (sprite) {
+          /**
+           * §21.8「每英雄一次」的**可见**那一半：当前英雄已经领过的属性物件压暗。
+           *
+           * 三条口径：
+           *   ① 按**当前选中的英雄**判断，不按"我方任意英雄"——物件对别的英雄仍然有效，
+           *      全灰会把"换个英雄还能拿"这件事直接说错；
+           *   ② 只压精灵（0.45），不动接地影与地面 ⇒ 读成"这件领过了"，不是"这里没东西"；
+           *   ③ 物件**不移除**（`applyInteraction` 也不移除）——所以必须有这个视觉差，
+           *      否则玩家会一直走上去看同一句"已经领过了"。
+           */
+          const spent =
+            d.obj.kind === 'statBoost' &&
+            vm.selectedHeroId != null &&
+            d.obj.visitedBy.includes(vm.selectedHeroId);
           // 接地影先落笔、精灵后盖 ⇒ 只留脚下那一圈，不在半空留黑饼（见 drawContactShadow）。
           const bb = this.silBBoxAt(sprite, d.x, d.y);
           if (bb) this.drawContactShadow(bb);
+          if (spent) ctx.globalAlpha = 0.45;
           this.blit(sprite, d.x, d.y);
+          if (spent) ctx.globalAlpha = 1;
           // §19.3.4 C3：爆发怪 = 普通野怪图标 + 6×6 红角标（不改图集）。
           // 分不出"能绕的"和"挡路的"，玩家会以为所有野怪都必须打、全程绕路。
           if (isOutbreakObject(d.obj)) {

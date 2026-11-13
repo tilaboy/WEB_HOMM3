@@ -31,8 +31,8 @@
  */
 
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { distDir, printHeader } from './_dist.mjs';
@@ -95,11 +95,42 @@ if (!existsSync(DIST)) {
 const NO_CAP = process.argv.includes('--no-cap');
 console.log(NO_CAP ? '▶ 跳过 npx cap sync android（--no-cap，已由外部镜像）' : '▶ npx cap sync android');
 if (!NO_CAP) {
-  try {
-    execFileSync('npx', ['cap', 'sync', 'android'], { cwd: ROOT, stdio: 'inherit' });
-  } catch {
-    console.error('✗ cap sync 失败');
+  const r = spawnSync('npx', ['cap', 'sync', 'android'], { cwd: ROOT, encoding: 'utf8' });
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  const out = `${r.stdout ?? ''}\n${r.stderr ?? ''}`;
+  /**
+   * ⚠ `cap sync` 会把 copy 的失败**吞掉**：控制台打了 `copy android - failed!`，
+   *   末尾照样 `Sync finished` 且 **exit 0**。只看 `status` 会一路绿灯跑到下面的比对，
+   *   然后才发现 assets 还是旧的 —— 所以下面判的是**输出里的失败标记**，不是退出码。
+   */
+  const blocked = /SAFE_DELETE_BULK_CONFIRM_REQUIRED/.test(out);
+  const copyFailed = /Copying web assets .* - failed!/i.test(out) || /copy android - failed!/i.test(out);
+  if (r.status !== 0 && !blocked) {
+    console.error('✗ cap sync 失败（不是环境删除保护，不兜底）');
     process.exit(1);
+  }
+  if (blocked || copyFailed) {
+    /**
+     * ★ 2026-11-13：`cap copy` 是 `rm -rf assets/public` 再整目录复制。本机 node 带
+     *   safe-delete shim，**一次删 189 个文件 > 阈值 50** 直接抛
+     *   `SAFE_DELETE_BULK_CONFIRM_REQUIRED` ⇒ 同步失败、assets 留着上一批副本，
+     *   而闸门本身是好的（缺 6 / 差 14 全部点名）。
+     *   兜底 = **不删除**的逐文件镜像：`dist/` 里每个文件覆盖进 assets，
+     *   Capacitor 自己注入的 `cordova*.js` 原样留着。下面 2) 3) 的逐文件 md5 + 标记
+     *   断言一字不放松 ⇒ 镜像漏一个文件照样红。别的 copy 失败也会走镜像，不是静默放过。
+     */
+    console.warn('⚠ cap copy 失败（环境批量删除保护 / 复制中断）⇒ 改用「不删除」的逐文件镜像；断言不放松。');
+    const mirror = (src, dst) => {
+      mkdirSync(dst, { recursive: true });
+      for (const e of readdirSync(src, { withFileTypes: true })) {
+        const a = path.join(src, e.name);
+        const b = path.join(dst, e.name);
+        if (e.isDirectory()) mirror(a, b);
+        else if (e.isFile()) copyFileSync(a, b);
+      }
+    };
+    mirror(DIST, ASSETS);
   }
 }
 

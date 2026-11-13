@@ -82,6 +82,7 @@
 | `probe:castbeat` | `probes/castbeat.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` + 自带 server | — | **S4h 新增（2026-11-12）**。§11.2 施法时序 **16 条**：**[A0]–[A4]** 读 `ui/castTimeline.ts` 的 `castFrame()`（三段 180/420/200 = 800；边界 179/180、599/600、799/800；演出进度单调；NaN/越界钳住）/ **[A5] 负向对照**：压成一段的假实现在同一条判据上必红 / **[B0]–[B7] 真开一场战斗、真点施法**，读 `window.__castTrace`（`BattleScreen` 在跨段那一帧记 `{phase, at, ms}`）：顺序五段不跳、边界 show@180±25 / settle@600±25 / end≥800、**伤害与特效不抢跑**（`settled.at ≥595`、`fx.at ≥175`）、点一下后 ≤120ms 结束且**当帧就结算**（不跳过伤害）、演完 `cast`/`arrow` 清空、前摇采到描边与 `lunge`（抬手）。⚠️ 边界看 `at`（演出毫秒，已乘倍率），"点了多快结束"看 `ms`（墙钟）—— 两者不能混用 |
 | `probe:weekevent` | `probes/weekevent.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | **M6 · EV1 新增（2026-11-12）**。§19.2 周生长事件 **18 条**，**纯函数、不起 Chrome**：**[A]** 3,000 次分布 24.8/7.0/68.2%（判据 25/8/67 ±3pt）/ **[B]** 第 1~2 周恒平静（800 次 0 例外）/ **[C] 两臂对比**（同存档，一臂平静一臂带事件）：逐城逐兵的池子差必须**恰好** = `eventAdd × townMult × tierMult × dwellMult`、按档 5/3/2、异族同档恒 0、L2 兵营只加 `_u` / **[D]** 瘟疫 ×0.5（±1）且 p1 已招募部队逐字节未变 / **[E]** 接进 `endDay`（周号、当天公告、存档可读、同种子 28 天逐字节）/ **[F]** 旧签名与平静周逐位相同。⚠️ 同批给 AI 加了 **A5 单栈 60% 上限**（`capForStackShare`）：没有它，事件会把 seed 10104 的 T4 栈从 53% 推到 61%，`probe:aiscale` 的 A5 立刻红 |
 | `probe:outbreak` | `probes/outbreak.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | **M6 · EV2 新增（2026-11-12）**。§19.3 地图爆发 **28 条**，纯 Node：**[A]** 地形门槛（wild/ring × 4 尺寸，必经格 ≥8、小口袋门 ≥2）/ **[B0–B14] 直接调模块**（第 1~2 周不创建 `state.outbreak`；W3 预告 4 栈 @day17；落地 4 栈；**每个落点重算 `lost ∈ (0,40]`**、距英雄 ≥ 半天、口袋里无城；`lastDay` 闸；W4 只落 4、W5 判"路上已满"；三周累计 8；同种子逐字节；W6 不刷；角标 6×6 贴剪影右上）/ **[C] 三条负向对照**（`maxLost=∞` ⇒ ring large 出现 5 个 `lost>40`；`plan` 加 W6 ⇒ W6 落 6；`cap=∞` ⇒ 三周 15 栈）/ **[D]** 打掉 1 栈：金币 **+0**、格子恢复可通行、经验照发、其余栈原地不动 / **[E] 真 `endDay` 21 天**：W3 真的落 4 栈、日志有"过境"、存档 `live` 快照 = 实际 |
+| `probe:pockets` | `probes/pockets.mjs` | 门 | ✓ | ✓ | ✓ `requireFile` | — | **M6 · P0 新增（2026-11-12）**。§18 封闭宝地 + §21.8 属性物件，**纯 Node、不起 Chrome**（4 布局 × 4 尺寸 × 3 seed = 48 图；`SEEDS=5` ⇒ 80 图）：**[G1]** 每图 ≥3 块 / **[G4]** D1/D2/D3 各 1 块且深度单调（`payload.pocketDist`）/ **[G3]** 守卫就在入口格上 + **从奖励格洪水（禁走入口）水量 ∈ [8,20]** / **[G2]** 块内奖励恰好 1 件、来自本档池、无杂物件 / **[N1]** `pockets:false` ⇒ 0 件 / **[N3] 可执行的负向对照**：拆掉外圈一件障碍后同一把尺子必须 **>20**（80/80 全漏）/ **[G5]** 同图 `statBoost` 不重样 / **[G6]** 英雄出生格仍可通行（外圈曾把树种到英雄脚下，`audit:layout` 只报"某座城走不到"）/ **[H0–H6]** 9 种定义都在池里、领一次落实、每英雄一次、等级/金币两道闸。⚠️ 四条踩过的坑写进文件头：① 判据**不能**数「门边有几个 8~20 格小区域」（生成后放的障碍会圈出空壁龛 ⇒ `BAD(18/20/770)` 全是假红）；② 天然洞穴（外圈全是山/水）没有可拆的墙，N3 改试下一块而不是判红；③ 小图 `D3≥16` 落不下去 ⇒ 只断言单调、真实区间打印出来；④ **固定长满 20 格**会让 24×24 的 D1 全灭（`rimHasObject` 单档 133~137 次）⇒ 目标格数每次随机 8~20，且浅档 max 用深档**实测**深度封顶（否则 `D2 > D3`） |
 > ★ **表外**（不判过否）：`build`（`tsc` + `postbuild.mjs`）、`typecheck`、`start`/`serve.mjs`、`watch`、`dev`、`assets:mobile`、`mobile:sync`。
 
 ## 四、三条通用纪律
@@ -106,8 +107,27 @@
 | **`fs.rmSync` 在"第 50 次删除"上直接抛**（2026-11-12） | `probe:spellfx` 第一版把渲染页写进 `dist/__spellfx.html`、跑完 `rmSync`。**单独跑 4 次全绿**，一进全量顺序跑（排第 58 个门）就 4 秒 rc=1，堆栈是 `SAFE_DELETE_BULK_CONFIRM_REQUIRED` —— 本机 node 带 safe-delete shim，**同一 turn 累计 50 次批量删除**后要人工确认。前 57 个门早把额度用完了 | 探针**不落盘**：`createServer` 起一个内存路由（`/__spellfx.html` 从字符串返回，其余静态代发 `dist`）。**教训不是"重试"**：跑得越多越必炸，重试只是把炸点往后挪一个门。凡是要写临时文件的工具，先想能不能不写 |
 | **空白 canvas 也会「冻帧稳定」**（2026-11-12） | 全量顺序跑时 `audit:bandflip` 的 `?devtint=0` 臂抓到**整幅空白**（与默认臂逐块差 **8940 / 8940** = 全差）⇒ ⑥ 判红；同一份 dist 单独跑两次全绿 | 空白帧是**稳定**的 ⇒ 「连量两次逐块同」这条抓不到它。量块之前先等**像素真的有内容**（`DRAWN`：抽样 ≥8 个不同色），最多 5s，等
 | **「点没点成」和「没弹窗」读成同一个数**（2026-11-12） | `probe:dayflow` 单跑 3 次全绿，全量顺序跑时 `devreport` 臂读到 `模态=false · 标题「」`。根因两层：① `doEndDay` 开头 `if (isModalOpen() \|\| anim \|\| isBattleOpen()) return;` 会**静默吞掉点击**，而按钮并不 disabled；② 修好"点没点成"之后又踩到 `showAiDayReport()` 把收尾 hint 交给关闭回调 ⇒ **弹窗已经出来了，字幕仍停在前一天**，只认"字幕换天"就会把弹窗判成没弹 | 过天改成 `nextDay()`：点完**轮询完成信号**（① 字幕换天 **或** ②「对手动向」已弹），返回 `{ok, from, to, via, why}`；`ok=false` 时判据直接红并写明"这一天没过去"。读菜单前先 `clearModals()`（`openMenu()` 同样有 `isModalOpen()` 守卫，会被上一屏报告挡住）|不到就判「量不到」。**凡"冻帧稳定"类判据，都要配一条"帧里有东西"的前置** |
+| **`process.env` 写进浏览器模块**（2026-11-13 · M6 P0） | `generator.ts` 的排障分支 `if (process.env.POCKET_DEBUG)` 在浏览器里抛 `ReferenceError: process is not defined` ⇒ 建图中止。九道浏览器门一起红，且症状各不相同（"`?devexchange=1` 入口坏了" / "开始页未在 12s 内就绪" / "地图没起来" / `audit:tutorial` FAIL 5），看着像九个独立故障；纯 Node 门全绿 | **`src/` 里不许裸写 `process.env`**：统一收成模块常量 `const X_DEBUG = typeof process !== 'undefined' && !!process.env?.X_DEBUG`。抓法：`Page.addScriptToEvaluateOnNewDocument` 挂 `window.onerror` 再导航，一条栈就定位。浏览器门红了先**单独复跑**，别归因给并发 |
+| **跑门途中 `npm run build`**（2026-11-12/13） | 零打包器下 `build` 会整目录重写 `dist/`；全量顺序跑时 Chrome 手里的 bundle 中途换掉 ⇒ `audit:scenario` / `probe:castle` / `audit:tutorial` 等一片红，两次全量跑直接作废 | **开跑前 build 一次，跑到结束不再 build**。要改 `src` 就等这一轮跑完（或只跑纯 Node 门）；改完重跑全量 |
 
-> ★ 这几条与 §二 的「2 vs 1」是同一族病：**环境坏被读成代码坏**。区别只在于病因从"服务没起"扩到了"代理 / 缺命令 / 同步副作用 / 忘收尾 / 删除配额 / 空白帧"。
+> ★ 这几条与 §二 的「2 vs 1」是同一族病：**环境坏被读成代码坏**。区别只在于病因从"服务没起"扩到了"代理 / 缺命令 / 同步副作用 / 忘收尾 / 删除配额 / 空白帧 / 浏览器没有 process / 跑途中重建 dist"。
+
+### P0 之后新增的两条环境坑（2026-11-13）
+
+- **`cap sync` 吞掉失败并 `exit 0`**：控制台打了 `copy android - failed!`，末尾照样 `Sync finished`。
+  `androidsync.mjs` 现在认**输出里的** `SAFE_DELETE_BULK_CONFIRM_REQUIRED` / `Copying web assets … failed!`
+  （不看 status），命中就改用**不删除**的逐文件镜像，再跑同一套逐文件 md5 + 标记断言。
+  只看退出码 ⇒ 同步没发生、assets 留旧包，闸门会以"缺 6 / 差 14"报出来，但原因很难猜。
+- **新增地图要素会换掉固定 seed 的夹具**：P0 的口袋墙改了代价场/落点地形 ⇒
+  `probe:mapshadow` / `probe:pathday` / `probe:pathflow` 同时红，读数分别是
+  `offClean 13.2>12` / `今天 3 明天 0` / `明天翻转 0 枚` —— 全是**没量到对象**，不是渲染退化
+  （pathday 其余四臂在同一张开宝地的图上全过）。这三道是像素门，统一钉 `&devpockets=0`；
+  阈值、相位、判据一字未动。**钉住未受控变量，不放宽阈值**（同 `devflowphase=0.5`）。
+- **`probe:aiscale` A6 / `probe:outbreak` C1 都是"没有对象"**：前者 T5 落在野外英雄身上时
+  不存在"招募城"（`here=null` 记成 0 + 0）⇒ 判定集只收驻军局、空集判红、补脚本内负向对照；
+  后者口袋墙抹平了 `ring/large/20261112` 的大切断（`maxLost=∞` 也量不到 `lost>40`）⇒
+  重扫 4×4×12 张图换成 `ring/huge/20261112`（8 个越界、最大 84），阈值不动。
+  ★ 两处都遵守铁律 2：**「没有对象」与「有对象量不到」必须分开报**。
 
 ---
 

@@ -314,6 +314,32 @@ function artifact(pb: PixBuf): void {
   shadow(pb, 16, 29, 9, 2);
 }
 
+/**
+ * §21.8 属性物件：小石祠 + 一颗（+1）或两颗（+2）宝石。
+ *
+ * 为什么按"属性色 + 宝石颗数"编码，而不是画 9 张各不相同的图：
+ * 32×40 上真正能读出来的只有**颜色 + 数量**；9 个 H3 名字（营帐/塔/星轴/花园…）
+ * 缩到 32px 宽全是"一个台子顶个尖"，谁也认不出谁。玩家要判断的是"加什么、加多少"，
+ * 这两件事在色相和颗数上，恰好是 1 秒能读完的。
+ */
+function statShrine(pb: PixBuf, color: string, pips: number): void {
+  // 石台 + 柱身（左侧受光）
+  pb.ellipse(16, 38, 12, 4, '#7b7264');
+  pb.rect(9, 28, 14, 9, '#8f8678');
+  pb.poly([[11, 29], [12, 15], [20, 15], [21, 29]], '#a49a8c');
+  pb.poly([[11, 29], [12, 15], [16, 15], [16, 29]], '#b8ae9e');
+  pb.rect(8, 12, 16, 3, '#8a8076');
+  // 宝石：+1 一颗居中；+2 两颗并排
+  const xs = pips >= 2 ? [11, 21] : [16];
+  for (const cx of xs) {
+    pb.poly([[cx, 3], [cx + 4, 8], [cx, 13], [cx - 4, 8]], color);
+    pb.poly([[cx, 3], [cx + 4, 8], [cx, 13]], '#00000033');
+    pb.set(cx - 1, 6, '#ffffff', 0.85);
+  }
+  pb.outline(OUTLINE);
+  shadow(pb, 16, 39, 11, 2);
+}
+
 function resGold(pb: PixBuf): void {
   for (let i = 0; i < 22; i++) {
     const x = 6 + Math.floor(hash2(i, 3, 11) * 20);
@@ -1415,6 +1441,24 @@ export class Atlas {
     b = p(32, 44);
     vault(b);
     put('vault', b);
+
+    // §21.8 属性物件：只出**用得到**的 6 帧（不按 9 个名字出图，见 statShrine 注释）
+    const STAT_COLOR = {
+      attack: '#c0392b',
+      defense: '#2e6fb5',
+      spellPower: '#7b4fa8',
+      knowledge: '#c9a227',
+    } as const;
+    for (const [stat, pips] of [
+      ['attack', 1], ['attack', 2],
+      ['defense', 1],
+      ['spellPower', 1],
+      ['knowledge', 1], ['knowledge', 2],
+    ] as Array<[keyof typeof STAT_COLOR, number]>) {
+      b = p(32, 42);
+      statShrine(b, STAT_COLOR[stat], pips);
+      put(`stat_${stat}_${pips}`, b);
+    }
 
     for (const key of SPRITE_OWNERS) {
       const { roof } = ownerPalette(key);

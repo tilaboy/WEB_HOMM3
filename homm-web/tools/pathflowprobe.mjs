@@ -44,7 +44,10 @@ const MP = 200;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE =
   `http://127.0.0.1:${PORT}/index.html?devquick=1&devreveal=1&devprobe=1&devbandstats=1` +
-  `&devreachprobe=1&devseed=${SEED}&devlight=${LIGHT}`;
+  /* ★ 同 `pathdayprobe`：`flow-pixels` 需要一条**跨天**的路径才有"明天段"可量。
+   *   P0 的口袋墙改了同 seed 的代价场 ⇒ 明天段 0 枚采样 ⇒ 判据读到的是"没有对象"。
+   *   钉住地图内容，判据/阈值/相位一个字不动（`devflowphase` 仍由本门自己控）。 */
+  `&devreachprobe=1&devseed=${SEED}&devlight=${LIGHT}&devpockets=0`;
 
 const rows = [];
 const check = (id, label, ok, detail) => {
