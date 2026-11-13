@@ -55,6 +55,8 @@ import {
 import type { BuildStatus } from '../core/game/town.js';
 import { showModal } from './Dialogs.js';
 import { installResIcons, resIcon, type ResId } from './resicons.js';
+import { getAtlas } from '../render/atlas.js';
+import { guildArtName, guildArtTierOf } from '../render/guildArt.js';
 import { sfx } from './sfx.js';
 // TP-3：城镇场景曲（audio-direction.md §10.1 接线④）。开窗立即播；
 // 关窗回 map 由 main.ts 的场景巡更补（showModal 没有 onClose，见那边注释）。
@@ -252,7 +254,14 @@ function paintBuildings(
   // 浮层 `pointer-events:none`：不挡住下层按钮/卡片的点击。
   let descFor: HTMLElement | null = null;
   let descEl: HTMLElement | null = null;
-  const revealDesc = (card: HTMLElement, desc: string, trigger: HTMLElement): void => {
+  /**
+   * S5（§2.4 第三条链）：魔法行会的三阶外形只出现在**这张描述浮层**里。
+   *
+   * 为什么不在卡片上：P1 把建筑页定成 4 列 × 179px，并写明"卡宽仍放得下建造按钮
+   * 与最长状态行"。塞一张 44px 塔图要吃 52px ⇒ 实测「魔法…」被截断、"建造"折成两行。
+   * 浮层是 absolute、不参与布局 —— 与 D-70 当初为了描述选同一个容器。
+   */
+  const revealDesc = (card: HTMLElement, desc: string, trigger: HTMLElement, art = ''): void => {
     if (descFor === card) {
       descEl?.remove();
       descEl = null;
@@ -267,7 +276,16 @@ function paintBuildings(
     }
     descFor = card;
     trigger.setAttribute('aria-expanded', 'true');
-    descEl.textContent = desc;
+    descEl.innerHTML = '';
+    if (art) {
+      const fig = document.createElement('img');
+      fig.className = 'bdesc-art';
+      fig.src = art;
+      fig.alt = '';
+      fig.draggable = false;
+      descEl.append(fig);
+    }
+    descEl.append(document.createTextNode(desc));
     // 定位：紧贴该卡「首行（名 · 建造）」下方；再夹在 pane 可视区内（顶/底都别越界）。
     const pr = root.getBoundingClientRect();
     const brow = card.querySelector('.brow');
@@ -291,6 +309,7 @@ function paintBuildings(
     const card = document.createElement('div');
     card.className =
       'bcard' + (st.built ? ' built' : '') + (st.unlocked && (!st.built || st.canUpgrade) ? ' open' : '');
+
     const nm = document.createElement('div');
     nm.className = 'bn';
     // 等级只在 >1 时写出来：Lv.1 是常态，写在每张卡上是噪音（spec §2.4「只显示差价与效果差」）
@@ -300,7 +319,9 @@ function paintBuildings(
     nm.setAttribute('role', 'button');
     nm.setAttribute('tabindex', '0');
     nm.setAttribute('aria-expanded', 'false');
-    const onName = (): void => revealDesc(card, buildingDesc(town, id), nm);
+    const art =
+      def.feature === 'guild' ? getAtlas().url(guildArtName(town.owner, guildArtTierOf(id))) : '';
+    const onName = (): void => revealDesc(card, buildingDesc(town, id), nm, art);
     nm.addEventListener('click', onName);
     nm.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {

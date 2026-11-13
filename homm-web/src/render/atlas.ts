@@ -7,6 +7,7 @@
  */
 import { PixBuf, chamferRect, fbm, hash2, mix, pnoise, shade } from './pixel.js';
 import { NEUTRAL_ART_COLORS, UNIT_FRAMES, buildB0Frame, buildPortraitFrame } from './unitArt.js';
+import { buildGuildArt, guildArtName } from './guildArt.js';
 import { portraitOfCombatFrame } from './unitFrames.js';
 import { FACTIONS, NEUTRAL_COLOR, NEUTRAL_DARK } from '../core/data/factions.js';
 
@@ -1468,6 +1469,9 @@ export class Atlas {
         // 2×2 城堡：往上、往左右各借一点边界，落点对齐见 render/MapRenderer
         put(`castle_${key}_${t}`, buildCastleFrame(key, t), CASTLE_AX, CASTLE_AY);
       }
+      /* S5（§2.4 第三条链）：魔法行会三阶外形，只给城镇面板的行会卡用。
+         44×44 与地图的 town_/castle_ 两套帧无关 —— 别互相借帧。 */
+      for (let t = 1; t <= 3; t++) put(guildArtName(key, t), buildGuildArt(key, t));
       b = p(32, 44);
       hero(b, roof);
       put(`hero_${key}`, b);

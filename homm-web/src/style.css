@@ -1158,6 +1158,17 @@ table.est td:last-child {
   border-color: rgba(111, 174, 85, 0.35);
 }
 
+/* S5：行会三阶外形（魔法链）—— 画在**描述浮层**里，不占卡片版面。
+ * 卡片是 4 列 × 179px（P1 定死），44px 图会把建筑名截成「魔法…」、
+ * 把建造按钮挤成两行；浮层是 absolute，加图不动任何布局。 */
+.bdesc-art {
+  float: left;
+  width: 44px;
+  height: 44px;
+  margin: 0 8px 2px 0;
+  image-rendering: pixelated;
+}
+
 .bcard.open {
   border-color: var(--line);
 }
