@@ -57,6 +57,7 @@ import { showModal } from './Dialogs.js';
 import { installResIcons, resIcon, type ResId } from './resicons.js';
 import { getAtlas } from '../render/atlas.js';
 import { guildArtName, guildArtTierOf } from '../render/guildArt.js';
+import { buildingArtName } from '../render/buildingArt.js';
 import { sfx } from './sfx.js';
 // TP-3：城镇场景曲（audio-direction.md §10.1 接线④）。开窗立即播；
 // 关窗回 map 由 main.ts 的场景巡更补（showModal 没有 onClose，见那边注释）。
@@ -285,7 +286,10 @@ function paintBuildings(
       fig.draggable = false;
       descEl.append(fig);
     }
-    descEl.append(document.createTextNode(desc));
+    const txt = document.createElement('span');
+    txt.className = 'bdesc-txt';
+    txt.textContent = desc;
+    descEl.append(txt);
     // 定位：紧贴该卡「首行（名 · 建造）」下方；再夹在 pane 可视区内（顶/底都别越界）。
     const pr = root.getBoundingClientRect();
     const brow = card.querySelector('.brow');
@@ -319,9 +323,17 @@ function paintBuildings(
     nm.setAttribute('role', 'button');
     nm.setAttribute('tabindex', '0');
     nm.setAttribute('aria-expanded', 'false');
-    const art =
-      def.feature === 'guild' ? getAtlas().url(guildArtName(town.owner, guildArtTierOf(id))) : '';
-    const onName = (): void => revealDesc(card, buildingDesc(town, id), nm, art);
+    /* 建筑外观（M5 · B1）：16 座各有一张 44×44。
+       卡片首行放 **28px** 缩略（`.bcard-art`），描述浮层放 **44px** 原图（`.bdesc-art`）。
+       两处是同一个 URL：图集里只有一份 44×44。
+       28 是**量出来的**：179px 卡宽下 16 张 0 截断、卡高仍 66px；
+       DPR≥2 时 28 CSS = 56 设备像素（放大，最近邻，个别源像素重复一次，实拍清楚）；
+       DPR=1 是缩小 44→28，农舍篱笆与射箭场靶会糊 ⇒ 已记成欠账（见批次文档 §2.1）。 */
+    const artUrl =
+      def.feature === 'guild'
+        ? getAtlas().url(guildArtName(town.owner, guildArtTierOf(id)))
+        : getAtlas().url(buildingArtName(town.owner, id));
+    const onName = (): void => revealDesc(card, buildingDesc(town, id), nm, artUrl);
     nm.addEventListener('click', onName);
     nm.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -331,7 +343,13 @@ function paintBuildings(
     });
     const brow = document.createElement('div');
     brow.className = 'brow';
-    brow.appendChild(nm);
+    const ico = document.createElement('img');
+    ico.className = 'bcard-art';
+    ico.src = artUrl;
+    ico.alt = '';
+    ico.draggable = false;
+    ico.setAttribute('aria-hidden', 'true');
+    brow.append(ico, nm);
     card.append(brow, buildStateLine(st));
     if (st.level === 0 && st.unlocked) {
       const ready = st.affordable && !st.spentToday;

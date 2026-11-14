@@ -1158,15 +1158,46 @@ table.est td:last-child {
   border-color: rgba(111, 174, 85, 0.35);
 }
 
-/* S5：行会三阶外形（魔法链）—— 画在**描述浮层**里，不占卡片版面。
- * 卡片是 4 列 × 179px（P1 定死），44px 图会把建筑名截成「魔法…」、
- * 把建造按钮挤成两行；浮层是 absolute，加图不动任何布局。 */
+/* M5 · B1：卡片首行的 28px 建筑缩略图。
+ * 为什么不是 44：44px 会把建筑名挤成「魔法…」、把建造按钮挤成两行（S5 实拍）。
+ * 28 是量出来的落点：792×320 的 4 列布局下 16 张卡 **0 截断**（含「高级魔法行会」），
+ * 卡高仍 66px（与加图前逐像素相同）。读数见 production/b1-building-art-2026-11-13.md §2。
+ * 负 margin 把 `.brow` 的 6px gap 吃到 2px —— 图标和名字是一组，不该有按钮级间距。 */
+.bcard-art {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  margin-right: -4px;
+  image-rendering: pixelated;
+}
+
+/* 图标进 `.brow` 之后首行变成 3 个子项，`space-between` 会把建筑名推到正中间
+ * （实拍：图标在左、名字悬空在中间、按钮在右）。名字吃掉右侧余量，三件才靠左成组。 */
+.bcard .bn {
+  margin-right: auto;
+}
+
+/* 矮横屏 + 窄屏（640×320 / 568×320 一类）：4 列下卡内只剩 ~120px，
+ * 名字(60) + 间距(6) + 建造(44) 已经用掉 110px —— 连 22px 图标都会把「魔法行会」截掉
+ * （实测 640×320 trunc 1 · 568×320 trunc 2）。这些机器上**不画卡面图标**，图仍在描述浮层里（浮层是整宽，不吃卡片宽度）。 */
+@media (orientation: landscape) and (max-height: 340px) and (max-width: 740px) {
+  .bcard-art {
+    display: none;
+  }
+}
+
+/* S5/B1：建筑原图进**描述浮层**（44px）。浮层是 absolute、不参与卡片布局。
+ * 用 flex 而不是 float：浮层常常只有一行字，float 会让图挂在文字下方、
+ * 文字贴顶（实拍像"图掉出来了"）。flex + align-items:center 让两者同一中线。 */
 .bdesc-art {
-  float: left;
+  flex: 0 0 auto;
   width: 44px;
   height: 44px;
-  margin: 0 8px 2px 0;
   image-rendering: pixelated;
+}
+
+.bdesc-txt {
+  flex: 1 1 auto;
 }
 
 .bcard.open {
@@ -1205,6 +1236,10 @@ table.est td:last-child {
   line-height: 1.5;
   color: var(--text);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+  /* 图 + 文的排布（见 `.bdesc-art`）；没有图时 flex 退化成单块，等同原来的 block。 */
+  display: flex;
+  align-items: center;
+  gap: 8px;
   /* 不挡下层：按钮/其它卡片照常可点，不因浮层多一步。 */
   pointer-events: none;
 }

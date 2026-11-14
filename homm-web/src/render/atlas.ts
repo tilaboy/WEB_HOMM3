@@ -8,6 +8,7 @@
 import { PixBuf, chamferRect, fbm, hash2, mix, pnoise, shade } from './pixel.js';
 import { NEUTRAL_ART_COLORS, UNIT_FRAMES, buildB0Frame, buildPortraitFrame } from './unitArt.js';
 import { buildGuildArt, guildArtName } from './guildArt.js';
+import { BUILDING_ART_IDS, buildBuildingArt, buildingArtName } from './buildingArt.js';
 import { portraitOfCombatFrame } from './unitFrames.js';
 import { FACTIONS, NEUTRAL_COLOR, NEUTRAL_DARK } from '../core/data/factions.js';
 
@@ -1472,6 +1473,9 @@ export class Atlas {
       /* S5（§2.4 第三条链）：魔法行会三阶外形，只给城镇面板的行会卡用。
          44×44 与地图的 town_/castle_ 两套帧无关 —— 别互相借帧。 */
       for (let t = 1; t <= 3; t++) put(guildArtName(key, t), buildGuildArt(key, t));
+      /* B1（M5）：其余 13 座建筑的城镇外观，同样 44×44、同样只进描述浮层。
+         与 guild 分开注册是因为行会那三帧有自己的闸门与读数（S5），别在同一批里改。 */
+      for (const id of BUILDING_ART_IDS) put(buildingArtName(key, id), buildBuildingArt(key, id));
       b = p(32, 44);
       hero(b, roof);
       put(`hero_${key}`, b);

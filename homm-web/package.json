@@ -79,7 +79,8 @@
     "probe:heroskills": "node tools/probes/heroskills.mjs",
     "probe:wallgate": "node tools/probes/wallgate.mjs --gate",
     "probe:t5lag": "node tools/probes/t5lag.mjs --gate",
-    "probe:guildart": "node tools/probes/guildart.mjs --gate --negctrl"
+    "probe:guildart": "node tools/probes/guildart.mjs --gate --negctrl",
+    "probe:buildingart": "node tools/probes/buildingart.mjs --gate --negctrl"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",

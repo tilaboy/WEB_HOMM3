@@ -51,10 +51,17 @@ const PALETTES: Record<SpriteOwner, GuildPalette> = {
     roof: '#3f6fd0', roofDark: '#27467f', wood: '#7d5a34', woodDark: '#4e351d',
     glow: '#9fc0ff',
   },
-  /* 熔岩黑铁：黑曜石墙 + 暗红铁顶 + 余烬。 */
+  /* 熔岩黑铁：黑曜石墙 + 暗红铁顶 + 余烬。
+   *
+   * 2026-11-13（B1）：墙/木整体提亮一档。原值（wall #5d4a44 / wood #6b4a32）在战场上
+   * 没问题，但城镇卡底色是 `#33240f`（L* 15.5）—— 这一族 13 张图的平均明度只有 26，
+   * ΔL* **10.5**，低于本项目给背景定的 18，卡面上是一团深棕。提亮后 ΔL* ≈ 20，
+   * 仍然比别的族暗（这就是这一族的样子），只是在深色卡上读得出来。 */
   p2: {
-    wall: '#5d4a44', wallDark: '#332622', wallLite: '#7d6760',
-    roof: '#c0392b', roofDark: '#7d2119', wood: '#6b4a32', woodDark: '#3b2418',
+    wall: '#7a6158', wallDark: '#4a3730', wallLite: '#9a7f72',
+    /* 木件用**冷灰**而不是暖棕：这一族的木头是包铁的。暖棕会让它和 p3（枝干木构）
+       在剪影相同、明度接近时糊成一族（实测 Δrgb 13.2，判据 12）。 */
+    roof: '#c0392b', roofDark: '#7d2119', wood: '#6b5a50', woodDark: '#4a3b33',
     glow: '#ff8a45',
   },
   /* 枝干木构：树皮墙 + 叶绿顶。 */
@@ -80,6 +87,15 @@ const PALETTES: Record<SpriteOwner, GuildPalette> = {
 export function guildPaletteOf(owner: SpriteOwner): GuildPalette {
   return PALETTES[owner] ?? PALETTES.p1;
 }
+
+/**
+ * 同一张材质表在全建筑里的名字。
+ *
+ * S5 只画行会时它叫 `GuildPalette`；B1 把它推广到 16 座建筑 —— 名字改了，
+ * **表本身没动**（`buildingArt.ts` 直接调 `guildPaletteOf()`）。保留别名是为了
+ * 不惊动 S5 的闸门与已入档的读数。
+ */
+export type BuildingPalette = GuildPalette;
 
 /**
  * 负向对照开关（**只给闸门用**，游戏里永远是默认值）。
