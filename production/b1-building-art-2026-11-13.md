@@ -180,6 +180,8 @@ node tools/probes/buildingart.mjs --sheet=<dir>     # sheet-p1（13 格）/ shee
 
 ## 8. 指纹
 
+**提交 `90a0479`**（`main`，2026-11-13/14）。
+
 **全库 66 门 `rc=0`**（`/tmp/gatesZ/`，469s，含本门与 S5 的 `probe:guildart`）。
 注意批量跑清单时 `while read` 读不到**没有尾换行**的最后一行 —— 第一遍只跑了 65 门且安静通过，
 补跑 `probe:buildingart` 后才是 66/66（现在的循环写成 `while … || [ -n "$g" ]`，不再漏）。
