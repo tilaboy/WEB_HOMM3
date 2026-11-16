@@ -66,6 +66,7 @@
     "probe:outbreak": "node tools/probes/outbreak.mjs",
     "probe:homegold": "node tools/probes/homegold.mjs",
     "probe:aiscale": "node tools/probes/aiscale.mjs",
+    "probe:playtest": "node tools/probes/playtest.mjs",
     "probe:hexgeom": "node tools/probes/hexgeom.mjs",
     "probe:card": "node tools/probes/card.mjs",
     "probe:save": "node tools/probes/save.mjs",

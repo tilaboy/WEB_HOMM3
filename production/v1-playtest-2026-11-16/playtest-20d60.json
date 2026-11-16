@@ -1,0 +1,2079 @@
+{
+  "meta": {
+    "games": 20,
+    "days": 60,
+    "session": 35,
+    "difficulty": "normal",
+    "dist": "/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist",
+    "at": "2026-11-16T10:41:47.519Z"
+  },
+  "readings": {
+    "F1": 1,
+    "F2": 1,
+    "F3": 1,
+    "F4": 0.75,
+    "F5": 0.30177514792899407,
+    "wallDays": [
+      9,
+      20,
+      15,
+      27,
+      13,
+      9,
+      23,
+      4,
+      10,
+      9,
+      29,
+      19,
+      34,
+      4,
+      16,
+      21,
+      11,
+      5,
+      19,
+      22
+    ],
+    "guildDays": [
+      10,
+      6,
+      6,
+      7,
+      8,
+      7,
+      13,
+      15,
+      8,
+      6,
+      7,
+      7,
+      7,
+      9,
+      11,
+      5,
+      6,
+      15,
+      7,
+      8
+    ],
+    "fought": 51,
+    "aliveOb": 118,
+    "vanished": 0
+  },
+  "faction": {
+    "p1": {
+      "alive35": 1,
+      "towns35": 1.8,
+      "power35": 9509,
+      "t5": 0.75
+    },
+    "p2": {
+      "alive35": 0.95,
+      "towns35": 1.05,
+      "power35": 5049,
+      "t5": 0.25
+    },
+    "p3": {
+      "alive35": 0.8,
+      "towns35": 1,
+      "power35": 5298,
+      "t5": 0.35
+    },
+    "p4": {
+      "alive35": 0.85,
+      "towns35": 1.05,
+      "power35": 4612,
+      "t5": 0.15
+    }
+  },
+  "games": [
+    {
+      "seed": 6100,
+      "layout": "wild",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D5:banner",
+          "D6:townhall",
+          "D9:wall1",
+          "D10:guild1",
+          "D14:dwell4",
+          "D15:wall2",
+          "D18:workshop",
+          "D22:dwell5",
+          "D27:guild2"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 1,
+        "heroes": 1,
+        "power": 10826.13,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 10826.13,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 8575.52,
+          "wall": false,
+          "guild": true,
+          "t5": true
+        },
+        "p3": {
+          "alive": true,
+          "towns": 4,
+          "heroes": 3,
+          "power": 6777.1900000000005,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p4": {
+          "alive": false,
+          "towns": 0,
+          "heroes": 0,
+          "power": 0,
+          "wall": false,
+          "guild": false,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 29,
+          "order": 14
+        },
+        "p2": {
+          "t5Day": 29,
+          "order": 12
+        },
+        "p3": {
+          "t5Day": 36,
+          "order": 16
+        },
+        "p4": {
+          "t5Day": 0,
+          "order": 8
+        }
+      },
+      "outbreak": {
+        "fought": 5,
+        "vanished": 0,
+        "alive": 4
+      },
+      "msPerDay": 12.014688459016394
+    },
+    {
+      "seed": 6100,
+      "layout": "ring",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D4:banner",
+          "D6:guild1",
+          "D7:townhall",
+          "D9:dwell4",
+          "D18:dwell5",
+          "D19:workshop",
+          "D20:wall1",
+          "D21:wall2",
+          "D23:wall3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 2,
+        "heroes": 1,
+        "power": 14186.6,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 2,
+          "heroes": 1,
+          "power": 14186.6,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 1201.62,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 4310.58,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 6261.829999999999,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 22,
+          "order": 14
+        },
+        "p2": {
+          "t5Day": 45,
+          "order": 13
+        },
+        "p3": {
+          "t5Day": 36,
+          "order": 14
+        },
+        "p4": {
+          "t5Day": 44,
+          "order": 15
+        }
+      },
+      "outbreak": {
+        "fought": 1,
+        "vanished": 0,
+        "alive": 7
+      },
+      "msPerDay": 6.081711163934415
+    },
+    {
+      "seed": 6100,
+      "layout": "islands",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D4:banner",
+          "D6:guild1",
+          "D8:townhall",
+          "D10:dwell4",
+          "D13:dwell5",
+          "D14:workshop",
+          "D15:wall1",
+          "D16:guild2",
+          "D17:wall2",
+          "D20:wall3",
+          "D28:guild3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 1,
+        "heroes": 1,
+        "power": 19861.36,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 19861.36,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 12215.220000000001,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 2496.1400000000003,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 2519.56,
+          "wall": true,
+          "guild": false,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 15,
+          "order": 16
+        },
+        "p2": {
+          "t5Day": 22,
+          "order": 15
+        },
+        "p3": {
+          "t5Day": 50,
+          "order": 15
+        },
+        "p4": {
+          "t5Day": 0,
+          "order": 6
+        }
+      },
+      "outbreak": {
+        "fought": 0,
+        "vanished": 0,
+        "alive": 8
+      },
+      "msPerDay": 6.040470622950822
+    },
+    {
+      "seed": 6100,
+      "layout": "lanes",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D5:banner",
+          "D7:guild1",
+          "D10:townhall",
+          "D15:dwell4",
+          "D21:dwell5",
+          "D26:workshop",
+          "D27:wall1",
+          "D28:guild2",
+          "D29:wall2",
+          "D35:wall3",
+          "D41:guild3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 2,
+        "heroes": 1,
+        "power": 10430.69,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 2,
+          "heroes": 1,
+          "power": 10430.69,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 2,
+          "heroes": 0,
+          "power": 5265.780000000001,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 7809.15,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 8048.85,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 22,
+          "order": 16
+        },
+        "p2": {
+          "t5Day": 36,
+          "order": 14
+        },
+        "p3": {
+          "t5Day": 0,
+          "order": 11
+        },
+        "p4": {
+          "t5Day": 43,
+          "order": 13
+        }
+      },
+      "outbreak": {
+        "fought": 2,
+        "vanished": 0,
+        "alive": 6
+      },
+      "msPerDay": 10.876354459016376
+    },
+    {
+      "seed": 7077,
+      "layout": "wild",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D4:banner",
+          "D7:townhall",
+          "D8:guild1",
+          "D11:dwell4",
+          "D12:workshop",
+          "D13:wall1",
+          "D14:wall2",
+          "D20:dwell5",
+          "D21:wall3",
+          "D46:guild2",
+          "D47:guild3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 4,
+        "heroes": 3,
+        "power": 22253.280000000002,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 4,
+          "heroes": 3,
+          "power": 22253.280000000002,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 6339.360000000001,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 7430.4400000000005,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        },
+        "p4": {
+          "alive": false,
+          "towns": 0,
+          "heroes": 0,
+          "power": 0,
+          "wall": false,
+          "guild": false,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 22,
+          "order": 16
+        },
+        "p2": {
+          "t5Day": 37,
+          "order": 14
+        },
+        "p3": {
+          "t5Day": 0,
+          "order": 9
+        },
+        "p4": {
+          "t5Day": 0,
+          "order": 6
+        }
+      },
+      "outbreak": {
+        "fought": 8,
+        "vanished": 0,
+        "alive": 1
+      },
+      "msPerDay": 15.135372934426197
+    },
+    {
+      "seed": 7077,
+      "layout": "ring",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D5:banner",
+          "D7:guild1",
+          "D8:townhall",
+          "D9:wall1",
+          "D10:guild2",
+          "D13:dwell4",
+          "D17:workshop",
+          "D18:wall2",
+          "D21:wall3",
+          "D42:dwell5",
+          "D48:guild3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 1,
+        "heroes": 1,
+        "power": 8380.54,
+        "wall": true,
+        "guild": true,
+        "t5": false
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 8380.54,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 8030.36,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 7368.290000000001,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 7294.589999999999,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 43,
+          "order": 16
+        },
+        "p2": {
+          "t5Day": 22,
+          "order": 16
+        },
+        "p3": {
+          "t5Day": 31,
+          "order": 16
+        },
+        "p4": {
+          "t5Day": 0,
+          "order": 12
+        }
+      },
+      "outbreak": {
+        "fought": 4,
+        "vanished": 0,
+        "alive": 5
+      },
+      "msPerDay": 8.331328606557385
+    },
+    {
+      "seed": 7077,
+      "layout": "islands",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D11:banner",
+          "D13:guild1",
+          "D14:townhall",
+          "D18:dwell4",
+          "D21:dwell5",
+          "D22:workshop",
+          "D23:wall1",
+          "D25:wall2",
+          "D29:wall3",
+          "D45:guild2"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 2,
+        "heroes": 1,
+        "power": 11204.489999999998,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 2,
+          "heroes": 1,
+          "power": 11204.489999999998,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 3731.9,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p3": {
+          "alive": false,
+          "towns": 0,
+          "heroes": 0,
+          "power": 0,
+          "wall": false,
+          "guild": false,
+          "t5": false
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 8372.169999999998,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 22,
+          "order": 15
+        },
+        "p2": {
+          "t5Day": 57,
+          "order": 15
+        },
+        "p3": {
+          "t5Day": 0,
+          "order": 8
+        },
+        "p4": {
+          "t5Day": 30,
+          "order": 14
+        }
+      },
+      "outbreak": {
+        "fought": 0,
+        "vanished": 0,
+        "alive": 8
+      },
+      "msPerDay": 6.3663182950819985
+    },
+    {
+      "seed": 7077,
+      "layout": "lanes",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D4:wall1",
+          "D5:banner",
+          "D15:guild1",
+          "D15:townhall",
+          "D23:wall2",
+          "D27:dwell4",
+          "D28:workshop",
+          "D34:wall3",
+          "D38:dwell5",
+          "D44:guild2",
+          "D45:guild3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 2,
+        "heroes": 1,
+        "power": 6981.7300000000005,
+        "wall": true,
+        "guild": true,
+        "t5": false
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 2,
+          "heroes": 1,
+          "power": 6981.7300000000005,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 5185.530000000001,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p3": {
+          "alive": false,
+          "towns": 0,
+          "heroes": 0,
+          "power": 0,
+          "wall": false,
+          "guild": false,
+          "t5": false
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 10435.470000000001,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 43,
+          "order": 16
+        },
+        "p2": {
+          "t5Day": 0,
+          "order": 13
+        },
+        "p3": {
+          "t5Day": 0,
+          "order": 7
+        },
+        "p4": {
+          "t5Day": 0,
+          "order": 12
+        }
+      },
+      "outbreak": {
+        "fought": 0,
+        "vanished": 0,
+        "alive": 8
+      },
+      "msPerDay": 7.354062770491793
+    },
+    {
+      "seed": 8054,
+      "layout": "wild",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D4:banner",
+          "D7:townhall",
+          "D8:guild1",
+          "D10:wall1",
+          "D11:wall2",
+          "D15:dwell4",
+          "D16:workshop",
+          "D17:guild2",
+          "D25:dwell5",
+          "D28:wall3",
+          "D33:guild3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 1,
+        "heroes": 1,
+        "power": 6775.1900000000005,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 6775.1900000000005,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 3510.1000000000004,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 4310.58,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 2917.16,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 29,
+          "order": 16
+        },
+        "p2": {
+          "t5Day": 0,
+          "order": 11
+        },
+        "p3": {
+          "t5Day": 43,
+          "order": 14
+        },
+        "p4": {
+          "t5Day": 0,
+          "order": 8
+        }
+      },
+      "outbreak": {
+        "fought": 0,
+        "vanished": 0,
+        "alive": 8
+      },
+      "msPerDay": 11.047903016393425
+    },
+    {
+      "seed": 8054,
+      "layout": "ring",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D5:banner",
+          "D6:guild1",
+          "D8:townhall",
+          "D9:wall1",
+          "D10:wall2",
+          "D13:dwell4",
+          "D14:workshop",
+          "D21:dwell5",
+          "D27:wall3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 3,
+        "heroes": 1,
+        "power": 11193.689999999999,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 3,
+          "heroes": 1,
+          "power": 11193.689999999999,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 5636.77,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 5741.06,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        },
+        "p4": {
+          "alive": false,
+          "towns": 0,
+          "heroes": 0,
+          "power": 0,
+          "wall": false,
+          "guild": false,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 22,
+          "order": 14
+        },
+        "p2": {
+          "t5Day": 29,
+          "order": 16
+        },
+        "p3": {
+          "t5Day": 43,
+          "order": 14
+        },
+        "p4": {
+          "t5Day": 0,
+          "order": 8
+        }
+      },
+      "outbreak": {
+        "fought": 2,
+        "vanished": 0,
+        "alive": 8
+      },
+      "msPerDay": 11.897008196721337
+    },
+    {
+      "seed": 8054,
+      "layout": "islands",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:banner",
+          "D4:market",
+          "D7:guild1",
+          "D10:townhall",
+          "D18:dwell4",
+          "D27:dwell5",
+          "D28:workshop",
+          "D29:wall1",
+          "D33:wall2",
+          "D35:guild2",
+          "D41:wall3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 1,
+        "heroes": 1,
+        "power": 6063.15,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 6063.15,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 3700.3,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 10928.52,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 6029.530000000001,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 30,
+          "order": 15
+        },
+        "p2": {
+          "t5Day": 0,
+          "order": 12
+        },
+        "p3": {
+          "t5Day": 25,
+          "order": 16
+        },
+        "p4": {
+          "t5Day": 29,
+          "order": 16
+        }
+      },
+      "outbreak": {
+        "fought": 3,
+        "vanished": 0,
+        "alive": 5
+      },
+      "msPerDay": 10.509009573770527
+    },
+    {
+      "seed": 8054,
+      "layout": "lanes",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D6:banner",
+          "D7:guild1",
+          "D10:townhall",
+          "D12:dwell4",
+          "D17:dwell5",
+          "D18:workshop",
+          "D19:wall1",
+          "D20:wall2",
+          "D21:guild2",
+          "D22:wall3",
+          "D42:guild3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 3,
+        "heroes": 2,
+        "power": 11312.21,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 3,
+          "heroes": 2,
+          "power": 11312.21,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 6918.3,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 5481,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 2457.72,
+          "wall": false,
+          "guild": false,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 24,
+          "order": 16
+        },
+        "p2": {
+          "t5Day": 0,
+          "order": 13
+        },
+        "p3": {
+          "t5Day": 22,
+          "order": 16
+        },
+        "p4": {
+          "t5Day": 0,
+          "order": 6
+        }
+      },
+      "outbreak": {
+        "fought": 2,
+        "vanished": 0,
+        "alive": 6
+      },
+      "msPerDay": 9.672321688524596
+    },
+    {
+      "seed": 9031,
+      "layout": "wild",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D6:banner",
+          "D7:guild1",
+          "D13:townhall",
+          "D18:dwell4",
+          "D30:workshop",
+          "D31:dwell5",
+          "D34:wall1",
+          "D35:wall2",
+          "D42:wall3",
+          "D57:guild2"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 2,
+        "heroes": 0,
+        "power": 1201.66,
+        "wall": true,
+        "guild": true,
+        "t5": false
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 2,
+          "heroes": 0,
+          "power": 1201.66,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p2": {
+          "alive": false,
+          "towns": 0,
+          "heroes": 0,
+          "power": 0,
+          "wall": false,
+          "guild": false,
+          "t5": false
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 6815.5,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        },
+        "p4": {
+          "alive": true,
+          "towns": 3,
+          "heroes": 2,
+          "power": 7755.19,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 36,
+          "order": 15
+        },
+        "p2": {
+          "t5Day": 0,
+          "order": 8
+        },
+        "p3": {
+          "t5Day": 59,
+          "order": 14
+        },
+        "p4": {
+          "t5Day": 36,
+          "order": 14
+        }
+      },
+      "outbreak": {
+        "fought": 6,
+        "vanished": 0,
+        "alive": 4
+      },
+      "msPerDay": 13.526401704918007
+    },
+    {
+      "seed": 9031,
+      "layout": "ring",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D4:wall1",
+          "D6:banner",
+          "D8:townhall",
+          "D9:guild1",
+          "D18:dwell4",
+          "D26:dwell5",
+          "D28:workshop",
+          "D36:wall2"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 1,
+        "heroes": 0,
+        "power": 7465.08,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 7465.08,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 2,
+          "heroes": 2,
+          "power": 7814.920000000001,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 8541.400000000001,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 6454.2699999999995,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 29,
+          "order": 13
+        },
+        "p2": {
+          "t5Day": 36,
+          "order": 16
+        },
+        "p3": {
+          "t5Day": 42,
+          "order": 14
+        },
+        "p4": {
+          "t5Day": 0,
+          "order": 10
+        }
+      },
+      "outbreak": {
+        "fought": 2,
+        "vanished": 0,
+        "alive": 7
+      },
+      "msPerDay": 11.523373622950903
+    },
+    {
+      "seed": 9031,
+      "layout": "islands",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D7:banner",
+          "D11:guild1",
+          "D13:townhall",
+          "D15:guild2",
+          "D16:wall1",
+          "D24:wall2",
+          "D27:guild3",
+          "D29:dwell4",
+          "D30:workshop",
+          "D35:dwell5",
+          "D39:wall3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 1,
+        "heroes": 1,
+        "power": 3430.08,
+        "wall": true,
+        "guild": true,
+        "t5": false
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 3430.08,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 9394.55,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 11610.63,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 2844.6,
+          "wall": true,
+          "guild": false,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 36,
+          "order": 16
+        },
+        "p2": {
+          "t5Day": 29,
+          "order": 14
+        },
+        "p3": {
+          "t5Day": 22,
+          "order": 15
+        },
+        "p4": {
+          "t5Day": 0,
+          "order": 8
+        }
+      },
+      "outbreak": {
+        "fought": 2,
+        "vanished": 0,
+        "alive": 6
+      },
+      "msPerDay": 6.888585393442703
+    },
+    {
+      "seed": 9031,
+      "layout": "lanes",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D4:banner",
+          "D5:guild1",
+          "D10:townhall",
+          "D13:dwell4",
+          "D19:dwell5",
+          "D20:workshop",
+          "D21:wall1",
+          "D26:wall2",
+          "D28:guild2",
+          "D34:wall3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 3,
+        "heroes": 1,
+        "power": 9839.22,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 3,
+          "heroes": 1,
+          "power": 9839.22,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 5964.66,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        },
+        "p3": {
+          "alive": false,
+          "towns": 0,
+          "heroes": 0,
+          "power": 0,
+          "wall": false,
+          "guild": false,
+          "t5": false
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 5268.32,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 22,
+          "order": 15
+        },
+        "p2": {
+          "t5Day": 36,
+          "order": 14
+        },
+        "p3": {
+          "t5Day": 0,
+          "order": 9
+        },
+        "p4": {
+          "t5Day": 0,
+          "order": 11
+        }
+      },
+      "outbreak": {
+        "fought": 0,
+        "vanished": 0,
+        "alive": 8
+      },
+      "msPerDay": 8.28179168852467
+    },
+    {
+      "seed": 10008,
+      "layout": "wild",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D4:banner",
+          "D6:guild1",
+          "D7:townhall",
+          "D9:dwell4",
+          "D10:workshop",
+          "D11:wall1",
+          "D14:dwell5",
+          "D15:wall2",
+          "D18:wall3",
+          "D20:guild2",
+          "D24:guild3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 1,
+        "heroes": 1,
+        "power": 10650.419999999998,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 10650.419999999998,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 1203.1,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        },
+        "p3": {
+          "alive": true,
+          "towns": 2,
+          "heroes": 1,
+          "power": 6550.349999999999,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 2466.56,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 15,
+          "order": 16
+        },
+        "p2": {
+          "t5Day": 0,
+          "order": 7
+        },
+        "p3": {
+          "t5Day": 24,
+          "order": 15
+        },
+        "p4": {
+          "t5Day": 0,
+          "order": 8
+        }
+      },
+      "outbreak": {
+        "fought": 7,
+        "vanished": 0,
+        "alive": 1
+      },
+      "msPerDay": 5.357424852459055
+    },
+    {
+      "seed": 10008,
+      "layout": "ring",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D5:wall1",
+          "D7:banner",
+          "D15:guild1",
+          "D16:townhall",
+          "D17:guild2",
+          "D19:dwell4",
+          "D22:workshop",
+          "D23:guild3",
+          "D25:wall2",
+          "D29:dwell5",
+          "D32:wall3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 1,
+        "heroes": 1,
+        "power": 3726.1900000000005,
+        "wall": true,
+        "guild": true,
+        "t5": false
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 3726.1900000000005,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 2160.5,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 3345.76,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p4": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 1,
+          "power": 4483.0199999999995,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 36,
+          "order": 16
+        },
+        "p2": {
+          "t5Day": 0,
+          "order": 7
+        },
+        "p3": {
+          "t5Day": 34,
+          "order": 12
+        },
+        "p4": {
+          "t5Day": 43,
+          "order": 13
+        }
+      },
+      "outbreak": {
+        "fought": 4,
+        "vanished": 0,
+        "alive": 5
+      },
+      "msPerDay": 7.3343136065573535
+    },
+    {
+      "seed": 10008,
+      "layout": "islands",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:market",
+          "D5:banner",
+          "D7:guild1",
+          "D10:townhall",
+          "D12:dwell4",
+          "D17:dwell5",
+          "D18:workshop",
+          "D19:wall1",
+          "D20:guild2",
+          "D21:wall2",
+          "D22:wall3",
+          "D25:guild3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 2,
+        "heroes": 2,
+        "power": 7086.76,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 2,
+          "heroes": 2,
+          "power": 7086.76,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 2198.2000000000003,
+          "wall": false,
+          "guild": true,
+          "t5": false
+        },
+        "p3": {
+          "alive": false,
+          "towns": 0,
+          "heroes": 0,
+          "power": 0,
+          "wall": false,
+          "guild": false,
+          "t5": false
+        },
+        "p4": {
+          "alive": true,
+          "towns": 2,
+          "heroes": 1,
+          "power": 4401.18,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 23,
+          "order": 16
+        },
+        "p2": {
+          "t5Day": 0,
+          "order": 7
+        },
+        "p3": {
+          "t5Day": 0,
+          "order": 7
+        },
+        "p4": {
+          "t5Day": 29,
+          "order": 14
+        }
+      },
+      "outbreak": {
+        "fought": 1,
+        "vanished": 0,
+        "alive": 7
+      },
+      "msPerDay": 12.148876426229629
+    },
+    {
+      "seed": 10008,
+      "layout": "lanes",
+      "day": 61,
+      "status": "playing",
+      "p1": {
+        "order": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2",
+          "D2:dwell3",
+          "D3:banner",
+          "D4:market",
+          "D8:guild1",
+          "D10:townhall",
+          "D12:dwell4",
+          "D20:dwell5",
+          "D21:workshop",
+          "D22:wall1",
+          "D25:wall2",
+          "D26:wall3",
+          "D32:guild2",
+          "D34:guild3"
+        ],
+        "first3": [
+          "D2:tavern",
+          "D2:dwell1",
+          "D2:dwell2"
+        ],
+        "alive": true,
+        "towns": 2,
+        "heroes": 1,
+        "power": 7306.570000000001,
+        "wall": true,
+        "guild": true,
+        "t5": true
+      },
+      "snap": {
+        "p1": {
+          "alive": true,
+          "towns": 2,
+          "heroes": 1,
+          "power": 7306.570000000001,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p2": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 1935.8000000000002,
+          "wall": true,
+          "guild": false,
+          "t5": false
+        },
+        "p3": {
+          "alive": true,
+          "towns": 1,
+          "heroes": 0,
+          "power": 6441.620000000001,
+          "wall": true,
+          "guild": true,
+          "t5": true
+        },
+        "p4": {
+          "alive": true,
+          "towns": 2,
+          "heroes": 1,
+          "power": 4239.110000000001,
+          "wall": true,
+          "guild": true,
+          "t5": false
+        }
+      },
+      "factions": {
+        "p1": {
+          "t5Day": 22,
+          "order": 16
+        },
+        "p2": {
+          "t5Day": 0,
+          "order": 6
+        },
+        "p3": {
+          "t5Day": 22,
+          "order": 16
+        },
+        "p4": {
+          "t5Day": 36,
+          "order": 14
+        }
+      },
+      "outbreak": {
+        "fought": 2,
+        "vanished": 0,
+        "alive": 6
+      },
+      "msPerDay": 11.461758885245963
+    }
+  ]
+}
