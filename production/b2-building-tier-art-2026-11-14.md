@@ -232,7 +232,12 @@ node tools/probes/buildingart.mjs --sheet=<dir>    # 四张表（含 5 座 × 3 
 
 ## 10. 指纹
 
-提交号见本文件末尾回填（`main`）。
+代码 / 判据 / 文档：**`4e3a102`**；证据随后 7 个提交 `1c6178a` … `08062f2`（`main`）。
+
+> 为什么证据拆成 7 个提交：本机到 GitHub 的上行会把 **≥1.7 MB 的包中途掐断**
+> （`send-pack: unexpected disconnect while reading sideband packet`），而零负载的分支推送与
+> ~350 KB 的包都能过。于是按 p1/p2 · p3 · p4 · 对照表 · 两张城镇截图 · 卡片对照表分七次推。
+> 这不是仓库侧的限制 —— 同一个远端，包一小就成。
 
 | 文件 | md5 |
 |---|---|
