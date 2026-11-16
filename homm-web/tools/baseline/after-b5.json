@@ -4,7 +4,8 @@
     "date": "2026-11-13",
     "status": "d1-confirmed",
     "dist": "/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist",
-    "distMd5": "58fba8677f28a16366a7e18eb456e702",
+    "distMd5": "38855f6424f402656a367ff0addf04a3",
+    "distNote": "2026-11-16 更新：B2 只改 render/ ui/ main（美术 + 调试口 ?devtier + 探针钩子 __aiDayEvents），src/core/** 自 1bea9d4 起未变（ai/siege/units 的 md5 与 distCoreMd5 逐位相同）⇒ 模拟读数不重跑，只换聚合指纹。判据见 production/m7-decisions-homm3-2026-11-16.md",
     "gateTier": "normal",
     "tiersRecorded": [
       "normal",
