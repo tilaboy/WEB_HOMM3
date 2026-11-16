@@ -1,0 +1,48 @@
+[dist] dir=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist · cwd=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web · main.js.md5=71571093b27f6beed0744c656ac0346b · combo=sha256(index.html+main.js+style.css)@16:bc7cf756da536dc5 · mtime=2026-11-14T13:21:29.425Z(非绑定量) · gate=buildingart
+[PASS] [B0] 13 × 4 = 52 帧 · 44×44 — 最小面积 587
+[PASS] [B1] 四族 alpha 掩码逐像素相同（只换材质，不换结构） — 13 座 × 3 组对照 = 0 差异
+[PASS] [B2] 同建筑跨族平均色两两分开（判据 ≥12） — 最接近的一对 Δ19.5
+[PASS] [B3] 13 座两两剪影 IoU（判据 max ≤0.90 · mean ≤0.65） — max 0.855 (wall1/dwell4) · mean 0.589 · 78 对
+[PASS] [B4] 13 座各有识别件（13 条） — tavern ✓ · market ✓ · townhall ✓ · workshop ✓ · wall1 ✓ · wall2 ✓ · …
+
+  建筑        读数   阈值  判  识别件
+  tavern        22  ≥12   ✓  左侧挑出的招牌（木色像素）
+  market        12  ≥10   ✓  条纹遮阳篷（行内颜色变化）
+  townhall      70  ≥20   ✓  屋顶以上的旗
+  workshop     124  ≥60   ✓  右侧齿轮（木色像素）
+  wall1          8  =8    ✓  八根尖桩（一行 8 段）
+  wall2          5  =5    ✓  五个方城齿（一行 5 段）
+  wall3          2  =2    ✓  两座塔（一行 2 段）
+  dwell1        18  ≥12   ✓  左侧篱笆（木色像素）
+  dwell2        78  ≥50   ✓  草垛靶（浅色像素）
+  dwell3       139  ≥30   ✓  屋顶以上的交叉长矛
+  dwell4        33  ≥20   ✓  阁楼草料口（深木色像素）
+  dwell5         4  =4    ✓  四根透空柱廊（一行 4 段）
+  banner        71  ≥20   ✓  旗杆上的三角旗
+[PASS] [B5] 5 座 × 2 档 × 4 族 = 40 帧 · 面积逐档递增 · 档间 IoU ≤0.88 — 最大 0.857（dwell2 L1/L2）· 最小 0.772（dwell1 L1/L2）
+[PASS] [B6] 升级只加不拆（L1⊆L2⊆L3）· 识别件跨三档保留 — 5 座 × 3 档 = 15 组全部包含 + 识别件 15/15
+[PASS] [B7] 三档 × 四族只换材质（5×3×3 = 45 组掩码差 0） — 45 组逐像素相同
+
+  建筑       面积 L1 / L2 / L3        IoU L1/L2 · L2/L3
+  dwell1     587 /  760 /  934        0.772 · 0.814
+  dwell2     797 /  930 / 1150        0.857 · 0.809
+  dwell3     904 / 1119 / 1339        0.808 · 0.836
+  dwell4     744 /  920 / 1108        0.809 · 0.830
+  dwell5    1048 / 1278 / 1508        0.820 · 0.847
+
+--- 负向对照（每条都必须变红，跑完复原） ---
+[N-plain] 如期变红 — 识别件消失的 8 座（应 8）：tavern,townhall,workshop,dwell1,dwell2,dwell3,dwell4,banner
+[N-sameShape] 如期变红 — 13 张图的 max IoU 1.000
+[N-onePalette] 如期变红 — 酒馆 p1/p2 平均色 Δ0.0（四族共用 p1 材质）
+[N-jitter] 如期变红 — 石墙 p1/p2 掩码差 4px
+[N-tiersFlat] 如期变红 — 面积 904 / 904 / 904 · IoU 1.000/1.000
+
+PNG 已导出 → /Users/lichao/Workbuddy/2026-09-12-11-57-32/production/b2-building-tier-art-2026-11-14/art（92 帧 ×8，含兵营 40 帧三档）
+
+对照表已导出 → /Users/lichao/Workbuddy/2026-09-12-11-57-32/production/b2-building-tier-art-2026-11-14（sheet-p1 13 格 · sheet-factions 4×4 · sheet-tiers-p1 5×3 · sheet-tiers-28-p1 5×3@28px）
+
+========================================================================
+断言：全部通过
+负向对照：5/5 条如期变红
+人工项：×8 单张目检（铁律 1）—— 判"13 座认得出、分得开"，不判"面积达标"
+========================================================================
