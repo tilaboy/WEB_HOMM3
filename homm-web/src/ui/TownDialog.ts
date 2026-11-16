@@ -262,7 +262,7 @@ function paintBuildings(
    * 与最长状态行"。塞一张 44px 塔图要吃 52px ⇒ 实测「魔法…」被截断、"建造"折成两行。
    * 浮层是 absolute、不参与布局 —— 与 D-70 当初为了描述选同一个容器。
    */
-  const revealDesc = (card: HTMLElement, desc: string, trigger: HTMLElement, art = ''): void => {
+  const revealDesc = (card: HTMLElement, desc: string, trigger: HTMLElement, art = '', frame = ''): void => {
     if (descFor === card) {
       descEl?.remove();
       descEl = null;
@@ -282,6 +282,7 @@ function paintBuildings(
       const fig = document.createElement('img');
       fig.className = 'bdesc-art';
       fig.src = art;
+      fig.dataset.frame = frame;   // 与卡面同一帧名（两处共用一个 artUrl）
       fig.alt = '';
       fig.draggable = false;
       descEl.append(fig);
@@ -323,17 +324,19 @@ function paintBuildings(
     nm.setAttribute('role', 'button');
     nm.setAttribute('tabindex', '0');
     nm.setAttribute('aria-expanded', 'false');
-    /* 建筑外观（M5 · B1）：16 座各有一张 44×44。
+    /* 建筑外观（M5 · B1 / B2）：16 座各有一张 44×44，兵营线五座还有 Lv.2/3 两张。
        卡片首行放 **28px** 缩略（`.bcard-art`），描述浮层放 **44px** 原图（`.bdesc-art`）。
        两处是同一个 URL：图集里只有一份 44×44。
        28 是**量出来的**：179px 卡宽下 16 张 0 截断、卡高仍 66px；
        DPR≥2 时 28 CSS = 56 设备像素（放大，最近邻，个别源像素重复一次，实拍清楚）；
-       DPR=1 是缩小 44→28，农舍篱笆与射箭场靶会糊 ⇒ 已记成欠账（见批次文档 §2.1）。 */
-    const artUrl =
+       DPR=1 是缩小 44→28，农舍篱笆与射箭场靶会糊 ⇒ 已记成欠账（见批次文档 §2.1）。
+       行会走 S5 的三阶塔（`bard_*`），兵营线走 `bld_*_u2/u3`（B2）—— 两套帧名别混。 */
+    const artFrame =
       def.feature === 'guild'
-        ? getAtlas().url(guildArtName(town.owner, guildArtTierOf(id)))
-        : getAtlas().url(buildingArtName(town.owner, id));
-    const onName = (): void => revealDesc(card, buildingDesc(town, id), nm, artUrl);
+        ? guildArtName(town.owner, guildArtTierOf(id))
+        : buildingArtName(town.owner, id, st.level);
+    const artUrl = getAtlas().url(artFrame);
+    const onName = (): void => revealDesc(card, buildingDesc(town, id), nm, artUrl, artFrame);
     nm.addEventListener('click', onName);
     nm.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -346,6 +349,9 @@ function paintBuildings(
     const ico = document.createElement('img');
     ico.className = 'bcard-art';
     ico.src = artUrl;
+    /* 用的是**哪一帧**写成 data 属性：图集 URL 是 data:，从 src 反查不到帧名。
+       `probe` 与批证据用它证「等级真的换了帧」，而不是靠"看起来不一样"。 */
+    ico.dataset.frame = artFrame;
     ico.alt = '';
     ico.draggable = false;
     ico.setAttribute('aria-hidden', 'true');

@@ -251,14 +251,31 @@ try {
       );
 
       // ---- ② 对照臂：?devreport=1 必须弹得出来 ----
+      /* ⚠️ 不能只过一天就判：世界是随机开的（URL 不钉 seed），某一天 AI 可能**一条事件都没有**
+         ⇒ `if (!evs.length) finish()` 本来就该收尾，弹窗不出现是正确行为。
+         2026-11-14 全量跑时这一臂就是这么红的（`模态=false`，同一个门单跑全过）。
+         现在最多连过 3 天，任一天弹出即通过，并把每天的「AI 事件条数」写进读数 ——
+         「0 条事件（没对象）」与「有事件却没弹（坏了）」必须能分开（铁律 2）。 */
       await boot(send, evaluate, '&devreport=1');
-      const advRep = await nextDay(evaluate);
-      const rep = await waitReport(evaluate);
+      const tries = [];
+      let rep = null;
+      for (let d = 0; d < 3; d++) {
+        const adv = await nextDay(evaluate);
+        // `?devreview` 之外读不到这个钩子时返回 -2，别把"量不到"写成 0
+        const events = await evaluate(`(() => (window.__aiDayEvents ? window.__aiDayEvents() : -2))()`);
+        rep = adv.ok ? await waitReport(evaluate, 4000) : null;
+        const popped = !!rep && rep.hasModal && /对手动向/.test(rep.modalTitle || '');
+        tries.push({ ok: adv.ok, why: adv.why, events, popped });
+        if (popped) break;
+      }
+      const lastTry = tries[tries.length - 1];
       check(
         'devreport',
         '?devreport=1 时同一弹窗照样出现（证 no-daily 不是"弹窗坏了"）',
-        advRep.ok && !!rep && rep.hasModal && /对手动向/.test(rep.modalTitle),
-        `${advRep.ok ? '' : `⚠ 没量到：${advRep.why}｜`}模态=${rep && rep.hasModal} · 标题「${rep ? rep.modalTitle : ''}」`,
+        tries.some((t) => t.popped),
+        `${tries.map((t, i) => `第${i + 1}天：${t.ok ? '' : '没过去／'}事件 ${t.events}${t.popped ? ' → 弹出' : ''}`).join(' · ')}` +
+          `｜末次 模态=${rep && rep.hasModal} · 标题「${rep ? rep.modalTitle : ''}」` +
+          `${lastTry.ok ? '' : ` · ⚠ ${lastTry.why}`}`,
       );
 
       // ---- ③ 未读条数：拇指带无角标，菜单那一行带条数，读完归零 ----

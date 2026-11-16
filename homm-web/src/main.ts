@@ -19,6 +19,7 @@ import {
   previewInteraction,
 } from './core/game/interaction.js';
 import { openBattleScreen, isBattleOpen } from './ui/BattleScreen.js';
+import { DWELLING_TIER_IDS, MAX_BUILDING_TIER } from './render/buildingArt.js';
 import { battleBgOf, type BattleBg } from './render/battleBg.js';
 import { ExchangeDialog } from './ui/ExchangeDialog.js';
 import { ArtifactDialog } from './ui/ArtifactDialog.js';
@@ -1894,6 +1895,15 @@ function doEndDay(): void {
 }
 
 /**
+ * 上一次过天摘要看到了几条事件（-1 = 还没过过天）。
+ *
+ * 存在的理由只有一个：让 `probe:dayflow` 的对照臂能分「这天本来就 0 条事件（没对象）」
+ * 与「有事件却没弹出来（坏了）」。没有这个数，两件事在读数上长得一样 ——
+ * 2026-11-14 全量跑时 `devreport` 臂就是这么红的：世界是随机开的，正好那天 AI 什么也没干。
+ */
+let aiDayEventCount = -1;
+
+/**
  * 过天摘要：**只有打到玩家头上时才弹**（2026-10-27 起；此前是每天必弹）。
  *
  * 数据源是 AI 行动时记的结构化事件（`aiReport.ts`），不解析日志文本。
@@ -1937,7 +1947,9 @@ function showAiDayReport(): void {
       return false;
     }
   })();
-  const evs = devAll ? aiEvents() : aiEvents().filter((e) => e.vsPlayer);
+  const all = aiEvents();
+  const evs = devAll ? all : all.filter((e) => e.vsPlayer);
+  aiDayEventCount = all.length; // 探针读数：这天总共几条 AI 事件（与弹不弹无关）
   if (!evs.length) {
     finish();
     return;
@@ -2727,7 +2739,9 @@ if (bootParams.has('devsave')) {
 
 // 调试：?devprobe=1 暴露行程状态（tools/destaudit.mjs 端到端审计用）
 if (bootParams.has('devprobe')) {
-  const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void; __mapTint: (on: boolean) => void; __mapShadow: (on: boolean) => void; __mapShadowProbe: () => unknown; __mapShadowOffset: (dy: number) => void; __mapFringe: (tone: string) => void; __mapReachProbe: () => unknown; __mapPathProbe: () => unknown; __mapPreviewTo: (tx: number, ty: number) => unknown; __mapPreviewDay: () => unknown };
+  const w = window as unknown as { __journey: () => unknown; __journeyGo: (tx: number, ty: number) => void; __mapTint: (on: boolean) => void; __mapShadow: (on: boolean) => void; __mapShadowProbe: () => unknown; __mapShadowOffset: (dy: number) => void; __mapFringe: (tone: string) => void; __mapReachProbe: () => unknown; __mapPathProbe: () => unknown; __mapPreviewTo: (tx: number, ty: number) => unknown; __mapPreviewDay: () => unknown; __aiDayEvents: () => number };
+  // 上一次过天摘要的事件条数（`probe:dayflow` 的对照臂用来分「没对象」与「坏了」）
+  w.__aiDayEvents = () => aiDayEventCount;
   w.__journey = () => ({
     pendingDest,
     walking: !!anim,
@@ -3088,6 +3102,21 @@ if (bootParams.get('devarmy') === 't5' && selected && state.heroes[selected]) {
 if (bootParams.has('devpoor')) {
   const p = state.players[viewerOf(state)];
   if (p) p.resources = { ...p.resources, gold: 120, wood: 2, ore: 1, gem: 0, crystal: 0, sulfur: 0, mercury: 0 };
+}
+
+/* 调试：`?devtier=2|3` 把兵营线五座按档位预置（配合 `?devquick=1&devtown=1`）。
+   要证的是**接线**：`TownDialog` 的卡面会按 `st.level` 去图集查 `bld_*_u2/u3`。
+   帧本身画得对不对由 `probe:buildingart` 的 [B5]~[B7] 量；这里只证"画了的那帧真的被人用了"
+   —— 否则 40 帧图集里躺着、面板上永远显示 Lv.1，闸全绿也没意义。
+   必须排在 `devtown` 之前：面板一打开就按这份等级渲染。 */
+if (bootParams.has('devtier')) {
+  const lv = Math.max(1, Math.min(MAX_BUILDING_TIER, Number.parseInt(bootParams.get('devtier') ?? '3', 10) || 1));
+  const home = Object.values(state.towns).find((t) => t.owner === viewerOf(state));
+  if (home && lv > 1) {
+    home.buildings = [...new Set([...home.buildings, ...DWELLING_TIER_IDS])];
+    home.levels = { ...(home.levels ?? {}) };
+    for (const id of DWELLING_TIER_IDS) home.levels[id] = lv;
+  }
 }
 
 // 调试：?devtown=1 直接打开我方首座城镇面板（需配合 ?devquick 才有城镇）

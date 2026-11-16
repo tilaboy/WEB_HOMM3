@@ -8,7 +8,7 @@
 import { PixBuf, chamferRect, fbm, hash2, mix, pnoise, shade } from './pixel.js';
 import { NEUTRAL_ART_COLORS, UNIT_FRAMES, buildB0Frame, buildPortraitFrame } from './unitArt.js';
 import { buildGuildArt, guildArtName } from './guildArt.js';
-import { BUILDING_ART_IDS, buildBuildingArt, buildingArtName } from './buildingArt.js';
+import { BUILDING_ART_IDS, DWELLING_TIER_IDS, MAX_BUILDING_TIER, buildBuildingArt, buildingArtName } from './buildingArt.js';
 import { portraitOfCombatFrame } from './unitFrames.js';
 import { FACTIONS, NEUTRAL_COLOR, NEUTRAL_DARK } from '../core/data/factions.js';
 
@@ -1476,6 +1476,13 @@ export class Atlas {
       /* B1（M5）：其余 13 座建筑的城镇外观，同样 44×44、同样只进描述浮层。
          与 guild 分开注册是因为行会那三帧有自己的闸门与读数（S5），别在同一批里改。 */
       for (const id of BUILDING_ART_IDS) put(buildingArtName(key, id), buildBuildingArt(key, id));
+      /* B2：兵营线五座的 Lv.2 / Lv.3（5 × 2 × 4 = 40 帧）。
+         Lv.1 走上面那一行（帧名不带后缀）；这里只补升级档，别把 Lv.1 再注册一遍。 */
+      for (const id of DWELLING_TIER_IDS) {
+        for (let t = 2; t <= MAX_BUILDING_TIER; t++) {
+          put(buildingArtName(key, id, t), buildBuildingArt(key, id, 1, t));
+        }
+      }
       b = p(32, 44);
       hero(b, roof);
       put(`hero_${key}`, b);

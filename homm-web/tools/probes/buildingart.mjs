@@ -20,6 +20,7 @@
  *   node tools/probes/buildingart.mjs --negctrl    # 连负向对照
  *   node tools/probes/buildingart.mjs --png=<dir>  # 导出 ×8 目检图（14 帧/族）
  *   node tools/probes/buildingart.mjs --marks      # 逐座识别件读数（doc §3 那张表）
+ *   node tools/probes/buildingart.mjs --tiers      # 兵营线逐座面积 / 档间 IoU（B2）
  *   node tools/probes/buildingart.mjs --sheet=<dir> # 两张对照表（sheet-p1 / sheet-factions）
  * ```
  */
@@ -38,6 +39,8 @@ requireFile(DIST, 'render/pixel.js');
 const {
   BUILDING_ART_IDS,
   BUILDING_ART_SIZE,
+  DWELLING_TIER_IDS,
+  MAX_BUILDING_TIER,
   buildBuildingArt,
   buildingArtName,
   getBuildingArtBreaks,
@@ -47,6 +50,7 @@ const { guildPaletteOf } = await import(u('render/guildArt.js'));
 
 const GATE = process.argv.includes('--gate');
 const NEGCTRL = process.argv.includes('--negctrl');
+const TIERS_TABLE = process.argv.includes('--tiers');
 const PNG_DIR = argOf('png');
 const SHEET_DIR = argOf('sheet');
 
@@ -123,6 +127,47 @@ function spansAt(pb, y) {
     if (on && !prev) n++;
     prev = on;
   }
+  return n;
+}
+
+/** 同 `spansAt`，但只数 `x0..x1` 这一段 —— 圣殿两侧加了塔门之后，
+ *  整行会多出两段（塔），柱廊本身必须**单独量**。 */
+function spansBetween(pb, y, x0, x1) {
+  let n = 0;
+  let prev = false;
+  for (let x = x0; x <= x1; x++) {
+    const on = opaque(pb, x, y);
+    if (on && !prev) n++;
+    prev = on;
+  }
+  return n;
+}
+
+/** 44 → 28 最近邻降采：DPR1 上城镇面板卡面的**实际像素**。
+ *  判"升级在卡面上看不看得出"必须看这张 —— ×8 会高估（铁律 16 同理）。 */
+function card28(pb, s = 28) {
+  const out = { w: s, h: s, d: new Uint8ClampedArray(s * s * 4) };
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) {
+      const sx = Math.min(pb.w - 1, Math.floor(((x + 0.5) * pb.w) / s));
+      const sy = Math.min(pb.h - 1, Math.floor(((y + 0.5) * pb.h) / s));
+      const i = (sy * pb.w + sx) * 4;
+      const j = (y * s + x) * 4;
+      out.d[j] = pb.d[i];
+      out.d[j + 1] = pb.d[i + 1];
+      out.d[j + 2] = pb.d[i + 2];
+      out.d[j + 3] = pb.d[i + 3];
+    }
+  }
+  return out;
+}
+
+/** a 里不透明、b 里透明的像素数（"只加不拆"：L1 的每个点都必须在 L2 里）。 */
+function onlyIn(a, b) {
+  const ma = maskOf(a);
+  const mb = maskOf(b);
+  let n = 0;
+  for (let i = 0; i < ma.length; i++) if (ma[i] && !mb[i]) n++;
   return n;
 }
 
@@ -207,7 +252,7 @@ rebuild();
     }
   }
   const minArea = Math.min(...[...fresh.values()].map(area));
-  record('B0', `${IDS.length} × ${OWNERS.length} = ${IDS.length * OWNERS.length} 帧 · ${BUILDING_ART_SIZE}×${BUILDING_ART_SIZE}`,
+  record('B0', `Lv.1 覆盖 ${IDS.length} × ${OWNERS.length} = ${IDS.length * OWNERS.length} 帧 · ${BUILDING_ART_SIZE}×${BUILDING_ART_SIZE}（三档 40 帧另见 [B5]）`,
     bad.length === 0, bad.length ? bad.slice(0, 4).join('；') : `最小面积 ${minArea}`);
 }
 
@@ -350,6 +395,124 @@ const MARK_DESC = {
   }
 }
 
+/* ---------------------------------------------------------------- [B5]–[B7] 三档 */
+
+const TIERS = [1, 2, 3];
+const tierFresh = new Map();
+const tierBare = new Map();
+function rebuildTiers() {
+  for (const o of OWNERS) {
+    for (const id of DWELLING_TIER_IDS) {
+      for (const t of TIERS) {
+        tierFresh.set(`${o}:${id}:${t}`, buildBuildingArt(o, id, 1, t));
+        tierBare.set(`${o}:${id}:${t}`, buildBuildingArt(o, id, 0, t));
+      }
+    }
+  }
+}
+rebuildTiers();
+
+/** 跨档保留的识别件。阈值与 `[B4]` 同源，但**区域跟着档位的几何走**：
+ *  兵营的矛尖在 Lv.2 抬到了城齿之上，圣殿两侧多了塔门（柱廊要限定 x6..37 再数）。 */
+function tierMark(id, f, b) {
+  if (id === 'dwell1') {
+    const n = countColor(f, PAL.wood, 0, 32, 11, 40);
+    return { ok: n >= 12, detail: `篱笆 ${n}/12` };
+  }
+  if (id === 'dwell2') {
+    const n = countColor(f, PAL.wallLite, 26, 0, 43, 43);
+    return { ok: n >= 50, detail: `草垛靶 ${n}/50` };
+  }
+  if (id === 'dwell3') {
+    const n = countBox(f, 0, 0, 31, 13);
+    return { ok: n >= 12, detail: `矛尖 ${n}/12` };
+  }
+  if (id === 'dwell4') {
+    const n = countColor(f, PAL.woodDark, 5, 29, 13, 35);
+    return { ok: n >= 20, detail: `草料口 ${n}/20` };
+  }
+  const n = spansBetween(b, 30, 6, 37);
+  return { ok: n === 4, detail: `柱 ${n}/4 段` };
+}
+
+{
+  const bad = [];
+  let maxIou = 0;
+  let maxPair = '';
+  let minIou = 1;
+  let minPair = '';
+  for (const id of DWELLING_TIER_IDS) {
+    const a = TIERS.map((t) => area(tierFresh.get(`p1:${id}:${t}`)));
+    if (!(a[0] < a[1] && a[1] < a[2])) bad.push(`${id} 面积 ${a.join(' / ')}`);
+    for (const [x, y] of [[1, 2], [2, 3]]) {
+      const v = iou(tierFresh.get(`p1:${id}:${x}`), tierFresh.get(`p1:${id}:${y}`));
+      if (v > maxIou) { maxIou = v; maxPair = `${id} L${x}/L${y}`; }
+      if (v < minIou) { minIou = v; minPair = `${id} L${x}/L${y}`; }
+      if (v > 0.88) bad.push(`${id} L${x}/L${y} IoU ${v.toFixed(3)}`);
+    }
+  }
+  for (const o of OWNERS) {
+    for (const id of DWELLING_TIER_IDS) {
+      for (const t of [2, 3]) {
+        const pb = tierFresh.get(`${o}:${id}:${t}`);
+        if (pb.w !== BUILDING_ART_SIZE || pb.h !== BUILDING_ART_SIZE) bad.push(`${o}:${id}:u${t} 尺寸`);
+        if (buildingArtName(o, id, t) !== `bld_${o}_${id}_u${t}`) bad.push(`帧名 ${buildingArtName(o, id, t)}`);
+      }
+    }
+  }
+  record('B5', `${DWELLING_TIER_IDS.length} 座 × ${TIERS.length - 1} 档 × ${OWNERS.length} 族 = 40 帧 · 面积逐档递增 · 档间 IoU ≤0.88`,
+    bad.length === 0,
+    bad.length ? bad.slice(0, 4).join('；') : `最大 ${maxIou.toFixed(3)}（${maxPair}）· 最小 ${minIou.toFixed(3)}（${minPair}）`);
+}
+
+{
+  const bad = [];
+  const lost = [];
+  for (const id of DWELLING_TIER_IDS) {
+    // ① 只加不拆：L1 ⊆ L2 ⊆ L3（用未描边帧 —— 墨环会盖住外沿 1px）
+    const d12 = onlyIn(tierBare.get(`p1:${id}:1`), tierBare.get(`p1:${id}:2`));
+    const d23 = onlyIn(tierBare.get(`p1:${id}:2`), tierBare.get(`p1:${id}:3`));
+    if (d12) bad.push(`${id} L1⊄L2 少 ${d12}px`);
+    if (d23) bad.push(`${id} L2⊄L3 少 ${d23}px`);
+    // ② 识别件必须跨档还在（升级不能把"这是哪座建筑"弄丢）
+    for (const t of TIERS) {
+      const r = tierMark(id, tierFresh.get(`p1:${id}:${t}`), tierBare.get(`p1:${id}:${t}`));
+      if (!r.ok) lost.push(`${id} L${t} ${r.detail}`);
+    }
+  }
+  record('B6', '升级只加不拆（L1⊆L2⊆L3）· 识别件跨三档保留', bad.length === 0 && lost.length === 0,
+    bad.length || lost.length ? [...bad, ...lost].slice(0, 4).join('；') : '5 座 × 3 档 = 15 组全部包含 + 识别件 15/15');
+}
+
+{
+  const bad = [];
+  for (const id of DWELLING_TIER_IDS) {
+    for (const t of TIERS) {
+      const base = tierFresh.get(`p1:${id}:${t}`);
+      for (const o of ['p2', 'p3', 'p4']) {
+        const d = maskDiff(base, tierFresh.get(`${o}:${id}:${t}`));
+        if (d) bad.push(`${id} L${t}/${o} 差 ${d}px`);
+      }
+    }
+  }
+  record('B7', `三档 × 四族只换材质（${DWELLING_TIER_IDS.length}×${TIERS.length}×3 = 45 组掩码差 0）`,
+    bad.length === 0, bad.length ? bad.slice(0, 4).join('；') : '45 组逐像素相同');
+}
+
+/* 逐座读数表（批次文档 §3 那张）：面积与 IoU 都用**已描边帧**，与 [B5] 同口径。
+   列出来是为了让人能对着看"哪一座的升级最弱"，不是给闸门用的。 */
+if (TIERS_TABLE) {
+  console.log('\n  建筑       面积 L1 / L2 / L3        IoU L1/L2 · L2/L3');
+  for (const id of DWELLING_TIER_IDS) {
+    const f = [1, 2, 3].map((t) => tierFresh.get(`p1:${id}:${t}`));
+    const a = f.map(area);
+    console.log(
+      `  ${id.padEnd(9)} ${a.map((n) => String(n).padStart(4)).join(' / ')}` +
+        `        ${iou(f[0], f[1]).toFixed(3)} · ${iou(f[1], f[2]).toFixed(3)}`,
+    );
+  }
+}
+
 /* ---------------------------------------------------------------- 负向对照 */
 
 const negatives = [];
@@ -398,6 +561,18 @@ if (NEGCTRL) {
     const d = maskDiff(buildBuildingArt('p1', 'wall2'), buildBuildingArt('p2', 'wall2'));
     return { ok: d > 0, detail: `石墙 p1/p2 掩码差 ${d}px` };
   });
+
+  // [B5] 的反面：三档画成同一档（就是 B2 之前的样子 —— 玩家付了钱、屏幕没变）。
+  // 面积不再递增、档间 IoU 冲到 1.000，[B5] 必须红。这条量的是"闸会不会红"，不是画得好不好。
+  run('tiersFlat', { tiersFlat: true }, () => {
+    const id = 'dwell3'; // 剪影最规整的一座，最容易"看起来没变"还过闸
+    const f = [1, 2, 3].map((t) => buildBuildingArt('p1', id, 1, t));
+    const a = f.map(area);
+    const i12 = iou(f[0], f[1]);
+    const i23 = iou(f[1], f[2]);
+    const red = !(a[0] < a[1] && a[1] < a[2]) || i12 > 0.88 || i23 > 0.88;
+    return { ok: red, detail: `面积 ${a.join(' / ')} · IoU ${i12.toFixed(3)}/${i23.toFixed(3)}` };
+  });
 }
 
 /* ---------------------------------------------------------------- PNG 目检 */
@@ -410,8 +585,16 @@ if (PNG_DIR) {
       writeFileSync(join(PNG_DIR, `${o}_${id}.png`), encodePng(upscale(buildBuildingArt(o, id), 8)));
       n++;
     }
+    // 兵营线三档：Lv.1 已在上面，这里补 Lv.2 / Lv.3（帧名与图集一致：_u2 / _u3）
+    for (const id of DWELLING_TIER_IDS) {
+      for (let t = 2; t <= MAX_BUILDING_TIER; t++) {
+        writeFileSync(join(PNG_DIR, `${o}_${id}_u${t}.png`),
+          encodePng(upscale(buildBuildingArt(o, id, 1, t), 8)));
+        n++;
+      }
+    }
   }
-  console.log(`\nPNG 已导出 → ${PNG_DIR}（${n} 帧 ×8）`);
+  console.log(`\nPNG 已导出 → ${PNG_DIR}（${n} 帧 ×8，含兵营 40 帧三档）`);
 }
 
 /* ---------------------------------------------------------------- 对照表 */
@@ -430,7 +613,21 @@ if (SHEET_DIR) {
   for (const id of REPS) for (const o of OWNERS) cross.push({ pb: buildBuildingArt(o, id) });
   writeFileSync(join(SHEET_DIR, 'sheet-factions.png'), encodePng(montage(cross, opt)));
 
-  console.log(`\n对照表已导出 → ${SHEET_DIR}（sheet-p1 13 格 · sheet-factions 4×4）`);
+  // ③ 兵营线 5 座 × 3 档（p1）：每行一座，左→右 Lv.1/Lv.2/Lv.3。
+  //    ×8 用在 44px 上，判"新体块长在房子上、不是摆在旁边"。
+  const tierFrames = [];
+  for (const id of DWELLING_TIER_IDS) {
+    for (const t of [1, 2, 3]) tierFrames.push({ pb: buildBuildingArt('p1', id, 1, t) });
+  }
+  writeFileSync(join(SHEET_DIR, 'sheet-tiers-p1.png'),
+    encodePng(montage(tierFrames, { cols: 3, cell: 352, gap: 6 })));
+
+  // ④ 同一批降到 28px（= DPR1 城镇面板上卡面实际像素），再 ×6 放大看。
+  //    这张才是判"升级在卡面上看不看得出"的那张；看 ×8 会高估。
+  writeFileSync(join(SHEET_DIR, 'sheet-tiers-28-p1.png'),
+    encodePng(montage(tierFrames.map(({ pb }) => ({ pb: card28(pb) })), { cols: 3, cell: 168, gap: 6 })));
+
+  console.log(`\n对照表已导出 → ${SHEET_DIR}（sheet-p1 13 格 · sheet-factions 4×4 · sheet-tiers-p1 5×3 · sheet-tiers-28-p1 5×3@28px）`);
 }
 
 /* ---------------------------------------------------------------- 汇总 */
