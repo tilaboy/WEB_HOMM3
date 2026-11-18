@@ -110,11 +110,17 @@ for (const seed of [1, 42, 777, 20260912, 99999]) {
   ok((kinds.town ?? 0) === 4, `seed ${seed}: 4 座城镇（1 主城 + 3 中立）`);
   ok((kinds.fountain ?? 0) === 4, `seed ${seed}: 4 处泉水`);
 
-  // 每支野怪都得守着东西
+  // 每支野怪都得守着东西 —— **口袋入口守卫是唯一例外**：它只管开门，奖励在口袋里
+  // （P0 封闭宝地，`generator.ts:1205`；此前这条断言写"所有野怪都带 guard"，P0 之后必红）
   const monsters = Object.values(m.objects).filter((o) => o.kind === 'wanderingMonster');
-  ok(monsters.every((o) => !!o.payload.guard), `seed ${seed}: 所有野怪都带守卫奖励`);
+  const pocketGates = monsters.filter((o) => !o.payload.guard && !!o.payload.pocket);
+  const rewardless = monsters.filter((o) => !o.payload.guard && !o.payload.pocket);
   ok(
-    monsters.filter((o) => o.payload.guard.kind === 'mine').length >= 2,
+    rewardless.length === 0,
+    `seed ${seed}: 无守卫的野怪只有口袋入口（${pocketGates.length} 入口 / ${monsters.length} 组）`,
+  );
+  ok(
+    monsters.filter((o) => o.payload.guard?.kind === 'mine').length >= 2,
     `seed ${seed}: 至少 2 处野怪守着矿`,
   );
 
@@ -142,11 +148,18 @@ for (const seed of [1, 42, 777, 20260912, 99999]) {
   );
   ok(unreachable.length === 0, `seed ${seed}: 可交互物全部可达（不可达 ${unreachable.length}）`);
 
-  // 随便挑一个远点，必须能算出路径
-  const target = Object.values(m.objects).find((o) => o.kind === 'wanderingMonster');
-  const path = buildPath(s, f, hero.pos, target.pos);
+  // 随便挑一个**走得到**的野怪，必须能算出路径
+  // （口袋封死是上面那条断言的事；这里再挑到它会让本段直接 TypeError，盖住后面的读数）
+  const target = Object.values(m.objects).find(
+    (o) => o.kind === 'wanderingMonster' && isFinite(f.cost[o.pos.y * m.width + o.pos.x]),
+  );
+  ok(!!target, `seed ${seed}: 至少有一支走得到的野怪`);
+  const path = target ? buildPath(s, f, hero.pos, target.pos) : [];
   ok(path.length > 0, `seed ${seed}: 到野怪的路径长度 ${path.length}`);
-  ok(path[path.length - 1].x === target.pos.x && path[path.length - 1].y === target.pos.y, `seed ${seed}: 路径终点正确`);
+  ok(
+    !!target && path[path.length - 1].x === target.pos.x && path[path.length - 1].y === target.pos.y,
+    `seed ${seed}: 路径终点正确`,
+  );
 
   // 迷雾初始只揭开一小片
   let revealed = 0;
