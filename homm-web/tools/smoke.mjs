@@ -1009,12 +1009,19 @@ function runTactical(attacker, defender, seed) {
     checked += 1;
     // 城门就在旁边时 path 只有一步，这时"上一步"就是出发点
     const prev = path.length >= 2 ? path[path.length - 2] : start;
+    /**
+     * 地图是 **8 向移动**（`pathfinding.ts` 的 DIRS 含四条斜线），而城门是 2×2 的左下角格
+     * ⇒ 城门的外侧邻居有三个：西、南、**西南**（斜着贴角）。北/东/东北都在城堡占格里 = 翻墙。
+     * 所以判据是「不从占格里进来」，不是「只能在正南」。2026-11-18 量了 45 张图 285 次进城：
+     * 西 147 / 南 82 / 西南 56，穿墙 0 —— 三个方向都是正常路径，旧断言把西南判成红是尺子错。
+     */
     const fromWest = prev.x === t.pos.x - 1 && prev.y === t.pos.y;
     const fromSouth = prev.x === t.pos.x && prev.y === t.pos.y + 1;
-    if (!fromWest && !fromSouth) frontOnly = false;
+    const fromSouthWest = prev.x === t.pos.x - 1 && prev.y === t.pos.y + 1;
+    if (!fromWest && !fromSouth && !fromSouthWest) frontOnly = false;
   }
   ok(allReachable && checked === towns.length, `每座城都走得到（${checked}/${towns.length}）`);
-  ok(frontOnly, '进城的最后一步必定落在城门正面');
+  ok(frontOnly, '进城的最后一步只能从正面三格（西 / 南 / 西南）来，不能穿城墙');
 }
 
 // 8. 站上城门 = 进城；多张地图上都成立
@@ -1106,7 +1113,10 @@ function runTactical(attacker, defender, seed) {
   ok(wallLevelOf(myTown) === 3, 'wall3 = 城防 3 星');
 
   // 3. 城墙挡路：攻方一整列都过不去，只有砸掉才能通过
-  const atk = { army: [{ unitTypeId: 'p1_eagle', count: 20 }], attack: 5, defense: 3 };
+  //    ⚠️ 攻方必须是**地面**部队：飞行兵按 HOMM 规则飞越城墙（`reachable` 的飞行分支不判 `blocksMove`），
+  //    用 `p1_eagle` 做这条会读到"没破墙也能进 12/13/14 列"，看起来像 bug，其实是飞行。
+  //    城防档 D-13 里 `p1_knight` 是地面近战，速度 7，够走到护城河边。
+  const atk = { army: [{ unitTypeId: 'p1_knight', count: 20 }], attack: 5, defense: 3 };
   const def = { army: [{ unitTypeId: 'p1_crossbow', count: 15 }], attack: 0, defense: 0 };
   const b = createBattle(atk, def, 7, 2);
   const u = b.units[0];
@@ -1252,35 +1262,85 @@ function runTactical(attacker, defender, seed) {
   };
   ok(midVsL1(['catapult']) < midVsL1([]), '投石车让攻城损失明显变小（同一支兵打同一座城）');
 
-  // 11. AI 攻城能在 MAX_ROUNDS 内打完，且最终会破墙
+  // 11. AI 攻城能在 MAX_ROUNDS 内打完，而且**该破墙的时候真的会破**
+  //
+  //     这里必须用「双方全地面」的夹具：有飞行兵时，攻方可以飞过城墙直接把守军打光，
+  //     7~8 回合结束、一面墙都不用砸（实测 20/20 场如此）—— 旧夹具里塞了 `p1_eagle`，
+  //     于是"全部破墙"这条永远读 0/20，看起来像 AI 不打城防，其实是飞行兵合法绕过。
+  //     全地面时破墙是**唯一**进城的办法，这条才真的在量 `actSiege` 有没有被 AI 调起来。
+  const GROUND_ATK = [
+    { unitTypeId: 'p1_crossbow', count: 30 },
+    { unitTypeId: 'p1_knight', count: 8 },
+  ];
+  const GROUND_DEF = {
+    army: [
+      { unitTypeId: 'p1_child', count: 25 },
+      { unitTypeId: 'p1_knight', count: 6 },
+    ],
+    attack: 0,
+    defense: 0,
+  };
   let noBreach = 0;
   let tooLong = 0;
+  let won = 0;
   for (let seed = 1; seed <= 20; seed++) {
     const bb = createBattle(
-      { army: MID, attack: 6, defense: 3, warMachines: ['catapult', 'ballista'] },
-      { army: [{ unitTypeId: 'p1_crossbow', count: 20 }, { unitTypeId: 'p1_eagle', count: 10 }], attack: 0, defense: 0 },
+      { army: GROUND_ATK, attack: 6, defense: 3, warMachines: ['catapult', 'ballista'] },
+      GROUND_DEF,
       seed,
       2,
     );
     const out = autoResolve(bb);
     if (!bb.siege.structures.some((x) => x.hp <= 0)) noBreach += 1;
     if (out.rounds >= 40) tooLong += 1;
+    if (out.win) won += 1;
   }
-  ok(noBreach === 0, `20 场城防 2 星的攻城战全部破墙（没破 ${noBreach} 场）`);
+  ok(noBreach === 0, `20 场全地面攻城全部破墙（没破 ${noBreach} 场，攻方胜 ${won} 场）`);
   ok(tooLong === 0, `没有打到 40 回合上限的僵局（${tooLong} 场）`);
 
+  // 负向对照：同一支兵换成带飞行兵的编队，AI 照样赢但可以不破一面墙 ⇒
+  // 「破墙」不是恒真判据，上一条量的是夹具性质，不是战斗结局。
+  let flyerNoBreach = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const bf = createBattle(
+      { army: MID, attack: 6, defense: 3, warMachines: ['catapult', 'ballista'] },
+      GROUND_DEF,
+      seed,
+      2,
+    );
+    const out = autoResolve(bf);
+    if (out.win && !bf.siege.structures.some((x) => x.hp <= 0)) flyerNoBreach += 1;
+  }
+  ok(flyerNoBreach > 0, `对照：带飞行兵时确实存在"不破墙也赢"的场次（${flyerNoBreach}/20）`);
+
   // 12. 城防会提高攻城门槛（同一支部队打同一座城，墙越高损失越大）
+  //
+  //     单颗种子量不了这条：同一天花板下的方差极大（无器械时 L2 单场可以从 24% 跳到 100% 全灭），
+  //     2026-11-18 实测 seed 11 给出 15% / 57% / **100%** / 55% —— L3 比 L2 小，
+  //     看着像"墙越高越安全"，其实是那一场在 L2 撞了全灭。改成 16 颗种子取均值。
+  const N_LOSS = 16;
   const losses = (lv) => {
-    const out = quickBattle({ army: MID, attack: 6, defense: 3 }, DEFG, 11, lv);
-    return lossRatio(out);
+    let sum = 0;
+    let min = 1;
+    let max = 0;
+    for (let i = 0; i < N_LOSS; i++) {
+      const r = lossRatio(
+        quickBattle({ army: MID, attack: 6, defense: 3 }, DEFG, 11 + i * 13, lv),
+      );
+      sum += r;
+      min = Math.min(min, r);
+      max = Math.max(max, r);
+    }
+    return { mean: sum / N_LOSS, min, max };
   };
   const l0 = losses(0);
   const l1 = losses(1);
   const l2 = losses(2);
   const l3 = losses(3);
+  const pct = (x) => `${Math.round(x.mean * 100)}%（${Math.round(x.min * 100)}~${Math.round(x.max * 100)}%）`;
   ok(
-    l0 < l1 && l1 <= l2 && l2 <= l3,
-    `城防越高攻方损失越大：0 星 ${Math.round(l0 * 100)}% < 1 星 ${Math.round(l1 * 100)}% ≤ 2 星 ${Math.round(l2 * 100)}% ≤ 3 星 ${Math.round(l3 * 100)}%`,
+    l0.mean < l1.mean && l1.mean <= l2.mean && l2.mean <= l3.mean,
+    `城防越高攻方损失越大（${N_LOSS} 场均）：0 星 ${pct(l0)} < 1 星 ${pct(l1)} ≤ 2 星 ${pct(l2)} ≤ 3 星 ${pct(l3)}`,
   );
 
   // 13. 攻城战里城防不会反击
