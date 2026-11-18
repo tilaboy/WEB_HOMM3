@@ -1175,7 +1175,27 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
           const oneDoor = maskCount(inside) === cand.cells.length &&
             cand.cells.every((c) => inside[idx(map, c.x, c.y)] === 1);
           const compSizes: number[] = [maskCount(inside)];
-          if (!townsOk || !oneDoor) {
+          /**
+           * 门还必须**走得到**。
+           *
+           * `findPocketShell` 已经滤掉"朝里开"的门（四邻全在本块里/外圈），但那只是**生成前**的几何；
+           * 树一旦种下去，门口那条小路仍可能被自己这圈墙切断（实测修完几何仍有 7/58 封死）。
+           * 唯一可信的判据是**种完墙之后重算连通域**：门必须和某个玩家的英雄起点或某座城门同域。
+           * 没有这条，守卫站在门上打不到、口袋里的奖励永远拿不到 —— 玩家看得见，永远进不去。
+           */
+          const gateLab = compsAfter[gateIdx];
+          let gateOpen = false;
+          if (gateLab >= 0) {
+            for (const a of heroSpots) {
+              if (compsAfter[idx(map, a.x, a.y)] === gateLab) { gateOpen = true; break; }
+            }
+            if (!gateOpen) {
+              for (const a of townGates) {
+                if (compsAfter[a] === gateLab) { gateOpen = true; break; }
+              }
+            }
+          }
+          if (!townsOk || !oneDoor || !gateOpen) {
             if (POCKET_DEBUG) {
               const cellSet = new Set(cand.cells.map((c) => idx(map, c.x, c.y)));
               console.error('[pocket] reject', tier, {
@@ -1201,6 +1221,43 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
           for (const i of shellIndexSet(map, cand)) {
             pocketBlocked.add(i);
             taken.add(i);
+          }
+          /**
+           * ④ 门口留一条空走廊：从门朝外钉 3 格进 `taken`。
+           *
+           * ★ 血债（2026-11-18）：只把"壳"登记进 `taken` 时，装饰阶段的树会长在门口 ——
+           *   门本身在墙种下时是通的，**装饰完就封死了**（实测 10/176 块宝地，20 种子 10 张图）。
+           *   那条走廊同时也是"看得见的入口"：玩家能看出这块地有门，而不是一面墙。
+           *   只收与门同域（`compsAfter` 标签）且不在壳上的格；碰壁就停。
+           */
+          {
+            const shellSet = new Set<number>();
+            for (const c of cand.cells) shellSet.add(idx(map, c.x, c.y));
+            for (const c of cand.walls) shellSet.add(idx(map, c.x, c.y));
+            shellSet.add(idx(map, cand.gate.x, cand.gate.y));
+            let cur = idx(map, cand.gate.x, cand.gate.y);
+            for (let step = 0; step < 3; step++) {
+              const cx = cur % w;
+              const cy = (cur / w) | 0;
+              let next = -1;
+              for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+                const nx = cx + dx;
+                const ny = cy + dy;
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                const ni = ny * w + nx;
+                if (shellSet.has(ni)) continue;
+                if (!isPassable(map, nx, ny)) continue;
+                if (map.tiles[ni].objectId) continue;
+                if (compsAfter[ni] !== gateLab) continue; // 朝里那一侧不算
+                next = ni;
+                break;
+              }
+              if (next < 0) break;
+              shellSet.add(next);
+              taken.add(next);
+              pocketBlocked.add(next);
+              cur = next;
+            }
           }
           // 入口守卫：只管开门，**不背 guard**（见 ① ）
           placer.add({
@@ -1675,6 +1732,36 @@ function buildGame(cfg: GameConfig, attempt: number): GameState {
           `\n  修法：换一个 crop 窗口（node tools/h3m-terrain.mjs --origin=<x>,<y>）或换场景 seed。`,
       );
     }
+  }
+
+  /**
+   * 最后一道闸：**每块宝地的门都必须走得到**。
+   *
+   * ★ 血债（2026-11-18）：门在"种完墙之后"是通的，装饰阶段却能把门口那条走廊围成死胡同
+   *   （实测 20 种子 × 三尺寸 10/176 块）。玩家看得见守卫和宝地，永远进不去。
+   *   前面的 `gateOpen` 只验"墙种完"那一刻；这里验**全部物件落完之后**的成品图。
+   *   不满足就整张图重来 —— 沿用本文件既有的自愈重试，不在这里动手术拆树。
+   */
+  {
+    const finalComp = componentLabels(map);
+    const anchorLabs = new Set<number>();
+    for (const p of heroSpots) {
+      const l = finalComp[idx(map, p.x, p.y)];
+      if (l >= 0) anchorLabs.add(l);
+    }
+    for (const o of Object.values(map.objects)) {
+      if (o.kind !== 'town') continue;
+      const l = finalComp[idx(map, o.pos.x, o.pos.y)];
+      if (l >= 0) anchorLabs.add(l);
+    }
+    const sealed = Object.values(map.objects).some((o) => {
+      if (o.kind !== 'wanderingMonster') return false;
+      const pocket = (o.payload as { pocket?: string }).pocket;
+      if (!pocket) return false;
+      const l = finalComp[idx(map, o.pos.x, o.pos.y)];
+      return l < 0 || !anchorLabs.has(l);
+    });
+    if (sealed) return buildGame(cfg, attempt + 1);
   }
 
   /* ---------------- state ---------------- */

@@ -148,6 +148,32 @@ export function findPocketShell(map: GameMap, o: FindPocketOpts): PocketShell | 
     const walls: GridPos[] = [];
     const gates: number[] = [];
     let sealable = true;
+    let cornerGates = 0;
+    /**
+     * 门必须**朝外有开口**。
+     *
+     * ★ 血债（2026-11-18）：原先只要求「只贴住 1 个内部格」就配当门。门落在外圈的**拐角**上时，
+     *   它另外 2~3 个邻居同样是本圈要种树的格子 ⇒ 树一圈围死，门**朝里开**：
+     *   守卫站在这格上、玩家永远走不到，口袋里的奖励也永远拿不到。
+     *   实测 20 种子 × 三尺寸：small 5/57 · medium 4/59 · large 1/60 封死，10/60 张图受影响。
+     *   判据：四邻里至少一格**既不在内部、也不在本圈**，且可通行、无物件、生成前就走得到。
+     */
+    const gateFacesOut = (i: number): boolean => {
+      const gx = i % W;
+      const gy = (i / W) | 0;
+      for (const [dx, dy] of DIRS) {
+        const nx = gx + dx;
+        const ny = gy + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const ni = ny * W + nx;
+        if (inRegion.has(ni) || touch.has(ni)) continue; // 里面 / 本圈都不算出口
+        if (!o.reachable[ni]) continue; // 生成前就到不了的格，围完更到不了
+        if (map.tiles[ni].objectId || o.blocked.has(ni)) continue; // 被占住的格不是路
+        if (!isPassable(map, nx, ny)) continue;
+        return true;
+      }
+      return false;
+    };
     for (const [i, n] of touch) {
       const x = i % W;
       const y = (i / W) | 0;
@@ -165,11 +191,15 @@ export function findPocketShell(map: GameMap, o: FindPocketOpts): PocketShell | 
         break;
       }
       // 只有"只贴住一个内部格"的外圈格才配当门（否则门内是斜着的一排，读不出"一个口"）
-      if (n === 1) gates.push(i);
+      if (n === 1) {
+        cornerGates += 1;
+        if (gateFacesOut(i)) gates.push(i);
+      }
       walls.push({ x, y });
     }
     if (!sealable) { hit('rimHasObject'); continue; }
-    if (!gates.length) { hit('noGateCell'); continue; }
+    // 有候选门、但全都朝里开 ⇒ 这块地形的门口没法用，换一块（不是"图上没有门口"）
+    if (!gates.length) { hit(cornerGates ? 'gateSealed' : 'noGateCell'); continue; }
     // 外圈可通行格很少 = 这块被山/水天然围住，只剩一个口。那是最理想的洞穴，
     // 不是"没围起来"。"到底围没围住"由生成器的漏水检验（oneDoor）负责，不靠外圈长度猜。
 

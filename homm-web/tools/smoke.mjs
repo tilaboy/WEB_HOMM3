@@ -1458,8 +1458,11 @@ console.log('\n--- M7 矿场与宝库区 ---');
   let total = 0;
   for (const seed of [1, 42, 777, 20260912, 99999]) {
     const g = createGame(seed);
+    // 口袋里的宝贝不在这条尺子的量程内：它们的守卫是**门口那一个**（tier 按档位，未必是 strong），
+    // 由 `probe:pockets` [G3]「守卫就在入口格上」负责。不排掉的话，本条会随口袋落位随机红/绿。
     const deep = Object.values(g.map.objects).filter(
-      (o) => o.kind === 'vault' || (o.kind === 'mine' && RARE_RESOURCES.includes(o.payload.resource)),
+      (o) => (o.kind === 'vault' || (o.kind === 'mine' && RARE_RESOURCES.includes(o.payload.resource))) &&
+        !o.payload?.pocket,
     );
     const strong = Object.values(g.map.objects).filter(
       (o) => o.kind === 'wanderingMonster' && o.payload.tier === 'strong',
@@ -1469,6 +1472,7 @@ console.log('\n--- M7 矿场与宝库区 ---');
       if (strong.some((m) => Math.abs(m.pos.x - d.pos.x) <= 6 && Math.abs(m.pos.y - d.pos.y) <= 6)) guarded++;
     }
   }
+  ok(total >= 20, `深处物件（不含口袋）样本足够（${total}）`);
   ok(
     guarded === total,
     `宝库与稀有矿都有强档守卫挡路（${guarded}/${total}）`,

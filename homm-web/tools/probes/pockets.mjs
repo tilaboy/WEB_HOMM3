@@ -21,6 +21,9 @@
  *   [N3] **拆墙必漏**：随机挑一块口袋，拆掉它外圈的一件障碍，再从奖励格洪水；
  *        水量必须 **> 20**。这是 [G3] 尺子的负向对照 —— 如果拆了墙还量不出漏，
  *        说明洪水根本没穿过那圈墙，[G3] 的"8~20"就是白给的绿灯。
+ *   [G7] 每块宝地的**门都走得到**（从玩家起点 Flood 一遍，门格必须在连通域里）。
+ *        门口朝里开 / 被装饰树围死都在这条现形；负向对照：把门的四邻全堵死，同一判据必须变红。
+ *        血债（2026-11-18）：约 5.7% 的块门朝里开 —— 守卫打不到、奖励永远拿不到。
  *   [H1]–[H5] 属性物件（§21.8）的**行为**：领一次落实、每英雄一次、等级/金币两道闸。
  *        与 §18 同批交付（奖励表只有这一张），所以放在同一道门里。
  *
@@ -168,6 +171,8 @@ const stat = {
   poolBad: [],
   guardBad: [],
   spawnBad: [],
+  g7Total: 0,
+  g7Bad: [],
   n1Bad: [],
   dupBoost: [],
   n3Runs: 0,
@@ -250,6 +255,21 @@ for (const size of SIZES) {
         if (!isPassable(st.map, h.pos.x, h.pos.y)) {
           const id = st.map.tiles[h.pos.y * sv.W + h.pos.x]?.objectId;
           stat.spawnBad.push(`${tag} ${h.id} 脚下是 ${id ? st.map.objects[id]?.kind : '地形'}`);
+        }
+      }
+
+      /**
+       * [G7] 每块宝地的门都必须走得到。
+       *
+       * 从玩家起点 Flood 一遍（不设禁格），门格必须在连通域里。
+       * 这条量的是**成品图**：`oneDoor` 只证明"里面只有一个口"，`gateOpen` 只证明"墙刚种完时门通"，
+       * 都管不到装饰阶段的树 —— 实测 10/176 块的门被树围成死胡同。
+       */
+      const reach = flood(st.map, st.heroes.hero1.pos);
+      for (const r of sv.rows) {
+        stat.g7Total += 1;
+        if (reach[r.guardPos.y * sv.W + r.guardPos.x] !== 1) {
+          stat.g7Bad.push(`${tag} ${r.tier}@${r.guardPos.x},${r.guardPos.y}`);
         }
       }
 
@@ -445,6 +465,41 @@ for (const m of stat.dupBoost.slice(0, 6)) console.log(`       · ${m}`);
 HEAD('H · 属性物件行为（§21.8：领一次 / 每英雄一次 / 两道闸）');
 PASS(hIssues.length === 0, `H0–H6：${hIssues.length} 处异常`);
 for (const m of hIssues.slice(0, 8)) console.log(`       · ${m}`);
+
+HEAD('G7 · 每块宝地的门都走得到（从玩家起点算）');
+PASS(stat.g7Total > 0, `样本非空（${stat.g7Total} 块）`);
+PASS(stat.g7Bad.length === 0, `封死的门：${stat.g7Bad.length} 处`);
+for (const m of stat.g7Bad.slice(0, 6)) console.log(`       · ${m}`);
+
+HEAD('G7 负向对照 · 把门的四邻全堵死，同一判据必须变红');
+{
+  const st = createGame({ seed: 9100, layout: 'wild', size: 'medium', opponents: 3 });
+  const sv = survey(st);
+  const row = sv.rows[0];
+  if (!row) {
+    PASS(false, '没有可用的口袋做对照');
+  } else {
+    const idx = (p) => p.y * sv.W + p.x;
+    const before = flood(st.map, st.heroes.hero1.pos)[idx(row.guardPos)] === 1;
+    let k = 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = row.guardPos.x + dx;
+      const y = row.guardPos.y + dy;
+      if (x < 0 || y < 0 || x >= st.map.width || y >= st.map.height) continue;
+      const i = y * sv.W + x;
+      if (st.map.tiles[i]?.objectId) continue;
+      const id = `negctrl_g7_${k++}`;
+      st.map.objects[id] = {
+        id, kind: 'obstacle', pos: { x, y }, payload: { variant: 'tree' },
+        once: false, blocking: true, visitedBy: [],
+      };
+      st.map.tiles[i].objectId = id;
+    }
+    const after = flood(st.map, st.heroes.hero1.pos)[idx(row.guardPos)] === 1;
+    PASS(before, '对照前：这块门原本走得到');
+    PASS(!after, '围死之后：同一判据报"走不到"（尺子能红）');
+  }
+}
 
 HEAD('读数（不作断言，供设计参考）');
 const rng = (a) => (a.length ? `${Math.min(...a)}~${Math.max(...a)}（均 ${(a.reduce((x, y) => x + y, 0) / a.length).toFixed(1)}，n=${a.length}）` : '—');

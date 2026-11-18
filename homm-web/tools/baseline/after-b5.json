@@ -43,7 +43,9 @@
     "distCoreMd5": {
       "core/game/ai.js": "697f6af344ba08dc119c287bd777fab6",
       "core/combat/siege.js": "d2c92d6414314b7b5474e84557560f46",
-      "core/data/units.js": "7f080ffc372db0c4196116b272675117"
+      "core/data/units.js": "7f080ffc372db0c4196116b272675117",
+      "core/map/generator.js": "810ba1891bc6d06fd628b7994796dfc9",
+      "core/map/pockets.js": "a95c88c4f39087a29b7c560df6eb1459"
     },
     "b3c": {
       "date": "2026-11-13",
@@ -87,12 +89,19 @@
       },
       "v4Note": "audit:balance 的 V4 已撤下，每金 25.5% 只剩读数",
       "doc": "production/m7-d1-rare-v4-2026-11-13.md"
+    },
+    "pocketSeal": {
+      "date": "2026-11-18",
+      "change": "P0 封闭宝地门口修复：pockets.ts 门要朝外有开口；generator.ts 墙后连通 + 门口 3 格走廊 + 成品图总闸（自愈重试）",
+      "effect": "生成器变了 ⇒ 同种子不再是同一张图；balance / econ / aiscale(×3) / homegold / wallgate / t5lag 七段全部重录",
+      "normalReadings": "battles 40.75 · captures 30.0 · perGold 0.539 · D28 706 · T5 D28 5/8 · T5 D35 7/8",
+      "doc": "production/p0-pocket-seal-2026-11-18.md"
     }
   },
   "balance": {
     "caliber": "B",
     "dist": "/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist",
-    "distMd5": "58fba8677f28a16366a7e18eb456e702",
+    "distMd5": "38855f6424f402656a367ff0addf04a3",
     "printedPowerDriftPct": 0.83,
     "rows": [
       {
@@ -635,7 +644,7 @@
           "growthPerWeek": 2,
           "cost": {
             "gold": 1100,
-            "gem": 2,
+            "gem": 1,
             "wood": 5
           },
           "aiValue": 1164.22
@@ -819,7 +828,7 @@
           "growthPerWeek": 2,
           "cost": {
             "gold": 800,
-            "crystal": 4
+            "crystal": 1
           },
           "aiValue": 932.43
         },
@@ -866,11 +875,6 @@
         "name": "V3 T5 战力极差 ∈[1.40,1.60]×",
         "ok": true,
         "detail": "1.49×"
-      },
-      {
-        "name": "V4 T5 每金单调 + 极差 20~30%",
-        "ok": true,
-        "detail": "单调=true 极差 25.5%"
       },
       {
         "name": "V5 同档（T1 周产 ≤30%）",
@@ -1120,56 +1124,56 @@
       "difficulty": "normal",
       "seeds": 8,
       "days": 60,
-      "distMd5": "58fba8677f28a16366a7e18eb456e702",
+      "distMd5": "38855f6424f402656a367ff0addf04a3",
       "firstBattleDayMedian": 1,
-      "battlesMean": 39.875,
-      "capturesMean": 25.75,
+      "battlesMean": 40.75,
+      "capturesMean": 30,
       "lostAll": 0,
-      "t5GamesD28": 7,
-      "t5GamesD35": 8,
+      "t5GamesD28": 5,
+      "t5GamesD35": 7,
       "t5GamesAll": 8,
-      "t5ShareD28": 0.875,
-      "t5ShareD35": 1,
+      "t5ShareD28": 0.625,
+      "t5ShareD35": 0.875,
       "t5ShareAll": 1,
-      "t5Games": 7,
-      "t5Share": 0.875,
-      "perGold": 0.5709323488325685,
-      "heroValueD28Median": 795,
+      "t5Games": 5,
+      "t5Share": 0.625,
+      "perGold": 0.5394354189834504,
+      "heroValueD28Median": 705.5,
       "games": [
         {
           "seed": 4242,
           "firstBattleDay": 1,
-          "battles": 47,
-          "captures": 30,
+          "battles": 46,
+          "captures": 47,
           "lostAll": 0,
-          "firstT5Day": 28,
+          "firstT5Day": 34,
           "t5Structure": {
             "stacks": 5,
-            "maxShare": 0.3053157636822658,
+            "maxShare": 0.38420935522151894,
             "screen": true,
-            "holder": "阿尔文"
+            "holder": "艾莉亚"
           },
-          "garrisonAtT5": 4844.53,
+          "garrisonAtT5": 6032.46,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
             "p2": {
-              "d5": null,
-              "t5": null
+              "d5": 34,
+              "t5": 35
             },
             "p3": {
-              "d5": 21,
-              "t5": 28
+              "d5": 34,
+              "t5": 39
             },
             "p4": {
-              "d5": 21,
-              "t5": 28
+              "d5": 17,
+              "t5": 34
             }
           },
-          "recruitValue": 90185.92,
-          "recruitGold": 155620,
-          "heroValueD28": 763,
-          "townCountD28": 4,
+          "recruitValue": 86138.13999999998,
+          "recruitGold": 157610,
+          "heroValueD28": 801,
+          "townCountD28": 5,
           "a6Kind": "garrison",
           "heroAtT5": 0,
           "nakedTowns": 1
@@ -1177,36 +1181,36 @@
         {
           "seed": 5219,
           "firstBattleDay": 1,
-          "battles": 45,
-          "captures": 36,
+          "battles": 39,
+          "captures": 28,
           "lostAll": 0,
-          "firstT5Day": 22,
+          "firstT5Day": 28,
           "t5Structure": {
             "stacks": 5,
-            "maxShare": 0.5163196546550499,
+            "maxShare": 0.38275402124776076,
             "screen": true,
             "holder": "阿尔文"
           },
-          "garrisonAtT5": 4260.17,
+          "garrisonAtT5": 7503.72,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
             "p2": {
-              "d5": 17,
-              "t5": 22
+              "d5": 26,
+              "t5": 28
             },
             "p3": {
-              "d5": null,
-              "t5": null
+              "d5": 28,
+              "t5": 36
             },
             "p4": {
-              "d5": 33,
-              "t5": 36
+              "d5": null,
+              "t5": null
             }
           },
-          "recruitValue": 79165.15999999997,
-          "recruitGold": 133610,
-          "heroValueD28": 827,
+          "recruitValue": 81382.78000000006,
+          "recruitGold": 147510,
+          "heroValueD28": 1361,
           "townCountD28": 3,
           "a6Kind": "garrison",
           "heroAtT5": 0,
@@ -1215,50 +1219,50 @@
         {
           "seed": 6196,
           "firstBattleDay": 1,
-          "battles": 14,
-          "captures": 14,
+          "battles": 50,
+          "captures": 23,
           "lostAll": 0,
-          "firstT5Day": 29,
-          "t5Structure": null,
-          "garrisonAtT5": 8378.64,
+          "firstT5Day": 50,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.4585090132497152,
+            "screen": true,
+            "holder": "翠林守誓者"
+          },
+          "garrisonAtT5": 4347.96,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
             "p2": {
-              "d5": 40,
-              "t5": 42
+              "d5": null,
+              "t5": null
             },
             "p3": {
-              "d5": 27,
-              "t5": 29
+              "d5": 42,
+              "t5": 50
             },
             "p4": {
               "d5": null,
               "t5": null
             }
           },
-          "recruitValue": 70161.12000000005,
-          "recruitGold": 130430,
-          "heroValueD28": 403,
-          "townCountD28": 3,
+          "recruitValue": 63955.040000000045,
+          "recruitGold": 138015,
+          "heroValueD28": 810,
+          "townCountD28": 4,
           "a6Kind": "garrison",
           "heroAtT5": 0,
-          "nakedTowns": 0
+          "nakedTowns": 1
         },
         {
           "seed": 7173,
-          "firstBattleDay": 2,
-          "battles": 49,
-          "captures": 33,
+          "firstBattleDay": 1,
+          "battles": 44,
+          "captures": 27,
           "lostAll": 0,
           "firstT5Day": 21,
-          "t5Structure": {
-            "stacks": 5,
-            "maxShare": 0.36551756265722546,
-            "screen": true,
-            "holder": "紫晶秘法师"
-          },
-          "garrisonAtT5": 4197.85,
+          "t5Structure": null,
+          "garrisonAtT5": 4616.8,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
@@ -1267,17 +1271,17 @@
               "t5": null
             },
             "p3": {
-              "d5": 19,
-              "t5": 21
+              "d5": null,
+              "t5": null
             },
             "p4": {
-              "d5": 19,
+              "d5": 14,
               "t5": 21
             }
           },
-          "recruitValue": 98221.99000000003,
-          "recruitGold": 155995,
-          "heroValueD28": 859,
+          "recruitValue": 89715.66000000002,
+          "recruitGold": 171840,
+          "heroValueD28": 1502,
           "townCountD28": 5,
           "a6Kind": "garrison",
           "heroAtT5": 0,
@@ -1286,88 +1290,121 @@
         {
           "seed": 8150,
           "firstBattleDay": 1,
-          "battles": 46,
-          "captures": 19,
+          "battles": 34,
+          "captures": 21,
           "lostAll": 0,
           "firstT5Day": 21,
-          "t5Structure": {
-            "stacks": 4,
-            "maxShare": 0.4833497485874242,
-            "screen": true,
-            "holder": "紫晶秘法师"
-          },
-          "garrisonAtT5": 5790.71,
+          "t5Structure": null,
+          "garrisonAtT5": 2689.9600000000005,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
             "p2": {
-              "d5": 14,
+              "d5": 18,
+              "t5": 22
+            },
+            "p3": {
+              "d5": 17,
               "t5": 21
             },
-            "p3": {
-              "d5": null,
-              "t5": null
-            },
             "p4": {
-              "d5": 27,
-              "t5": 28
+              "d5": 28,
+              "t5": 36
             }
           },
-          "recruitValue": 93867.63999999997,
-          "recruitGold": 162050,
-          "heroValueD28": 507,
-          "townCountD28": 3,
-          "a6Kind": "garrison",
-          "heroAtT5": 0,
-          "nakedTowns": 0
-        },
-        {
-          "seed": 9127,
-          "firstBattleDay": 1,
-          "battles": 42,
-          "captures": 26,
-          "lostAll": 0,
-          "firstT5Day": 28,
-          "t5Structure": {
-            "stacks": 5,
-            "maxShare": 0.422969523676686,
-            "screen": true,
-            "holder": "艾莉亚"
-          },
-          "garrisonAtT5": 1442.57,
-          "t5Ready": null,
-          "t5BuyLag": null,
-          "perFaction": {
-            "p2": {
-              "d5": null,
-              "t5": null
-            },
-            "p3": {
-              "d5": 26,
-              "t5": 30
-            },
-            "p4": {
-              "d5": 25,
-              "t5": 28
-            }
-          },
-          "recruitValue": 83916.03000000001,
-          "recruitGold": 155360,
-          "heroValueD28": 1535,
+          "recruitValue": 124571.20000000013,
+          "recruitGold": 205295,
+          "heroValueD28": 557,
           "townCountD28": 5,
           "a6Kind": "garrison",
           "heroAtT5": 0,
           "nakedTowns": 1
         },
         {
+          "seed": 9127,
+          "firstBattleDay": 1,
+          "battles": 55,
+          "captures": 28,
+          "lostAll": 0,
+          "firstT5Day": 22,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.5913398337384264,
+            "screen": true,
+            "holder": "艾莉亚"
+          },
+          "garrisonAtT5": 2324.08,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 21,
+              "t5": 28
+            },
+            "p3": {
+              "d5": null,
+              "t5": null
+            },
+            "p4": {
+              "d5": 18,
+              "t5": 22
+            }
+          },
+          "recruitValue": 89644.27000000003,
+          "recruitGold": 167690,
+          "heroValueD28": 306,
+          "townCountD28": 6,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
           "seed": 10104,
           "firstBattleDay": 1,
-          "battles": 21,
-          "captures": 16,
+          "battles": 38,
+          "captures": 52,
+          "lostAll": 0,
+          "firstT5Day": 35,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.5595795059051748,
+            "screen": true,
+            "holder": "塞拉菲"
+          },
+          "garrisonAtT5": 5253.02,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": 32,
+              "t5": 36
+            },
+            "p4": {
+              "d5": 32,
+              "t5": 35
+            }
+          },
+          "recruitValue": 54324.57000000004,
+          "recruitGold": 108100,
+          "heroValueD28": 610,
+          "townCountD28": 3,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 1
+        },
+        {
+          "seed": 11081,
+          "firstBattleDay": 1,
+          "battles": 20,
+          "captures": 14,
           "lostAll": 0,
           "firstT5Day": 28,
           "t5Structure": null,
-          "garrisonAtT5": 3812.87,
+          "garrisonAtT5": 6919.31,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
@@ -1376,56 +1413,18 @@
               "t5": 28
             },
             "p3": {
-              "d5": 33,
-              "t5": 35
+              "d5": 35,
+              "t5": 42
             },
             "p4": {
               "d5": null,
               "t5": null
             }
           },
-          "recruitValue": 72238.25000000007,
-          "recruitGold": 128255,
-          "heroValueD28": 488,
+          "recruitValue": 69976.28000000006,
+          "recruitGold": 126900,
+          "heroValueD28": 292,
           "townCountD28": 3,
-          "a6Kind": "garrison",
-          "heroAtT5": 0,
-          "nakedTowns": 0
-        },
-        {
-          "seed": 11081,
-          "firstBattleDay": 1,
-          "battles": 55,
-          "captures": 32,
-          "lostAll": 0,
-          "firstT5Day": 23,
-          "t5Structure": {
-            "stacks": 5,
-            "maxShare": 0.4146814054316051,
-            "screen": true,
-            "holder": "艾莉亚"
-          },
-          "garrisonAtT5": 6184.110000000001,
-          "t5Ready": null,
-          "t5BuyLag": null,
-          "perFaction": {
-            "p2": {
-              "d5": null,
-              "t5": null
-            },
-            "p3": {
-              "d5": 28,
-              "t5": 35
-            },
-            "p4": {
-              "d5": 20,
-              "t5": 23
-            }
-          },
-          "recruitValue": 84565.26000000004,
-          "recruitGold": 156265,
-          "heroValueD28": 906,
-          "townCountD28": 4,
           "a6Kind": "garrison",
           "heroAtT5": 0,
           "nakedTowns": 0
@@ -1436,212 +1435,221 @@
       "difficulty": "easy",
       "seeds": 8,
       "days": 60,
-      "distMd5": "58fba8677f28a16366a7e18eb456e702",
+      "distMd5": "38855f6424f402656a367ff0addf04a3",
       "firstBattleDayMedian": 1,
-      "battlesMean": 50.25,
-      "capturesMean": 43,
+      "battlesMean": 43,
+      "capturesMean": 37.125,
       "lostAll": 0,
-      "t5GamesD28": 2,
-      "t5GamesD35": 4,
+      "t5GamesD28": 7,
+      "t5GamesD35": 8,
       "t5GamesAll": 8,
-      "t5ShareD28": 0.25,
-      "t5ShareD35": 0.5,
+      "t5ShareD28": 0.875,
+      "t5ShareD35": 1,
       "t5ShareAll": 1,
-      "t5Games": 2,
-      "t5Share": 0.25,
-      "perGold": 0.5120430125007487,
-      "heroValueD28Median": 664.5,
+      "t5Games": 7,
+      "t5Share": 0.875,
+      "perGold": 0.5618098126862496,
+      "heroValueD28Median": 803.5,
       "games": [
         {
           "seed": 4242,
           "firstBattleDay": 1,
-          "battles": 46,
-          "captures": 37,
-          "lostAll": 0,
-          "firstT5Day": 35,
-          "t5Structure": {
-            "stacks": 5,
-            "maxShare": 0.3295951124629033,
-            "screen": true,
-            "holder": "格罗姆"
-          },
-          "garrisonAtT5": null,
-          "t5Ready": null,
-          "t5BuyLag": null,
-          "perFaction": {
-            "p2": {
-              "d5": 33,
-              "t5": 35
-            },
-            "p3": {
-              "d5": 34,
-              "t5": 37
-            },
-            "p4": {
-              "d5": null,
-              "t5": null
-            }
-          },
-          "recruitValue": 85108.63,
-          "recruitGold": 165805,
-          "heroValueD28": 399,
-          "townCountD28": 4,
-          "a6Kind": "field",
-          "heroAtT5": null,
-          "fieldT5Value": 3794.1400000000003,
-          "nakedTowns": 1
-        },
-        {
-          "seed": 5219,
-          "firstBattleDay": 1,
-          "battles": 62,
-          "captures": 40,
-          "lostAll": 0,
-          "firstT5Day": 21,
-          "t5Structure": {
-            "stacks": 4,
-            "maxShare": 0.4142147535070273,
-            "screen": true,
-            "holder": "翠林守誓者"
-          },
-          "garrisonAtT5": 2600.77,
-          "t5Ready": null,
-          "t5BuyLag": null,
-          "perFaction": {
-            "p2": {
-              "d5": 24,
-              "t5": 31
-            },
-            "p3": {
-              "d5": 19,
-              "t5": 21
-            },
-            "p4": {
-              "d5": null,
-              "t5": null
-            }
-          },
-          "recruitValue": 104573.25000000007,
-          "recruitGold": 188190,
-          "heroValueD28": 1109,
-          "townCountD28": 6,
-          "a6Kind": "garrison",
-          "heroAtT5": 0,
-          "nakedTowns": 1
-        },
-        {
-          "seed": 6196,
-          "firstBattleDay": 1,
           "battles": 39,
-          "captures": 41,
-          "lostAll": 0,
-          "firstT5Day": 36,
-          "t5Structure": null,
-          "garrisonAtT5": 6102.46,
-          "t5Ready": null,
-          "t5BuyLag": null,
-          "perFaction": {
-            "p2": {
-              "d5": 32,
-              "t5": 36
-            },
-            "p3": {
-              "d5": 47,
-              "t5": 52
-            },
-            "p4": {
-              "d5": null,
-              "t5": null
-            }
-          },
-          "recruitValue": 60222.920000000035,
-          "recruitGold": 127495,
-          "heroValueD28": 737,
-          "townCountD28": 4,
-          "a6Kind": "garrison",
-          "heroAtT5": 0,
-          "nakedTowns": 2
-        },
-        {
-          "seed": 7173,
-          "firstBattleDay": 2,
-          "battles": 55,
-          "captures": 35,
+          "captures": 45,
           "lostAll": 0,
           "firstT5Day": 28,
           "t5Structure": {
             "stacks": 5,
-            "maxShare": 0.5020154324542209,
+            "maxShare": 0.313051205988009,
             "screen": true,
-            "holder": "紫晶秘法师"
+            "holder": "格罗姆"
           },
-          "garrisonAtT5": 2646.48,
+          "garrisonAtT5": 4718.29,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
             "p2": {
-              "d5": null,
-              "t5": null
+              "d5": 25,
+              "t5": 28
             },
             "p3": {
-              "d5": 21,
-              "t5": 30
+              "d5": 55,
+              "t5": 57
             },
             "p4": {
-              "d5": 21,
-              "t5": 28
+              "d5": 28,
+              "t5": 35
             }
           },
-          "recruitValue": 79579.70999999992,
-          "recruitGold": 141440,
-          "heroValueD28": 592,
+          "recruitValue": 81415.16999999995,
+          "recruitGold": 139840,
+          "heroValueD28": 975,
           "townCountD28": 5,
           "a6Kind": "garrison",
           "heroAtT5": 0,
           "nakedTowns": 1
         },
         {
-          "seed": 8150,
+          "seed": 5219,
           "firstBattleDay": 1,
-          "battles": 38,
-          "captures": 47,
+          "battles": 42,
+          "captures": 33,
           "lostAll": 0,
-          "firstT5Day": 40,
-          "t5Structure": null,
-          "garrisonAtT5": 11468.55,
+          "firstT5Day": 28,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.4122768430038996,
+            "screen": true,
+            "holder": "艾莉亚"
+          },
+          "garrisonAtT5": 5725.93,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
             "p2": {
-              "d5": null,
-              "t5": null
+              "d5": 28,
+              "t5": 43
             },
             "p3": {
-              "d5": null,
-              "t5": null
+              "d5": 26,
+              "t5": 28
             },
             "p4": {
-              "d5": 34,
-              "t5": 40
+              "d5": null,
+              "t5": null
             }
           },
-          "recruitValue": 60713.07000000002,
-          "recruitGold": 128140,
-          "heroValueD28": 451,
-          "townCountD28": 4,
+          "recruitValue": 91313.39000000001,
+          "recruitGold": 168335,
+          "heroValueD28": 254,
+          "townCountD28": 5,
           "a6Kind": "garrison",
           "heroAtT5": 0,
           "nakedTowns": 0
         },
         {
-          "seed": 9127,
+          "seed": 6196,
           "firstBattleDay": 1,
-          "battles": 47,
+          "battles": 41,
+          "captures": 28,
+          "lostAll": 0,
+          "firstT5Day": 22,
+          "t5Structure": {
+            "stacks": 4,
+            "maxShare": 0.537842815286154,
+            "screen": true,
+            "holder": "翠林守誓者"
+          },
+          "garrisonAtT5": 5895.210000000001,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 30,
+              "t5": null
+            },
+            "p3": {
+              "d5": 34,
+              "t5": 35
+            },
+            "p4": {
+              "d5": 18,
+              "t5": 22
+            }
+          },
+          "recruitValue": 94058.05000000005,
+          "recruitGold": 160415,
+          "heroValueD28": 1091,
+          "townCountD28": 5,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 7173,
+          "firstBattleDay": 1,
+          "battles": 45,
           "captures": 54,
           "lostAll": 0,
-          "firstT5Day": 38,
+          "firstT5Day": 28,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.432847093453917,
+            "screen": true,
+            "holder": "艾莉亚"
+          },
+          "garrisonAtT5": 6735.789999999999,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 35,
+              "t5": 42
+            },
+            "p3": {
+              "d5": 27,
+              "t5": 29
+            },
+            "p4": {
+              "d5": 27,
+              "t5": 28
+            }
+          },
+          "recruitValue": 96462.05999999997,
+          "recruitGold": 166315,
+          "heroValueD28": 1299,
+          "townCountD28": 5,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 8150,
+          "firstBattleDay": 1,
+          "battles": 55,
+          "captures": 38,
+          "lostAll": 0,
+          "firstT5Day": 31,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.41412893075191126,
+            "screen": true,
+            "holder": "格罗姆"
+          },
+          "garrisonAtT5": 5192.71,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 26,
+              "t5": 31
+            },
+            "p3": {
+              "d5": 28,
+              "t5": 35
+            },
+            "p4": {
+              "d5": 41,
+              "t5": 42
+            }
+          },
+          "recruitValue": 97467.69000000005,
+          "recruitGold": 177005,
+          "heroValueD28": 2283,
+          "townCountD28": 5,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 1
+        },
+        {
+          "seed": 9127,
+          "firstBattleDay": 1,
+          "battles": 33,
+          "captures": 22,
+          "lostAll": 0,
+          "firstT5Day": 21,
           "t5Structure": null,
-          "garrisonAtT5": 4566.6,
+          "garrisonAtT5": 3626.34,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
@@ -1650,92 +1658,87 @@
               "t5": null
             },
             "p3": {
-              "d5": null,
-              "t5": null
+              "d5": 19,
+              "t5": 21
             },
             "p4": {
-              "d5": 25,
-              "t5": 38
+              "d5": 33,
+              "t5": 36
             }
           },
-          "recruitValue": 85599.15999999999,
-          "recruitGold": 167675,
-          "heroValueD28": 1369,
-          "townCountD28": 6,
+          "recruitValue": 93087.83000000005,
+          "recruitGold": 159475,
+          "heroValueD28": 373,
+          "townCountD28": 5,
           "a6Kind": "garrison",
           "heroAtT5": 0,
-          "nakedTowns": 2
+          "nakedTowns": 0
         },
         {
           "seed": 10104,
           "firstBattleDay": 1,
-          "battles": 65,
-          "captures": 36,
+          "battles": 48,
+          "captures": 48,
           "lostAll": 0,
-          "firstT5Day": 35,
-          "t5Structure": {
-            "stacks": 4,
-            "maxShare": 0.3704985288632879,
-            "screen": true,
-            "holder": "阿尔文"
-          },
-          "garrisonAtT5": 2477.94,
+          "firstT5Day": 28,
+          "t5Structure": null,
+          "garrisonAtT5": 7072.39,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
             "p2": {
-              "d5": 48,
+              "d5": null,
               "t5": null
             },
             "p3": {
-              "d5": 33,
-              "t5": 35
+              "d5": 25,
+              "t5": 28
             },
             "p4": {
               "d5": null,
               "t5": null
             }
           },
-          "recruitValue": 59198.01000000003,
-          "recruitGold": 116615,
-          "heroValueD28": 810,
-          "townCountD28": 4,
+          "recruitValue": 52582.45000000003,
+          "recruitGold": 104895,
+          "heroValueD28": 632,
+          "townCountD28": 3,
           "a6Kind": "garrison",
           "heroAtT5": 0,
-          "nakedTowns": 1
+          "nakedTowns": 0
         },
         {
           "seed": 11081,
           "firstBattleDay": 1,
-          "battles": 50,
-          "captures": 54,
+          "battles": 41,
+          "captures": 29,
           "lostAll": 0,
-          "firstT5Day": 36,
+          "firstT5Day": 28,
           "t5Structure": null,
-          "garrisonAtT5": 6396.83,
+          "garrisonAtT5": 7224.0199999999995,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
             "p2": {
-              "d5": null,
-              "t5": null
+              "d5": 26,
+              "t5": 28
             },
             "p3": {
-              "d5": 28,
-              "t5": 36
+              "d5": 27,
+              "t5": 33
             },
             "p4": {
-              "d5": null,
+              "d5": 49,
               "t5": null
             }
           },
-          "recruitValue": 63445.280000000006,
-          "recruitGold": 133370,
-          "heroValueD28": 149,
+          "recruitValue": 79852.81000000004,
+          "recruitGold": 145200,
+          "heroValueD28": 217,
           "townCountD28": 3,
           "a6Kind": "garrison",
           "heroAtT5": 0,
-          "nakedTowns": 1
+          "nakedTowns": 0
         }
       ]
     },
@@ -1743,173 +1746,36 @@
       "difficulty": "hard",
       "seeds": 8,
       "days": 60,
-      "distMd5": "58fba8677f28a16366a7e18eb456e702",
+      "distMd5": "38855f6424f402656a367ff0addf04a3",
       "firstBattleDayMedian": 1,
-      "battlesMean": 23.625,
-      "capturesMean": 19.5,
+      "battlesMean": 37.25,
+      "capturesMean": 31.5,
       "lostAll": 0,
-      "t5GamesD28": 5,
+      "t5GamesD28": 7,
       "t5GamesD35": 8,
       "t5GamesAll": 8,
-      "t5ShareD28": 0.625,
+      "t5ShareD28": 0.875,
       "t5ShareD35": 1,
       "t5ShareAll": 1,
-      "t5Games": 5,
-      "t5Share": 0.625,
-      "perGold": 0.5436368667675165,
-      "heroValueD28Median": 470,
+      "t5Games": 7,
+      "t5Share": 0.875,
+      "perGold": 0.5436162989804849,
+      "heroValueD28Median": 930.5,
       "games": [
         {
           "seed": 4242,
           "firstBattleDay": 1,
-          "battles": 43,
-          "captures": 39,
-          "lostAll": 0,
-          "firstT5Day": 29,
-          "t5Structure": {
-            "stacks": 4,
-            "maxShare": 0.3888224646151585,
-            "screen": true,
-            "holder": "艾莉亚"
-          },
-          "garrisonAtT5": 4703.5,
-          "t5Ready": null,
-          "t5BuyLag": null,
-          "perFaction": {
-            "p2": {
-              "d5": null,
-              "t5": null
-            },
-            "p3": {
-              "d5": 25,
-              "t5": 29
-            },
-            "p4": {
-              "d5": 14,
-              "t5": 33
-            }
-          },
-          "recruitValue": 88772.94999999995,
-          "recruitGold": 164090,
-          "heroValueD28": 916,
-          "townCountD28": 5,
-          "a6Kind": "garrison",
-          "heroAtT5": 0,
-          "nakedTowns": 0
-        },
-        {
-          "seed": 5219,
-          "firstBattleDay": 1,
-          "battles": 11,
-          "captures": 13,
-          "lostAll": 0,
-          "firstT5Day": 22,
-          "t5Structure": null,
-          "garrisonAtT5": 4961.87,
-          "t5Ready": null,
-          "t5BuyLag": null,
-          "perFaction": {
-            "p2": {
-              "d5": 20,
-              "t5": 22
-            },
-            "p3": {
-              "d5": 21,
-              "t5": 28
-            },
-            "p4": {
-              "d5": null,
-              "t5": null
-            }
-          },
-          "recruitValue": 69688.73000000007,
-          "recruitGold": 117700,
-          "heroValueD28": 328,
-          "townCountD28": 3,
-          "a6Kind": "garrison",
-          "heroAtT5": 0,
-          "nakedTowns": 0
-        },
-        {
-          "seed": 6196,
-          "firstBattleDay": 1,
-          "battles": 13,
-          "captures": 11,
-          "lostAll": 0,
-          "firstT5Day": 28,
-          "t5Structure": null,
-          "garrisonAtT5": 6386.8,
-          "t5Ready": null,
-          "t5BuyLag": null,
-          "perFaction": {
-            "p2": {
-              "d5": 27,
-              "t5": 28
-            },
-            "p3": {
-              "d5": 27,
-              "t5": 31
-            },
-            "p4": {
-              "d5": null,
-              "t5": null
-            }
-          },
-          "recruitValue": 75588.61000000007,
-          "recruitGold": 135415,
-          "heroValueD28": 421,
-          "townCountD28": 3,
-          "a6Kind": "garrison",
-          "heroAtT5": 0,
-          "nakedTowns": 0
-        },
-        {
-          "seed": 7173,
-          "firstBattleDay": 2,
-          "battles": 8,
-          "captures": 17,
-          "lostAll": 0,
-          "firstT5Day": 22,
-          "t5Structure": null,
-          "garrisonAtT5": 6022.610000000001,
-          "t5Ready": null,
-          "t5BuyLag": null,
-          "perFaction": {
-            "p2": {
-              "d5": null,
-              "t5": null
-            },
-            "p3": {
-              "d5": 20,
-              "t5": 22
-            },
-            "p4": {
-              "d5": 27,
-              "t5": 35
-            }
-          },
-          "recruitValue": 70943.83,
-          "recruitGold": 119225,
-          "heroValueD28": 519,
-          "townCountD28": 3,
-          "a6Kind": "garrison",
-          "heroAtT5": 0,
-          "nakedTowns": 0
-        },
-        {
-          "seed": 8150,
-          "firstBattleDay": 1,
-          "battles": 28,
-          "captures": 24,
+          "battles": 57,
+          "captures": 49,
           "lostAll": 0,
           "firstT5Day": 29,
           "t5Structure": {
             "stacks": 5,
-            "maxShare": 0.42554947034661667,
+            "maxShare": 0.3416220295887038,
             "screen": true,
-            "holder": "格罗姆"
+            "holder": "艾莉亚"
           },
-          "garrisonAtT5": 5251.2,
+          "garrisonAtT5": 3823.48,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
@@ -1922,107 +1788,75 @@
               "t5": null
             },
             "p4": {
-              "d5": null,
-              "t5": null
+              "d5": 23,
+              "t5": 29
             }
           },
-          "recruitValue": 74791.16000000006,
-          "recruitGold": 152460,
-          "heroValueD28": 360,
-          "townCountD28": 4,
+          "recruitValue": 105011.75000000003,
+          "recruitGold": 189250,
+          "heroValueD28": 535,
+          "townCountD28": 5,
           "a6Kind": "garrison",
           "heroAtT5": 0,
           "nakedTowns": 1
         },
         {
-          "seed": 9127,
+          "seed": 5219,
           "firstBattleDay": 1,
-          "battles": 35,
-          "captures": 24,
+          "battles": 33,
+          "captures": 43,
           "lostAll": 0,
-          "firstT5Day": 24,
-          "t5Structure": null,
-          "garrisonAtT5": 4862.75,
-          "t5Ready": null,
-          "t5BuyLag": null,
-          "perFaction": {
-            "p2": {
-              "d5": 20,
-              "t5": 24
-            },
-            "p3": {
-              "d5": 35,
-              "t5": 42
-            },
-            "p4": {
-              "d5": 17,
-              "t5": 34
-            }
-          },
-          "recruitValue": 99465.11999999991,
-          "recruitGold": 182385,
-          "heroValueD28": 1503,
-          "townCountD28": 6,
-          "a6Kind": "garrison",
-          "heroAtT5": 0,
-          "nakedTowns": 0
-        },
-        {
-          "seed": 10104,
-          "firstBattleDay": 1,
-          "battles": 27,
-          "captures": 20,
-          "lostAll": 0,
-          "firstT5Day": 35,
+          "firstT5Day": 28,
           "t5Structure": {
             "stacks": 5,
-            "maxShare": 0.4031687667478949,
+            "maxShare": 0.3312848466168303,
             "screen": true,
-            "holder": "艾莉亚"
+            "holder": "紫晶秘法师"
           },
-          "garrisonAtT5": 2601.33,
+          "garrisonAtT5": null,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
             "p2": {
-              "d5": null,
-              "t5": null
+              "d5": 39,
+              "t5": 42
             },
             "p3": {
-              "d5": 31,
-              "t5": 35
-            },
-            "p4": {
               "d5": null,
               "t5": null
+            },
+            "p4": {
+              "d5": 26,
+              "t5": 28
             }
           },
-          "recruitValue": 49228.50999999999,
-          "recruitGold": 97085,
-          "heroValueD28": 546,
-          "townCountD28": 3,
-          "a6Kind": "garrison",
-          "heroAtT5": 0,
+          "recruitValue": 84353.78000000004,
+          "recruitGold": 164155,
+          "heroValueD28": 1133,
+          "townCountD28": 5,
+          "a6Kind": "field",
+          "heroAtT5": null,
+          "fieldT5Value": 4736.83,
           "nakedTowns": 0
         },
         {
-          "seed": 11081,
+          "seed": 6196,
           "firstBattleDay": 1,
-          "battles": 24,
-          "captures": 8,
+          "battles": 17,
+          "captures": 11,
           "lostAll": 0,
           "firstT5Day": 28,
           "t5Structure": null,
-          "garrisonAtT5": 8944.44,
+          "garrisonAtT5": 8994.880000000001,
           "t5Ready": null,
           "t5BuyLag": null,
           "perFaction": {
             "p2": {
-              "d5": null,
-              "t5": null
+              "d5": 32,
+              "t5": 35
             },
             "p3": {
-              "d5": 27,
+              "d5": 26,
               "t5": 28
             },
             "p4": {
@@ -2030,9 +1864,189 @@
               "t5": null
             }
           },
-          "recruitValue": 60888.69000000004,
-          "recruitGold": 115760,
-          "heroValueD28": 291,
+          "recruitValue": 70160.44000000009,
+          "recruitGold": 130680,
+          "heroValueD28": 444,
+          "townCountD28": 3,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 7173,
+          "firstBattleDay": 1,
+          "battles": 37,
+          "captures": 31,
+          "lostAll": 0,
+          "firstT5Day": 28,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.553481088294461,
+            "screen": true,
+            "holder": "紫晶秘法师"
+          },
+          "garrisonAtT5": 6358.370000000001,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": null,
+              "t5": null
+            },
+            "p4": {
+              "d5": 27,
+              "t5": 28
+            }
+          },
+          "recruitValue": 73938.26000000001,
+          "recruitGold": 138840,
+          "heroValueD28": 1041,
+          "townCountD28": 4,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 1
+        },
+        {
+          "seed": 8150,
+          "firstBattleDay": 1,
+          "battles": 45,
+          "captures": 30,
+          "lostAll": 0,
+          "firstT5Day": 22,
+          "t5Structure": null,
+          "garrisonAtT5": 4167.67,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 16,
+              "t5": 22
+            },
+            "p3": {
+              "d5": 27,
+              "t5": 28
+            },
+            "p4": {
+              "d5": 42,
+              "t5": null
+            }
+          },
+          "recruitValue": 108659.93000000007,
+          "recruitGold": 186600,
+          "heroValueD28": 1460,
+          "townCountD28": 5,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 9127,
+          "firstBattleDay": 1,
+          "battles": 33,
+          "captures": 28,
+          "lostAll": 0,
+          "firstT5Day": 28,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.4431364774107209,
+            "screen": true,
+            "holder": "翠林守誓者"
+          },
+          "garrisonAtT5": 7037.51,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 21,
+              "t5": 28
+            },
+            "p3": {
+              "d5": 21,
+              "t5": 28
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 87004.00000000006,
+          "recruitGold": 153770,
+          "heroValueD28": 825,
+          "townCountD28": 3,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 0
+        },
+        {
+          "seed": 10104,
+          "firstBattleDay": 1,
+          "battles": 42,
+          "captures": 36,
+          "lostAll": 0,
+          "firstT5Day": 28,
+          "t5Structure": {
+            "stacks": 5,
+            "maxShare": 0.3268741529095474,
+            "screen": true,
+            "holder": "塞拉菲"
+          },
+          "garrisonAtT5": 3339.29,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": 49,
+              "t5": null
+            },
+            "p3": {
+              "d5": null,
+              "t5": null
+            },
+            "p4": {
+              "d5": 27,
+              "t5": 28
+            }
+          },
+          "recruitValue": 61394.29999999999,
+          "recruitGold": 117885,
+          "heroValueD28": 1036,
+          "townCountD28": 4,
+          "a6Kind": "garrison",
+          "heroAtT5": 0,
+          "nakedTowns": 1
+        },
+        {
+          "seed": 11081,
+          "firstBattleDay": 1,
+          "battles": 34,
+          "captures": 24,
+          "lostAll": 0,
+          "firstT5Day": 21,
+          "t5Structure": null,
+          "garrisonAtT5": 5283.390000000001,
+          "t5Ready": null,
+          "t5BuyLag": null,
+          "perFaction": {
+            "p2": {
+              "d5": null,
+              "t5": null
+            },
+            "p3": {
+              "d5": 20,
+              "t5": 21
+            },
+            "p4": {
+              "d5": null,
+              "t5": null
+            }
+          },
+          "recruitValue": 65059.77000000005,
+          "recruitGold": 124785,
+          "heroValueD28": 166,
           "townCountD28": 3,
           "a6Kind": "garrison",
           "heroAtT5": 0,
@@ -2042,7 +2056,7 @@
     }
   },
   "homegold": {
-    "distMd5": "58fba8677f28a16366a7e18eb456e702",
+    "distMd5": "38855f6424f402656a367ff0addf04a3",
     "orphanNegative": false,
     "strongNegative": false,
     "maps": 9,
@@ -2119,8 +2133,8 @@
     "defenderArmyGold": {
       "p1": 36570,
       "p2": 37020,
-      "p3": 46275,
-      "p4": 59250
+      "p3": 41475,
+      "p4": 44850
     },
     "thresholdK": {
       "p1": {
@@ -2472,106 +2486,114 @@
     "batch": "D1",
     "seeds": 16,
     "days": 60,
-    "distMd5": "58fba8677f28a16366a7e18eb456e702",
+    "distMd5": "38855f6424f402656a367ff0addf04a3",
     "perFaction": {
       "p1": {
-        "dwellSamples": 15,
-        "buySamples": 15,
-        "buyLagMedian": 2,
-        "buyLagMax": 12,
+        "dwellSamples": 16,
+        "buySamples": 16,
+        "buyLagMedian": 2.5,
+        "buyLagMax": 10,
         "neverBuy": 0,
-        "noDwell": 1,
-        "fieldLagMedian": 12,
-        "buyLags": [
-          4,
-          2,
-          2,
-          10,
-          1,
-          2,
-          1,
-          8,
-          5,
-          1,
-          5,
-          2,
-          12,
-          2,
-          7
-        ],
-        "fieldLags": [
-          22,
-          0,
-          11,
-          13
-        ]
-      },
-      "p2": {
-        "dwellSamples": 7,
-        "buySamples": 7,
-        "buyLagMedian": 2,
-        "buyLagMax": 7,
-        "neverBuy": 0,
-        "noDwell": 9,
-        "fieldLagMedian": 14,
-        "buyLags": [
-          2,
-          7,
-          2,
-          1,
-          2,
-          3,
-          7
-        ],
-        "fieldLags": [
-          14
-        ]
-      },
-      "p3": {
-        "dwellSamples": 13,
-        "buySamples": 13,
-        "buyLagMedian": 4,
-        "buyLagMax": 11,
-        "neverBuy": 0,
-        "noDwell": 3,
+        "noDwell": 0,
         "fieldLagMedian": 10,
         "buyLags": [
-          7,
-          2,
-          2,
-          4,
-          2,
-          8,
           3,
+          2,
+          10,
           4,
-          7,
+          9,
+          2,
           3,
+          9,
+          1,
+          1,
+          2,
+          2,
           7,
           7,
-          11
+          2,
+          1
         ],
         "fieldLags": [
           10
         ]
       },
-      "p4": {
-        "dwellSamples": 4,
-        "buySamples": 4,
-        "buyLagMedian": 3,
+      "p2": {
+        "dwellSamples": 9,
+        "buySamples": 9,
+        "buyLagMedian": 4,
         "buyLagMax": 7,
         "neverBuy": 0,
-        "noDwell": 12,
-        "fieldLagMedian": 1,
+        "noDwell": 7,
+        "fieldLagMedian": 0.5,
         "buyLags": [
+          3,
+          4,
           7,
           2,
+          7,
+          4,
           2,
-          4
+          2,
+          6
+        ],
+        "fieldLags": [
+          1,
+          0
+        ]
+      },
+      "p3": {
+        "dwellSamples": 13,
+        "buySamples": 13,
+        "buyLagMedian": 3,
+        "buyLagMax": 8,
+        "neverBuy": 0,
+        "noDwell": 3,
+        "fieldLagMedian": 15,
+        "buyLags": [
+          8,
+          7,
+          4,
+          3,
+          4,
+          7,
+          3,
+          1,
+          2,
+          1,
+          3,
+          8,
+          3
         ],
         "fieldLags": [
           0,
+          0,
+          15,
+          15,
+          17,
+          25
+        ]
+      },
+      "p4": {
+        "dwellSamples": 7,
+        "buySamples": 6,
+        "buyLagMedian": 2.5,
+        "buyLagMax": 7,
+        "neverBuy": 1,
+        "noDwell": 9,
+        "fieldLagMedian": 9.5,
+        "buyLags": [
+          1,
+          7,
+          3,
           7,
           2,
+          2
+        ],
+        "fieldLags": [
+          16,
+          29,
+          3,
           0
         ]
       }
@@ -2590,34 +2612,34 @@
     },
     "verdict": [
       {
-        "name": "[L1] 晨曦 覆盖 ≥3 个样本（落成 15 / 买到 15）",
+        "name": "[L1] 晨曦 覆盖 ≥3 个样本（落成 16 / 买到 16）",
         "ok": true,
         "detail": "ok"
       },
       {
         "name": "[L2] 晨曦 采购滞后中位 ≤6 天",
         "ok": true,
-        "detail": "2 天"
+        "detail": "2.5 天"
       },
       {
         "name": "[L3] 晨曦 最长 ≤14 天（只防死锁）",
         "ok": true,
-        "detail": "12 天"
+        "detail": "10 天"
       },
       {
         "name": "[L4] 晨曦 建了居所却没买到的比例 ≤25%",
         "ok": true,
-        "detail": "0/15 = 0%"
+        "detail": "0/16 = 0%"
       },
       {
-        "name": "[L1] 赤焰 覆盖 ≥3 个样本（落成 7 / 买到 7）",
+        "name": "[L1] 赤焰 覆盖 ≥3 个样本（落成 9 / 买到 9）",
         "ok": true,
         "detail": "ok"
       },
       {
         "name": "[L2] 赤焰 采购滞后中位 ≤6 天",
         "ok": true,
-        "detail": "2 天"
+        "detail": "4 天"
       },
       {
         "name": "[L3] 赤焰 最长 ≤14 天（只防死锁）",
@@ -2627,7 +2649,7 @@
       {
         "name": "[L4] 赤焰 建了居所却没买到的比例 ≤25%",
         "ok": true,
-        "detail": "0/7 = 0%"
+        "detail": "0/9 = 0%"
       },
       {
         "name": "[L1] 翠林 覆盖 ≥3 个样本（落成 13 / 买到 13）",
@@ -2637,12 +2659,12 @@
       {
         "name": "[L2] 翠林 采购滞后中位 ≤6 天",
         "ok": true,
-        "detail": "4 天"
+        "detail": "3 天"
       },
       {
         "name": "[L3] 翠林 最长 ≤14 天（只防死锁）",
         "ok": true,
-        "detail": "11 天"
+        "detail": "8 天"
       },
       {
         "name": "[L4] 翠林 建了居所却没买到的比例 ≤25%",
@@ -2650,14 +2672,14 @@
         "detail": "0/13 = 0%"
       },
       {
-        "name": "[L1] 紫晶 覆盖 ≥3 个样本（落成 4 / 买到 4）",
+        "name": "[L1] 紫晶 覆盖 ≥3 个样本（落成 7 / 买到 6）",
         "ok": true,
         "detail": "ok"
       },
       {
         "name": "[L2] 紫晶 采购滞后中位 ≤6 天",
         "ok": true,
-        "detail": "3 天"
+        "detail": "2.5 天"
       },
       {
         "name": "[L3] 紫晶 最长 ≤14 天（只防死锁）",
@@ -2667,7 +2689,7 @@
       {
         "name": "[L4] 紫晶 建了居所却没买到的比例 ≤25%",
         "ok": true,
-        "detail": "0/4 = 0%"
+        "detail": "1/7 = 14%"
       },
       {
         "name": "[L5] 度量有效：至少一族中位 >0（全 0 = 夹具失效）",

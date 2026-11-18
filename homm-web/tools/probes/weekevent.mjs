@@ -114,6 +114,7 @@ HEAD('C. 数值：两臂对比（同存档，一臂平静、一臂带事件）')
 
 /** 造一份可控存档：四阵营的有主城镇补齐 T1~T3 兵营，池子清零。 */
 function armedState(seed) {
+  // 3 对手：C 段要**四阵营**的有主城镇都补齐兵营（0 对手只剩 p1 一座城，C2b 会误判）
   const st = createGame({ seed, layout: 'wild', size: 'small', opponents: 3 });
   for (const town of Object.values(st.towns)) {
     if (!st.players[town.owner]) continue; // 中立城没有产出
@@ -233,26 +234,43 @@ console.log(`   （瘟疫 seed=${plagueSeed}）`);
 }
 {
   // D2：跑真 endDay。只看 p1 —— AI 在增长之后还会招募，混进来就不是"瘟疫砍部队"的读数。
-  const st = createGame({ seed: plagueSeed, layout: 'wild', size: 'small', opponents: 3 });
-  while (st.day < 14) endDay(st);
-  const p1Army = () =>
-    JSON.stringify(
-      st.heroOrder.filter((id) => st.heroes[id]?.owner === 'p1').map((id) => st.heroes[id].army),
+  //
+  // ⚠️ 2026-11-18（口袋门口修复，地图重排）：原来写死 `while (st.day < 14)`。
+  //    一旦这张图在第 10 天就把 p1 打没，`endDay` 在 `status !== 'playing'` 之后**不再推进 day**
+  //    ⇒ 整个门死循环（不是红，是挂住；实测 seed 34 卡死 8 分钟）。
+  //    所以两手：① 步数上限；② 按"能活到第 15 天"重挑瘟疫种子。量的仍然是瘟疫，不是运气。
+  let st = null;
+  for (let s = 1; s < 600 && !st; s++) {
+    if (W.weekEventFor(s, 3).kind !== 'plague') continue;
+    // 0 对手：p1 在这段里不动，AI 只会来把城打掉 ⇒ p1 第 10 天出局纯属噪声
+    const cand = createGame({ seed: s, layout: 'wild', size: 'small', opponents: 0 });
+    for (let i = 0; i < 20 && cand.day < 14 && cand.status === 'playing'; i++) endDay(cand);
+    if (cand.day >= 14) st = cand;
+  }
+  PASS(!!st, `D2 找得到能活到第 15 天的瘟疫种子（${st ? `seed=${st.config.seed}` : '无'}）`);
+  if (st) {
+    const p1Army = () =>
+      JSON.stringify(
+        st.heroOrder.filter((id) => st.heroes[id]?.owner === 'p1').map((id) => st.heroes[id].army),
+      );
+    const before = p1Army();
+    endDay(st); // day 15 = 第 3 周
+    PASS(
+      st.weekEvent?.kind === 'plague' && before === p1Army(),
+      `D2 第 3 周确为瘟疫（${st.weekEvent?.kind}），p1 已招募部队 ${before === p1Army() ? '完全未变' : '被砍了'}`,
     );
-  const before = p1Army();
-  endDay(st); // day 15 = 第 3 周
-  PASS(
-    st.weekEvent?.kind === 'plague' && before === p1Army(),
-    `D2 第 3 周确为瘟疫（${st.weekEvent?.kind}），p1 已招募部队 ${before === p1Army() ? '完全未变' : '被砍了'}`,
-  );
+  } else {
+    PASS(false, 'D2 没量到：没有能活到第 15 天的瘟疫种子');
+  }
 }
 
 /* ==================================================================== *
  * E. 接进 endDay
  * ==================================================================== */
 HEAD('E. 接进 endDay：掷点 / 公告 / 确定性');
+// ⚠️ 0 对手：E 量的是周界/公告/确定性，p1 不行动；有 AI 时它可能在第 2 周把 p1 打没 ⇒ day 不再推进（死循环）
 const seed = growthSeed;
-const st = createGame({ seed, layout: 'wild', size: 'small', opponents: 3 });
+const st = createGame({ seed, layout: 'wild', size: 'small', opponents: 0 });
 const seen = [];
 /** 公告必须在**当天**就在日志里（日志只留 60 条，第 28 天再回头查会被挤掉）。 */
 const announced = [];
@@ -297,7 +315,7 @@ PASS(
   );
 }
 {
-  const st2 = createGame({ seed, layout: 'wild', size: 'small', opponents: 3 });
+  const st2 = createGame({ seed, layout: 'wild', size: 'small', opponents: 0 });
   for (let i = 0; i < 28; i++) endDay(st2);
   const pools = (s) =>
     JSON.stringify(
