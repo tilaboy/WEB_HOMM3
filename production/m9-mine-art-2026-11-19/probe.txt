@@ -1,0 +1,35 @@
+[dist] dir=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist · cwd=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web · main.js.md5=38855f6424f402656a367ff0addf04a3 · combo=sha256(index.html+main.js+style.css)@16:29d58a8dc8fcb796 · mtime=2026-11-19T03:49:50.242Z(非绑定量) · gate=mineart
+[PASS] [M1] 七帧齐、32×42、无空帧 — 7/7
+    IoU gold     × wood     = 0.545
+    IoU gold     × ore      = 0.647
+    IoU gold     × gem      = 0.665
+    IoU gold     × crystal  = 0.589
+    IoU gold     × sulfur   = 0.579
+    IoU gold     × mercury  = 0.535
+    IoU wood     × ore      = 0.626
+    IoU wood     × gem      = 0.642
+    IoU wood     × crystal  = 0.700
+    IoU wood     × sulfur   = 0.360
+    IoU wood     × mercury  = 0.670
+    IoU ore      × gem      = 0.679
+    IoU ore      × crystal  = 0.741
+    IoU ore      × sulfur   = 0.446
+    IoU ore      × mercury  = 0.710
+    IoU gem      × crystal  = 0.696
+    IoU gem      × sulfur   = 0.614
+    IoU gem      × mercury  = 0.514
+    IoU crystal  × sulfur   = 0.488
+    IoU crystal  × mercury  = 0.611
+    IoU sulfur   × mercury  = 0.305
+[PASS] [M2] 任意两型剪影 IoU ≤ 0.75 — max 0.741 (ore/crystal)
+[PASS] [M3] gold 的识别件可量 — bbox {"x0":3,"y0":12,"x1":29,"y1":41,"w":27,"h":30}
+[PASS] [M3] wood 的识别件可量 — bbox {"x0":3,"y0":7,"x1":29,"y1":41,"w":27,"h":35}
+[PASS] [M3] ore 的识别件可量 — bbox {"x0":1,"y0":12,"x1":31,"y1":41,"w":31,"h":30}
+[PASS] [M3] gem 的识别件可量 — bbox {"x0":3,"y0":5,"x1":29,"y1":41,"w":27,"h":37}
+[PASS] [M3] crystal 的识别件可量 — bbox {"x0":1,"y0":4,"x1":30,"y1":41,"w":30,"h":38}
+[PASS] [M3] sulfur 的识别件可量 — bbox {"x0":6,"y0":3,"x1":26,"y1":41,"w":21,"h":39}
+[PASS] [M3] mercury 的识别件可量 — bbox {"x0":1,"y0":17,"x1":31,"y1":41,"w":31,"h":25}
+[PASS] [M4] 七帧都注册进冒险图集（画了有人用） — 7/7
+[PASS] [N1] 同款帐篷负向对照：IoU 必须 > 0.75（闸门有分辨力） — IoU 1.000
+
+共 21 对；最大 IoU 0.741 (ore/crystal)。

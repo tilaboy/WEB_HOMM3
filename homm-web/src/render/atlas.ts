@@ -10,6 +10,7 @@ import { NEUTRAL_ART_COLORS, UNIT_FRAMES, buildB0Frame, buildPortraitFrame } fro
 import { buildGuildArt, guildArtName } from './guildArt.js';
 import { BUILDING_ART_IDS, DWELLING_TIER_IDS, MAX_BUILDING_TIER, buildBuildingArt, buildingArtName } from './buildingArt.js';
 import { portraitOfCombatFrame } from './unitFrames.js';
+import { MINE_KINDS, buildMineArt, mineArtName } from './mineArt.js';
 import { FACTIONS, NEUTRAL_COLOR, NEUTRAL_DARK } from '../core/data/factions.js';
 
 export const TILE = 32;
@@ -379,26 +380,7 @@ function resOre(pb: PixBuf): void {
   shadow(pb, 16, 28, 11, 2.5);
 }
 
-/** 七种资源各自的矿石配色，和 resIcon 用的是同一套。 */
-const RES_COLOR: Record<string, string> = {
-  gold: '#e0b62a', wood: '#8a5f34', ore: '#8a857e',
-  gem: '#d05fa0', crystal: '#7ec8e3', sulfur: '#e0d24a', mercury: '#b8b8c4',
-};
-
-function mine(pb: PixBuf, kind: string): void {
-  const ore = RES_COLOR[kind] ?? '#8a857e';
-  pb.poly([[2, 38], [6, 20], [16, 12], [26, 20], [30, 38]], '#5a5148');
-  pb.poly([[2, 38], [6, 20], [16, 12], [16, 38]], '#6e6459');
-  pb.poly([[16, 38], [16, 30], [26, 38]], '#241a10');
-  pb.poly([[9, 38], [9, 26], [14, 22], [18, 26], [18, 38]], '#3a2a18');
-  pb.rect(6, 20, 3, 18, '#7a5f34');
-  pb.rect(23, 20, 3, 18, '#7a5f34');
-  pb.rect(6, 18, 20, 3, '#8a6b3c');
-  pb.ellipse(24, 35, 5, 3, ore);
-  pb.ellipse(23, 34, 3, 2, shade(ore, 0.35), 0.9);
-  pb.outline(OUTLINE);
-  shadow(pb, 16, 39, 13, 2.5);
-}
+/** 七种矿各一张独立剪影（M9）；旧版"七顶同款帐篷 + 换矿石色"已删除。 */
 
 /**
  * 宝库区：一座嵌在山体里的石门，门缝里透出金光。
@@ -1434,11 +1416,7 @@ export class Atlas {
     resOre(b);
     put('res_ore', b);
 
-    for (const k of ['gold', 'wood', 'ore', 'gem', 'crystal', 'sulfur', 'mercury']) {
-      b = p(32, 42);
-      mine(b, k);
-      put(`mine_${k}`, b);
-    }
+    for (const k of MINE_KINDS) put(mineArtName(k), buildMineArt(k));
 
     b = p(32, 44);
     vault(b);
