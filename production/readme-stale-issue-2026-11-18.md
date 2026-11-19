@@ -1,9 +1,29 @@
 # 待发 issue 草稿：README 与现状不一致（12 处）
 
-> **状态：未发出去。** 2026-11-18 用 GitHub connector 试了 `issue_write`，返回
-> `403 Resource not accessible by integration` —— connector 的授权没有 **Issues: write**
-> （读得到列表：`list_issues` 正常，仓库 Issues 页也在）。要么给 connector 补这个权限，
-> 要么用下面这份正文在网页上手动新建。
+> **状态：未发出去。** 2026-11-18 用 GitHub connector 试了 `issue_write`（两次），均返回
+> `403 Resource not accessible by integration` —— 读得到（`list_issues` 正常、仓库 Issues 页也在），写不进去。
+>
+> **为什么在 GitHub 设置页改不了**：connector 是 **GitHub App**（client id `Iv23li…`），
+> `github.com/settings/connections/applications/<client_id>` 这一页只做两件事 —— 展示已授予的权限、
+> 提供 "Revoke access"。权限由 App 的注册方（connector 发布方）声明，安装者只能授予或撤销，
+> **不能就地提权**。要提升到 Issues: write，只能由发布方改注册、再由我们重新授权。
+>
+> **今天能走的路**：用下面这条预填链接一键新建（标题与正文已带好，点 "Submit new issue" 即可）：
+>
+> ```
+> https://github.com/tilaboy/WEB_HOMM3/issues/new?title=…&body=…
+> ```
+>
+> 完整可点链接由 `tools` 之外的一条命令生成（正文含 12 条 checklist，URL 长约 3.9 KB）：
+>
+> ```bash
+> cd <repo> && python3 - <<'PY'
+> import urllib.parse
+> title = "README 与现状不一致：状态横幅、断言数、四族兵种树、G-15、音乐、存档版本等 12 处"
+> body  = open('production/readme-stale-issue-2026-11-18.md').read()  # 或下面 §1–§7 的浓缩版
+> print("https://github.com/tilaboy/WEB_HOMM3/issues/new?" + urllib.parse.urlencode({"title": title, "body": body}))
+> PY
+> ```
 >
 > 标题：**README 与现状不一致：状态横幅、断言数、四族兵种树、G-15、音乐、存档版本等 12 处**
 
