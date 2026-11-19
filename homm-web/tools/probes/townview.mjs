@@ -9,6 +9,8 @@
  *      `?devtownview=0` 负向臂必须看不到入口（证明判测的是新视图）。
  *   ③ **英雄招募接线**：默认在「招募」页、`市场·工坊` 页没有；`?devhiretab=market`
  *      负向臂把它退回旧页，两条判据都必须翻转（证明测的是页签位置而不是字样）。
+ *   ④ **存量转换接线**（决策 59）：`devtier=3` 下「驻军」页有 `.stack-convert` 按钮，
+ *      点一下真的换成升级版；`?devnoconvert=1` 负向臂下按钮必须一个都没有。
  *
  * 用法：node tools/probes/townview.mjs [--gate] [--shot=<dir>]
  * 退出码：不给 --gate 时只报读数；给了 --gate 时 0=全过 / 1=FAIL / 2=前置不满足。
@@ -171,6 +173,45 @@ async function heroHireIn(send, evaluate, tabLabel, extra = '') {
   })()`);
 }
 
+/** 驻军页存量转换接线：切 tab → 数按钮 → 点第一个 → 看清单是否换帧；可带负向臂。 */
+async function armyConvertIn(send, evaluate, extra = '') {
+  await send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `try { localStorage.clear(); } catch {}`,
+  });
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 844, height: 390, deviceScaleFactor: 1, mobile: true,
+  });
+  await send('Page.navigate', { url: `${BASE_URL}/?devquick=1&devtown=1&devtier=3${extra}` });
+  for (let i = 0; i < 100; i++) {
+    try { if (await evaluate(`!!document.querySelector('.town-meta')`)) break; } catch { /* 导航中 */ }
+    await sleep(100);
+  }
+  return await evaluate(`(() => {
+    const tab = [...document.querySelectorAll('.town-tabs .btn')]
+      .find((b) => (b.textContent ?? '').trim() === '驻军');
+    if (!tab) return { tab: false, buttons: 0 };
+    tab.click();
+    const btns = [...document.querySelectorAll('.town-pane .stack-convert')];
+    const before = [...document.querySelectorAll('.town-pane .rrow .un')].map((e) => e.textContent ?? '');
+    const titles = btns.map((b) => b.title);
+    const labels = btns.map((b) => (b.textContent ?? '').trim());
+    const whyText = [...document.querySelectorAll('.town-pane .cv-why')].map((e) => e.textContent ?? '');
+    const clicked = btns.find((b) => !b.disabled);
+    if (clicked) clicked.click();
+    // say() 重绘整个 pane：必须重新查 DOM，不能沿用旧引用
+    const after = [...document.querySelectorAll('.town-pane .rrow .un')].map((e) => e.textContent ?? '');
+    const note = document.querySelector('.town-note')?.textContent ?? '';
+    return {
+      tab: true,
+      buttons: btns.length,
+      enabled: btns.filter((b) => !b.disabled).length,
+      titles, labels, whyText,
+      changed: before.join('|') !== after.join('|'),
+      before, after, note,
+    };
+  })()`);
+}
+
 try {
   const result = await withHeadlessChrome(async ({ send, evaluate }) => {
     await send('Page.enable');
@@ -222,7 +263,9 @@ try {
     const hireMarket = await heroHireIn(send, evaluate, '市场·工坊');
     const hireNegRecruit = await heroHireIn(send, evaluate, '招募', '&devhiretab=market');
     const hireNegMarket = await heroHireIn(send, evaluate, '市场·工坊', '&devhiretab=market');
-    return { view, detail, neg: n, hireRecruit, hireMarket, hireNegRecruit, hireNegMarket };
+    const conv = await armyConvertIn(send, evaluate);
+    const convNeg = await armyConvertIn(send, evaluate, '&devnoconvert=1');
+    return { view, detail, neg: n, hireRecruit, hireMarket, hireNegRecruit, hireNegMarket, conv, convNeg };
   }, { port: cdpPort(9800, 150), devServerPort: APP_PORT });
 
   if (result.err) {
@@ -250,6 +293,13 @@ try {
     const nr = result.hireNegRecruit, nm = result.hireNegMarket;
     record('N2', 'devhiretab=market 负向对照：入口退回市场页',
       nr?.tab && !nr.hire && nm?.tab && nm.hire, `招募=${nr?.hire} 市场=${nm?.hire}`);
+    const cv = result.conv;
+    record('U8', '驻军页有转换按钮，造价写在脸上，点一下真的换成升级版',
+      cv?.tab && cv.buttons > 0 && cv.enabled > 0 && cv.changed &&
+      cv.labels.some((l) => /\d+\s*金/.test(l)),
+      `按钮=${cv?.buttons} 可点=${cv?.enabled} 换帧=${cv?.changed} 标签=${JSON.stringify(cv?.labels)}`);
+    record('N3', 'devnoconvert=1 负向对照：转换按钮一个都没有',
+      result.convNeg?.tab && result.convNeg.buttons === 0, `按钮=${result.convNeg?.buttons}`);
   }
 } catch (e) {
   record('U0', 'Chrome 前置/运行', false, `${e.message}${serverLog ? ` · ${serverLog.slice(-200)}` : ''}`);

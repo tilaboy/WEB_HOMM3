@@ -1,4 +1,4 @@
-import type { FactionId, ResourceBag, UnitType } from '../types.js';
+import type { FactionId, ResourceBag, ResourceKind, UnitType } from '../types.js';
 import { FACTIONS } from './factions.js';
 import { powerRef } from '../combat/damage.js';
 
@@ -389,6 +389,27 @@ export function baseUnitIdOf(id: string): string {
 export function upgradedUnitIdOf(baseId: string): string | null {
   const up = upgradeIdOf(baseId);
   return UNITS[up] ? up : null;
+}
+
+/**
+ * 存量转换单价 = (升级版单价 − 基础版单价) 逐资源相减（决策 59）。
+ *
+ * **必须从两张 `cost` 表实算，不许写成 `base.cost × 0.2`**：两者的取整口径不同。
+ * 例：鹰的 `_u` 价 288 = round(240×1.2) ⇒ 差价 48（正好 0.2）；但骑士带 3 矿，
+ * `round(3×1.2)=4` ⇒ 差价 1 矿（0.333），写死 0.2 会把 `0.6 矿` 取整成 0 或 1。
+ * 只有一张表真源：`makeUpgrade()` 生成的 `UNITS[up].cost`。
+ */
+export function conversionCostOf(baseId: string): ResourceBag | null {
+  const base = UNITS[baseId];
+  const upId = upgradedUnitIdOf(baseId);
+  if (!base || !upId) return null;
+  const up = UNITS[upId]!;
+  const out: ResourceBag = {};
+  for (const k of new Set([...Object.keys(base.cost), ...Object.keys(up.cost)] as ResourceKind[])) {
+    const delta = (up.cost[k] ?? 0) - (base.cost[k] ?? 0);
+    if (delta > 0) out[k] = delta;
+  }
+  return out;
 }
 
 /** 招募价 = 基础价 × 1.2，逐项取整；非零项至少 1（0.2 个矿不能变成 0）。 */

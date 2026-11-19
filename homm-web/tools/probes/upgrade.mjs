@@ -36,8 +36,8 @@ const TOWN = await import(distUrl('core/game/town.js', DIST));
 const UNITS = await import(distUrl('core/data/units.js', DIST));
 const BUILDINGS = await import(distUrl('core/data/buildings.js', DIST));
 
-const { build, buildStatus, canBuild, levelOf, nextUpgradeCost, recruitRows, applyWeeklyGrowth } = TOWN;
-const { getUnit, upgradedUnitIdOf } = UNITS;
+const { build, buildStatus, canBuild, canConvertStack, convertStack, levelOf, nextUpgradeCost, recruitRows, applyWeeklyGrowth } = TOWN;
+const { getUnit, upgradedUnitIdOf, conversionCostOf } = UNITS;
 
 let bad = 0;
 const pass = (ok, label, extra = '') => {
@@ -169,6 +169,84 @@ console.log('\n=== E. 旧档（没有 levels 字段）按 L1 读 ===');
   eq(recruitRows(st, town).find((r) => r.unitTypeId === 'p1_eagle')?.available, 0, '旧档仍产基础版');
   eq(upgradedUnitIdOf('p1_eagle'), 'p1_eagle_u', 'upgradedUnitIdOf 能查到');
   eq(getUnit('p1_eagle_u').upgradeOf, 'p1_eagle', 'upgradeOf 自指正确');
+}
+
+/* ---------------- F. 存量转换（决策 59 / §2.5） ---------------- */
+console.log('\n=== F. 已到手的兵按差价转换（决策 59）===');
+{
+  // 定价只从两张 cost 表实算；骑士 3 矿 → round(3×1.2)=4 ⇒ 差价 1 矿（写死 ×0.2 会得 0）
+  eq(JSON.stringify(conversionCostOf('p1_eagle')), '{"gold":48}', '鹰差价 288−240 = 48 金');
+  eq(JSON.stringify(conversionCostOf('p1_knight')), '{"gold":104,"ore":1}', '骑士差价 104 金 + 1 矿（不是 0.6 矿）');
+  eq(conversionCostOf('wolf'), null, '中立怪（wolf）没有升级形态，不进转换表');
+
+  const make = (lv, gold = 20000) => {
+    const town = makeTown({
+      buildings: ['tavern', 'dwell1', 'dwell2', 'dwell3'], levels: { dwell3: lv },
+      garrison: [{ unitTypeId: 'p1_eagle', count: 5 }],
+    });
+    const st = makeState(town);
+    st.players.p1.resources.gold = gold;
+    return { town, st };
+  };
+  const snapshot = (st, town) => JSON.stringify({ army: town.garrison, gold: res(st).gold, log: st.log.length });
+
+  // F1：L2 + 5 只 ⇒ 一次转完，扣 48×5=240 金，兵种 id 换、数量不丢
+  {
+    const { town, st } = make(2);
+    const chk = canConvertStack(st, town, town.garrison, 'p1_eagle');
+    eq(chk.ok, true, 'L2 的鹰营允许转换');
+    eq(chk.count, 5, '转换数量 = 整格 5 只（不限数量）');
+    eq(chk.cost.gold, 240, '总价 = 48 × 5');
+    const r = convertStack(st, town, town.garrison, 'p1_eagle');
+    eq(r.converted, 5, '一次转完 5 只');
+    eq(town.garrison.length, 1, '转换不新增格（还是一格）');
+    eq(town.garrison[0].unitTypeId, 'p1_eagle_u', '兵种 id 变成金雕');
+    eq(town.garrison[0].count, 5, '数量不丢');
+    eq(res(st).gold, 20000 - 240, '只扣差价 240 金');
+    eq(canConvertStack(st, town, town.garrison, 'p1_eagle_u').ok, false, '已升级的兵不能再转');
+  }
+  // F2：升级版已存在一格 ⇒ 合并，不占新格
+  {
+    const town = makeTown({ buildings: ['tavern', 'dwell1', 'dwell2', 'dwell3'], levels: { dwell3: 2 },
+      garrison: [{ unitTypeId: 'p1_eagle', count: 2 }, { unitTypeId: 'p1_eagle_u', count: 3 }] });
+    const st = makeState(town);
+    eq(convertStack(st, town, town.garrison, 'p1_eagle').converted, 2, '合并场景仍转成功');
+    eq(town.garrison.length, 1, '合并后只有一格');
+    eq(town.garrison[0].count, 5, '2 + 3 = 5');
+  }
+  // F3：负向对照 —— L1 兵营 / 钱不够 / 外族兵 / 无形态，四种都必须：转不动 + 零写入
+  {
+    const cases = [
+      ['L1 兵营', () => { const { town, st } = make(1); return { town, st, uid: 'p1_eagle' }; }],
+      ['钱不够（差 1 金）', () => { const { town, st } = make(2, 239); return { town, st, uid: 'p1_eagle' }; }],
+      ['外族兵（p3 矮人在 p1 城）', () => {
+        const { town, st } = make(2);
+        town.garrison = [{ unitTypeId: 'p3_dwarf', count: 4 }];
+        return { town, st, uid: 'p3_dwarf' };
+      }],
+      ['无升级形态（中立怪）', () => {
+        const { town, st } = make(2);
+        town.garrison = [{ unitTypeId: 'p1_eagle', count: 5 }];
+        return { town, st, uid: 'p1_child' }; // 兵不在场：grp 为空也要转不动
+      }],
+    ];
+    for (const [label, setup] of cases) {
+      const { town, st, uid } = setup();
+      const before = snapshot(st, town);
+      const r = convertStack(st, town, town.garrison, uid);
+      eq(r.converted, 0, `${label}：拒绝转换`);
+      eq(snapshot(st, town), before, `${label}：钱/部队/日志零写入`);
+    }
+  }
+  // F4：不占建造次数（与 build 的每日一次分家）——转换前后 builtDay 必须原地不动
+  {
+    const { town, st } = make(2);
+    town.garrison[0].count = 6;
+    eq(canBuild(st, town, 'market'), true, '转换前可以照常建造');
+    eq(convertStack(st, town, town.garrison, 'p1_eagle').converted, 6, '同日 6 只一起转');
+    eq(town.builtDay ?? 0, 0, '转换不写 builtDay（不占建造次数）');
+    eq(canBuild(st, town, 'market'), true, '转换后建筑仍可照常建造（不共享 spentToday）');
+  }
 }
 
 console.log(`\n=== ${bad === 0 ? 'PASS' : `FAIL（${bad} 条）`} ===`);

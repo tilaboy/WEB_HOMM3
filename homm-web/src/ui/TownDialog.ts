@@ -1,7 +1,7 @@
 import type { GameState, Hero, ResourceBag, ResourceKind } from '../core/types.js';
 import { BUILDINGS, HERO_HIRE_COST } from '../core/data/buildings.js';
 import { WAR_MACHINES, WAR_MACHINE_IDS } from '../core/data/warmachines.js';
-import { getUnit } from '../core/data/units.js';
+import { getUnit, upgradedUnitIdOf } from '../core/data/units.js';
 import { viewerOf } from '../core/data/factions.js';
 
 /**
@@ -24,6 +24,18 @@ const COST_CHIPS = ((): boolean => {
 const TOWN_VIEW_ENABLED = ((): boolean => {
   try {
     return new URLSearchParams(location.search).get('devtownview') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
+/**
+ * 存量转换入口是否显示（默认开；`?devnoconvert=1` 是闸门负向对照臂 ——
+ * 没有它，"驻军页有转换按钮"证明不了自己测的是新入口）。
+ */
+const CONVERT_ENABLED = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devnoconvert') !== '1';
   } catch {
     return true;
   }
@@ -59,7 +71,9 @@ import {
   MARKET_RATES,
   build,
   buildStatus,
+  canConvertStack,
   canHireHero,
+  convertStack,
   costText,
   garrisonToHero,
   heroToGarrison,
@@ -698,6 +712,40 @@ function paintArmy(
   const town = state.towns[townId];
   if (!town) return;
 
+  const convertBtn = (army: { unitTypeId: string; count: number }[], uid: string): HTMLElement | null => {
+    if (!CONVERT_ENABLED || !upgradedUnitIdOf(uid)) return null;
+    const chk = canConvertStack(state, town, army, uid);
+    const upName = getUnit(chk.to || `${uid}_u`)?.name ?? '升级版';
+    // 造价必须写在脸上（决策处可见）：触屏没有 hover，只放 title 等于没写。
+    // 禁用时把原因也放出来，别让玩家猜"为什么这格不能转"。
+    const label = chk.ok ? `转${upName} ${costText(chk.cost)}` : `转${upName}`;
+    const btn = actionBtn(
+      label,
+      chk.ok,
+      () =>
+        act(() => {
+          const r = convertStack(state, town, army, uid);
+          // act() → say() 已经 renderAll + opts.onChange，这里只返回提示词，别刷两次
+          return r.converted
+            ? `${getUnit(uid).name} ×${r.converted} 已转为 ${getUnit(r.to).name}`
+            : r.reason;
+        }),
+      chk.ok ? `差价 ${costText(chk.cost)} · ${chk.count} 只一次转完` : chk.reason,
+    );
+    btn.classList.add('stack-convert');
+    btn.setAttribute('data-unit', uid);
+    if (!chk.ok) {
+      const why = document.createElement('span');
+      why.className = 'cv-why';
+      why.textContent = chk.reason;
+      const box = document.createElement('span');
+      box.className = 'cv-wrap';
+      box.append(btn, why);
+      return box;
+    }
+    return btn;
+  };
+
   root.appendChild(sectionTitle('驻军'));
   root.appendChild(
     armyList(
@@ -713,6 +761,7 @@ function paintArmy(
           }
         : null,
       '带走',
+      (uid) => convertBtn(town.garrison, uid),
     ),
   );
 
@@ -730,6 +779,7 @@ function paintArmy(
           });
         },
         '留下',
+        hero ? (uid) => convertBtn(hero.army, uid) : null,
       ),
     );
   }
@@ -1000,6 +1050,7 @@ function armyList(
   army: { unitTypeId: string; count: number }[],
   onMove: ((unitTypeId: string) => void) | null,
   moveLabel: string,
+  onConvert?: ((unitTypeId: string) => HTMLElement | null) | null,
 ): HTMLElement {
   const list = document.createElement('div');
   list.className = 'rlist';
@@ -1020,6 +1071,13 @@ function armyList(
     row.appendChild(nm);
     row.appendChild(st);
     if (onMove) row.appendChild(actionBtn(moveLabel, true, () => onMove(s.unitTypeId)));
+    const cv = onConvert?.(s.unitTypeId);
+    if (cv) {
+      cv.setAttribute('data-unit', s.unitTypeId);
+      // 禁用态 cv 是 .cv-wrap 外壳，按钮在里面；类已由 convertBtn 打在按钮上
+      if (!cv.classList.contains('stack-convert')) cv.setAttribute('data-disabled', '1');
+      row.appendChild(cv);
+    }
     list.appendChild(row);
   }
   return list;

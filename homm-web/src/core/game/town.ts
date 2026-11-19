@@ -14,7 +14,7 @@ import { BASE_TOWN_INCOME, BUILDINGS, DWELLING_IDS, HERO_HIRE_COST, upgradeCostO
 import { WAR_MACHINES } from '../data/warmachines.js';
 import { DIFFICULTIES, factionIds, factionName } from '../data/factions.js';
 import { getSpell, spellsOfGuild } from '../data/spells.js';
-import { MAX_STACKS, baseUnitIdOf, getUnit, unitIdForTier, upgradeUnlockedFor } from '../data/units.js';
+import { MAX_STACKS, baseUnitIdOf, conversionCostOf, getUnit, unitIdForTier, upgradeUnlockedFor, upgradedUnitIdOf } from '../data/units.js';
 import { heroTemplateFor, startArmyFor } from '../data/heroes.js';
 import { addResources, maxMovePoints } from './hero.js';
 import { isNewWeek, weekOf } from './calendar.js';
@@ -716,6 +716,96 @@ export function recruitToGarrison(
   addToArmy(town.garrison, unitTypeId, n);
   pushLog(state, `${town.name} 驻军增加了 ${getUnit(unitTypeId).name} ×${n}`);
   return { taken: n, reason: '' };
+}
+
+/* ---------------- 存量转换（决策 59 / spec §2.5） ---------------- */
+
+/**
+ * 已到手的**基础版**部队 → 升级版：按差价付费，城镇面板一次转完，不占建造次数。
+ *
+ * 与"兵营 L2 池子免费转"是两笔钱：池子是没售出的库存（免费），
+ * 这里是玩家已经拥有的部队（付 `(升级价 − 基础价) × 数量`）。§2.5 把两笔分得很清。
+ *
+ * 解锁条件复用 `dwellUnitId()` 的同一把尺：本城对应 tier 的兵营 L2+、且该族
+ * 升级形态已画（`upgradeUnlockedFor`）。不给这两个闸就会出现"花了钱兵没变"
+ * （缺帧会在战斗里抛异常）或"没升兵营却能白嫖升级"。
+ */
+export interface ConvertCheck {
+  ok: boolean;
+  reason: string;
+  from: string;
+  to: string;
+  count: number;
+  cost: ResourceBag;
+}
+
+export function canConvertStack(
+  state: GameState,
+  town: Town,
+  army: Army,
+  unitTypeId: string,
+): ConvertCheck {
+  const none: ConvertCheck = { ok: false, reason: '', from: unitTypeId, to: '', count: 0, cost: {} };
+  const base = getUnit(unitTypeId);
+  if (!base || !upgradedUnitIdOf(unitTypeId)) return { ...none, reason: '此兵种没有升级形态' };
+  const upId = upgradedUnitIdOf(unitTypeId)!;
+
+  // ① 对应兵营必须 L2+（本城、本族、本 tier）——"唯一的兵种升级入口"
+  const dwellId = DWELLING_IDS[base.tier - 1];
+  if (!dwellId || levelOf(town, dwellId) < 2) {
+    return { ...none, reason: `需先把${getUnit(unitIdForTier(town.owner, base.tier) ?? unitTypeId).name}的兵营升到 Lv.2`, to: upId };
+  }
+  if (!upgradeUnlockedFor(town.owner, base.tier)) {
+    return { ...none, reason: '本族升级形态尚未开放', to: upId };
+  }
+  // ② 只认**本城本族**的兵：p1 城不能替带进来的 p3 矮人做转换（owner 拿错钱、tier 对不上）
+  if (unitIdForTier(town.owner, base.tier) !== base.id) {
+    return { ...none, reason: '只有本族的兵能在本城转换', to: upId };
+  }
+
+  const count = army.find((s) => s.unitTypeId === unitTypeId)?.count ?? 0;
+  if (count <= 0) return { ...none, reason: '城里没有这种兵', to: upId };
+  const unit = conversionCostOf(unitTypeId);
+  if (!unit) return { ...none, reason: '定价缺失', to: upId };
+  const cost = unitCost(count, unit);
+  if (!canAfford(state, town.owner, cost)) {
+    return { ...none, reason: '资源不足', to: upId, count, cost };
+  }
+  return { ok: true, reason: '', from: unitTypeId, to: upId, count, cost };
+}
+
+export interface ConvertResult {
+  converted: number;
+  reason: string;
+  to: string;
+}
+
+/**
+ * 真转换。全部前置在 `canConvertStack` 里判完，**失败零写入**；付钱用同一 `pay()`。
+ * 升级版已存在一格 ⇒ 合并进去，不新增格（否则会顶到 `MAX_STACKS` 上限凭空失败）。
+ */
+export function convertStack(
+  state: GameState,
+  town: Town,
+  army: Army,
+  unitTypeId: string,
+): ConvertResult {
+  const chk = canConvertStack(state, town, army, unitTypeId);
+  if (!chk.ok) return { converted: 0, reason: chk.reason, to: chk.to };
+  if (!pay(state, town.owner, chk.cost)) return { converted: 0, reason: '资源不足', to: chk.to };
+  const s = army.find((x) => x.unitTypeId === chk.from)!;
+  s.count -= chk.count;
+  const dest = army.find((x) => x.unitTypeId === chk.to);
+  if (dest) {
+    dest.count += chk.count;
+    if (s.count <= 0) army.splice(army.indexOf(s), 1);
+  } else {
+    // 原地换 id：count 已经扣到 0，但这一格就是转换后的兵，绝不能 splice 掉（F1）
+    s.unitTypeId = chk.to;
+    s.count = chk.count;
+  }
+  pushLog(state, `${town.name} 把 ${getUnit(chk.from).name} ×${chk.count} 转换为 ${getUnit(chk.to).name}`);
+  return { converted: chk.count, reason: '', to: chk.to };
 }
 
 /* ---------------- garrison <-> hero ---------------- */

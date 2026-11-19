@@ -1583,6 +1583,18 @@ table.est td:last-child {
   font-variant-numeric: tabular-nums;
 }
 
+/* 存量转换按钮：造价写在脸上；禁用时原因也 inline（触屏没有 hover，只有 title 等于没写）。 */
+.cv-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cv-why {
+  color: var(--text-dim);
+  font-size: var(--t-cap);
+}
+
 .town .empty {
   color: var(--text-dim);
   font-size: var(--t-body);
