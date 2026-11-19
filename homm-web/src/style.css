@@ -1177,6 +1177,18 @@ table.est td:last-child {
   image-rendering: pixelated;
 }
 /*
+ * 特效层：旗面/火把光晕/喷泉/路灯。压在底图之上、地块之下 ——
+ * 单独一层是让动画每帧只重画十来个几十像素的精灵，不用重烘 832×275 的底图。
+ */
+.tv-fx {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+/*
  * 会生长的城市：地块用 % 定位在 stage 上，y 同时决定 DOM 顺序/z-index，
  * 后画的自然盖住前面的 —— 这是 HOMM3 城景的纵深来源，不该压成网格。
  */

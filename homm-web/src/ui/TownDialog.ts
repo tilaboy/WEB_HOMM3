@@ -30,6 +30,23 @@ const TOWN_VIEW_ENABLED = ((): boolean => {
 })();
 
 /**
+ * 城景动画开关（默认开）。两条关掉的路：
+ *   `?devtownanim=0` —— 闸门的负向对照臂（关不掉就等于"帧里本来就有差"证明不了动画）；
+ *   `prefers-reduced-motion` —— 系统级减动效，尊重用户设置，不做第二套开关。
+ */
+const TOWN_ANIM_ON = ((): boolean => {
+  try {
+    if (new URLSearchParams(location.search).get('devtownanim') === '0') return false;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return false;
+    return true;
+  } catch {
+    return true;
+  }
+})();
+/** 一帧 170ms ≈ 5.9 fps：比 HOMM3 的原版城景慢一点，够读成"在动"，又不会让手机一直解码。 */
+const TOWN_ANIM_MS = 170;
+
+/**
  * 存量转换入口是否显示（默认开；`?devnoconvert=1` 是闸门负向对照臂 ——
  * 没有它，"驻军页有转换按钮"证明不了自己测的是新入口）。
  */
@@ -100,12 +117,16 @@ import { guildArtName, guildArtTierOf } from '../render/guildArt.js';
 import { buildingArtName } from '../render/buildingArt.js';
 import {
   CASTLE_PLOT,
+  SCENE_ANIM_FRAMES,
   SCENE_BUILDING_SIZE,
   TOWN_BUILDING_IDS,
+  TOWN_FX_SPRITES,
   TOWN_PLOTS,
   buildSceneBuilding,
-  buildTownBase,
+  buildTownScene,
+  buildTownFxSprite,
   sceneBuildingFrameName,
+  type TownFxSpot,
   type TownPlot,
 } from '../render/townSceneArt.js';
 import { wallLevelOf } from '../core/combat/siege.js';
@@ -136,6 +157,29 @@ function tvArtUrl(name: string, make: () => { toCanvas: () => HTMLCanvasElement 
     tvArtUrls.set(name, url);
   }
   return url;
+}
+
+/** 场景建筑在某个动画相位的 data URL。帧名带 `#p<相位>`，8 帧各自缓存。 */
+function townFrameUrl(owner: SpriteOwner, id: string, tier: number, frame: string, phase: number): string {
+  return tvArtUrl(`${frame}#p${phase}`, () => buildSceneBuilding(owner, id, tier, phase));
+}
+
+/** 底子特效精灵缓存：键已含 owner/种类/旗长/相位（相位里含每个锚点的偏移）。 */
+const fxSpriteCache = new Map<string, HTMLCanvasElement>();
+
+/**
+ * 相位图预热：`img.src` 换成没解码过的 data URL 会闪一帧空白。
+ * 只预热**没预热过**的 URL（模块级集合）——否则每次点选重画都要再把 112 张烘一遍。
+ */
+const warmedUrls = new Set<string>();
+let warmKeep: HTMLImageElement[] = [];
+function warmFrameUrl(url: string): void {
+  if (warmedUrls.has(url)) return;
+  warmedUrls.add(url);
+  const im = new Image();
+  im.src = url;
+  warmKeep.push(im);
+  if (warmKeep.length > 400) warmKeep = warmKeep.slice(-200); // 只留引用，别无限长
 }
 
 /**
@@ -175,9 +219,17 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
   const bg = document.createElement('canvas');
   bg.className = 'tv-bg';
   bg.setAttribute('aria-hidden', 'true');
+  /*
+   * 三层：底图（地形/城堡/街道，画一次）→ 特效层（旗面、火把光晕、喷泉、路灯，
+   * 逐帧重画十来个小精灵）→ 建筑地块。特效层单独一张而不是把底图整帧烘出来：
+   * 832×275 的底图一张 0.9 MB、p1 一次要 12 ms，8 帧就是 7 MB + 常态卡顿。
+   */
+  const fx = document.createElement('canvas');
+  fx.className = 'tv-fx';
+  fx.setAttribute('aria-hidden', 'true');
   const world = document.createElement('div');
   world.className = 'tv-world';
-  stage.append(bg, world);
+  stage.append(bg, fx, world);
 
   const detail = document.createElement('div');
   detail.className = 'tv-detail';
@@ -187,6 +239,10 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
   let selected: string = TOWN_BUILDING_IDS[0];
   let note = '';
   let castleUrl = '';
+  let phase = 0;
+  let spots: TownFxSpot[] = [];
+  /** 当前已建的地块 → 每帧换 src 的 <img>（paint() 重建 DOM 时同步刷新）。 */
+  let liveBuilt: { img: HTMLImageElement; id: string; level: number }[] = [];
 
   /** 一块地：已建画建筑，未建画浅地基；用 y 做 z-index，前面的盖住后面的。 */
   const place = (plot: TownPlot, built: boolean, frame: string, url: string, label: string): HTMLElement => {
@@ -206,9 +262,32 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
     img.draggable = false;
     img.dataset.frame = frame;
     img.dataset.kind = plot.id === CASTLE_PLOT.id ? 'castle' : built ? 'building' : 'foundation';
+    if (built) img.dataset.phase = String(phase);
     slot.appendChild(img);
     slot.addEventListener('click', () => { selected = plot.id; note = ''; paint(); });
     return slot;
+  };
+
+  /** 特效层：清空后把当前相位的精灵按锚点贴上去。十几个 drawImage，够便宜到每帧跑。 */
+  const drawFx = (): void => {
+    const w = bg.width, h = bg.height;
+    if (fx.width !== w) fx.width = w;
+    if (fx.height !== h) fx.height = h;
+    const ctx = fx.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, fx.width, fx.height);
+    ctx.imageSmoothingEnabled = false;
+    for (const s of spots) {
+      const g = TOWN_FX_SPRITES[s.k];
+      const eff = (phase + (s.off ?? 0)) % SCENE_ANIM_FRAMES;
+      const key = `${owner}:${s.k}:${s.len ?? 0}:${eff}`;
+      let cv = fxSpriteCache.get(key);
+      if (!cv) {
+        cv = buildTownFxSprite(owner, s.k, eff, { len: s.len }).toCanvas();
+        fxSpriteCache.set(key, cv);
+      }
+      ctx.drawImage(cv, Math.round(s.x + g.dx), Math.round(s.y + g.dy));
+    }
   };
 
   const paint = (): void => {
@@ -218,12 +297,16 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
     bg.width = w;
     bg.height = h;
     const ctx = bg.getContext('2d');
+    const sceneArt = buildTownScene(owner, w, h);
     if (ctx) {
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(buildTownBase(owner, w, h).toCanvas(), 0, 0);
+      ctx.drawImage(sceneArt.base.toCanvas(), 0, 0);
     }
+    spots = sceneArt.fx;
+    drawFx();
 
     world.innerHTML = '';
+    liveBuilt = [];
     const castleLv = wallLevelOf(town);
     const castleFrame = `tv_${owner}_castle_lv${castleLv}`;
     if (!castleUrl) castleUrl = tvArtUrl(castleFrame, () => buildCastleFrame(owner, castleLv));
@@ -248,9 +331,14 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
       const st = buildStatus(opts.state, town, plot.id);
       const frame = sceneBuildingFrameName(owner, plot.id, st.level);
       const url = st.built
-        ? tvArtUrl(frame, () => buildSceneBuilding(owner, plot.id, st.level))
+        ? townFrameUrl(owner, plot.id, st.level, frame, phase)
         : FOUNDATION_URL;
-      world.appendChild(place(plot, st.built, frame, url, `${def.name}${st.built ? ` Lv.${st.level}` : '（空地 · 可建造）'}`));
+      const slot = place(plot, st.built, frame, url, `${def.name}${st.built ? ` Lv.${st.level}` : '（空地 · 可建造）'}`);
+      world.appendChild(slot);
+      if (st.built) {
+        const img = slot.querySelector('img');
+        if (img) liveBuilt.push({ img, id: plot.id, level: st.level });
+      }
     }
 
     detail.innerHTML = '';
@@ -282,7 +370,7 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
     const art = document.createElement('img');
     art.className = 'tv-detail-art';
     art.src = st.built
-      ? tvArtUrl(frame, () => buildSceneBuilding(owner, selected, st.level))
+      ? townFrameUrl(owner, selected, st.level, frame, phase)
       : FOUNDATION_URL;
     art.alt = '';
     art.dataset.frame = frame;
@@ -314,6 +402,41 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
   };
 
   paint();
+
+  /* ---------------- 动画：一个 rAF 循环换图，DOM 结构不动 ---------------- */
+  overlay.dataset.phase = '0';
+  if (TOWN_ANIM_ON) {
+    /** 先把 7 个相位的 data URL 烘好（每座 0.12ms 画 + 一次 PNG 编码），
+     *  按地块分片 yield，别在开城景那一帧里塞 100 多次编码。 */
+    const warmQueue = liveBuilt.slice();
+    const warmNext = (): void => {
+      const b = warmQueue.shift();
+      if (!b || !overlay.isConnected) return;
+      for (let k = 1; k < SCENE_ANIM_FRAMES; k++) {
+        warmFrameUrl(townFrameUrl(owner, b.id, b.level, sceneBuildingFrameName(owner, b.id, b.level), k));
+      }
+      setTimeout(warmNext, 0);
+    };
+    setTimeout(warmNext, 0);
+
+    let last = 0;
+    const step = (ts: number): void => {
+      if (!overlay.isConnected) return; // 覆盖层已关：不再排下一帧
+      requestAnimationFrame(step);
+      if (ts - last < TOWN_ANIM_MS) return;
+      last = ts;
+      phase = (phase + 1) % SCENE_ANIM_FRAMES;
+      overlay.dataset.phase = String(phase);
+      drawFx();
+      for (const b of liveBuilt) {
+        const name = sceneBuildingFrameName(owner, b.id, b.level);
+        const url = townFrameUrl(owner, b.id, b.level, name, phase);
+        if (b.img.src !== url) b.img.src = url;
+        b.img.dataset.phase = String(phase);
+      }
+    };
+    requestAnimationFrame(step);
+  }
 }
 
 /**

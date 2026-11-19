@@ -32,14 +32,54 @@ export const TOWN_PLAZA_COLOR = '#b4a47e';
 
 /** 负向臂：`sameShape` 全塌成尖顶小屋，`sameBase` 底子同形，`noStreet` 抽掉街道，
  *  `sameTone` 把所有建材塌回"一族一色"（用户批评的旧配色），`flatCastle` 把远景城堡
- *  塌回一块灰墙，`noShadow` 抽掉落地投影。 */
+ *  塌回一块灰墙，`noShadow` 抽掉落地投影。
+ *  动画两条：`noAnim` 冻结相位（所有帧必须塌成同一张），`fxBeforeOutline` 把半透明
+ *  烟火/光晕挪到描边**之前**（证明"光不该被墨线圈住"这条判据真的测得到）。 */
 let sceneArtBreaks = {
   sameShape: false, sameBase: false, noStreet: false, sameTone: false,
-  flatCastle: false, noShadow: false,
+  flatCastle: false, noShadow: false, noAnim: false, fxBeforeOutline: false,
 };
 export function setSceneArtBreaks(v: Partial<typeof sceneArtBreaks>): void {
   sceneArtBreaks = { ...sceneArtBreaks, ...v };
 }
+
+/* ------------------------------------------------------------------ 动画相位 */
+/**
+ * 城景的动画是**离线逐帧**，不是 canvas 里的实时插值：
+ * 每一帧都是一次完整的 `buildSceneBuilding(..., phase)`，所以闸门能在 Node 里
+ * 逐帧量（帧间差、质心位移、描边像素），浏览器只负责换图。
+ *
+ * 8 帧 × 170ms ≈ 1.36s 一轮。为什么是 8 而不是 4：旗面的飘幅要走过 0→+2→0→−1→0
+ * 才像"布"，4 帧只能来回抖；水车一轮转 45°（8 根辐条的一个对称步）也正好要 8 帧才不重样。
+ */
+export const SCENE_ANIM_FRAMES = 8;
+
+/**
+ * 当前相位。**只在一次同步 build 内有效** —— `flag()` 被 16 个 recipe 调用，
+ * 逐层加形参只会让每个调用点多一个用不到的参数；与 `footprint` 同一处理方式。
+ */
+let buildPhase = 0;
+/** 给闸门读"这一帧是不是动画帧"，避免探针自己维护一份帧数。 */
+export function sceneAnimFrame(): number { return buildPhase; }
+
+/** 每面旗按自己的位置取相位偏移：全城旗子一起摆会像军训，错开才像风。 */
+function phasedBy(seed: number): number {
+  if (sceneArtBreaks.noAnim) return 0;
+  const f = SCENE_ANIM_FRAMES;
+  return (((buildPhase + (seed % f)) % f) + f) % f;
+}
+/** 三角波 -1..+1，用来做"飘"而不是"抖"。 */
+const FLAG_SWAY = [0, 1, 2, 2, 1, 0, -1, -1] as const;
+
+/**
+ * 建筑内的半透明特效（烟、光晕）。**必须画在 outline 之后**：`outline()` 把所有
+ * alpha>8 的像素都算进剪影，先画烟就会被墨线圈成一个灰泡泡（同 castShadow 的坑）。
+ */
+type BuildFxSpot =
+  | { k: 'smoke'; x: number; y: number }
+  | { k: 'motes'; x: number; y: number; rx: number; ry: number; color: string }
+  | { k: 'flick'; x: number; y: number; r: number; color: string };
+let buildFx: BuildFxSpot[] = [];
 
 interface ScenePalette {
   wall: string; wallDark: string; wallLite: string;
@@ -210,15 +250,21 @@ function chimney(pb: PixBuf, x: number, y: number, w: number, h: number, p: Scen
   pb.rect(x, y, w, h, p.stoneDark);
   pb.hline(x - 2, x + w + 1, y, p.stone);
   pb.hline(x, x + w - 1, y + 3, p.stone);
-  if (smoke) {
-    pb.ellipse(x + Math.round(w / 2), y - 5, 4, 3, '#b8ac98', 0.55);
-    pb.ellipse(x + Math.round(w / 2) + 5, y - 11, 3, 2, '#b8ac98', 0.4);
-  }
+  // 烟不在这里画：半透明的东西统一进特效层（见 drawBuildFx）
+  if (smoke) buildFx.push({ k: 'smoke', x: x + Math.round(w / 2), y });
+}
+/** 旗杆是构件（每帧不动），旗面是布（逐帧摆）—— 拆开才能只让布动。 */
+function flagPole(pb: PixBuf, x: number, y: number, p: ScenePalette): void {
+  pb.vline(x, y, y + 16, p.woodDark);
+}
+/** 旗面；`x` 是旗杆列，`sway` 是飘端上下偏移（-2..+2）。城内底子的特效层复用同一段。 */
+function flagClothInto(pb: PixBuf, x: number, y: number, len: number, sway: number, accent: string, cloth: string): void {
+  pb.poly([[x + 1, y], [x + len, y + 3 + sway], [x + len - 2, y + 6 + sway], [x + 1, y + 7]], accent);
+  pb.poly([[x + 1, y], [x + Math.round(len * 0.55), y + 2 + Math.round(sway / 2)], [x + 1, y + 4]], cloth);
 }
 function flag(pb: PixBuf, x: number, y: number, p: ScenePalette, len = 12): void {
-  pb.vline(x, y, y + 16, p.woodDark);
-  pb.poly([[x + 1, y], [x + len, y + 3], [x + 1, y + 7]], p.accent);
-  pb.poly([[x + 1, y], [x + Math.round(len * 0.55), y + 2], [x + 1, y + 4]], p.cloth);
+  flagPole(pb, x, y, p);
+  flagClothInto(pb, x, y, len, FLAG_SWAY[phasedBy(x * 3 + y * 5)]!, p.accent, p.cloth);
 }
 function crate(pb: PixBuf, x: number, bottom: number, s: number, p: ScenePalette): void {
   pb.rect(x, bottom - s, s, s, p.wood);
@@ -230,16 +276,23 @@ function timberFrame(pb: PixBuf, x: number, y: number, w: number, h: number, p: 
   for (let i = x + 4; i < x + w; i += 12) pb.vline(i, y, y + h, p.woodDark);
   pb.hline(x, x + w, y + Math.round(h / 2), p.woodDark);
 }
-/** 升级档：L2 加一圈上层线脚 + 一面小旗，L3 再加 widen 台基（见 buildSceneBuilding）。 */
-function tierCrown(pb: PixBuf, p: ScenePalette, tier: number, x: number, y: number, w: number): void {
+/**
+ * 升级冠旗：L2 起在屋顶立一面小旗。
+ *
+ * **旗杆底必须落在实体像素上** —— 按列（左右各让 1px 找缝）从上往下找最高的不透明行。
+ * 旧版是"给一个 y 直接画一条 24px 横杆 + 旗"，16 座里有 8 座的横杆悬在屋顶上方，
+ * 远看像插在空中的招牌（×4 对照表一眼可见，闸门量不到这种错）。
+ */
+function tierCrown(pb: PixBuf, p: ScenePalette, tier: number, x: number): void {
   if (tier <= 1) return;
-  pb.rect(x, y, w, 3, p.stone);
-  pb.hline(x, x + w - 1, y + 2, p.stoneDark);
-  flag(pb, Math.round(x + w - 5), y - 15, p, 9);
-  if (tier >= 3) {
-    pb.rect(x - 3, y - 3, w + 6, 3, p.stone);
-    pb.hline(x - 3, x + w + 2, y - 3, p.stoneDark);
+  let top = -1;
+  for (let y = 2; y < B && top < 0; y++) {
+    for (const dx of [0, -1, 1]) {
+      if (pb.alphaAt(x + dx, y) > 8) { top = y; break; }
+    }
   }
+  if (top < 0) top = 40;
+  flag(pb, x, Math.max(1, top - 16), p, 9);
 }
 
 type Recipe = (pb: PixBuf, p: ScenePalette, tier: number) => void;
@@ -277,7 +330,7 @@ const RECIPES: Record<string, Recipe> = {
     pb.rect(x + w + 2, y + 12, 12, 12, p.wood);
     pb.hline(x + w + 4, x + w + 12, y + 16, p.accent);
     pb.hline(x + w + 4, x + w + 12, y + 20, p.cloth);
-    tierCrown(pb, p, tier, x + 16, y - 18, 24);
+    tierCrown(pb, p, tier, 38);
   },
   market: (pb, p, tier) => {
     const x = 8;
@@ -296,7 +349,7 @@ const RECIPES: Record<string, Recipe> = {
       if (i === 2) { crate(pb, sx + 8, B, 7, p); }
     }
     pb.rect(x + 30, B - 6, 8, 6, p.stoneDark);
-    tierCrown(pb, p, tier, 18, 32, 44);
+    tierCrown(pb, p, tier, 37);
   },
   townhall: (pb, p, tier) => {
     const x = 16, w = 48, y = 48;
@@ -320,26 +373,34 @@ const RECIPES: Record<string, Recipe> = {
     pb.vline(tx + 9, 30, 34, p.woodDark);
     archWindow(pb, tx + 9, 40, 12, p);
     flag(pb, tx + 9, 10, p, 10);
-    tierCrown(pb, p, tier, 22, 16, 34);
+    tierCrown(pb, p, tier, 52);
   },
   workshop: (pb, p, tier) => {
     const x = 10, w = 60, y = 52;
     base(pb, x, w, p);
     wall(pb, x, y, w, B - y, p, p.stone);
     sawRoof(pb, x - 2, y - 12, w + 4, 12, p, 4);
-    chimney(pb, 54, 8, 10, 34, p, true);
+    chimney(pb, 54, 18, 10, 24, p, true);
     pb.ellipse(26, 66, 11, 7, '#3a2b1c');
     pb.ellipse(26, 64, 7, 4, p.accent);
     pb.vline(26, 55, 60, p.metal);
-    // 水车：圆 + 辐条，和住宅的圆窗不是一回事
+    buildFx.push({ k: 'flick', x: 26, y: 64, r: 9, color: '#ffb347' });
+    // 水车：圆 + 辐条，和住宅的圆窗不是一回事。**每个相位重画整只轮子**（每次 build
+    // 都是新 PixBuf，不会有残影），辐条按相位转 90°/轮 —— 8 根辐条对称周期正好 45°，
+    // 所以转 90° 后形状无缝接回下一轮。
+    // 一轮转 45°（= 8 根辐条的一个对称步）：8 个相位各自站位不同，第 8 帧无缝接回第 1 帧。
+    // 转 90° 会让第 1 帧和第 5 帧长得一模一样（2 个对称步）—— 看上去只有 4 帧，
+    // 而且 265°/s 的水车快得像风扇。
+    const rot = (phasedBy(0) / SCENE_ANIM_FRAMES) * (Math.PI / 4);
     pb.ellipse(70, 62, 9, 9, p.woodDark);
     pb.ellipse(70, 62, 6, 6, p.wood);
     for (let a = 0; a < 8; a++) {
-      const th = (a * Math.PI) / 4;
+      const th = (a * Math.PI) / 4 + rot;
       pb.line(70, 62, 70 + Math.round(Math.cos(th) * 7), 62 + Math.round(Math.sin(th) * 7), p.woodDark);
     }
+    pb.rect(69, 61, 2, 2, p.metal);
     doorway(pb, 42, B, 11, 15, p);
-    tierCrown(pb, p, tier, 14, 32, 34);
+    tierCrown(pb, p, tier, 34);
   },
 
   /* ------------------------------ 城防 ------------------------------ */
@@ -356,7 +417,7 @@ const RECIPES: Record<string, Recipe> = {
     pb.rect(32, B - 26, 16, 23, p.woodDark);
     pb.hline(32, 47, B - 26, p.accent);
     pb.vline(32, B - 26, B - 3, p.wood); pb.vline(47, B - 26, B - 3, p.wood);
-    tierCrown(pb, p, tier, 30, 34, 20);
+    tierCrown(pb, p, tier, 22);
   },
   wall2: (pb, p, tier) => {
     const x = 14, w = 52, y = 46;
@@ -370,7 +431,7 @@ const RECIPES: Record<string, Recipe> = {
     pb.rect(35, B - 26, 10, 4, p.metal);
     pb.vline(40, B - 26, B - 2, p.metal);
     for (const wx of [31, 49]) archWindow(pb, wx, 54, 10, p);
-    tierCrown(pb, p, tier, 32, 26, 16);
+    tierCrown(pb, p, tier, 40);
   },
   wall3: (pb, p, tier) => {
     const x = 6, w = 68, y = 44;
@@ -389,7 +450,7 @@ const RECIPES: Record<string, Recipe> = {
     pb.rect(34, B - 20, 12, 14, p.metal);
     for (let i = 0; i < 4; i++) pb.vline(35 + i * 3, B - 20, B - 6, p.stoneDark);
     flag(pb, 40, 8, p, 13);
-    tierCrown(pb, p, tier, 26, 16, 28);
+    tierCrown(pb, p, tier, 17);
   },
   banner: (pb, p, tier) => {
     base(pb, 28, 24, p);
@@ -397,10 +458,13 @@ const RECIPES: Record<string, Recipe> = {
     pb.hline(31, 49, B - 12, p.stone);
     pb.vline(40, 6, B - 10, p.woodDark);
     pb.ellipse(40, 6, 3, 3, p.accent);
-    // 大旗在右、小旗在左，剪影极不对称
-    pb.poly([[42, 10], [76, 16], [66, 24], [76, 32], [42, 30]], p.roof);
-    pb.poly([[42, 10], [62, 13], [58, 20], [42, 20]], p.accent);
-    pb.poly([[38, 18], [18, 22], [28, 28], [18, 34], [38, 32]], p.clothDark);
+    // 大旗在右、小旗在左，剪影极不对称。两面各自按相位飘 —— 同一风速下，
+    // 大旗摆幅大、小旗几乎只抖边，才不会读成"一块布在同步抽搐"。
+    const swayA = FLAG_SWAY[phasedBy(11)]!;
+    const swayB = FLAG_SWAY[phasedBy(23)]!;
+    pb.poly([[42, 10], [76, 16 + swayA], [66, 24 + swayA], [76, 32 + swayA], [42, 30]], p.roof);
+    pb.poly([[42, 10], [62, 13 + swayA], [58, 20 + swayA], [42, 20]], p.accent);
+    pb.poly([[38, 18], [18, 22 + swayB], [28, 28 + swayB], [18, 34 - swayB], [38, 32]], p.clothDark);
     if (tier > 1) flag(pb, 22, 40, p, 10);
     if (tier > 2) flag(pb, 54, 42, p, 10);
   },
@@ -420,7 +484,7 @@ const RECIPES: Record<string, Recipe> = {
     for (let i = x - 2; i < x + w + 2; i += 8) pb.vline(i, B - 13, B - 5, p.wood);
     pb.ellipse(70, B - 5, 8, 5, '#c8a95c');
     pb.hline(62, 78, B - 5, '#9c803e');
-    tierCrown(pb, p, tier, 24, 38, 24);
+    tierCrown(pb, p, tier, 40);
   },
   dwell2: (pb, p, tier) => {
     const x = 12;
@@ -435,7 +499,7 @@ const RECIPES: Record<string, Recipe> = {
     chimney(pb, x + 26, 22, 6, 16, p, true);
     doorway(pb, x + 18, B, 11, 15, p);
     windowAt(pb, x + 6, 58, p, 3); windowAt(pb, x + 46, 58, p, 3);
-    tierCrown(pb, p, tier, 30, 26, 20);
+    tierCrown(pb, p, tier, 29);
   },
   dwell3: (pb, p, tier) => {
     const x = 10;
@@ -447,7 +511,7 @@ const RECIPES: Record<string, Recipe> = {
     for (let i = 0; i < 3; i++) windowAt(pb, x + 8 + i * 18, 56, p, 3);
     doorway(pb, x + 24, B, 11, 14, p);
     pb.vline(x + 31, 50, 66, p.woodDark); // 排屋分界
-    tierCrown(pb, p, tier, 42, 20, 20);
+    tierCrown(pb, p, tier, 55);
   },
   dwell4: (pb, p, tier) => {
     const x = 8, w = 64, y = 52;
@@ -465,7 +529,7 @@ const RECIPES: Record<string, Recipe> = {
     }
     pb.hline(x, x + w, B - 3, p.stone);
     doorway(pb, x + 36, B, 10, 13, p);
-    tierCrown(pb, p, tier, 20, 30, 16);
+    tierCrown(pb, p, tier, 40);
   },
   dwell5: (pb, p, tier) => {
     const x = 6;
@@ -481,7 +545,7 @@ const RECIPES: Record<string, Recipe> = {
     windowAt(pb, 32, 52, p, 3); windowAt(pb, 45, 52, p, 3);
     doorway(pb, 40, B, 13, 17, p);
     flag(pb, 40, 12, p, 12);
-    tierCrown(pb, p, tier, 28, 18, 24);
+    tierCrown(pb, p, tier, 17);
   },
 
   /* ------------------------------ 行会 ------------------------------ */
@@ -496,7 +560,7 @@ const RECIPES: Record<string, Recipe> = {
     pb.line(35, 33, 45, 23, p.woodDark);
     pb.line(35, 23, 45, 33, p.woodDark);
     doorway(pb, 40, B, 10, 14, p);
-    tierCrown(pb, p, tier, 30, 44, 20);
+    tierCrown(pb, p, tier, 52);
   },
   guild2: (pb, p, tier) => {
     const x = 14, w = 52;
@@ -508,7 +572,7 @@ const RECIPES: Record<string, Recipe> = {
     for (const wx of [32, 48]) archWindow(pb, wx, 54, 12, p);
     doorway(pb, 40, B, 11, 15, p);
     pb.ellipse(40, 20, 4, 4, p.accent);
-    tierCrown(pb, p, tier, 24, 36, 32);
+    tierCrown(pb, p, tier, 54);
   },
   guild3: (pb, p, tier) => {
     const x = 18, w = 44;
@@ -522,21 +586,73 @@ const RECIPES: Record<string, Recipe> = {
     pb.poly([[40, 3], [50, 20], [40, 38], [30, 20]], p.glass);
     pb.poly([[40, 3], [40, 38], [30, 20]], p.accent);
     pb.poly([[40, 9], [46, 20], [40, 31], [34, 20]], p.glass);
-    pb.ellipse(40, 25, 14, 5, p.accent, 0.75); // 悬浮法环
-    pb.ellipse(40, 25, 10, 3, p.glass, 0.55);
+    // 悬浮光尘绕着晶体转（旧版是一条实心光带，会把晶体中段盖掉 —— 见 drawBuildFx）
+    buildFx.push({ k: 'motes', x: 40, y: 23, rx: 14, ry: 15, color: p.accent });
     archWindow(pb, 40, 50, 14, p);
     doorway(pb, 40, B, 11, 14, p);
     if (tier > 1) { pb.ellipse(22, 22, 4, 4, p.glass); pb.ellipse(58, 22, 4, 4, p.glass); }
-    if (tier > 2) flag(pb, 40, 10, p, 10);
+    // L3 只加台基：旗杆穿水晶尖顶会读成"被钉住"，本座的动效由光尘承担
   },
 };
 
-/** 80×80 的场景建筑；tier 只影响附加装饰，不改骨架。 */
-export function buildSceneBuilding(owner: SpriteOwner, id: string, tier = 1): PixBuf {
+/**
+ * 建筑内的特效层：烟、火光、法环。**在 outline 之后**调用（`fxBeforeOutline` 是
+ * 证明这条的负向臂：挪到描边前，烟圈边缘会出现一圈墨色）。
+ */
+function drawBuildFx(pb: PixBuf, phase: number): void {
+  const f = SCENE_ANIM_FRAMES;
+  for (const s of buildFx) {
+    if (s.k === 'smoke') {
+      // 烟：四团依次上升、变大、变淡。上升幅度受"头顶还有多少画布"限制 ——
+      // 工坊的烟囱原来顶在 y=8，烟只能挤在 4px 里（实拍是一坨白点）；
+      // 把烟囱降到 y=18 后才有 16px 的烟道。
+      // 半径与相位都按 f/4 排开，四团互相搭接才是"缕"，三团分离会读成爆米花（×8 目检）。
+      const rise = Math.min(16, Math.max(6, s.y - 5));
+      for (let i = 0; i < 4; i++) {
+        // 相位间隔**不是等距**：等距（f/4=2）会让"第 k 帧"和"第 k+2 帧"是同一组烟团，
+        // 只是换了画序 ⇒ 逐帧看是原地蹦，不是往上飘（实测 topY 5,8,5,8…）。
+        const t = ((phase + ((s.x * 5 + s.y * 3) % f) + [0, 2.2, 4.3, 6.4][i]!) % f) / f;
+        const py = s.y - 2 - t * rise;
+        const r = 1.6 + t * 2.4;
+        // 两端淡出、中段满：烟团在烟囱口"生出来"、在顶端"散掉"，循环接缝才看不见。
+        // 不能用纯 sin —— 它让烟团刚出烟囱时几乎透明，烟柱和烟囱之间出现一道空档。
+        const a = 0.46 * Math.min(1, t * 7) * Math.min(1, (1 - t) * 4);
+        pb.ellipse(s.x + Math.round((i - 1.5) * 1.4 * (1 - t)), Math.round(py),
+          Math.max(1, Math.round(r)), Math.max(1, Math.round(r * 0.85)), '#b6b0a0', a);
+      }
+    } else if (s.k === 'flick') {
+      // 炉火/火把：只让**光晕**呼吸，火芯本身不动（动火芯会读成一团跳动的噪点）
+      const pulse = 0.5 + 0.5 * Math.sin((phase / f) * Math.PI * 2 + (s.x % 3));
+      const k = 0.85 + pulse * 0.3;
+      pb.ellipse(s.x, s.y, Math.round(s.r * k), Math.round(s.r * 0.7 * k), s.color, 0.11 + pulse * 0.1);
+    } else {
+      // 法环改成**四粒绕晶体的光尘**：环形光带在 80px 上要么填实盖住晶体
+      // （读成"被黄带子缠住"），要么只剩左右两瓣（读成"长了两只耳朵"）。
+      // 光尘是点，不遮结构，绕一圈正好一轮。
+      for (let i = 0; i < 4; i++) {
+        const th = (i / 4 + phase / f) * Math.PI * 2;
+        const px = s.x + Math.round(Math.cos(th) * s.rx);
+        const py = s.y + Math.round(Math.sin(th) * s.ry * 0.55);
+        const tw = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(th * 2));
+        pb.ellipse(px, py, 3, 3, s.color, 0.14 * tw);
+        pb.ellipse(px, py, 1, 1, s.color, 0.85 * tw);
+      }
+    }
+  }
+}
+
+/**
+ * 80×80 的场景建筑；tier 只影响附加装饰，不改骨架。
+ * `phase` 是动画相位（0..SCENE_ANIM_FRAMES-1）：同一座建筑每帧都是从头重画，
+ * 所以不存在"上一帧的辐条留在原地"这种残影。
+ */
+export function buildSceneBuilding(owner: SpriteOwner, id: string, tier = 1, phase = 0): PixBuf {
   const pb = new PixBuf(SCENE_BUILDING_SIZE, SCENE_BUILDING_SIZE);
   const p = paletteOf(owner, id);
   const recipe = sceneArtBreaks.sameShape ? genericSpire : (RECIPES[id] ?? RECIPES.tavern!);
   const t = Math.max(1, Math.min(3, tier | 0));
+  buildPhase = ((phase | 0) % SCENE_ANIM_FRAMES + SCENE_ANIM_FRAMES) % SCENE_ANIM_FRAMES;
+  buildFx = [];
   footprint = { x: 8, w: 64 };
   recipe(pb, p, t);
   /* 升级档必须改变**剪影**：L2 台基到 x=2..77，L3 到 x=0..79（四族共用同一段几何）。
@@ -551,8 +667,10 @@ export function buildSceneBuilding(owner: SpriteOwner, id: string, tier = 1): Pi
     pb.hline(0, 79, 73, p.stoneDark);
     for (let i = 4; i < 80; i += 11) pb.vline(i, 73, 75, p.stoneDark);
   }
+  if (sceneArtBreaks.fxBeforeOutline) drawBuildFx(pb, buildPhase);
   pb.outline(p.outline);
   if (!sceneArtBreaks.noShadow) castShadow(pb);
+  if (!sceneArtBreaks.fxBeforeOutline) drawBuildFx(pb, buildPhase);
   return pb;
 }
 
@@ -589,20 +707,106 @@ export const TOWN_PLOTS: readonly TownPlot[] = [
 export const CASTLE_PLOT: TownPlot = { id: '__castle', x: 0.50, y: 0.46, scale: 0.60 };
 
 /* ------------------------------------------------------------------ 底子 */
-/** 四族**结构不同**的空城底子（不是换配色）：石堡山丘 / 火山营地 / 巨树 / 神殿。 */
-export function buildTownBase(owner: SpriteOwner, w: number, h: number): PixBuf {
+/**
+ * 底子的动画元素**不进底图**，而是作为"锚点"返回给上层，由一张透明特效画布逐帧叠加。
+ *
+ * 为什么不把 8 帧底图整个烘出来：832×275 一张 RGBA 就 0.9 MB，8 张 7 MB，而且 p1 的
+ * 山丘底子一次要 12 ms —— 每帧重画等于给手机上挂一个常态卡顿。底图只画一次
+ * （地形/城堡/街道都不动），动的只有旗面、火把光晕、喷泉、路灯 —— 十来个几十像素的精灵。
+ */
+export type TownFxKind = 'flagCloth' | 'torch' | 'lamp' | 'fire' | 'crystal' | 'fountain';
+export interface TownFxSpot {
+  k: TownFxKind;
+  /** 锚点：旗=旗杆顶，火/灯=火芯，水晶=晶柱中段，喷泉=出水口。 */
+  x: number; y: number;
+  /** 旗面长度（只对 flagCloth 有效）。 */
+  len?: number;
+  /** 相位偏移：同一种特效在城里多处出现时错开，免得整城一起眨眼。 */
+  off?: number;
+}
+let baseFx: TownFxSpot[] = [];
+function pushBaseFx(s: TownFxSpot): void { baseFx.push(s); }
+
+/** 精灵几何：w/h 是画布尺寸，dx/dy 是"精灵左上角相对锚点"的偏移（负=向左上）。 */
+export const TOWN_FX_SPRITES: Readonly<Record<TownFxKind, { w: number; h: number; dx: number; dy: number }>> = {
+  flagCloth: { w: 24, h: 14, dx: -1, dy: -2 },
+  torch: { w: 26, h: 30, dx: -13, dy: -15 },
+  lamp: { w: 22, h: 26, dx: -11, dy: -13 },
+  fire: { w: 44, h: 40, dx: -22, dy: -27 },
+  crystal: { w: 34, h: 44, dx: -17, dy: -26 },
+  fountain: { w: 52, h: 44, dx: -26, dy: -20 },
+};
+
+/**
+ * 单帧特效精灵（透明底）。上层按 `(phase + off) % SCENE_ANIM_FRAMES` 取帧并叠在底图上。
+ * 这里画的全是**半透明/发光**的东西：底图不带它们，所以永远不会被描边圈住。
+ */
+export function buildTownFxSprite(owner: SpriteOwner, kind: TownFxKind, phase: number, o: { len?: number; off?: number } = {}): PixBuf {
+  const s = TOWN_FX_SPRITES[kind];
+  const pb = new PixBuf(s.w, s.h);
+  const ax = -s.dx, ay = -s.dy;
+  const p = paletteOf(owner);
+  const f = SCENE_ANIM_FRAMES;
+  const ph = sceneArtBreaks.noAnim ? 0 : ((((phase | 0) + (o.off ?? 0)) % f) + f) % f;
+  const pulse = 0.5 + 0.5 * Math.sin((ph / f) * Math.PI * 2);
+  if (kind === 'flagCloth') {
+    flagClothInto(pb, ax, ay, o.len ?? 12, FLAG_SWAY[ph]!, p.accent, p.cloth);
+  } else if (kind === 'torch') {
+    // 火把：光晕呼吸 + 火舌尖端上下 1px（只有光晕会读成"屏幕在闪"，加个舌尖才是火）
+    pb.ellipse(ax, ay, Math.round(7 + pulse), Math.round(8 + pulse), '#ffa93a', 0.13 + pulse * 0.12);
+    pb.ellipse(ax, ay - 3 - Math.round(pulse), 1, 2, '#ffcf6b', 0.75);
+  } else if (kind === 'lamp') {
+    pb.ellipse(ax, ay, Math.round(6 + pulse), Math.round(7 + pulse), p.accent, 0.1 + pulse * 0.1);
+  } else if (kind === 'fire') {
+    // 篝火：外焰两片轮流抬高，内焰芯不动（动芯会读成噪点）
+    pb.ellipse(ax, ay + 4, Math.round(13 + pulse * 2), Math.round(9 + pulse), '#ff8b2a', 0.16 + pulse * 0.1);
+    for (const dir of [-1, 1]) {
+      const h = 10 + ((ph + (dir > 0 ? 3 : 0)) % f < 4 ? 4 : 0);
+      pb.poly([[ax + dir * 3, ay + 6], [ax + dir * 6, ay + 6 - h], [ax + dir * 9, ay + 6]], '#ffb347');
+    }
+    pb.poly([[ax, ay + 5], [ax - 3, ay - 7], [ax + 3, ay - 7]], p.accent);
+  } else if (kind === 'crystal') {
+    pb.ellipse(ax, ay, Math.round(11 + pulse * 2), Math.round(14 + pulse * 2), p.accent, 0.1 + pulse * 0.08);
+    pb.ellipse(ax, ay, 5, 7, '#e8d0ff', 0.16 + pulse * 0.1);
+  } else {
+    // 喷泉：5 滴水按抛物线从出水口散开落回池面；池面反光两处交替亮
+    for (let i = 0; i < 5; i++) {
+      const t = (((ph + i * (f / 5)) % f) / f);
+      const dir = i % 2 ? 1 : -1;
+      const dx = dir * Math.round(2 + t * 12);
+      const dy = Math.round(-Math.sin(t * Math.PI) * 8 + t * t * 13);
+      pb.hline(ax + dx, ax + dx + 1, ay + dy, '#cdeef4', 0.85);
+      pb.hline(ax + dx, ax + dx, ay + dy + 1, '#8fc3cf', 0.5);
+    }
+    for (const s2 of [-1, 1]) {
+      const on = (ph + (s2 > 0 ? 3 : 0)) % f < 4;
+      pb.ellipse(ax + s2 * 8, ay + 16, 3, 1, '#cdeef4', on ? 0.85 : 0.35);
+    }
+  }
+  return pb;
+}
+
+/** 四族**结构不同**的空城底子（不是换配色）：石堡山丘 / 火山营地 / 巨树 / 神殿。
+ *  返回静态底图 + 需要逐帧叠加的特效锚点。 */
+export function buildTownScene(owner: SpriteOwner, w: number, h: number): { base: PixBuf; fx: TownFxSpot[] } {
   const pb = new PixBuf(Math.max(320, w | 0), Math.max(180, h | 0));
   const W = pb.w, H = pb.h;
   const p = paletteOf(owner);
   // sameBase 负向臂也要统一材质，否则塔顶/路灯仍带族色，IoU 到不了 1
   const bp = sceneArtBreaks.sameBase ? paletteOf('p1') : p;
+  baseFx = [];
   if (owner === 'p1' || sceneArtBreaks.sameBase) baseHill(pb, W, H, bp);
   else if (owner === 'p2') baseCamp(pb, W, H, p);
   else if (owner === 'p3') baseTree(pb, W, H, p);
   else baseTemple(pb, W, H, p);
   castleBackdrop(pb, W, H, bp);
   if (!sceneArtBreaks.noStreet) townInfrastructure(pb, W, H, bp, owner);
-  return pb;
+  return { base: pb, fx: baseFx.slice() };
+}
+
+/** 只要静态底图时用这个（闸门的 S4/S6/S8 都读它）。 */
+export function buildTownBase(owner: SpriteOwner, w: number, h: number): PixBuf {
+  return buildTownScene(owner, w, h).base;
 }
 
 function skyBands(pb: PixBuf, W: number, H: number, top: string, low: string): void {
@@ -655,7 +859,9 @@ function castleBackdrop(pb: PixBuf, W: number, H: number, p: ScenePalette): void
   for (const fx of [0.12, 0.285, 0.715, 0.88]) {
     const cx = Math.round(W * fx);
     roundTower(pb, cx, wallB, towerR, towerH, p, 'cone');
-    flag(pb, cx, wallB - towerH - 14, p, 9);
+    // 杆留在底图上（构件），旗面交给特效层（会飘）
+    flagPole(pb, cx, wallB - towerH - 14, p);
+    pushBaseFx({ k: 'flagCloth', x: cx, y: wallB - towerH - 14, len: 9, off: cx % SCENE_ANIM_FRAMES });
   }
 
   /* ---- 主堡：三层收分 ---- */
@@ -697,7 +903,8 @@ function castleBackdrop(pb: PixBuf, W: number, H: number, p: ScenePalette): void
   // 顶收两座小角楼，把方盒子破掉
   const topY = Math.round(H * 0.168);
   for (const s of [-1, 1]) roundTower(pb, Math.round(W * 0.5) + s * Math.round(W * 0.038), topY + 12, 4, 12, p, 'cone');
-  flag(pb, Math.round(W * 0.5), topY - 24, p, 18);
+  flagPole(pb, Math.round(W * 0.5), topY - 24, p);
+  pushBaseFx({ k: 'flagCloth', x: Math.round(W * 0.5), y: topY - 24, len: 18, off: 3 });
   // 两条长旗从城垛垂下来：主堡正面最缺的就是"人的痕迹"
   for (const s of [-1, 1]) {
     const bnx = Math.round(W * 0.5) + s * 17 - 4;
@@ -733,10 +940,14 @@ function castleBackdrop(pb: PixBuf, W: number, H: number, p: ScenePalette): void
     pb.hline(tx - 2, tx + 2, wallB - 25, '#3a3126');
     pb.vline(tx, wallB - 25, wallB - 17, '#3a3126');
     pb.ellipse(tx, wallB - 26, 2, 3, '#ffcf6b');
-    pb.ellipse(tx, wallB - 26, 7, 8, '#ffa93a', 0.18);
+    pushBaseFx({ k: 'torch', x: tx, y: wallB - 26, off: s > 0 ? 4 : 0 });
   }
   // 幕墙上的两面色旗，把"这是谁的城"摊到整条防线
-  for (const fx of [0.36, 0.64]) flag(pb, Math.round(W * fx), wallY - 16, p, 12);
+  for (const fx of [0.36, 0.64]) {
+    const wx = Math.round(W * fx);
+    flagPole(pb, wx, wallY - 16, p);
+    pushBaseFx({ k: 'flagCloth', x: wx, y: wallY - 16, len: 12, off: wx % SCENE_ANIM_FRAMES });
+  }
 }
 
 /** 城市骨架：主干道 + 中央广场 + 喷泉 + 支路 + 路灯。负向臂 noStreet 整段抽掉。 */
@@ -781,20 +992,19 @@ function townInfrastructure(pb: PixBuf, W: number, H: number, p: ScenePalette, o
   const plazaRx = Math.round(W * 0.15), plazaRy = Math.round(H * 0.085);
   pb.ellipse(W * 0.5, py, plazaRx, plazaRy, roadDark);
   pb.ellipse(W * 0.5, py, plazaRx - 4, plazaRy - 3, plaza);
-  // 喷泉：底座 + 水柱 + 水花
+  // 喷泉：池体与出水柱是构件，水花交给特效层（逐帧散开落回池面）
   pb.ellipse(W * 0.5, py + 4, 18, 7, '#5b5346');
   pb.ellipse(W * 0.5, py + 2, 15, 5, '#5a8fa0');
   pb.rect(Math.round(W * 0.5 - 2), py - 14, 4, 15, '#8b8472');
   pb.ellipse(W * 0.5, py - 15, 4, 3, '#8b8472');
-  pb.ellipse(W * 0.5 - 8, py - 2, 3, 2, '#a8d8e0', 0.9);
-  pb.ellipse(W * 0.5 + 9, py - 1, 3, 2, '#a8d8e0', 0.9);
+  pushBaseFx({ k: 'fountain', x: W * 0.5, y: py - 15 });
   // 路灯：杆 + 暖光，沿街不挡建筑
-  for (const fx of [0.26, 0.38, 0.62, 0.74]) {
+  [0.26, 0.38, 0.62, 0.74].forEach((fx, i) => {
     const x = Math.round(W * fx), y = Math.round(H * (fx < 0.5 ? 0.78 : 0.78));
     pb.vline(x, y - 18, y, '#3a2f22');
     pb.ellipse(x, y - 19, 3, 4, p.accent, 0.95);
-    pb.ellipse(x, y - 19, 7, 8, p.accent, 0.14);
-  }
+    pushBaseFx({ k: 'lamp', x, y: y - 19, off: (i * 3) % SCENE_ANIM_FRAMES });
+  });
 }
 
 /** p1：石堡山丘 —— 三层岩台 + 松林 + 石阶，最"骑士"的一张。 */
@@ -850,6 +1060,8 @@ function baseCamp(pb: PixBuf, W: number, H: number, p: ScenePalette): void {
     const x = Math.round(W * fx), y = Math.round(H * 0.82);
     pb.ellipse(x, y, 12, 6, '#241610'); pb.poly([[x, y - 22], [x - 8, y - 4], [x + 8, y - 4]], '#ff8b2a');
     pb.poly([[x, y - 14], [x - 4, y - 4], [x + 4, y - 4]], p.accent);
+    // 火焰本体是构件，跳动由特效层的两片外焰承担（同一条流水线的火把规则）
+    pushBaseFx({ k: 'fire', x, y: y - 13, off: fx < 0.5 ? 0 : 5 });
   }
 }
 
@@ -894,5 +1106,6 @@ function baseTemple(pb: PixBuf, W: number, H: number, p: ScenePalette): void {
     const x = Math.round(W * fx), y = Math.round(H * 0.62);
     pb.poly([[x, y - 34], [x + 10, y - 12], [x, y], [x - 10, y - 12]], '#b58cd8');
     pb.poly([[x, y - 34], [x, y], [x - 10, y - 12]], p.accent);
+    pushBaseFx({ k: 'crystal', x, y: y - 17, off: fx < 0.5 ? 2 : 6 });
   }
 }

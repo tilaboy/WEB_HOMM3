@@ -84,7 +84,8 @@
     "probe:guildart": "node tools/probes/guildart.mjs --gate --negctrl",
     "probe:buildingart": "node tools/probes/buildingart.mjs --gate --negctrl",
     "probe:mineart": "node tools/probes/mineart.mjs --gate --negctrl",
-    "probe:townview": "node tools/probes/townview.mjs --gate"
+    "probe:townview": "node tools/probes/townview.mjs --gate",
+    "probe:townanim": "node tools/probes/townanim.mjs --gate"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
