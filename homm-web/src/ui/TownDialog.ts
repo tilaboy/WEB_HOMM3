@@ -29,6 +29,19 @@ const TOWN_VIEW_ENABLED = ((): boolean => {
   }
 })();
 
+/**
+ * 英雄招募入口所在页（默认「招募」）。`?devhiretab=market` 是闸门负向对照臂 ——
+ * 把入口退回 2026-11-19 之前的「市场·工坊」页；没有它，"招募英雄在招募页"
+ * 这条判据证明不了自己测的是新位置，而不是"面板上恰好有这段字"。
+ */
+const HIRE_IN_RECRUIT = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devhiretab') !== 'market';
+  } catch {
+    return true;
+  }
+})();
+
 /** 造价/库存里图标的固定顺序（金→木→矿→宝石→水晶→硫磺→水银）。 */
 const RES_ORDER: ResourceKind[] = ['gold', 'wood', 'ore', 'gem', 'crystal', 'sulfur', 'mercury'];
 /** 全名只进 `title`/`aria-label`：卡面上**不写汉字**，只留图标 + 数字。 */
@@ -594,7 +607,39 @@ function paintBuildings(
   root.appendChild(grid);
 }
 
-/* ---------------- 页 3：招募 ---------------- */
+/* ---------------- 页 3：招募（含英雄招募） ---------------- */
+
+/**
+ * 酒馆招英雄这一行。原先只在「市场·工坊」页，2026-11-19 挪到「招募」页 ——
+ * 英雄和兵一样是"招"来的，把入口埋在市场页是分类错了。
+ * `HIRE_IN_RECRUIT=false`（负向对照臂）时它回到市场页，供闸门证判据敏感。
+ */
+function heroHireRow(opts: TownDialogOptions, act: (fn: () => string | void) => void): HTMLElement | null {
+  const { state, townId } = opts;
+  const town = state.towns[townId];
+  if (!town || !town.buildings.includes('tavern')) return null;
+  const hb = canHireHero(state, town);
+  const wrap = document.createElement('div');
+  wrap.className = 'ex-row hero-hire';
+  const t = document.createElement('span');
+  t.textContent = `酒馆 · 招募英雄（${HERO_HIRE_COST} 金，每周一位）`;
+  wrap.appendChild(t);
+  wrap.appendChild(
+    actionBtn(
+      '招募',
+      hb.ok,
+      () =>
+        act(() => {
+          const h = hireHero(state, town);
+          if (!h) return '无法招募';
+          opts.onHire(h.id);
+          return `${h.name} 加入了你的麾下`;
+        }),
+      hb.ok ? '' : hb.reason,
+    ),
+  );
+  return wrap;
+}
 
 function paintRecruit(
   root: HTMLElement,
@@ -607,8 +652,15 @@ function paintRecruit(
   if (!town) return;
 
   const rows = recruitRows(state, town);
+  const hire = HIRE_IN_RECRUIT ? heroHireRow(opts, act) : null;
+  if (hire) {
+    const box = document.createElement('div');
+    box.className = 'town-extra';
+    box.appendChild(hire);
+    root.appendChild(box);
+  }
   if (!rows.length) {
-    root.appendChild(empty('尚未建成任何兵营'));
+    if (!hire) root.appendChild(empty('尚未建成任何兵营'));
     return;
   }
   const list = document.createElement('div');
@@ -717,28 +769,10 @@ function paintMarket(
   const extra = document.createElement('div');
   extra.className = 'town-extra';
 
-  if (town.buildings.includes('tavern')) {
-    const hb = canHireHero(state, town);
-    const wrap = document.createElement('div');
-    wrap.className = 'ex-row';
-    const t = document.createElement('span');
-    t.textContent = `酒馆 · 招募英雄（${HERO_HIRE_COST} 金，每周一位）`;
-    wrap.appendChild(t);
-    wrap.appendChild(
-      actionBtn(
-        '招募',
-        hb.ok,
-        () =>
-          act(() => {
-            const h = hireHero(state, town);
-            if (!h) return '无法招募';
-            opts.onHire(h.id);
-            return `${h.name} 加入了你的麾下`;
-          }),
-        hb.ok ? '' : hb.reason,
-      ),
-    );
-    extra.appendChild(wrap);
+  // 负向对照臂 devhiretab=market：入口退回旧页，供 probe:townview 的 N2 验证
+  if (!HIRE_IN_RECRUIT) {
+    const hire = heroHireRow(opts, act);
+    if (hire) extra.appendChild(hire);
   }
 
   if (town.buildings.includes('market')) {

@@ -7,6 +7,8 @@
  *   ② **接线/交互层**（真 Chrome）：844×390 横屏下从城镇面板打开城景，16 座 + 城堡
  *      全在槽位里、按等级换 `data-frame`、点选出现详情、未建/已建双态都在；
  *      `?devtownview=0` 负向臂必须看不到入口（证明判测的是新视图）。
+ *   ③ **英雄招募接线**：默认在「招募」页、`市场·工坊` 页没有；`?devhiretab=market`
+ *      负向臂把它退回旧页，两条判据都必须翻转（证明测的是页签位置而不是字样）。
  *
  * 用法：node tools/probes/townview.mjs [--gate] [--shot=<dir>]
  * 退出码：不给 --gate 时只报读数；给了 --gate 时 0=全过 / 1=FAIL / 2=前置不满足。
@@ -146,6 +148,29 @@ async function openTownAndScene(send, evaluate, extra = '') {
   return { toggle: true, scene: await evaluate(`!!document.querySelector('.townview')`) };
 }
 
+/** 切到指定页签，返回该页是否含「招募英雄」按钮（读文本节点，不靠 title）。 */
+async function heroHireIn(send, evaluate, tabLabel, extra = '') {
+  await send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `try { localStorage.clear(); } catch {}`,
+  });
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 844, height: 390, deviceScaleFactor: 1, mobile: true,
+  });
+  await send('Page.navigate', { url: `${BASE_URL}/?devquick=1&devtown=1${extra}` });
+  for (let i = 0; i < 100; i++) {
+    try { if (await evaluate(`!!document.querySelector('.town-meta')`)) break; } catch { /* 导航中 */ }
+    await sleep(100);
+  }
+  return await evaluate(`(() => {
+    const tab = [...document.querySelectorAll('.town-tabs .btn')]
+      .find((b) => (b.textContent ?? '').trim() === ${JSON.stringify(tabLabel)});
+    if (!tab) return { tab: false, hire: false, text: '' };
+    tab.click();
+    const row = document.querySelector('.town-pane .hero-hire');
+    return { tab: true, hire: !!row, text: row ? (row.textContent ?? '') : '' };
+  })()`);
+}
+
 try {
   const result = await withHeadlessChrome(async ({ send, evaluate }) => {
     await send('Page.enable');
@@ -192,7 +217,12 @@ try {
     }
     // 负向臂：同一构建、关掉城景开关 ⇒ 入口必须不存在
     const n = await openTownAndScene(send, evaluate, '&devtownview=0');
-    return { view, detail, neg: n };
+    // 英雄招募：默认在「招募」页；市场页必须没有（负向臂 devhiretab=market 把入口退回旧页）
+    const hireRecruit = await heroHireIn(send, evaluate, '招募');
+    const hireMarket = await heroHireIn(send, evaluate, '市场·工坊');
+    const hireNegRecruit = await heroHireIn(send, evaluate, '招募', '&devhiretab=market');
+    const hireNegMarket = await heroHireIn(send, evaluate, '市场·工坊', '&devhiretab=market');
+    return { view, detail, neg: n, hireRecruit, hireMarket, hireNegRecruit, hireNegMarket };
   }, { port: cdpPort(9800, 150), devServerPort: APP_PORT });
 
   if (result.err) {
@@ -213,6 +243,13 @@ try {
       !d.err && !!d.nm && !!d.art && /建造|升级/.test(d.btn), JSON.stringify(d));
     record('N1', 'devtownview=0 负向对照：入口与城景都必须消失',
       result.neg && !result.neg.toggle && !result.neg.scene, JSON.stringify(result.neg));
+    const hr = result.hireRecruit, hm = result.hireMarket;
+    record('U7', '英雄招募在「招募」页、不在「市场·工坊」页',
+      hr?.tab && hr.hire && hr.text.includes('招募英雄') && hm?.tab && !hm.hire,
+      `招募=${hr?.hire} 市场=${hm?.hire}`);
+    const nr = result.hireNegRecruit, nm = result.hireNegMarket;
+    record('N2', 'devhiretab=market 负向对照：入口退回市场页',
+      nr?.tab && !nr.hire && nm?.tab && nm.hire, `招募=${nr?.hire} 市场=${nm?.hire}`);
   }
 } catch (e) {
   record('U0', 'Chrome 前置/运行', false, `${e.message}${serverLog ? ` · ${serverLog.slice(-200)}` : ''}`);
