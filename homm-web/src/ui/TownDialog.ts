@@ -227,7 +227,19 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
     const castleLv = wallLevelOf(town);
     const castleFrame = `tv_${owner}_castle_lv${castleLv}`;
     if (!castleUrl) castleUrl = tvArtUrl(castleFrame, () => buildCastleFrame(owner, castleLv));
-    world.appendChild(place(CASTLE_PLOT, true, castleFrame, castleUrl, `城墙 Lv.${castleLv}`));
+    /*
+     * 城堡已经由底子直接画出来（幕墙 + 三层主堡 + 门楼），这里只放一个透明热区。
+     * 以前是再叠一张小城堡图 —— 底子有了主堡之后，那就成了两座城叠在一起，
+     * 而且小图正好堵在城门前面。
+     */
+    const hot = document.createElement('button');
+    hot.className = 'tv-castle-hot' + (selected === CASTLE_PLOT.id ? ' selected' : '');
+    hot.dataset.plot = CASTLE_PLOT.id;
+    hot.dataset.frame = castleFrame;
+    hot.setAttribute('aria-label', `城墙 Lv.${castleLv}`);
+    hot.title = `城墙 Lv.${castleLv}`;
+    hot.addEventListener('click', () => { selected = CASTLE_PLOT.id; note = ''; paint(); });
+    world.appendChild(hot);
 
     // 只有已建的地块放建筑；未建放浅地基（仍可点 → 详情里给建造按钮）
     for (const plot of TOWN_PLOTS) {

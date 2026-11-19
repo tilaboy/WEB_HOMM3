@@ -31,8 +31,12 @@ export const TOWN_ROAD_COLOR = '#9a8a66';
 export const TOWN_PLAZA_COLOR = '#b4a47e';
 
 /** 负向臂：`sameShape` 全塌成尖顶小屋，`sameBase` 底子同形，`noStreet` 抽掉街道，
- *  `sameTone` 把所有建材塌回"一族一色"（用户批评的旧配色）。 */
-let sceneArtBreaks = { sameShape: false, sameBase: false, noStreet: false, sameTone: false };
+ *  `sameTone` 把所有建材塌回"一族一色"（用户批评的旧配色），`flatCastle` 把远景城堡
+ *  塌回一块灰墙，`noShadow` 抽掉落地投影。 */
+let sceneArtBreaks = {
+  sameShape: false, sameBase: false, noStreet: false, sameTone: false,
+  flatCastle: false, noShadow: false,
+};
 export function setSceneArtBreaks(v: Partial<typeof sceneArtBreaks>): void {
   sceneArtBreaks = { ...sceneArtBreaks, ...v };
 }
@@ -111,8 +115,17 @@ export function scenePaletteOf(owner: SpriteOwner, id: string): Pick<ScenePalett
 /* ------------------------------------------------------------------ 笔法 */
 const B = 76; // 建筑落地基线（outline 再吃 1px，正好落在 80 画布内）
 
-function groundShadow(pb: PixBuf, cx: number, bottom: number, half: number): void {
-  pb.ellipse(cx, bottom, half, 3, '#2a2114', 0.4);
+/**
+ * 投影：月光在右上，影子压向左下。**必须在 outline 之后画**——描边会把 alpha>8
+ * 的像素都算进剪影，先画影子会被圈上一圈墨线，看着像一块贴纸。
+ * 宽度跟着 base() 记下的落地宽度走，塔楼不会拖出一条比本体还长的影子。
+ */
+function castShadow(pb: PixBuf): void {
+  const cx = footprint.x + footprint.w / 2;
+  const rx = Math.max(9, Math.round(footprint.w / 2) + 2);
+  pb.ellipse(cx, 77, rx, 2, '#1c150d', 0.34);
+  pb.ellipse(cx - 5, 78, Math.round(rx * 0.72), 1, '#1c150d', 0.22);
+  pb.ellipse(cx - 8, 77, Math.round(rx * 0.45), 1, '#1c150d', 0.16);
 }
 function wall(pb: PixBuf, x: number, y: number, w: number, h: number, p: ScenePalette, color = p.wall): void {
   pb.rect(x, y, w, h, color);
@@ -120,9 +133,19 @@ function wall(pb: PixBuf, x: number, y: number, w: number, h: number, p: ScenePa
   pb.rect(x + w - Math.max(2, Math.round(w * 0.16)), y, Math.max(2, Math.round(w * 0.16)), h, shade(color, -0.2));
   pb.hline(x, x + w - 1, y + h - 1, shade(color, -0.28));
 }
-function base(pb: PixBuf, x: number, w: number, p: ScenePalette): void {
-  pb.rect(x - 2, B - 4, w + 4, 4, p.stone);
-  pb.hline(x - 2, x + w + 1, B - 4, p.stoneDark);
+/**
+ * 落地：**只有草簇**。地面暗部与投影统一放到 outline 之后画——先画的话描边会把
+ * 地面圈成一圈墨线，一块 80px 的画面里立刻读成"垫在下面的板"（旧版正是这个毛病）。
+ */
+let footprint = { x: 8, w: 64 };
+
+function base(pb: PixBuf, x: number, w: number, _p: ScenePalette): void {
+  footprint = { x, w };
+  for (const [sx, r] of [[x - 4, 3], [x + w + 3, 3]] as [number, number][]) {
+    pb.ellipse(sx, B - 2, r, 2, '#4a6a32');
+    pb.ellipse(sx + 1, B - 1, r - 1, 1, '#3d5a28');
+    pb.vline(sx, B - 5, B - 3, '#5f7f3c');
+  }
 }
 /** 人字坡（酒馆/住宅用），顶在 y、檐在 y+h。 */
 function gable(pb: PixBuf, x: number, y: number, w: number, h: number, p: ScenePalette, color = p.roof): void {
@@ -513,19 +536,23 @@ export function buildSceneBuilding(owner: SpriteOwner, id: string, tier = 1): Pi
   const pb = new PixBuf(SCENE_BUILDING_SIZE, SCENE_BUILDING_SIZE);
   const p = paletteOf(owner, id);
   const recipe = sceneArtBreaks.sameShape ? genericSpire : (RECIPES[id] ?? RECIPES.tavern!);
-  groundShadow(pb, SCENE_BUILDING_SIZE / 2, B + 2, 28);
   const t = Math.max(1, Math.min(3, tier | 0));
+  footprint = { x: 8, w: 64 };
   recipe(pb, p, t);
-  /* 升级档必须改变**剪影**：L2 台基到 x=2..77，L3 到 x=0..79（四族共用同一段几何）。 */
+  /* 升级档必须改变**剪影**：L2 台基到 x=2..77，L3 到 x=0..79（四族共用同一段几何）。
+     画成带竖缝的砌石，不是一条纯色板——否则读成"垫在下面的板"。 */
   if (t >= 2) {
     pb.rect(2, 76, 76, 3, p.stone);
     pb.hline(2, 77, 76, p.stoneDark);
+    for (let i = 8; i < 76; i += 9) pb.vline(i, 76, 78, p.stoneDark);
   }
   if (t >= 3) {
     pb.rect(0, 73, 80, 3, p.stone);
     pb.hline(0, 79, 73, p.stoneDark);
+    for (let i = 4; i < 80; i += 11) pb.vline(i, 73, 75, p.stoneDark);
   }
   pb.outline(p.outline);
+  if (!sceneArtBreaks.noShadow) castShadow(pb);
   return pb;
 }
 
@@ -574,7 +601,7 @@ export function buildTownBase(owner: SpriteOwner, w: number, h: number): PixBuf 
   else if (owner === 'p3') baseTree(pb, W, H, p);
   else baseTemple(pb, W, H, p);
   castleBackdrop(pb, W, H, bp);
-  if (!sceneArtBreaks.noStreet) townInfrastructure(pb, W, H, bp);
+  if (!sceneArtBreaks.noStreet) townInfrastructure(pb, W, H, bp, owner);
   return pb;
 }
 
@@ -592,67 +619,168 @@ function grassGrain(pb: PixBuf, W: number, H: number, y0: number, seed: number):
   }
 }
 
-/** 远景城堡：一整条带塔楼的城墙 + 中央高堡，让建筑不是摆在空地上。 */
+/**
+ * 远景城堡：幕墙 + 角塔 + **三层收分主堡** + 门楼。
+ * 旧版是一整块灰矩形开个黑洞，占画面最大面积却最没有设计——这里把纵向做碎：
+ * 每层各自有城垛、箭孔和受光边，顶上再收两座小角楼，剪影才有 HOMM3 的层次。
+ */
 function castleBackdrop(pb: PixBuf, W: number, H: number, p: ScenePalette): void {
   const wallY = Math.round(H * 0.40);
   const wallH = Math.round(H * 0.12);
-  const x0 = Math.round(W * 0.12), x1 = Math.round(W * 0.88);
-  // 城墙本体
-  pb.rect(x0, wallY, x1 - x0, wallH, '#6f6858');
-  pb.rect(x0, wallY + 3, x1 - x0, 4, '#837c69');
-  pb.hline(x0, x1, wallY + wallH - 1, '#4b4639');
-  for (let x = x0; x < x1; x += 14) pb.rect(x, wallY - 5, 8, 5, '#8b8472');
-  // 角塔与中间塔（锥形顶用族色，构成"这是谁的城"）
-  for (const fx of [0.14, 0.30, 0.70, 0.86]) {
-    const cx = Math.round(W * fx), r = Math.round(W * 0.022);
-    roundTower(pb, cx, wallY + wallH, r, Math.round(H * 0.17), p, 'cone');
+  const wallB = wallY + wallH;
+  const x0 = Math.round(W * 0.10), x1 = Math.round(W * 0.90);
+  const stone = '#6f6858', lite = '#938b77', dark = '#4a4538';
+
+  if (sceneArtBreaks.flatCastle) {
+    // 负向臂：旧版"一块灰墙 + 一个洞"，用来证明判据量的是结构
+    pb.rect(x0, wallY, x1 - x0, wallH, stone);
+    pb.rect(Math.round(W * 0.5) - 11, wallB - 26, 22, 26, '#2b2419');
+    return;
   }
-  // 中央高堡
-  const kx = Math.round(W * 0.43), kw = Math.round(W * 0.14);
-  const ky = Math.round(H * 0.20), kb = wallY + wallH;
-  pb.rect(kx, ky, kw, kb - ky, '#7c7565');
-  pb.rect(kx + 3, ky, 5, kb - ky, '#948c79');
-  pb.rect(kx + kw - 8, ky, 5, kb - ky, '#5d5749');
-  for (let x = kx; x < kx + kw; x += 13) pb.rect(x, ky - 5, 7, 5, '#8b8472');
-  pb.hline(kx, kx + kw, ky, '#4b4639');
-  // 城门洞
-  const gateX = Math.round(W * 0.5);
-  pb.rect(gateX - 11, kb - 26, 22, 26, '#2b2419');
-  pb.ellipse(gateX, kb - 26, 11, 8, '#2b2419');
-  pb.vline(gateX - 12, kb - 26, kb, '#5b5346');
-  pb.vline(gateX + 11, kb - 26, kb, '#5b5346');
-  flag(pb, gateX, ky - 18, p, 16);
+
+  /* ---- 幕墙 ---- */
+  pb.rect(x0, wallY, x1 - x0, wallH, stone);
+  pb.rect(x0, wallY, x1 - x0, 2, lite); // 顶面受光
+  pb.hline(x0, x1, wallB - 1, dark);
+  for (let y = wallY + 6; y < wallB - 2; y += 7) pb.hline(x0, x1, y, '#5d5749', 0.45);
+  for (let x = x0; x < x1; x += 13) pb.rect(x, wallY - 5, 7, 5, lite); // 城垛
+  for (let x = x0 + 10; x < x1 - 8; x += 27) {
+    if (Math.abs(x - W * 0.5) < 52) continue; // 别和主堡/门楼打架
+    pb.rect(x, wallY + 8, 2, 7, '#2b2419');
+  }
+
+  /* ---- 四座角塔 ---- */
+  const towerR = Math.max(6, Math.round(W * 0.021));
+  const towerH = Math.round(H * 0.19);
+  for (const fx of [0.12, 0.285, 0.715, 0.88]) {
+    const cx = Math.round(W * fx);
+    roundTower(pb, cx, wallB, towerR, towerH, p, 'cone');
+    flag(pb, cx, wallB - towerH - 14, p, 9);
+  }
+
+  /* ---- 主堡：三层收分 ---- */
+  const bands: [number, number, number][] = [
+    [0.424, 0.576, 0.318],
+    [0.444, 0.556, 0.238],
+    [0.461, 0.539, 0.168],
+  ];
+  bands.forEach(([fa, fb, fy], i) => {
+    const bx = Math.round(W * fa), bw = Math.round(W * (fb - fa));
+    const by = Math.round(H * fy);
+    // 每层只画到自己头顶为止：三段都铺到墙根的话，后画的会把前一段整段盖掉，
+    // 收分就消失成一个方盒子（第一版就是这个错）。
+    const nextY = i < 2 ? Math.round(H * bands[i + 1]![2]) : wallB;
+    // 三层各自一个明度台阶，否则收分只体现在宽窄上，远看还是一整块
+    const face = ['#6d6656', '#787160', '#847c69'][i]!;
+    pb.rect(bx, by, bw, nextY - by, face);
+    pb.rect(bx, by, 4, nextY - by, lite); // 左受光
+    pb.rect(bx + 4, by, 1, nextY - by, '#5f5949'); // 受光面与正面的转折
+    pb.rect(bx + bw - 6, by, 6, nextY - by, '#585245'); // 右背光
+    pb.hline(bx, bx + bw - 1, by, dark);
+    pb.hline(bx, bx + bw - 1, by + 3, '#524c3f', 0.85); // 城垛投在墙面上的暗带
+    // 砌石横缝：不加的话主堡就是一大片纯色，远看像没画完
+    for (let my = by + 9; my < nextY - 2; my += 7) pb.hline(bx + 5, bx + bw - 7, my, '#5b5546', 0.32);
+    for (let x = bx; x < bx + bw - 3; x += 11) pb.rect(x, by - 5, 6, 5, lite);
+    // 箭孔：底层给门楼让位
+    for (let x = bx + 9; x < bx + bw - 9; x += 16) {
+      if (i === 0 && Math.abs(x - W * 0.5) < 26) continue;
+      if (by + 12 > nextY - 2) continue;
+      pb.rect(x, by + 10, 2, 6, '#2b2419');
+    }
+    // 亮着的窗：主堡是唯一在夜里还醒着的建筑
+    if (i === 1) for (const s of [-1, 1]) {
+      pb.rect(Math.round(W * 0.5) + s * 22 - 2, by + 14, 4, 6, p.woodDark);
+      pb.rect(Math.round(W * 0.5) + s * 22 - 1, by + 15, 2, 4, p.glass);
+      pb.ellipse(Math.round(W * 0.5) + s * 22, by + 17, 5, 5, p.glass, 0.12);
+    }
+  });
+  // 顶收两座小角楼，把方盒子破掉
+  const topY = Math.round(H * 0.168);
+  for (const s of [-1, 1]) roundTower(pb, Math.round(W * 0.5) + s * Math.round(W * 0.038), topY + 12, 4, 12, p, 'cone');
+  flag(pb, Math.round(W * 0.5), topY - 24, p, 18);
+  // 两条长旗从城垛垂下来：主堡正面最缺的就是"人的痕迹"
+  for (const s of [-1, 1]) {
+    const bnx = Math.round(W * 0.5) + s * 17 - 4;
+    pb.rect(bnx, topY + 6, 9, 26, p.clothDark);
+    pb.rect(bnx + 1, topY + 7, 7, 23, p.accent);
+    pb.poly([[bnx + 1, topY + 30], [bnx + 4, topY + 26], [bnx + 8, topY + 30]], p.clothDark);
+    pb.vline(bnx + 4, topY + 8, topY + 28, p.cloth);
+  }
+
+  /* ---- 门楼：拱门 + 闸门 + 火把 ---- */
+  const gx = Math.round(W * 0.5);
+  const gh = Math.round(H * 0.105);
+  // 门楼是主堡底座上凸出的一块，用比底座更深的石头，才不会像贴上去的浅色板
+  pb.rect(gx - 22, wallB - gh - 12, 44, gh + 12, '#645d4d');
+  pb.rect(gx - 22, wallB - gh - 12, 3, gh + 12, '#8d8471');
+  pb.rect(gx + 19, wallB - gh - 12, 3, gh + 12, '#4f493c');
+  for (let my = wallB - gh; my < wallB - 2; my += 6) pb.hline(gx - 19, gx + 18, my, '#55503f', 0.4);
+  for (let x = gx - 22; x < gx + 22; x += 10) pb.rect(x, wallB - gh - 17, 6, 5, lite);
+  // 拱洞
+  pb.rect(gx - 12, wallB - gh, 24, gh, '#241c12');
+  pb.ellipse(gx, wallB - gh, 12, 8, '#241c12');
+  pb.ellipse(gx, wallB - 5, 9, 5, '#c98a3a', 0.5); // 门洞里透出的火光
+  pb.ellipse(gx, wallB - gh + 5, 7, 5, '#e0a24a', 0.2);
+  // 闸门栅条
+  for (let i = -1; i <= 1; i++) pb.vline(gx + i * 6, wallB - gh + 3, wallB - 1, '#3a3126');
+  pb.hline(gx - 12, gx + 12, wallB - gh + 9, '#3a3126');
+  pb.hline(gx - 12, gx + 12, wallB - 3, '#3a3126');
+  // 拱券石 + 门口火把（火把先画托架，不然就是两个悬空黄点）
+  pb.vline(gx - 13, wallB - gh, wallB, '#8d8471');
+  pb.vline(gx + 13, wallB - gh, wallB, '#8d8471');
+  for (const s of [-1, 1]) {
+    const tx = gx + s * 18;
+    pb.hline(tx - 2, tx + 2, wallB - 25, '#3a3126');
+    pb.vline(tx, wallB - 25, wallB - 17, '#3a3126');
+    pb.ellipse(tx, wallB - 26, 2, 3, '#ffcf6b');
+    pb.ellipse(tx, wallB - 26, 7, 8, '#ffa93a', 0.18);
+  }
+  // 幕墙上的两面色旗，把"这是谁的城"摊到整条防线
+  for (const fx of [0.36, 0.64]) flag(pb, Math.round(W * fx), wallY - 16, p, 12);
 }
 
 /** 城市骨架：主干道 + 中央广场 + 喷泉 + 支路 + 路灯。负向臂 noStreet 整段抽掉。 */
-function townInfrastructure(pb: PixBuf, W: number, H: number, p: ScenePalette): void {
+function townInfrastructure(pb: PixBuf, W: number, H: number, p: ScenePalette, owner: SpriteOwner): void {
+  // 路面跟着地形走：同一块米色铺在火山黑土或紫色神殿地上，会像贴上去的一块沙盘。
+  // 负向臂 sameBase 连路面一起塌回 p1，否则"底子同形"还剩一层族色差。
+  const road = sceneArtBreaks.sameBase ? TOWN_ROAD_COLOR
+    : owner === 'p1' ? TOWN_ROAD_COLOR
+    : owner === 'p2' ? mix(TOWN_ROAD_COLOR, '#5a3a24', 0.55)
+      : owner === 'p3' ? mix(TOWN_ROAD_COLOR, '#5f6f3a', 0.42)
+        : mix(TOWN_ROAD_COLOR, '#4b3d5e', 0.5);
+  const roadDark = shade(road, -0.26);
+  const plaza = shade(road, 0.1);
+  const stoneLite = shade(road, 0.16), stoneDeep = shade(road, -0.18);
   const topY = Math.round(H * 0.44);
   const roadTop = Math.round(W * 0.035), roadBot = Math.round(W * 0.10);
   // 主干道：从城门向屏幕下方张开
   pb.poly([
     [Math.round(W * 0.5 - roadTop), topY], [Math.round(W * 0.5 + roadTop), topY],
     [Math.round(W * 0.5 + roadBot), H], [Math.round(W * 0.5 - roadBot), H],
-  ], TOWN_ROAD_COLOR);
-  pb.line(W * 0.5 - roadTop, topY, W * 0.5 - roadBot, H, '#6f6249', 1.5);
-  pb.line(W * 0.5 + roadTop, topY, W * 0.5 + roadBot, H, '#6f6249', 1.5);
+  ], road);
+  pb.line(W * 0.5 - roadTop, topY, W * 0.5 - roadBot, H, roadDark, 1.5);
+  pb.line(W * 0.5 + roadTop, topY, W * 0.5 + roadBot, H, roadDark, 1.5);
   // 支路：广场向左右延伸，暗示"城里还有别的街"
   const py = Math.round(H * 0.70);
-  pb.rect(0, py - 5, Math.round(W * 0.5), 10, TOWN_ROAD_COLOR);
-  pb.rect(Math.round(W * 0.5), py - 5, Math.round(W * 0.5), 10, TOWN_ROAD_COLOR);
-  pb.hline(0, W, py - 5, '#6f6249', 0.5);
-  pb.hline(0, W, py + 5, '#6f6249', 0.5);
-  // 石板纹理：按位置哈希，不引入随机流
-  for (let i = 0; i < 260; i++) {
-    const t = hash2(i, 1, 2026);
+  pb.rect(0, py - 5, Math.round(W * 0.5), 10, road);
+  pb.rect(Math.round(W * 0.5), py - 5, Math.round(W * 0.5), 10, road);
+  pb.hline(0, W, py - 5, roadDark, 0.5);
+  pb.hline(0, W, py + 5, roadDark, 0.5);
+  // 铺石纹理：按位置哈希，不引入随机流。只用比底子略深/略浅两色，
+  // 大面积纯色会读成一块沙地（2x 目检时最明显的问题）。
+  for (let i = 0; i < 420; i++) {
+    const t = hash2(i, 3, 2026);
     const y = Math.round(topY + t * (H - topY));
     const halfW = Math.round(roadTop + (t * (roadBot - roadTop)));
-    const x = Math.round(W * 0.5 + (hash2(i, 2, 2026) - 0.5) * halfW * 1.8);
-    pb.hline(x, x + 4, y, '#6f6249', 0.55);
+    const x = Math.round(W * 0.5 + (hash2(i, 4, 2026) - 0.5) * halfW * 1.78);
+    const tone = hash2(i, 5, 2026) > 0.5 ? stoneLite : stoneDeep;
+    pb.hline(x, x + 4, y, tone, 0.8);
+    if (i % 3 === 0) pb.vline(x, y, y + 2, roadDark, 0.5);
   }
   // 中央广场
   const plazaRx = Math.round(W * 0.15), plazaRy = Math.round(H * 0.085);
-  pb.ellipse(W * 0.5, py, plazaRx, plazaRy, '#6f6249');
-  pb.ellipse(W * 0.5, py, plazaRx - 4, plazaRy - 3, TOWN_PLAZA_COLOR);
+  pb.ellipse(W * 0.5, py, plazaRx, plazaRy, roadDark);
+  pb.ellipse(W * 0.5, py, plazaRx - 4, plazaRy - 3, plaza);
   // 喷泉：底座 + 水柱 + 水花
   pb.ellipse(W * 0.5, py + 4, 18, 7, '#5b5346');
   pb.ellipse(W * 0.5, py + 2, 15, 5, '#5a8fa0');
@@ -705,10 +833,13 @@ function baseCamp(pb: PixBuf, W: number, H: number, p: ScenePalette): void {
   pb.poly([[0, H * 0.5], [W * 0.2, H * 0.44], [W * 0.8, H * 0.46], [W, H * 0.5], [W, H], [0, H]], '#4a3226');
   pb.poly([[0, H * 0.76], [W, H * 0.72], [W, H], [0, H]], '#35231a');
   let lx = Math.round(W * 0.08);
-  for (let y = Math.round(H * 0.56); y < H; y += Math.max(6, H >> 5)) {
+  const fissure = Math.max(6, H >> 5);
+  for (let y = Math.round(H * 0.56); y < H; y += fissure) {
     const nx = lx + Math.round((hash2(y, 2, 91) - 0.5) * W * 0.08);
-    pb.line(lx, y, nx, y + Math.max(6, H >> 5), '#c4471e', 0.9);
-    pb.hline(lx - 1, lx + 1, y, '#ffb347', 0.9);
+    // 岩唇 → 熔岩 → 高光三层，单根细线在这个尺寸下只会读成一道涂鸦
+    for (let k = -2; k <= 2; k++) pb.line(lx, y + k, nx, y + fissure + k, '#2a120a', 1);
+    for (let k = -1; k <= 1; k++) pb.line(lx, y + k, nx, y + fissure + k, '#c4471e', 1);
+    pb.line(lx, y, nx, y + fissure, '#ffb347', 0.95);
     lx = nx;
   }
   for (let i = 0; i < 7; i++) {

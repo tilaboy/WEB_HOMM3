@@ -1213,14 +1213,44 @@ table.est td:last-child {
   transform: translateY(-3px);
 }
 .tv-plot.selected img {
-  filter: drop-shadow(0 0 0 #ffdf7a) drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
-  outline: 2px solid #f3d477;
-  outline-offset: 1px;
+  filter: drop-shadow(0 0 4px #ffdf7a) drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
 }
-.tv-plot[data-plot='__castle'] {
-  width: 9%;
-  aspect-ratio: 72 / 96;
-  transform: translate(-50%, -80%);
+/* 选中的标记画在地面上：outline 会沿 <img> 的盒子走一圈，未建地块是空图，
+   描边就变成一个悬在草地上的空方框（实拍里一眼就能看到）。 */
+.tv-plot.selected::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 4%;
+  width: 38%;
+  height: 3px;
+  transform: translateX(-50%);
+  background: #f3d477;
+  box-shadow: 0 0 7px rgba(243, 212, 119, 0.9);
+}
+/*
+ * 城堡热区：底子已经画出城堡本体，这里只做点击区（不再叠第二张城堡图）。
+ * z-index 低于所有地块，前面有房子时优先点房子。
+ */
+.tv-castle-hot {
+  position: absolute;
+  left: 50%;
+  top: 53%;
+  width: 17%;
+  min-width: 72px;
+  height: 36%;
+  transform: translate(-50%, -100%);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 9;
+  border-radius: 8px;
+}
+.tv-castle-hot.selected {
+  outline: 2px solid #f3d477;
+  outline-offset: -2px;
+  background: rgba(243, 212, 119, 0.07);
 }
 
 .tv-detail {
