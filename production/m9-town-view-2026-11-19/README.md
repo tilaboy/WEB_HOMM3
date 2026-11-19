@@ -153,7 +153,7 @@
 
 ## 回归
 
-`probe:townview` / `probe:townanim` 全绿；`tools/GATES.md` 登记的 **51 道门全绿**。未改动经济、战斗、存档与任务流程，只改城景呈现、建材配色、城堡与落地、以及对应闸门。
+`probe:townview` / `probe:townanim` 全绿；`tools/GATES.md` 表内 **55 行门全部 rc=0**（51 条有 npm 脚本，逐条跑 **258 s**；另 4 条是"无 npm script、直接 `node tools/*.mjs`"：`grimscontact` / `showcasegate` / `verify-static-map` / `iaaccept`，`iaaccept` 须先起 5173 且带 `NO_PROXY='*'`）。未改动经济、战斗、存档与任务流程，只改城景呈现、建材配色、城堡与落地、动画、以及对应闸门。
 
 ## 边界
 
