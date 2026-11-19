@@ -5,8 +5,10 @@
  *   ① **美术层**（纯 Node）：16 座 80×80 场景建筑按建筑原型重画（弧顶长屋 / 锯齿厂棚 /
  *      柱廊宅 / 圆塔 / 穹顶 / 平顶钟楼 / 水晶尖塔…），四族"结构同材质不同"、升级档改变剪影、
  *      **16 座两两 IoU <0.88**（上一版"12 座同款尖顶"必须转红）；底子新增城堡远景、主干道、
- *      广场与喷泉，四族底子在特征区域结构上不同。负向臂 `sameShape` / `sameBase` / `noStreet`
- *      分别让建筑塌成同一张、底子塌成同一张、街道消失，证明判据测的是设计而不是"帧里有东西"。
+ *      广场与喷泉，四族底子在特征区域结构上不同；**16 座各有建材**（红瓦/茅草/石板/
+ *      砖窑/铜绿/水晶…），阵营色退成旗、饰带与轻微偏色。负向臂 `sameShape` / `sameBase` /
+ *      `noStreet` / `sameTone` 分别让建筑塌成同一张、底子塌成同一张、街道消失、
+ *      建材塌回"一族一色"，证明判据测的是设计而不是"帧里有东西"。
  *   ② **接线/交互层**（真 Chrome）：844×390 横屏下从城镇面板打开城景，城堡 + 16 块地
  *      按 y 与远/中/近三档缩放落位；**只有已建的地块画建筑**，未建画浅地基，点两种地块都能出详情；
  *      `?devtownview=0` 负向臂必须看不到入口。
@@ -49,6 +51,7 @@ const {
   buildSceneBuilding,
   buildTownBase,
   setSceneArtBreaks,
+  scenePaletteOf,
   TOWN_ROAD_COLOR,
 } = await import(u('render/townSceneArt.js'));
 const OWNERS = ['p1', 'p2', 'p3', 'p4'];
@@ -94,6 +97,23 @@ const roadPixels = (pb) => {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(TOWN_ROAD_COLOR.slice(i, i + 2), 16));
   let n = 0;
   for (let y = Math.floor(pb.h * 0.44); y < pb.h; y++) for (let x = 0; x < pb.w; x++) {
+    const c = pb.px(x, y);
+    if (c[0] === r && c[1] === g && c[2] === b) n++;
+  }
+  return n;
+};
+const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const hueBucket = (h) => {
+  const [r, g, b] = hexRgb(h).map((v) => v / 255);
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  if (!d) return -1;
+  const x = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return Math.floor(x * 60 / 30); // 30° 一档
+};
+const colorPixels = (pb, hex) => {
+  const [r, g, b] = hexRgb(hex);
+  let n = 0;
+  for (let y = 0; y < pb.h; y++) for (let x = 0; x < pb.w; x++) {
     const c = pb.px(x, y);
     if (c[0] === r && c[1] === g && c[2] === b) n++;
   }
@@ -153,6 +173,18 @@ record('S5', '16 座建筑轮廓互不相同（两两 IoU <0.88，不许 12 座�
 const roadN = roadPixels(bases[0]);
 record('S6', '底子里真有主干道/广场（路面色像素 >5000）', roadN > 5000, `${roadN} px`);
 
+// 用户第二轮实拍反馈：轮廓分开了，但"全是蓝顶白墙"仍单调。每座必须有自己的建材。
+const mats = TOWN_BUILDING_IDS.map((id) => scenePaletteOf('p1', id));
+const roofUniq = new Set(mats.map((m) => m.roof)).size;
+const wallUniq = new Set(mats.map((m) => m.wall)).size;
+const roofHues = new Set(mats.map((m) => hueBucket(m.roof))).size;
+const wallHues = new Set(mats.map((m) => hueBucket(m.wall))).size;
+const painted = TOWN_BUILDING_IDS.filter((id, i) =>
+  Object.values(mats[i]).some((c) => colorPixels(big.get(`p1/${id}`), c) >= 25)).length;
+record('S7', '16 座各有建材：16 种屋顶/墙色、≥5 个屋顶色相族，且每帧真画出自己的色',
+  roofUniq === 16 && wallUniq === 16 && roofHues >= 5 && wallHues >= 4 && painted === 16,
+  `屋顶 ${roofUniq} 色/${roofHues} 族 · 墙 ${wallUniq} 色/${wallHues} 族 · 上色 ${painted}/16`);
+
 setSceneArtBreaks({ sameShape: true });
 const flatMasks = TOWN_BUILDING_IDS.map((id) => maskOf(buildSceneBuilding('p1', id, 1)));
 const flatIoU = maxPair(flatMasks, iouOf);
@@ -170,6 +202,14 @@ setSceneArtBreaks({ noStreet: true });
 const noRoadN = roadPixels(buildTownBase('p1', 760, 300));
 record('N0d', 'noStreet 负向对照：抽掉街道后路面色像素 = 0', noRoadN === 0, `${noRoadN} px`);
 setSceneArtBreaks({ noStreet: false });
+
+setSceneArtBreaks({ sameTone: true });
+const flatMats = TOWN_BUILDING_IDS.map((id) => scenePaletteOf('p1', id));
+const flatRoofUniq = new Set(flatMats.map((m) => m.roof)).size;
+const flatWallUniq = new Set(flatMats.map((m) => m.wall)).size;
+record('N0e', 'sameTone 负向对照：建材必须塌回"一族一色"（蓝顶白墙）',
+  flatRoofUniq === 1 && flatWallUniq === 1, `屋顶 ${flatRoofUniq} 色 · 墙 ${flatWallUniq} 色`);
+setSceneArtBreaks({ sameTone: false });
 
 /* ================================================================ 接线层 */
 const APP_PORT = 39800 + (process.pid % 200);

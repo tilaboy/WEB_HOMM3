@@ -30,6 +30,13 @@ export const TOWN_BUILDING_IDS = [
 export const TOWN_ROAD_COLOR = '#9a8a66';
 export const TOWN_PLAZA_COLOR = '#b4a47e';
 
+/** 负向臂：`sameShape` 全塌成尖顶小屋，`sameBase` 底子同形，`noStreet` 抽掉街道，
+ *  `sameTone` 把所有建材塌回"一族一色"（用户批评的旧配色）。 */
+let sceneArtBreaks = { sameShape: false, sameBase: false, noStreet: false, sameTone: false };
+export function setSceneArtBreaks(v: Partial<typeof sceneArtBreaks>): void {
+  sceneArtBreaks = { ...sceneArtBreaks, ...v };
+}
+
 interface ScenePalette {
   wall: string; wallDark: string; wallLite: string;
   roof: string; roofDark: string;
@@ -41,26 +48,64 @@ interface ScenePalette {
   outline: string;
 }
 
-function paletteOf(owner: SpriteOwner): ScenePalette {
+/**
+ * 16 座各自的建材。阵营色只作 22% 的轻微偏色 + 旗/饰带/窗光，
+ * 所以同一座城里能同时看到红瓦、茅草、石板、砖窑、铜绿和水晶，
+ * 但四族同功能建筑仍能被认出来（探针 S2 量四族色距）。
+ */
+export interface BuildingMaterial { roof: string; wall: string; cloth: string; glass: string; stone: string; }
+export const TOWN_BUILDING_MATERIALS: Readonly<Record<string, BuildingMaterial>> = {
+  tavern:   { roof: '#a95432', wall: '#d9c39a', cloth: '#8c3f28', glass: '#ffe3a0', stone: '#a89a7e' },
+  market:   { roof: '#c28a3a', wall: '#e2cba3', cloth: '#d8b05c', glass: '#f6d88a', stone: '#a89a7e' },
+  townhall: { roof: '#55677f', wall: '#cfc6a8', cloth: '#3f4f66', glass: '#bcd8e0', stone: '#9a9584' },
+  workshop: { roof: '#5b534a', wall: '#9d7f67', cloth: '#7a4a32', glass: '#e8c98a', stone: '#8a7a68' },
+  wall1:    { roof: '#7a4f2f', wall: '#8a6238', cloth: '#6a4226', glass: '#f0d268', stone: '#9a8f78' },
+  wall2:    { roof: '#8f3f35', wall: '#a9a393', cloth: '#5e5748', glass: '#e8d6a0', stone: '#9a8f78' },
+  wall3:    { roof: '#6f6a5a', wall: '#bdb39d', cloth: '#8a7c62', glass: '#e8d6a0', stone: '#9a8f78' },
+  banner:   { roof: '#9a6a42', wall: '#b9a084', cloth: '#5a3f24', glass: '#ffe9a0', stone: '#9a8f78' },
+  dwell1:   { roof: '#b99a58', wall: '#cfd3a8', cloth: '#8a7a48', glass: '#e0e8b0', stone: '#9a8f78' },
+  dwell2:   { roof: '#9c4b3c', wall: '#d8c5a2', cloth: '#7a3a2e', glass: '#ffe0a0', stone: '#9a8f78' },
+  dwell3:   { roof: '#6a7f5a', wall: '#c9b79a', cloth: '#8b6b4a', glass: '#ffe9a0', stone: '#9a8f78' },
+  dwell4:   { roof: '#7d7166', wall: '#e0d9c4', cloth: '#6a6258', glass: '#cfe0e8', stone: '#b3ac98' },
+  dwell5:   { roof: '#4d6b55', wall: '#b7b8a8', cloth: '#3c5544', glass: '#cfe0d8', stone: '#9a8f78' },
+  guild1:   { roof: '#4f9c86', wall: '#aeb9ad', cloth: '#3a7a6a', glass: '#a8e0d0', stone: '#948f80' },
+  guild2:   { roof: '#6c5a9a', wall: '#c8bed0', cloth: '#8372b3', glass: '#d8c8f0', stone: '#9a8f78' },
+  guild3:   { roof: '#7d5aa6', wall: '#b3a6b8', cloth: '#5a3f7a', glass: '#8fe6e0', stone: '#8a7f96' },
+};
+
+function paletteOf(owner: SpriteOwner, id?: string): ScenePalette {
   const { roof: faction } = ownerPalette(owner);
-  const wall = owner === 'p1' ? '#d8cdb2' : owner === 'p2' ? '#b9a084' : owner === 'p3' ? '#c6d0a6' : '#bfb4c6';
+  const mat = id && !sceneArtBreaks.sameTone ? TOWN_BUILDING_MATERIALS[id] : undefined;
+  const factionWall = owner === 'p1' ? '#d8cdb2' : owner === 'p2' ? '#b9a084' : owner === 'p3' ? '#c6d0a6' : '#bfb4c6';
+  const roof = mat ? mix(mat.roof, faction, 0.22) : faction;
+  const wall = mat ? mix(mat.wall, faction, 0.08) : factionWall;
+  const stone = mat ? mix(mat.stone, faction, 0.38) : '#9a8f78';
+  const woodMat = mat ? mix('#8a6238', mat.roof, 0.18) : (owner === 'p4' ? '#6a4a34' : '#8a6238');
+  const wood = mat ? mix(woodMat, faction, 0.38) : woodMat;
+  const clothBase = mat?.cloth ?? shade(faction, 0.22);
   return {
     wall,
     wallDark: shade(wall, -0.22),
     wallLite: shade(wall, 0.14),
-    roof: faction,
-    roofDark: shade(faction, -0.28),
-    wood: owner === 'p4' ? '#6a4a34' : '#8a6238',
+    roof,
+    roofDark: shade(roof, -0.28),
+    wood,
     woodDark: '#5a3f24',
     accent: owner === 'p1' ? '#f0d268' : owner === 'p2' ? '#ff9a4a' : owner === 'p3' ? '#b6e07a' : '#d8a8ff',
-    glass: owner === 'p4' ? '#e0b0ff' : '#ffe9a0',
-    stone: '#9a8f78',
-    stoneDark: '#5e5748',
-    cloth: shade(faction, 0.22),
-    clothDark: shade(faction, -0.12),
+    glass: mat ? mix(mat.glass, faction, 0.30) : (owner === 'p4' ? '#e0b0ff' : '#ffe9a0'),
+    stone,
+    stoneDark: shade(stone, -0.38),
+    cloth: mat ? mix(clothBase, faction, 0.45) : shade(faction, 0.22),
+    clothDark: shade(clothBase, -0.12),
     metal: '#7d8790',
     outline: '#241c12',
   };
+}
+
+/** 给闸门读"这座实际用的建材"，不许探针自己抄一份色表。 */
+export function scenePaletteOf(owner: SpriteOwner, id: string): Pick<ScenePalette, 'roof' | 'wall' | 'cloth' | 'glass'> {
+  const p = paletteOf(owner, id);
+  return { roof: p.roof, wall: p.wall, cloth: p.cloth, glass: p.glass };
 }
 
 /* ------------------------------------------------------------------ 笔法 */
@@ -463,16 +508,10 @@ const RECIPES: Record<string, Recipe> = {
   },
 };
 
-/** 闸门负向对照：`sameShape` 全塌成尖顶小屋，`sameBase` 底子同形，`noStreet` 抽掉街道。 */
-let sceneArtBreaks = { sameShape: false, sameBase: false, noStreet: false };
-export function setSceneArtBreaks(v: Partial<typeof sceneArtBreaks>): void {
-  sceneArtBreaks = { ...sceneArtBreaks, ...v };
-}
-
 /** 80×80 的场景建筑；tier 只影响附加装饰，不改骨架。 */
 export function buildSceneBuilding(owner: SpriteOwner, id: string, tier = 1): PixBuf {
   const pb = new PixBuf(SCENE_BUILDING_SIZE, SCENE_BUILDING_SIZE);
-  const p = paletteOf(owner);
+  const p = paletteOf(owner, id);
   const recipe = sceneArtBreaks.sameShape ? genericSpire : (RECIPES[id] ?? RECIPES.tavern!);
   groundShadow(pb, SCENE_BUILDING_SIZE / 2, B + 2, 28);
   const t = Math.max(1, Math.min(3, tier | 0));
