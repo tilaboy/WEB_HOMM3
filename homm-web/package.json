@@ -13,6 +13,7 @@
     "audit:score": "node tools/tp3-scorecheck.mjs",
     "audit:layout": "node tools/layoutaudit.mjs",
     "audit:mines": "node tools/minesaudit.mjs",
+    "probe:dressing": "node tools/dressdensity.mjs --gate --negctrl",
     "audit:ai": "node tools/ailayout.mjs",
     "audit:hover": "node tools/hoveraudit.mjs",
     "audit:touch": "node tools/tinytargetaudit.mjs",

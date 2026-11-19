@@ -4,9 +4,10 @@
  * ## 本文件实现了什么、没实现什么（诚实边界）
  *
  * §6.1 的规格是 17 型 / 38 帧、分 A（地面涂鸦）/ B（立体道具）/ C（活动物）三拨。
- * 本切片只做 **A 组地面涂鸦的 5 型**（`sd_g_*`）—— 它是**唯一不需要新建渲染通道**的一拨：
+ * 本切片做 **A 组地面涂鸦的 13 型**（`sd_g_*`）—— 它是**唯一不需要新建渲染通道**的一拨：
  * 地面涂鸦永不遮挡单位（§6.1.3），因此可以整体烘进一张离屏画布，每帧一次 `drawImage`。
- * **B 组（立体道具，须并入 y 排序）与 C 组（活动物，须每帧位移）本切片不做** ——
+ * 原有 5 型（M0）之外，M9 补 8 型：枯枝 / 灌木 / 蘑菇圈 / 碎石 / 断墙 / 篝火 / 路牌 / 弃车。
+ * **B 组（立体道具，须并入 y 排序）与 C 组（活动物，须每帧位移）仍不做** ——
  * 它们要动 `MapRenderer` 的画家算法与新增每帧状态，是独立一单（见 §6.1.8 工程 2.5 人日）。
  *
  * ## 为什么单独一张画布（而不是烘进 TerrainLayer）
@@ -53,6 +54,25 @@ const MARK_RED = '#c0392b';
 const STRAW_A = '#e8d08a';
 const STRAW_B = '#c9a94e';
 const STRAW_C = '#8a6f2a';
+const LEAF_DARK = '#315427';
+const LEAF_MID = '#55813a';
+const DEADWOOD = '#8c806c';
+const EMBER = '#d96a24';
+
+/**
+ * 负向对照开关（**只给闸门用**，运行期永远全 false）。
+ * `ignoreClear` 拆掉目标物净距（密度门必须报"压到目标物"）；
+ * `allTypesEverywhere` 拆掉语义锚点（密度门必须报"一屏塞太多"）。
+ */
+export interface DressingBreaks {
+  ignoreClear: boolean;
+  allTypesEverywhere: boolean;
+  dense: boolean;
+}
+let dressingBreaks: DressingBreaks = { ignoreClear: false, allTypesEverywhere: false, dense: false };
+export function setDressingBreaks(o: Partial<DressingBreaks>): void {
+  dressingBreaks = { ...dressingBreaks, ...o };
+}
 
 /* ---------------- 三个确定性种子（§6.1.4 ①） ---------------- */
 const SEED_PLACE = 7717;
@@ -183,6 +203,106 @@ function drawTreasureMap(pb: PixBuf): void {
   pb.outline(INK0);
 }
 
+/* ---- M9 新增 8 型（仍是 A 组贴地涂鸦，不进 y 排序） ---- */
+
+/** 枯枝：一场雷雨之后折断的树枝，躺在林边（32×32）。 */
+function drawDeadBranch(pb: PixBuf): void {
+  pb.line(3, 26, 27, 8, DEADWOOD, 0.95);
+  pb.line(12, 19, 9, 8, DEADWOOD, 0.9);
+  pb.line(19, 14, 27, 15, DEADWOOD, 0.9);
+  pb.line(9, 8, 6, 5, '#b5a78e', 0.8);
+  pb.line(27, 15, 30, 12, '#b5a78e', 0.8);
+  pb.ellipse(26, 9, 3, 2, '#6e6354', 0.6); // 断口旁的一小撮枯叶
+  pb.set(24, 11, '#a58c53');
+  pb.set(28, 7, '#a58c53');
+}
+
+/** 灌木丛：一团低矮的叶子 + 两颗红果，长在林边或水边。 */
+function drawBush(pb: PixBuf): void {
+  pb.ellipse(15, 20, 11, 8, LEAF_DARK, 0.85);
+  pb.ellipse(11, 18, 7, 6, LEAF_MID, 0.9);
+  pb.ellipse(21, 19, 6, 5, LEAF_MID, 0.85);
+  pb.ellipse(14, 15, 4, 3, '#77a456', 0.8);
+  pb.set(9, 16, '#b4473a');
+  pb.set(22, 17, '#b4473a');
+  pb.outline(INK0);
+}
+
+/** 蘑菇圈：三顶小伞围成弧，林地里才讲得通。 */
+function drawMushrooms(pb: PixBuf): void {
+  const caps: [number, number, number][] = [[8, 20, 4], [16, 24, 5], [25, 18, 4]];
+  for (const [cx, cy, r] of caps) {
+    pb.rect(cx - 1, cy, 2, 6, '#e5dcc4');
+    pb.ellipse(cx, cy, r, r * 0.65, '#a8514e');
+    pb.ellipse(cx - 1, cy - 1, 1, 1, '#e7c5a8', 0.9);
+    pb.set(cx + 1, cy - 1, '#f2e5d0', 0.8);
+  }
+  pb.ellipse(16, 29, 12, 2, '#6a5b41', 0.35); // 一圈暗草影
+}
+
+/** 碎石堆：山路边炸开的一小堆石片。 */
+function drawRubble(pb: PixBuf): void {
+  const bits: [number, number, number][] = [
+    [8, 21, 4], [15, 24, 5], [22, 20, 4], [12, 16, 3], [20, 15, 3], [26, 25, 3],
+  ];
+  for (const [cx, cy, r] of bits) {
+    pb.ellipse(cx, cy, r, r * 0.7, STONE_MID);
+    pb.ellipse(cx - 1, cy - 1, r - 1, r * 0.4, '#c7c0b4', 0.8);
+  }
+  pb.ellipse(16, 28, 12, 2, '#5c5448', 0.35);
+}
+
+/** 断墙：镇子外塌了一半的矮石墙（两段，中间透空）。 */
+function drawBrokenWall(pb: PixBuf): void {
+  pb.rect(2, 15, 11, 12, STONE_MID);
+  pb.hline(2, 12, 15, '#c7c0b4');
+  pb.rect(19, 19, 11, 8, STONE_MID);
+  pb.hline(19, 29, 19, '#c7c0b4');
+  for (let x = 3; x < 12; x += 4) pb.vline(x, 17, 26, '#7d7569');
+  for (let x = 20; x < 29; x += 4) pb.vline(x, 21, 26, '#7d7569');
+  pb.ellipse(16, 28, 3, 2, '#7d7569', 0.6); // 塌下来的碎块
+  pb.outline(INK0);
+}
+
+/** 篝火：石圈 + 木柴 + 还在烧的火苗（路边的营地）。 */
+function drawCampfire(pb: PixBuf): void {
+  pb.ellipse(16, 22, 11, 7, '#7d7569');
+  pb.ellipse(16, 22, 7, 4, '#3d342b');
+  pb.line(8, 25, 23, 18, '#6b4a2a', 1);
+  pb.line(9, 18, 23, 25, '#6b4a2a', 1);
+  pb.poly([[16, 9], [12, 18], [15, 18], [13, 23], [20, 16], [17, 16], [19, 9]], EMBER, 0.95);
+  pb.ellipse(16, 20, 2, 2, '#f5d36a', 0.9);
+  for (const [x, y] of [[7, 23], [12, 28], [21, 27], [26, 21]] as [number, number][]) {
+    pb.ellipse(x, y, 3, 2, '#9b958a');
+  }
+}
+
+/** 路牌：柱顶两块朝相反方向的木板（不写字，§5.3 no text）。 */
+function drawSignpost(pb: PixBuf): void {
+  pb.ellipse(16, 28, 7, 2, '#5b4e3b', 0.45);
+  pb.rect(14, 8, 4, 20, '#6b4a2a');
+  pb.vline(14, 8, 27, '#9a7047');
+  pb.poly([[4, 10], [14, 8], [14, 14], [4, 16]], '#b98a54');
+  pb.poly([[18, 14], [28, 12], [28, 18], [18, 20]], '#b98a54');
+  pb.hline(5, 13, 12, '#e0bd86', 0.8);
+  pb.hline(19, 27, 16, '#e0bd86', 0.8);
+  pb.outline(INK0);
+}
+
+/** 废弃推车：侧翻的木车斗 + 一只轮子 + 断掉的车辕。 */
+function drawAbandonedCart(pb: PixBuf): void {
+  pb.poly([[5, 15], [24, 12], [26, 24], [7, 26]], '#8a5f34');
+  pb.hline(5, 24, 15, '#b98a54');
+  pb.vline(7, 17, 25, '#5f4022');
+  pb.vline(13, 16, 25, '#5f4022');
+  pb.vline(19, 15, 24, '#5f4022');
+  pb.line(24, 22, 30, 27, '#6b4a2a', 1); // 断辕
+  pb.ellipse(10, 27, 5, 5, '#6b4a2a');
+  pb.ellipse(10, 27, 2, 2, '#b98a54');
+  pb.ellipse(23, 26, 3, 3, '#6b4a2a', 0.8);
+  pb.outline(INK0);
+}
+
 /* ---------------------------------------------------------------- 道具登记 */
 
 /* ---------------------------------------------------------------- 语境 / 语义锚点 */
@@ -213,7 +333,7 @@ interface Decal {
   fits: (c: Ctx) => boolean;
 }
 
-/** A 组 5 型（`asset-spec.md §2.3` 的 `sd_g_*`）。全程序化，0 张 AI（§6.1.2）。 */
+/** A 组 13 型（前 5 型是 M0，后 8 型是 M9）。全程序化，0 张 AI（§6.1.2）。 */
 const DECALS: readonly Decal[] = [
   // 广场跳房子：得有人住、有广场 —— 放镇子（含城堡，kind 同为 town）附近
   { name: 'sd_g_hopscotch', span: 2, build: drawHopscotch, fits: (c) => c.hasObject(['town'], 4) },
@@ -225,7 +345,29 @@ const DECALS: readonly Decal[] = [
   { name: 'sd_g_stain', span: 1, build: drawStain, fits: (c) => c.hasObject(['town'], 4) },
   // 画错的藏宝图：笑点就在"红十字标在一片明显是水的中央" ⇒ 必须在水边
   { name: 'sd_g_map', span: 1, build: drawTreasureMap, fits: (c) => c.hasTerrain(['water'], 1) },
+  // M9 八型：语境只认「林边 / 水边 / 路边 / 镇边 / 石地」，空地依旧不放
+  { name: 'sd_g_deadbranch', span: 1, build: drawDeadBranch, fits: (c) => c.hasObject(['obstacle'], 2) },
+  { name: 'sd_g_bush', span: 1, build: drawBush, fits: (c) => c.hasObject(['obstacle'], 1) || c.hasTerrain(['water'], 1) },
+  { name: 'sd_g_mushrooms', span: 1, build: drawMushrooms, fits: (c) => c.hasObject(['obstacle'], 2) },
+  { name: 'sd_g_rubble', span: 1, build: drawRubble, fits: (c) => c.hasTerrain(['rock'], 1) || c.hasObject(['obstacle'], 1) },
+  { name: 'sd_g_brokenwall', span: 1, build: drawBrokenWall, fits: (c) => c.hasObject(['town'], 5) },
+  { name: 'sd_g_campfire', span: 1, build: drawCampfire, fits: (c) => c.hasTerrain(['dirt'], 1) && c.hasObject(['obstacle'], 2) },
+  { name: 'sd_g_signpost', span: 1, build: drawSignpost, fits: (c) => c.hasTerrain(['dirt'], 1) },
+  { name: 'sd_g_cart', span: 1, build: drawAbandonedCart, fits: (c) => c.hasTerrain(['dirt'], 1) && c.hasObject(['obstacle'], 2) },
 ];
+
+/** 道具帧名（给闸门/目检导出用；顺序与 `DECALS` 一致）。 */
+export const DECAL_NAMES = DECALS.map((d) => d.name);
+
+/** 单独画一枚贴地道具（`tools/dressdensity.mjs --png=` 用它导出 ×8 目检图）。 */
+export function buildDecal(name: string): PixBuf | null {
+  const d = DECALS.find((x) => x.name === name);
+  if (!d) return null;
+  const n = d.span * TILE;
+  const pb = new PixBuf(n, n);
+  d.build(pb);
+  return pb;
+}
 
 /** 每个道具的 PixBuf 画布（惰性建一次；`toCanvas()` 有分配，不该每次烘焙重建）。 */
 let decalCanvases: HTMLCanvasElement[] | null = null;
@@ -297,14 +439,16 @@ function canPlace(map: GameMap, x: number, y: number, span: number): boolean {
       if (c.objectId) return false;
     }
   }
-  // ② 目标物净距：只避 TARGET_KINDS
-  for (let dy = -CLEAR; dy < span + CLEAR; dy++) {
-    for (let dx = -CLEAR; dx < span + CLEAR; dx++) {
-      const nx = x + dx, ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
-      const c = map.tiles[idx(map, nx, ny)];
-      if (!c.objectId) continue;
-      if (TARGET_KINDS.includes(map.objects[c.objectId].kind)) return false;
+  // ② 目标物净距：只避 TARGET_KINDS（负向对照可拆，证明这条判据真的在拦东西）
+  if (!dressingBreaks.ignoreClear) {
+    for (let dy = -CLEAR; dy < span + CLEAR; dy++) {
+      for (let dx = -CLEAR; dx < span + CLEAR; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
+        const c = map.tiles[idx(map, nx, ny)];
+        if (!c.objectId) continue;
+        if (TARGET_KINDS.includes(map.objects[c.objectId].kind)) return false;
+      }
     }
   }
   return true;
@@ -338,7 +482,7 @@ export function placementsOf(map: GameMap): Placement[] {
     for (let bxi = 0; bxi < bx; bxi++) {
       // 每块先掷一次"这块要不要有布景"。密度**只**由这一处控制：
       // `fits` 已经保证"放下就讲得通"，所以这里不需要再靠低概率去压噪声。
-      if (hash2(bxi, byi, SEED_PLACE) >= PLACE_CUTOFF) continue;
+      if (!dressingBreaks.dense && hash2(bxi, byi, SEED_PLACE) >= PLACE_CUTOFF) continue;
 
       // 块内从确定性起点起扫，找第一个"能放 **且** 有讲得通的候选"的格。
       // ⚠️ 候选是**先看有哪种讲得通、再在其中挑**，不是先挑一种再看放不放得下 ——
@@ -354,7 +498,7 @@ export function placementsOf(map: GameMap): Placement[] {
 
         const cand: number[] = [];
         for (let i = 0; i < DECALS.length; i++) {
-          if (!DECALS[i].fits(dctx)) continue;
+          if (!dressingBreaks.allTypesEverywhere && !DECALS[i].fits(dctx)) continue;
           if (!canPlace(map, cx, cy, DECALS[i].span)) continue;
           cand.push(i);
         }
