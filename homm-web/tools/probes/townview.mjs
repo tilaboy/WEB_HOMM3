@@ -1,12 +1,13 @@
 /**
- * 城内一览闸门（M9）。
+ * 会生长的城市场景闸门（HOMM3 观感 · 2026-11-19 重画）。
  *
  * 两层判据：
- *   ① **美术层**（纯 Node）：16 座 88×88 大图、四族"结构同材质不同"、升级帧确有体量差、
- *      四张背景不重样；负向对照 `sameShape` 必须让大图塌成同一张。
- *   ② **接线/交互层**（真 Chrome）：844×390 横屏下从城镇面板打开城景，16 座 + 城堡
- *      全在槽位里、按等级换 `data-frame`、点选出现详情、未建/已建双态都在；
- *      `?devtownview=0` 负向臂必须看不到入口（证明判测的是新视图）。
+ *   ① **美术层**（纯 Node）：16 座 80×80 场景建筑逐笔重画、四族"结构同材质不同"、
+ *      升级档改变剪影、四张阵营底子**结构不同**；负向臂 `sameShape` / `sameBase`
+ *      分别让建筑/底子塌成一张，证明判据测的是形状而不是"帧里有东西"。
+ *   ② **接线/交互层**（真 Chrome）：844×390 横屏下从城镇面板打开城景，城堡 + 16 块地
+ *      按 y 做深度排序；**只有已建的地块画建筑**，未建画浅地基，点两种地块都能出详情；
+ *      `?devtownview=0` 负向臂必须看不到入口。
  *   ③ **英雄招募接线**：默认在「招募」页、`市场·工坊` 页没有；`?devhiretab=market`
  *      负向臂把它退回旧页，两条判据都必须翻转（证明测的是页签位置而不是字样）。
  *   ④ **存量转换接线**（决策 59）：`devtier=3` 下「驻军」页有 `.stack-convert` 按钮，
@@ -25,7 +26,7 @@ import { withHeadlessChrome, cdpPort } from '../_chrome.mjs';
 const DIST = distDir();
 printHeader(DIST, 'gate=townview');
 const u = (rel) => distUrl(rel, DIST);
-requireFile(DIST, 'render/townViewArt.js');
+requireFile(DIST, 'render/townSceneArt.js');
 requireFile(DIST, 'ui/TownDialog.js');
 
 const GATE = process.argv.includes('--gate');
@@ -40,9 +41,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ================================================================ 美术层 */
 installShim();
-const { TOWN_BUILDING_IDS, buildTownBuilding, buildTownSceneBg, townBuildingFrameName } =
-  await import(u('render/townViewArt.js'));
-const { setBuildingArtBreaks } = await import(u('render/buildingArt.js'));
+const {
+  SCENE_BUILDING_SIZE,
+  TOWN_BUILDING_IDS,
+  buildSceneBuilding,
+  buildTownBase,
+  setSceneArtBreaks,
+} = await import(u('render/townSceneArt.js'));
 const OWNERS = ['p1', 'p2', 'p3', 'p4'];
 
 const maskOf = (pb) => {
@@ -64,17 +69,33 @@ const meanColor = (pb) => {
   }
   return [r / n, g / n, b / n];
 };
+/** 亮度梯度掩码：底子整幅不透明，不能用 alpha 判结构；取 4px 采样点的边缘。 */
+const edgeMask = (pb) => {
+  const m = new Uint8Array(pb.w * pb.h);
+  const lum = (x, y) => { const c = pb.px(x, y); return (c[0] * 77 + c[1] * 150 + c[2] * 29) >> 8; };
+  for (let y = 2; y < pb.h - 2; y += 4) for (let x = 2; x < pb.w - 2; x += 4) {
+    const g = Math.abs(lum(x + 2, y) - lum(x - 2, y)) + Math.abs(lum(x, y + 2) - lum(x, y - 2));
+    if (g > 26) m[y * pb.w + x] = 1;
+  }
+  return m;
+};
+const maxPair = (arr, metric) => {
+  let worst = 0;
+  for (let i = 0; i < arr.length; i++) for (let j = i + 1; j < arr.length; j++) worst = Math.max(worst, metric(arr[i], arr[j]));
+  return worst;
+};
 
 const big = new Map();
 for (const owner of OWNERS) for (const id of TOWN_BUILDING_IDS) {
-  const pb = buildTownBuilding(owner, id, 1);
-  big.set(`${owner}/${id}`, pb);
+  big.set(`${owner}/${id}`, buildSceneBuilding(owner, id, 1));
 }
-record('T0', `16 座 × 4 族 = 64 张 88×88 大图，无空帧`,
-  big.size === 64 && [...big.values()].every((pb) => pb.w === 88 && pb.h === 88 && areaOf(maskOf(pb)) > 200),
-  `${big.size} 帧`);
+record('S0', `16 座 × 4 族 = 64 张 ${SCENE_BUILDING_SIZE}px 场景建筑，无空帧`,
+  big.size === 64 && [...big.values()].every((pb) =>
+    pb.w === SCENE_BUILDING_SIZE && pb.h === SCENE_BUILDING_SIZE && areaOf(maskOf(pb)) > 400),
+  `${big.size} 帧 · ${SCENE_BUILDING_SIZE}px`);
 
 let maskSame = 0, colorSplit = 0;
+const colorClose = [];
 for (const id of TOWN_BUILDING_IDS) {
   const masks = OWNERS.map((o) => maskOf(big.get(`${o}/${id}`)));
   if (masks.slice(1).every((m) => iouOf(masks[0], m) === 1)) maskSame++;
@@ -84,36 +105,43 @@ for (const id of TOWN_BUILDING_IDS) {
     min = Math.min(min, Math.hypot(...cs[i].map((v, k) => v - cs[j][k])));
   }
   if (min >= 6) colorSplit++;
+  else colorClose.push(`${id}:${min.toFixed(1)}`);
 }
-record('T1', '四族结构逐像素相同（只换材质）', maskSame === 16, `${maskSame}/16`);
-record('T2', '四族材质确实分开（最近两族色距 ≥6）', colorSplit === 16, `${colorSplit}/16`);
+record('S1', '四族建筑结构逐像素相同（只换材质）', maskSame === 16, `${maskSame}/16`);
+record('S2', '四族材质确实分开（最近两族色距 ≥6）', colorSplit === 16,
+  `${colorSplit}/16${colorClose.length ? ` · 太近 ${colorClose.join(' ')}` : ''}`);
 
-const l1 = buildTownBuilding('p1', 'dwell3', 1);
-const l3 = buildTownBuilding('p1', 'dwell3', 3);
-const a1 = areaOf(maskOf(l1)), a3 = areaOf(maskOf(l3));
-const iou13 = iouOf(maskOf(l1), maskOf(l3));
-record('T3', '升级后体量变大且不是同一张（L3 面积 > L1、IoU <0.95）',
-  a3 > a1 && iou13 < 0.95, `${a1}→${a3} · IoU ${iou13.toFixed(3)}`);
-
-const bgs = OWNERS.map((o) => buildTownSceneBg(o, 760, 300));
-const bgColors = bgs.map((pb) => {
-  const s = new Set();
-  for (let i = 0; i < pb.w * pb.h; i += 97) {
-    const p = pb.px(i % pb.w, (i / pb.w) | 0);
-    s.add((p[0] << 16) | (p[1] << 8) | p[2]);
-  }
-  return s.size;
+const tierDeltas = TOWN_BUILDING_IDS.map((id) => {
+  const a1 = areaOf(maskOf(buildSceneBuilding('p1', id, 1)));
+  const a3 = areaOf(maskOf(buildSceneBuilding('p1', id, 3)));
+  return { id, a1, a3 };
 });
-record('T4', '四张 760×300 背景不透明且不是纯色块',
-  bgs.every((b) => b.w === 760 && b.h === 300) && bgColors.every((n) => n > 12),
-  `抽样色数 ${bgColors.join('/')}`);
+const grown = tierDeltas.filter((d) => d.a3 > d.a1).length;
+record('S3', '16 座 L3 剪影都比 L1 大（不是只改内部像素）',
+  grown === 16, `${grown}/16 · ${tierDeltas.slice(0, 3).map((d) => `${d.id}:${d.a1}→${d.a3}`).join(' ')}`);
 
-setBuildingArtBreaks({ sameShape: true });
-const flat1 = maskOf(buildTownBuilding('p1', 'tavern', 1));
-const flat2 = maskOf(buildTownBuilding('p1', 'market', 1));
+const bases = OWNERS.map((o) => buildTownBase(o, 760, 300));
+const baseEdges = bases.map(edgeMask);
+const baseEdgeCounts = baseEdges.map(areaOf);
+const baseEdgeIoU = maxPair(baseEdges, iouOf);
+record('S4', '四族底子结构不同（边缘掩码两两 IoU <0.60，且每张真有边缘）',
+  bases.every((b) => b.w === 760 && b.h === 300) &&
+  baseEdgeCounts.every((n) => n > 200) && baseEdgeIoU < 0.60,
+  `边缘 ${baseEdgeCounts.join('/')} · 最大 IoU ${baseEdgeIoU.toFixed(3)}`);
+
+setSceneArtBreaks({ sameShape: true });
+const flat1 = maskOf(buildSceneBuilding('p1', 'tavern', 1));
+const flat2 = maskOf(buildSceneBuilding('p1', 'market', 1));
 const flatIoU = iouOf(flat1, flat2);
-record('N0', 'sameShape 负向对照：大图必须塌成同一张（IoU >0.95）', flatIoU > 0.95, `IoU ${flatIoU.toFixed(3)}`);
-setBuildingArtBreaks({ sameShape: false });
+record('N0', 'sameShape 负向对照：建筑必须塌成同一张（IoU >0.95）', flatIoU > 0.95, `IoU ${flatIoU.toFixed(3)}`);
+setSceneArtBreaks({ sameShape: false });
+
+setSceneArtBreaks({ sameBase: true });
+const flatBases = OWNERS.map((o) => edgeMask(buildTownBase(o, 760, 300)));
+const flatBaseIoU = maxPair(flatBases, iouOf);
+record('N0b', 'sameBase 负向对照：四张底子必须塌成同一张（IoU = 1）',
+  flatBaseIoU === 1, `IoU ${flatBaseIoU.toFixed(3)}`);
+setSceneArtBreaks({ sameBase: false });
 
 /* ================================================================ 接线层 */
 const APP_PORT = 39800 + (process.pid % 200);
@@ -219,37 +247,47 @@ try {
     const a = await openTownAndScene(send, evaluate);
     if (!a.toggle || !a.scene) return { err: '城景入口/覆盖层没打开', a };
     const view = await evaluate(`(() => {
-      const slots = [...document.querySelectorAll('.tv-grid .tv-slot')];
-      const buildingImgs = slots.filter((s) => !s.classList.contains('tv-castle'))
-        .map((s) => s.querySelector('img')).filter(Boolean);
+      const slots = [...document.querySelectorAll('.tv-world .tv-plot')];
       const imgs = slots.map((s) => s.querySelector('img')).filter(Boolean);
-      const frames = buildingImgs.map((i) => i.dataset.frame ?? '');
-      const cols = getComputedStyle(document.querySelector('.tv-grid')).gridTemplateColumns.split(' ').length;
-      const natural = [...new Set(buildingImgs.map((i) => i.naturalWidth))];
-      const rendered = buildingImgs.map((i) => Math.round(i.getBoundingClientRect().width));
+      const built = slots.filter((s) => s.dataset.plot !== '__castle' && s.classList.contains('built'));
+      const unbuilt = slots.filter((s) => s.classList.contains('unbuilt'));
+      const castle = slots.filter((s) => s.dataset.plot === '__castle');
+      const ofKind = (k) => imgs.filter((i) => i.dataset.kind === k);
+      const rects = slots.map((s) => s.getBoundingClientRect());
+      const depths = slots.map((s) => ({ y: parseFloat(s.style.top), z: +getComputedStyle(s).zIndex }));
+      const depthOk = depths.every((a, i) => depths.every((b, j) =>
+        a.y === b.y || (a.y < b.y) === (a.z < b.z)));
+      const rendered = ofKind('building').map((i) => Math.round(i.getBoundingClientRect().width));
       return {
-        slots: slots.length, built: slots.filter((s) => s.classList.contains('built')).length,
-        unbuilt: slots.filter((s) => s.classList.contains('unbuilt')).length,
-        cols, natural, minRendered: Math.min(...rendered), maxRendered: Math.max(...rendered),
-        tier3: frames.filter((f) => f.includes('_u3')).length,
-        castleFrames: slots.filter((s) => s.classList.contains('tv-castle'))
-          .flatMap((s) => [...s.querySelectorAll('img')]).filter((i) => (i.dataset.frame ?? '').includes('_castle_')).length,
-        townFrames: frames.filter((f) => f.startsWith('tv_p1_')).length,
+        slots: slots.length, built: built.length, unbuilt: unbuilt.length, castle: castle.length,
+        buildingKind: ofKind('building').length,
+        foundationKind: ofKind('foundation').length,
+        castleKind: ofKind('castle').length,
+        buildingOnUnbuilt: unbuilt.filter((s) => s.querySelector('img')?.dataset.kind === 'building').length,
+        foundationSrcs: [...new Set(ofKind('foundation').map((i) => i.src))].length,
+        natural: [...new Set(ofKind('building').map((i) => i.naturalWidth))],
+        minRendered: Math.min(...rendered), maxRendered: Math.max(...rendered),
+        outside: rects.filter((r) => r.left < -1 || r.right > innerWidth + 1 || r.top < -1 || r.bottom > innerHeight + 1).length,
+        depthOk,
+        tier3: ofKind('building').filter((i) => (i.dataset.frame ?? '').includes('_u3')).length,
+        sceneFrames: ofKind('building').filter((i) => (i.dataset.frame ?? '').startsWith('scene_p1_')).length,
+        castleFrames: ofKind('castle').filter((i) => (i.dataset.frame ?? '').includes('_castle_')).length,
         bg: (() => { const c = document.querySelector('.tv-bg'); return c ? c.width + 'x' + c.height : '-'; })(),
       };
     })()`);
     // 点一个已建成建筑 → 详情有名字；再点一个未建 → 详情有建造/升级按钮
     const detail = await evaluate(`(() => {
-      const built = document.querySelector('.tv-slot.built:not(.tv-castle)');
+      const built = document.querySelector('.tv-world .tv-plot.built[data-plot]:not([data-plot="__castle"])');
       if (!built) return { err: '没有已建建筑可点' };
       built.click();
       const nm = document.querySelector('.tv-detail-body strong')?.textContent ?? '';
       const art = document.querySelector('.tv-detail-art')?.dataset.frame ?? '';
-      const un = document.querySelector('.tv-slot.unbuilt');
+      const un = document.querySelector('.tv-world .tv-plot.unbuilt');
       if (!un) return { err: '没有未建建筑可点', nm, art };
       un.click();
       const btn = [...document.querySelectorAll('.tv-detail .btn')].map((b) => b.textContent ?? '').join('/');
-      return { nm, art, btn };
+      const artKind = document.querySelector('.tv-detail-art')?.dataset.frame ?? '';
+      return { nm, art, btn, artKind, foundationSelected: !!document.querySelector('.tv-plot.unbuilt.selected') };
     })()`);
     if (SHOT_DIR) {
       mkdirSync(SHOT_DIR, { recursive: true });
@@ -273,17 +311,24 @@ try {
   } else {
     const v = result.view;
     record('U0', '城景能从城镇面板打开', true);
-    record('U1', '16 座建筑 + 城堡都在槽位里', v.slots === 17 && v.castleFrames === 1, `${v.slots} 槽 / ${v.castleFrames} 城堡`);
-    record('U2', '已建/未建双态同时可见', v.built > 0 && v.unbuilt > 0, `built ${v.built} / unbuilt ${v.unbuilt}`);
-    record('U3', '八列网格 + 88px 源图（手机横屏渲染 ≥44px）',
-      v.cols === 8 && v.natural.length === 1 && v.natural[0] === 88 && v.minRendered >= 44,
-      `cols=${v.cols} natural=${v.natural.join(',')} rendered=${v.minRendered}~${v.maxRendered}`);
-    record('U4', '等级帧真的接上了（devtier=3 ⇒ 五座 _u3）', v.tier3 === 5 && v.townFrames === 16,
-      `u3=${v.tier3} townFrames=${v.townFrames}`);
+    record('U1', '城堡 + 16 块地都在场景里', v.slots === 17 && v.castle === 1 && v.castleFrames === 1,
+      `${v.slots} 槽 / ${v.castle} 城堡`);
+    record('U2', '只画已建建筑：未建地块是同一张浅地基，没有偷画房子',
+      v.built > 0 && v.unbuilt > 0 && v.buildingKind === v.built &&
+      v.foundationKind === v.unbuilt && v.buildingOnUnbuilt === 0 &&
+      v.foundationSrcs === 1,
+      `built ${v.built} / unbuilt ${v.unbuilt} · 建筑帧 ${v.buildingKind} / 地基 ${v.foundationKind} / 错画 ${v.buildingOnUnbuilt}`);
+    record('U3', '按 y 深度排序，844×390 下没有地块被裁掉，80px 源图落到 ≥44px',
+      v.depthOk && v.outside === 0 && v.natural.length === 1 && v.natural[0] === 80 && v.minRendered >= 44,
+      `depth=${v.depthOk} outside=${v.outside} natural=${v.natural.join(',')} rendered=${v.minRendered}~${v.maxRendered}`);
+    record('U4', '已建地块全部用场景帧，等级帧确实接上',
+      v.sceneFrames === v.built && v.castleKind === 1 && v.tier3 > 0 && v.tier3 <= v.built,
+      `scene=${v.sceneFrames}/${v.built} u3=${v.tier3}`);
     record('U5', '背景按舞台实际像素绘制', /^\d+x\d+$/.test(v.bg) && v.bg !== '320x180', v.bg);
     const d = result.detail;
-    record('U6', '点建筑出详情（名字 + 大图 + 建造/升级按钮）',
-      !d.err && !!d.nm && !!d.art && /建造|升级/.test(d.btn), JSON.stringify(d));
+    record('U6', '点已建出详情大图，点空地出建造/升级按钮',
+      !d.err && !!d.nm && (d.art ?? '').startsWith('scene_') &&
+      /建造|升级/.test(d.btn ?? '') && d.foundationSelected, JSON.stringify(d));
     record('N1', 'devtownview=0 负向对照：入口与城景都必须消失',
       result.neg && !result.neg.toggle && !result.neg.scene, JSON.stringify(result.neg));
     const hr = result.hireRecruit, hm = result.hireMarket;

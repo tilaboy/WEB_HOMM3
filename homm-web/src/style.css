@@ -1176,54 +1176,53 @@ table.est td:last-child {
   height: 100%;
   image-rendering: pixelated;
 }
-.tv-grid {
+/*
+ * 会生长的城市：地块用 % 定位在 stage 上，y 同时决定 DOM 顺序/z-index，
+ * 后画的自然盖住前面的 —— 这是 HOMM3 城景的纵深来源，不该压成网格。
+ */
+.tv-world {
   position: absolute;
   inset: 0;
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  grid-template-rows: repeat(3, 1fr);
-  align-items: end;
-  justify-items: center;
 }
-.tv-slot {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 44px;
+.tv-plot {
+  position: absolute;
+  width: 15%;
+  min-width: 44px;
+  aspect-ratio: 1 / 1;
+  transform: translate(-50%, -72%);
   padding: 0;
   border: 0;
   background: transparent;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
   cursor: pointer;
 }
-.tv-slot img {
+.tv-plot img {
   display: block;
-  width: min(100%, 96px);
-  height: auto;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   image-rendering: pixelated;
   filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
   transition: transform 120ms ease-out;
 }
-.tv-slot.unbuilt img {
-  opacity: 0.42;
+.tv-plot.unbuilt img {
+  opacity: 0.36;
   filter: grayscale(0.7) drop-shadow(0 1px 0 rgba(0, 0, 0, 0.3));
 }
-.tv-slot.built:hover img,
-.tv-slot.selected img {
+.tv-plot.built:hover img,
+.tv-plot.selected img {
   transform: translateY(-3px);
 }
-.tv-slot.selected img {
+.tv-plot.selected img {
   filter: drop-shadow(0 0 0 #ffdf7a) drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
   outline: 2px solid #f3d477;
   outline-offset: 1px;
 }
-.tv-castle img {
-  width: min(100%, 116px);
+.tv-plot[data-plot='__castle'] {
+  width: 9%;
+  aspect-ratio: 72 / 96;
+  transform: translate(-50%, -80%);
 }
+
 .tv-detail {
   flex: 0 0 auto;
   min-height: 72px;

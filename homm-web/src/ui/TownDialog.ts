@@ -94,15 +94,20 @@ import {
 import type { BuildStatus } from '../core/game/town.js';
 import { showModal } from './Dialogs.js';
 import { installResIcons, resIcon, type ResId } from './resicons.js';
+import { PixBuf } from '../render/pixel.js';
 import { getAtlas, buildCastleFrame, type SpriteOwner } from '../render/atlas.js';
 import { guildArtName, guildArtTierOf } from '../render/guildArt.js';
 import { buildingArtName } from '../render/buildingArt.js';
 import {
+  CASTLE_PLOT,
+  SCENE_BUILDING_SIZE,
   TOWN_BUILDING_IDS,
-  buildTownBuilding,
-  buildTownSceneBg,
-  townBuildingFrameName,
-} from '../render/townViewArt.js';
+  TOWN_PLOTS,
+  buildSceneBuilding,
+  buildTownBase,
+  sceneBuildingFrameName,
+  type TownPlot,
+} from '../render/townSceneArt.js';
 import { wallLevelOf } from '../core/combat/siege.js';
 import { sfx } from './sfx.js';
 // TP-3：城镇场景曲（audio-direction.md §10.1 接线④）。开窗立即播；
@@ -120,9 +125,9 @@ export interface TownDialogOptions {
   onHire: (heroId: string) => void;
 }
 
-/* ---------------- 城内一览（M9 · HOMM3 观感） ---------------- */
+/* ---------------- 城内一览（会生长的城市 · HOMM3 观感） ---------------- */
 
-/** 大图 data URL 缓存：同一帧每次开城景都重画 88×88 是白花钱。 */
+/** 大图 data URL 缓存：同一帧每次开城景都重画 80×80 是白花钱。 */
 const tvArtUrls = new Map<string, string>();
 function tvArtUrl(name: string, make: () => { toCanvas: () => HTMLCanvasElement }): string {
   let url = tvArtUrls.get(name);
@@ -134,12 +139,13 @@ function tvArtUrl(name: string, make: () => { toCanvas: () => HTMLCanvasElement 
 }
 
 /**
- * 全屏城景：山丘城堡 + 16 座全尺寸建筑（88×88 像素硬边）+ 点选详情。
+ * 全屏城景：四族底子 + **只画已建建筑**，按地块 y 做画家排序。
  *
- * 为什么不是塞进 560×300 的城镇面板：88px 的建筑在里面只够摆两行，
- * 一屏看不完，也就不是"一览"了。这里用一层 fixed 覆盖舞台，退出即回原面板。
- * 建筑槽位与卡片共用 `buildStatus` / `build()`，所以"在城景里建造"和
- * "在建筑卡里建造"是同一条规则，不会出现两套真相。
+ * 与 M9 固定 17 格网格的区别：未建的地块只剩一圈浅地基，点它就是建造 ——
+ * 每建一座，城里真的多一座，这才是 HOMM3 的城镇观感。建造/升级仍复用
+ * `buildStatus()` / `build()`，所以城景与建筑卡没有两套规则。
+ *
+ * 为什么不是塞进 560×300 的城镇面板：16 座建筑在那一屏看不完，也就不是"一览"。
  */
 function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
   const town = opts.state.towns[opts.townId];
@@ -161,7 +167,7 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
   title.textContent = `${town.name} · 城内一览`;
   const hint = document.createElement('span');
   hint.className = 'tv-hint';
-  hint.textContent = '点建筑查看详情 / 建造';
+  hint.textContent = '点建筑看详情 · 点空地建造';
   head.append(back, title, hint);
 
   const stage = document.createElement('div');
@@ -169,9 +175,9 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
   const bg = document.createElement('canvas');
   bg.className = 'tv-bg';
   bg.setAttribute('aria-hidden', 'true');
-  const grid = document.createElement('div');
-  grid.className = 'tv-grid';
-  stage.append(bg, grid);
+  const world = document.createElement('div');
+  world.className = 'tv-world';
+  stage.append(bg, world);
 
   const detail = document.createElement('div');
   detail.className = 'tv-detail';
@@ -180,6 +186,29 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
 
   let selected: string = TOWN_BUILDING_IDS[0];
   let note = '';
+  let castleUrl = '';
+
+  /** 一块地：已建画建筑，未建画浅地基；用 y 做 z-index，前面的盖住后面的。 */
+  const place = (plot: TownPlot, built: boolean, frame: string, url: string, label: string): HTMLElement => {
+    const slot = document.createElement('button');
+    slot.className = 'tv-plot' + (built ? ' built' : ' unbuilt') + (selected === plot.id ? ' selected' : '');
+    slot.style.left = `${plot.x * 100}%`;
+    slot.style.top = `${plot.y * 100}%`;
+    slot.style.zIndex = String(10 + Math.round(plot.y * 100));
+    slot.setAttribute('aria-label', label);
+    slot.title = label;
+    slot.dataset.frame = frame;
+    slot.dataset.plot = plot.id;
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = '';
+    img.draggable = false;
+    img.dataset.frame = frame;
+    img.dataset.kind = plot.id === CASTLE_PLOT.id ? 'castle' : built ? 'building' : 'foundation';
+    slot.appendChild(img);
+    slot.addEventListener('click', () => { selected = plot.id; note = ''; paint(); });
+    return slot;
+  };
 
   const paint = (): void => {
     // 背景按舞台实际像素重画（不是把一张固定图拉伸），横屏/竖屏都不糊
@@ -190,46 +219,26 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
     const ctx = bg.getContext('2d');
     if (ctx) {
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(buildTownSceneBg(owner, w, h).toCanvas(), 0, 0);
+      ctx.drawImage(buildTownBase(owner, w, h).toCanvas(), 0, 0);
     }
 
-    grid.innerHTML = '';
-    // 城堡占第一排中央三列；16 座建筑分两排各 8 座
+    world.innerHTML = '';
     const castleLv = wallLevelOf(town);
-    const castle = document.createElement('button');
-    castle.className = 'tv-slot tv-castle' + (selected === '__castle' ? ' selected' : '');
-    castle.style.gridColumn = '4 / span 2';
-    castle.style.gridRow = '1';
     const castleFrame = `tv_${owner}_castle_lv${castleLv}`;
-    const castleImg = document.createElement('img');
-    castleImg.src = tvArtUrl(castleFrame, () => buildCastleFrame(owner, castleLv));
-    castleImg.alt = '';
-    castleImg.dataset.frame = castleFrame;
-    castle.appendChild(castleImg);
-    castle.addEventListener('click', () => { selected = '__castle'; note = ''; paint(); });
-    grid.appendChild(castle);
+    if (!castleUrl) castleUrl = tvArtUrl(castleFrame, () => buildCastleFrame(owner, castleLv));
+    world.appendChild(place(CASTLE_PLOT, true, castleFrame, castleUrl, `城墙 Lv.${castleLv}`));
 
-    TOWN_BUILDING_IDS.forEach((id, i) => {
-      const def = BUILDINGS[id];
-      if (!def) return;
-      const st = buildStatus(opts.state, town, id);
-      const frame = townBuildingFrameName(owner, id, st.level);
-      const slot = document.createElement('button');
-      slot.className = 'tv-slot' + (st.built ? ' built' : ' unbuilt') + (selected === id ? ' selected' : '');
-      slot.style.gridColumn = String((i % 8) + 1);
-      slot.style.gridRow = i < 8 ? '2' : '3';
-      slot.setAttribute('aria-label', `${def.name}${st.built ? ` Lv.${st.level}` : '（未建）'}`);
-      slot.title = def.name;
-      slot.dataset.frame = frame;
-      const img = document.createElement('img');
-      img.src = tvArtUrl(frame, () => buildTownBuilding(owner, id, st.level));
-      img.alt = '';
-      img.draggable = false;
-      img.dataset.frame = frame;
-      slot.appendChild(img);
-      slot.addEventListener('click', () => { selected = id; note = ''; paint(); });
-      grid.appendChild(slot);
-    });
+    // 只有已建的地块放建筑；未建放浅地基（仍可点 → 详情里给建造按钮）
+    for (const plot of TOWN_PLOTS) {
+      const def = BUILDINGS[plot.id];
+      if (!def) continue;
+      const st = buildStatus(opts.state, town, plot.id);
+      const frame = sceneBuildingFrameName(owner, plot.id, st.level);
+      const url = st.built
+        ? tvArtUrl(frame, () => buildSceneBuilding(owner, plot.id, st.level))
+        : FOUNDATION_URL;
+      world.appendChild(place(plot, st.built, frame, url, `${def.name}${st.built ? ` Lv.${st.level}` : '（空地 · 可建造）'}`));
+    }
 
     detail.innerHTML = '';
     if (note) {
@@ -241,7 +250,7 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
     if (selected === '__castle') {
       const art = document.createElement('img');
       art.className = 'tv-detail-art';
-      art.src = castleImg.src;
+      art.src = castleUrl;
       art.alt = '';
       const body = document.createElement('div');
       body.className = 'tv-detail-body';
@@ -256,18 +265,20 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
     const def = BUILDINGS[selected];
     if (!def) return;
     const st = buildStatus(opts.state, town, selected);
-    const frame = townBuildingFrameName(owner, selected, st.level);
+    const frame = sceneBuildingFrameName(owner, selected, st.level);
     const art = document.createElement('img');
     art.className = 'tv-detail-art';
-    art.src = tvArtUrl(frame, () => buildTownBuilding(owner, selected, st.level));
+    art.src = st.built
+      ? tvArtUrl(frame, () => buildSceneBuilding(owner, selected, st.level))
+      : FOUNDATION_URL;
     art.alt = '';
     art.dataset.frame = frame;
     const body = document.createElement('div');
     body.className = 'tv-detail-body';
     const nm = document.createElement('strong');
-    nm.textContent = st.level > 1 ? `${def.name} Lv.${st.level}` : def.name;
+    nm.textContent = st.built && st.level > 1 ? `${def.name} Lv.${st.level}` : def.name;
     const tx = document.createElement('span');
-    tx.textContent = buildingDesc(town, selected);
+    tx.textContent = st.built ? buildingDesc(town, selected) : (st.unlocked ? '空地：现在就能建造。' : st.reason);
     body.append(nm, tx, buildStateLine(st));
     detail.appendChild(art);
     detail.appendChild(body);
@@ -291,6 +302,24 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
 
   paint();
 }
+
+/**
+ * 未建地块的浅地基：程序化画一次，四族共用（地基不是建筑，不承载族色）。
+ * 画成 data URL 而不是每格重画：16 格 × 每次点选都重建会浪费一整帧。
+ */
+const FOUNDATION_URL: string = (() => {
+  try {
+    const pb = new PixBuf(SCENE_BUILDING_SIZE, SCENE_BUILDING_SIZE);
+    const cx = SCENE_BUILDING_SIZE / 2;
+    pb.ellipse(cx, SCENE_BUILDING_SIZE - 8, 22, 5, '#000000', 0.22);
+    pb.rect(12, 64, 56, 8, '#9a8f78', 0.7);
+    pb.hline(12, 67, 64, '#d8cca8', 0.7);
+    for (let i = 16; i < 68; i += 12) pb.vline(i, 58, 64, '#b3a88c', 0.6);
+    return pb.toCanvas().toDataURL('image/png');
+  } catch {
+    return '';
+  }
+})();
 
 /** 城镇管理的 5 个标签页（§5.4：标签页 ≤5 个，每页纵向可点行 ≤5）。 */
 type TownTab = 'build' | 'dwell' | 'recruit' | 'army' | 'market';
