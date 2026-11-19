@@ -1125,6 +1125,163 @@ table.est td:last-child {
   color: #d8e8c4;
 }
 
+/* ---------- 城内一览（M9 · HOMM3 观感） ---------- */
+/*
+ * 独立 fixed 层，不挤 560×300 的城镇面板：那里面 88px 建筑只摆得下两行，
+ * 看不到全景。z-index 高于 #modal-root(100)，退出即回原面板。
+ */
+.townview {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  display: flex;
+  flex-direction: column;
+  background: #1b1409;
+  color: var(--parchment, #f2e5c8);
+  padding: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 4px)
+    calc(var(--safe-area-inset-right, env(safe-area-inset-right, 0px)) + 6px)
+    calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 4px)
+    calc(var(--safe-area-inset-left, env(safe-area-inset-left, 0px)) + 6px);
+}
+.tv-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 2px 4px 4px;
+  border-bottom: 1px solid #6b4a26;
+}
+.tv-head h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #f0d79c;
+}
+.tv-hint {
+  margin-left: auto;
+  font-size: 11px;
+  opacity: 0.72;
+}
+.tv-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background: #2d4a26;
+}
+.tv-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.tv-grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-rows: repeat(3, 1fr);
+  align-items: end;
+  justify-items: center;
+}
+.tv-slot {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: pointer;
+}
+.tv-slot img {
+  display: block;
+  width: min(100%, 96px);
+  height: auto;
+  max-height: 100%;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
+  transition: transform 120ms ease-out;
+}
+.tv-slot.unbuilt img {
+  opacity: 0.42;
+  filter: grayscale(0.7) drop-shadow(0 1px 0 rgba(0, 0, 0, 0.3));
+}
+.tv-slot.built:hover img,
+.tv-slot.selected img {
+  transform: translateY(-3px);
+}
+.tv-slot.selected img {
+  filter: drop-shadow(0 0 0 #ffdf7a) drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
+  outline: 2px solid #f3d477;
+  outline-offset: 1px;
+}
+.tv-castle img {
+  width: min(100%, 116px);
+}
+.tv-detail {
+  flex: 0 0 auto;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: linear-gradient(180deg, #4a351b, #2f210f);
+  border-top: 1px solid #7a5a31;
+}
+.tv-detail-art {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  flex: 0 0 auto;
+}
+.tv-detail-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+.tv-detail-body strong {
+  color: #ffe1a0;
+  font-size: 13px;
+}
+.tv-detail-body .bs {
+  margin-top: 2px;
+}
+.tv-detail .btn {
+  flex: 0 0 auto;
+}
+.tv-note {
+  position: absolute;
+  right: 10px;
+  bottom: 82px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  background: rgba(24, 16, 8, 0.86);
+  color: #ffe1a0;
+  font-size: 12px;
+}
+.town-view-toggle {
+  margin-left: auto;
+  border-color: #c9a227;
+  color: #ffe1a0;
+}
+
+@media (orientation: landscape) and (max-height: 400px) {
+  .tv-head { min-height: 28px; }
+  .tv-hint { display: none; }
+  .tv-detail { min-height: 60px; padding: 4px 8px; }
+  .tv-detail-art { width: 48px; height: 48px; }
+}
+
 .town .th {
   margin: 14px 0 6px;
   font-size: var(--t-body);

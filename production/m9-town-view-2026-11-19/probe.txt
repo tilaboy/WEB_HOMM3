@@ -1,0 +1,17 @@
+[dist] dir=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist · cwd=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web · main.js.md5=38855f6424f402656a367ff0addf04a3 · combo=sha256(index.html+main.js+style.css)@16:c4678ecabba7eb70 · mtime=2026-11-19T04:06:45.898Z(非绑定量) · gate=townview
+[PASS] [T0] 16 座 × 4 族 = 64 张 88×88 大图，无空帧 — 64 帧
+[PASS] [T1] 四族结构逐像素相同（只换材质） — 16/16
+[PASS] [T2] 四族材质确实分开（最近两族色距 ≥6） — 16/16
+[PASS] [T3] 升级后体量变大且不是同一张（L3 面积 > L1、IoU <0.95） — 4032→5724 · IoU 0.704
+[PASS] [T4] 四张 760×300 背景不透明且不是纯色块 — 抽样色数 19/19/19/19
+[PASS] [N0] sameShape 负向对照：大图必须塌成同一张（IoU >0.95） — IoU 1.000
+[PASS] [U0] 城景能从城镇面板打开
+[PASS] [U1] 16 座建筑 + 城堡都在槽位里 — 17 槽 / 1 城堡
+[PASS] [U2] 已建/未建双态同时可见 — built 6 / unbuilt 10
+[PASS] [U3] 八列网格 + 88px 源图（手机横屏渲染 ≥44px） — cols=8 natural=88 rendered=96~96
+[PASS] [U4] 等级帧真的接上了（devtier=3 ⇒ 五座 _u3） — u3=5 townFrames=16
+[PASS] [U5] 背景按舞台实际像素绘制 — 832x275
+[PASS] [U6] 点建筑出详情（名字 + 大图 + 建造/升级按钮） — {"nm":"酒馆","art":"tv_p1_tavern","btn":"建造"}
+[PASS] [N1] devtownview=0 负向对照：入口与城景都必须消失 — {"toggle":false,"scene":false}
+
+合计：全过

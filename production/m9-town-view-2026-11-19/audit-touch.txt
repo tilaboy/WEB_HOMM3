@@ -1,0 +1,136 @@
+[dist] dir=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist · cwd=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web · main.js.md5=38855f6424f402656a367ff0addf04a3 · combo=sha256(index.html+main.js+style.css)@16:c4678ecabba7eb70 · mtime=2026-11-19T04:06:45.898Z(非绑定量) · gate=tinytargetaudit
+[tiny] dev server 未响应 → **进程内**自起 serve.mjs（dir=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist :59273）…
+[serve] dir=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist · cwd=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web · fp=c4678ecabba7eb70 · main.js.mtime=2026-11-19T04:06:45.898Z
+英雄之歌 → http://localhost:59273
+触摸目标审计（真实命中区，elementFromPoint 量测）
+
+[primary] .btn.primary 视觉高 ≥ 48px
+  PASS  自动             视觉 60×48      命中高 49    (±1/0)
+
+[normal] .btn 普通 视觉高 ≥ 44px
+  PASS  低              视觉 45×48      命中高 49    (±1/0)
+  PASS  重新检测           视觉 90×48      命中高 49    (±1/0)
+
+[spellbook] .spellbook .btn.tiny 视觉高 ≥ 44px
+  PASS  施放             视觉 44×44      命中高 45    (±1/0)
+  PASS  施放             视觉 44×44      命中高 45    (±1/0)
+  PASS  施放             视觉 44×44      命中高 45    (±1/0)
+  PASS  施放             视觉 44×44      命中高 45    (±1/0)
+
+[rrow .tap] .btn.tiny.tap 有效命中高 ≥ 43px
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+
+[hp-ctbtns] 密集区 .hp-ctbtns 视觉高 ≥ 40px（§5.2 密集区 ≥40×40）
+  PASS  管理             视觉 44×40      命中高 41    (±1/0)
+  PASS  定位             视觉 44×40      命中高 41    (±1/0)
+  PASS  管理             视觉 44×40      命中高 41    (±1/0)
+  PASS  定位             视觉 44×40      命中高 41    (±1/0)
+  PASS  管理             视觉 44×40      命中高 41    (±1/0)
+  PASS  定位             视觉 44×40      命中高 41    (±1/0)
+
+[hp-nav] 密集区 .hp-nav 视觉高 ≥ 40px（§5.2 密集区 ≥40×40）
+  PASS  ‹              视觉 40×40      命中高 41    (±1/0)
+  PASS  ›              视觉 40×40      命中高 41    (±1/0)
+  PASS  宝物▾            视觉 41.7×40    命中高 41    (±1/0)
+
+[魔法书 .tap] 孤立 .btn.tiny.tap 有效命中高 ≥ 43px
+  PASS  魔法书            视觉 56×40      命中高 47    (±4/3)
+
+[底线] 所有 .btn.tiny 真实盒子 ≥ 40px —— PASS
+[间距] .hp-ctbtns 横向间距 8px ≥ 8 —— PASS
+[间距] .hp-nav 横向间距 8px ≥ 8（§5.2 中心距 ≥48）—— PASS
+
+── 合成探针 · 移动视口 792×320 @3x（≤860px 规则在此激活） ──
+[PASS] 收起态 #side 盒宽=0 · display=none · #panel-toggle 在 DOM=false —— 右缘无 48px 竖条（收起态不得吃地图）
+
+── 合成探针 · 移动口径 .btn.tiny（792 宽 × 1000 高） ──
+
+[m.spellbook] 移动 · .spellbook .btn.tiny 视觉高 ≥ 44px
+  PASS  施放             视觉 44×44      命中高 45    (±1/0)
+  PASS  施放             视觉 44×44      命中高 45    (±1/0)
+  PASS  施放             视觉 44×44      命中高 45    (±1/0)
+  PASS  施放             视觉 44×44      命中高 45    (±1/0)
+
+[m.rrow .tap] 移动 · .btn.tiny.tap 有效命中高 ≥ 43px
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+  PASS  招 1            视觉 42×40      命中高 47    (±4/3)
+
+[m.hp-ctbtns] 移动 · 密集区 .hp-ctbtns 视觉高 ≥ 40px
+  PASS  管理             视觉 44×40      命中高 41    (±1/0)
+  PASS  定位             视觉 44×40      命中高 41    (±1/0)
+  PASS  管理             视觉 44×40      命中高 41    (±1/0)
+  PASS  定位             视觉 44×40      命中高 41    (±1/0)
+  PASS  管理             视觉 44×40      命中高 41    (±1/0)
+  PASS  定位             视觉 44×40      命中高 41    (±1/0)
+
+[m.hp-nav] 移动 · 密集区 .hp-nav 视觉高 ≥ 40px
+  PASS  ‹              视觉 40×40      命中高 41    (±1/0)
+  PASS  ›              视觉 40×40      命中高 41    (±1/0)
+  PASS  宝物▾            视觉 41.7×40    命中高 41    (±1/0)
+
+[m.魔法书 .tap] 移动 · 孤立 .btn.tiny.tap 有效命中高 ≥ 43px
+  PASS  魔法书            视觉 56×40      命中高 47    (±4/3)
+
+── 真实 app（index.html?devquick=1）· 顶栏 / 拇指带 ──
+[PASS] C4 顶栏可点元素 = 0 个（应为 0 —— R7 顶栏只读）
+[PASS] 顶栏 pointer-events = none（应为 none —— 只读展示层）
+── C3 多宽度扫描（720/792/860；横向溢出应为 0） ──
+[PASS] 720px → 顶栏溢出 0px · document 0px · 最高子项 21.8px / 条 30px
+[PASS] 792px → 顶栏溢出 0px · document 0px · 最高子项 21.8px / 条 30px
+[PASS] 860px → 顶栏溢出 0px · document 0px · 最高子项 21.8px / 条 30px
+[PASS] 换行（任一宽度下子项高 ≤ 条高）
+── 拇指带（≤48px，全部可交互；纯文字标签） ──
+[信息] 拇指带高 124px ≤ 48
+[PASS] 拇指带横向溢出 0px = 0
+[PASS] 拇指带按钮最低视觉高 44px ≥ 44
+[PASS] 主操作「结束一天」视觉高 48px ≥ 44
+        共 4 个按钮：菜单(44×44) · 英雄(44×44) · 城(44×44) · 结束一天(84×48*)
+
+── 真实 app（?devquick=1）· ④ 日志入口搬家（F-3.6 / §15.4） ──
+[PASS] 拇指带已无「日志」入口（实测拇指带：菜单 / 英雄 / 城 / 结束一天）
+[PASS] 菜单一级项含「事件日志」（复用 openLogPanel，函数不变）
+[PASS] 拇指带上没有未读角标（条数改挂「菜单 → 事件日志」那一行）
+[PASS] 「菜单」按钮 aria-label 以「菜单」起（实测「菜单」，a11y §4.3 数字不得为唯一语义）
+[PASS] 菜单一级项 6 项 ≤ 6（§7 上限=6；守卫『不膨胀』而非当时读数）：继续 / 存档 / 读档 / 事件日志 / 设置 / 回到开始页 / 新游戏
+[PASS] 菜单一屏放下（不滚动）：面板 233px · 内容 233px · 溢出 0px · 未完整可见 0/6 项
+
+── 真实 app（?devquick=1&devtown=1）· 城镇面板内容窗（792×320） ──
+[PASS] 内容窗 .town-pane clientHeight 146px ≥ 120（modal 285.8 · head 53 · 视口 792×320）
+[PASS] 建筑页完整可见 .bcard 4/8 张 ≥ 4（首卡 66px · 需滚 1.1 屏）
+[PASS] 兵营·行会 完整可见行块 4 ≥ 1（卡 8 · 行 0）
+[PASS] 招募 完整可见行块 2 ≥ 1（卡 0 · 行 2）
+[PASS] 驻军 完整可见行块 1 ≥ 1（卡 0 · 行 1）
+[PASS] 市场·工坊 完整可见行块 2 ≥ 1（卡 0 · 行 2）
+[PASS] D-70 点建筑名 → 描述浮层：高 58px · 在 pane 内 true · 完整可见卡 前 4 / 后 4（均需 ≥4）
+[信息] modal computed: {"modalH":"285.75px","modalMaxH":"min(352px, 94%)","rootH":"320px","rootPad":"8px","rootContentH":320,"stageH":"320px","appH":"320px","headH":53,"metaH":29.4,"tabsH":53,"townH":228.8,"paneBeforeH":146,"paneAt100H":165,"cardH":66,"bsClamp":{"clientW":160,"scrollW":160,"clipped":false},"innerH":320}
+── a11y 可机检项（accessibility-requirements.md §5） ──
+[PASS] :focus-visible 且 outline ≥2px（实测 2px）
+[PASS] prefers-reduced-motion 生效（#hint transition 0.18s → 1e-06s）
+[PASS] 顶栏「图标+数字」可访问名 4/4
+[PASS] 拇指带「标签即名称」 4/4
+  ↑ 以上非 PASS 项均为**已知待办**（顶栏重构批 R7）；STRICT=1 升格为硬断言时应 RED。
+
+[信息] 合成探针 · 移动端 #side 宽度 200px
+
+全部通过：触摸目标与顶栏/拇指带达标

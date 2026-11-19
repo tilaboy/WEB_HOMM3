@@ -17,6 +17,18 @@ const COST_CHIPS = ((): boolean => {
   }
 })();
 
+/**
+ * 城内一览开关（默认开；`?devtownview=0` 是闸门用的负向对照臂 ——
+ * 没有它，"能看到城景"这条判据证明不了自己测的是新视图而不是旧建筑卡）。
+ */
+const TOWN_VIEW_ENABLED = ((): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('devtownview') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
 /** 造价/库存里图标的固定顺序（金→木→矿→宝石→水晶→硫磺→水银）。 */
 const RES_ORDER: ResourceKind[] = ['gold', 'wood', 'ore', 'gem', 'crystal', 'sulfur', 'mercury'];
 /** 全名只进 `title`/`aria-label`：卡面上**不写汉字**，只留图标 + 数字。 */
@@ -55,9 +67,16 @@ import {
 import type { BuildStatus } from '../core/game/town.js';
 import { showModal } from './Dialogs.js';
 import { installResIcons, resIcon, type ResId } from './resicons.js';
-import { getAtlas } from '../render/atlas.js';
+import { getAtlas, buildCastleFrame, type SpriteOwner } from '../render/atlas.js';
 import { guildArtName, guildArtTierOf } from '../render/guildArt.js';
 import { buildingArtName } from '../render/buildingArt.js';
+import {
+  TOWN_BUILDING_IDS,
+  buildTownBuilding,
+  buildTownSceneBg,
+  townBuildingFrameName,
+} from '../render/townViewArt.js';
+import { wallLevelOf } from '../core/combat/siege.js';
 import { sfx } from './sfx.js';
 // TP-3：城镇场景曲（audio-direction.md §10.1 接线④）。开窗立即播；
 // 关窗回 map 由 main.ts 的场景巡更补（showModal 没有 onClose，见那边注释）。
@@ -72,6 +91,178 @@ export interface TownDialogOptions {
   onChange: () => void;
   /** 招募到新英雄时通知外部（用于选中 + 开视野） */
   onHire: (heroId: string) => void;
+}
+
+/* ---------------- 城内一览（M9 · HOMM3 观感） ---------------- */
+
+/** 大图 data URL 缓存：同一帧每次开城景都重画 88×88 是白花钱。 */
+const tvArtUrls = new Map<string, string>();
+function tvArtUrl(name: string, make: () => { toCanvas: () => HTMLCanvasElement }): string {
+  let url = tvArtUrls.get(name);
+  if (!url) {
+    url = make().toCanvas().toDataURL('image/png');
+    tvArtUrls.set(name, url);
+  }
+  return url;
+}
+
+/**
+ * 全屏城景：山丘城堡 + 16 座全尺寸建筑（88×88 像素硬边）+ 点选详情。
+ *
+ * 为什么不是塞进 560×300 的城镇面板：88px 的建筑在里面只够摆两行，
+ * 一屏看不完，也就不是"一览"了。这里用一层 fixed 覆盖舞台，退出即回原面板。
+ * 建筑槽位与卡片共用 `buildStatus` / `build()`，所以"在城景里建造"和
+ * "在建筑卡里建造"是同一条规则，不会出现两套真相。
+ */
+function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
+  const town = opts.state.towns[opts.townId];
+  if (!town) return;
+  const owner = town.owner as SpriteOwner;
+  const overlay = document.createElement('div');
+  overlay.className = 'townview';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', `${town.name} · 城内一览`);
+
+  const head = document.createElement('div');
+  head.className = 'tv-head';
+  const back = document.createElement('button');
+  back.className = 'btn tiny';
+  back.textContent = '返回城镇';
+  back.addEventListener('click', () => overlay.remove());
+  const title = document.createElement('h2');
+  title.textContent = `${town.name} · 城内一览`;
+  const hint = document.createElement('span');
+  hint.className = 'tv-hint';
+  hint.textContent = '点建筑查看详情 / 建造';
+  head.append(back, title, hint);
+
+  const stage = document.createElement('div');
+  stage.className = 'tv-stage';
+  const bg = document.createElement('canvas');
+  bg.className = 'tv-bg';
+  bg.setAttribute('aria-hidden', 'true');
+  const grid = document.createElement('div');
+  grid.className = 'tv-grid';
+  stage.append(bg, grid);
+
+  const detail = document.createElement('div');
+  detail.className = 'tv-detail';
+  overlay.append(head, stage, detail);
+  parent.appendChild(overlay);
+
+  let selected: string = TOWN_BUILDING_IDS[0];
+  let note = '';
+
+  const paint = (): void => {
+    // 背景按舞台实际像素重画（不是把一张固定图拉伸），横屏/竖屏都不糊
+    const w = Math.max(320, stage.clientWidth);
+    const h = Math.max(180, stage.clientHeight);
+    bg.width = w;
+    bg.height = h;
+    const ctx = bg.getContext('2d');
+    if (ctx) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(buildTownSceneBg(owner, w, h).toCanvas(), 0, 0);
+    }
+
+    grid.innerHTML = '';
+    // 城堡占第一排中央三列；16 座建筑分两排各 8 座
+    const castleLv = wallLevelOf(town);
+    const castle = document.createElement('button');
+    castle.className = 'tv-slot tv-castle' + (selected === '__castle' ? ' selected' : '');
+    castle.style.gridColumn = '4 / span 2';
+    castle.style.gridRow = '1';
+    const castleFrame = `tv_${owner}_castle_lv${castleLv}`;
+    const castleImg = document.createElement('img');
+    castleImg.src = tvArtUrl(castleFrame, () => buildCastleFrame(owner, castleLv));
+    castleImg.alt = '';
+    castleImg.dataset.frame = castleFrame;
+    castle.appendChild(castleImg);
+    castle.addEventListener('click', () => { selected = '__castle'; note = ''; paint(); });
+    grid.appendChild(castle);
+
+    TOWN_BUILDING_IDS.forEach((id, i) => {
+      const def = BUILDINGS[id];
+      if (!def) return;
+      const st = buildStatus(opts.state, town, id);
+      const frame = townBuildingFrameName(owner, id, st.level);
+      const slot = document.createElement('button');
+      slot.className = 'tv-slot' + (st.built ? ' built' : ' unbuilt') + (selected === id ? ' selected' : '');
+      slot.style.gridColumn = String((i % 8) + 1);
+      slot.style.gridRow = i < 8 ? '2' : '3';
+      slot.setAttribute('aria-label', `${def.name}${st.built ? ` Lv.${st.level}` : '（未建）'}`);
+      slot.title = def.name;
+      slot.dataset.frame = frame;
+      const img = document.createElement('img');
+      img.src = tvArtUrl(frame, () => buildTownBuilding(owner, id, st.level));
+      img.alt = '';
+      img.draggable = false;
+      img.dataset.frame = frame;
+      slot.appendChild(img);
+      slot.addEventListener('click', () => { selected = id; note = ''; paint(); });
+      grid.appendChild(slot);
+    });
+
+    detail.innerHTML = '';
+    if (note) {
+      const n = document.createElement('div');
+      n.className = 'tv-note';
+      n.textContent = note;
+      detail.appendChild(n);
+    }
+    if (selected === '__castle') {
+      const art = document.createElement('img');
+      art.className = 'tv-detail-art';
+      art.src = castleImg.src;
+      art.alt = '';
+      const body = document.createElement('div');
+      body.className = 'tv-detail-body';
+      const nm = document.createElement('strong');
+      nm.textContent = `城墙 · Lv.${castleLv}`;
+      const tx = document.createElement('span');
+      tx.textContent = castleLv === 0 ? '尚无城防：在「建筑」页建木栅。' : `现有城防 +${townDefenseBonus(town)}；升级在「建筑」页办理。`;
+      body.append(nm, tx);
+      detail.append(art, body);
+      return;
+    }
+    const def = BUILDINGS[selected];
+    if (!def) return;
+    const st = buildStatus(opts.state, town, selected);
+    const frame = townBuildingFrameName(owner, selected, st.level);
+    const art = document.createElement('img');
+    art.className = 'tv-detail-art';
+    art.src = tvArtUrl(frame, () => buildTownBuilding(owner, selected, st.level));
+    art.alt = '';
+    art.dataset.frame = frame;
+    const body = document.createElement('div');
+    body.className = 'tv-detail-body';
+    const nm = document.createElement('strong');
+    nm.textContent = st.level > 1 ? `${def.name} Lv.${st.level}` : def.name;
+    const tx = document.createElement('span');
+    tx.textContent = buildingDesc(town, selected);
+    body.append(nm, tx, buildStateLine(st));
+    detail.appendChild(art);
+    detail.appendChild(body);
+    if (st.unlocked && (!st.built || st.canUpgrade)) {
+      const ready = st.affordable && !st.spentToday;
+      detail.appendChild(
+        actionBtn(st.built ? '升级' : '建造', ready, () => {
+          if (!build(opts.state, town, selected)) {
+            sfx.error();
+            note = st.spentToday ? '今日已动工，明日再来' : '资源不足';
+          } else {
+            sfx.build();
+            note = `${def.name} ${st.built ? `升到 Lv.${st.level + 1}` : '建成'}`;
+            opts.onChange();
+          }
+          paint();
+        }),
+      );
+    }
+  };
+
+  paint();
 }
 
 /** 城镇管理的 5 个标签页（§5.4：标签页 ≤5 个，每页纵向可点行 ≤5）。 */
@@ -164,6 +355,15 @@ export function openTownDialog(parent: HTMLElement, opts: TownDialogOptions): vo
         renderAll();
       });
       tabs.appendChild(b);
+    }
+    // 城景是"视图"不是第 6 个标签页：R4/§5.4 的 ≤5 页不变，出口也仍在头部。
+    if (TOWN_VIEW_ENABLED) {
+      const vb = document.createElement('button');
+      vb.className = 'btn tiny town-view-toggle';
+      vb.textContent = '城内一览';
+      vb.setAttribute('aria-label', '打开城内一览');
+      vb.addEventListener('click', () => openTownView(parent, opts));
+      tabs.appendChild(vb);
     }
 
     pane.innerHTML = '';

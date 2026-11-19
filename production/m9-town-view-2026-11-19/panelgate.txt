@@ -1,0 +1,19 @@
+[dist] dir=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist · cwd=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web · main.js.md5=38855f6424f402656a367ff0addf04a3 · combo=sha256(index.html+main.js+style.css)@16:c4678ecabba7eb70 · mtime=2026-11-19T04:06:45.898Z(非绑定量) · gate=panelgate
+[serve] dir=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web/dist · cwd=/Users/lichao/Workbuddy/2026-09-12-11-57-32/homm-web · fp=c4678ecabba7eb70 · main.js.mtime=2026-11-19T04:06:45.898Z
+英雄之歌 → http://localhost:59329
+[初始] 收起=true · #side 宽=0 · 内容可见=false · 拇指带「英雄」存在=true 可点=true
+[PASS] 拇指带「英雄」按钮存在且可点（收起路径的载体在场）
+[第 1 次点「英雄」] 收起=false · #side 宽=200 · 内容可见=true · 按钮可点=true
+[PASS] 第 1 次点击「英雄」返回 OK（实为 OK）
+[PASS] 第 1 次点击后：拇指带按钮**仍可点**（收起来还找得到入口）
+[第 2 次点「英雄」] 收起=true · #side 宽=0 · 内容可见=false · 按钮可点=true
+[PASS] 第 2 次点击「英雄」返回 OK（实为 OK）
+[PASS] 第 2 次点击后：拇指带按钮**仍可点**（收起来还找得到入口）
+[第 3 次点「英雄」] 收起=false · #side 宽=200 · 内容可见=true · 按钮可点=true
+[PASS] 第 3 次点击「英雄」返回 OK（实为 OK）
+[PASS] 第 3 次点击后：拇指带按钮**仍可点**（收起来还找得到入口）
+[PASS] ① 能开：出现过展开态（关→开→关→开）
+[PASS] ② 能关：出现过收起态
+[PASS] ③ 是**开关**：三次点击后状态逐次互反（关→开→关→开）
+---------------------------------------------
+[总结] 能开能关能再开（三向皆过）
