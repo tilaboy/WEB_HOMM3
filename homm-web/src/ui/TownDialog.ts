@@ -194,6 +194,7 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
     slot.className = 'tv-plot' + (built ? ' built' : ' unbuilt') + (selected === plot.id ? ' selected' : '');
     slot.style.left = `${plot.x * 100}%`;
     slot.style.top = `${plot.y * 100}%`;
+    slot.style.width = `${15 * plot.scale}%`;
     slot.style.zIndex = String(10 + Math.round(plot.y * 100));
     slot.setAttribute('aria-label', label);
     slot.title = label;

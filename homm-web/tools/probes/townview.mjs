@@ -1,12 +1,14 @@
 /**
- * 会生长的城市场景闸门（HOMM3 观感 · 2026-11-19 重画）。
+ * 会生长的城市场景闸门（HOMM3 观感 · 2026-11-19 第二版重新设计）。
  *
  * 两层判据：
- *   ① **美术层**（纯 Node）：16 座 80×80 场景建筑逐笔重画、四族"结构同材质不同"、
- *      升级档改变剪影、四张阵营底子**结构不同**；负向臂 `sameShape` / `sameBase`
- *      分别让建筑/底子塌成一张，证明判据测的是形状而不是"帧里有东西"。
+ *   ① **美术层**（纯 Node）：16 座 80×80 场景建筑按建筑原型重画（弧顶长屋 / 锯齿厂棚 /
+ *      柱廊宅 / 圆塔 / 穹顶 / 平顶钟楼 / 水晶尖塔…），四族"结构同材质不同"、升级档改变剪影、
+ *      **16 座两两 IoU <0.88**（上一版"12 座同款尖顶"必须转红）；底子新增城堡远景、主干道、
+ *      广场与喷泉，四族底子在特征区域结构上不同。负向臂 `sameShape` / `sameBase` / `noStreet`
+ *      分别让建筑塌成同一张、底子塌成同一张、街道消失，证明判据测的是设计而不是"帧里有东西"。
  *   ② **接线/交互层**（真 Chrome）：844×390 横屏下从城镇面板打开城景，城堡 + 16 块地
- *      按 y 做深度排序；**只有已建的地块画建筑**，未建画浅地基，点两种地块都能出详情；
+ *      按 y 与远/中/近三档缩放落位；**只有已建的地块画建筑**，未建画浅地基，点两种地块都能出详情；
  *      `?devtownview=0` 负向臂必须看不到入口。
  *   ③ **英雄招募接线**：默认在「招募」页、`市场·工坊` 页没有；`?devhiretab=market`
  *      负向臂把它退回旧页，两条判据都必须翻转（证明测的是页签位置而不是字样）。
@@ -47,6 +49,7 @@ const {
   buildSceneBuilding,
   buildTownBase,
   setSceneArtBreaks,
+  TOWN_ROAD_COLOR,
 } = await import(u('render/townSceneArt.js'));
 const OWNERS = ['p1', 'p2', 'p3', 'p4'];
 
@@ -70,19 +73,31 @@ const meanColor = (pb) => {
   return [r / n, g / n, b / n];
 };
 /** 亮度梯度掩码：底子整幅不透明，不能用 alpha 判结构；取 4px 采样点的边缘。 */
-const edgeMask = (pb) => {
+const edgeMask = (pb, region = () => true) => {
   const m = new Uint8Array(pb.w * pb.h);
   const lum = (x, y) => { const c = pb.px(x, y); return (c[0] * 77 + c[1] * 150 + c[2] * 29) >> 8; };
   for (let y = 2; y < pb.h - 2; y += 4) for (let x = 2; x < pb.w - 2; x += 4) {
+    if (!region(x, y, pb.w, pb.h)) continue;
     const g = Math.abs(lum(x + 2, y) - lum(x - 2, y)) + Math.abs(lum(x, y + 2) - lum(x, y - 2));
     if (g > 26) m[y * pb.w + x] = 1;
   }
   return m;
 };
+/** 四族底子的特征区域：天空/两侧地表/前景，避开四族共用的城堡与街道骨架。 */
+const baseSignature = (x, y, W, H) => y < H * 0.20 || x < W * 0.13 || x > W * 0.87 || y > H * 0.55;
 const maxPair = (arr, metric) => {
   let worst = 0;
   for (let i = 0; i < arr.length; i++) for (let j = i + 1; j < arr.length; j++) worst = Math.max(worst, metric(arr[i], arr[j]));
   return worst;
+};
+const roadPixels = (pb) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(TOWN_ROAD_COLOR.slice(i, i + 2), 16));
+  let n = 0;
+  for (let y = Math.floor(pb.h * 0.44); y < pb.h; y++) for (let x = 0; x < pb.w; x++) {
+    const c = pb.px(x, y);
+    if (c[0] === r && c[1] === g && c[2] === b) n++;
+  }
+  return n;
 };
 
 const big = new Map();
@@ -121,27 +136,40 @@ record('S3', '16 座 L3 剪影都比 L1 大（不是只改内部像素）',
   grown === 16, `${grown}/16 · ${tierDeltas.slice(0, 3).map((d) => `${d.id}:${d.a1}→${d.a3}`).join(' ')}`);
 
 const bases = OWNERS.map((o) => buildTownBase(o, 760, 300));
-const baseEdges = bases.map(edgeMask);
+const baseEdges = bases.map((b) => edgeMask(b, baseSignature));
 const baseEdgeCounts = baseEdges.map(areaOf);
 const baseEdgeIoU = maxPair(baseEdges, iouOf);
-record('S4', '四族底子结构不同（边缘掩码两两 IoU <0.60，且每张真有边缘）',
+record('S4', '四族底子的特征区域结构不同（边缘掩码两两 IoU <0.65，且每张真有边缘）',
   bases.every((b) => b.w === 760 && b.h === 300) &&
-  baseEdgeCounts.every((n) => n > 200) && baseEdgeIoU < 0.60,
+  baseEdgeCounts.every((n) => n > 200) && baseEdgeIoU < 0.65,
   `边缘 ${baseEdgeCounts.join('/')} · 最大 IoU ${baseEdgeIoU.toFixed(3)}`);
 
+// 用户实拍反馈的核心：上一版 12/16 都是"米色方盒 + 蓝尖顶"。两两 IoU 必须真的分开。
+const silhouettes = TOWN_BUILDING_IDS.map((id) => maskOf(big.get(`p1/${id}`)));
+const silhouetteIoU = maxPair(silhouettes, iouOf);
+record('S5', '16 座建筑轮廓互不相同（两两 IoU <0.88，不许 12 座同款尖顶）',
+  silhouetteIoU < 0.88, `最大 IoU ${silhouetteIoU.toFixed(3)}`);
+
+const roadN = roadPixels(bases[0]);
+record('S6', '底子里真有主干道/广场（路面色像素 >5000）', roadN > 5000, `${roadN} px`);
+
 setSceneArtBreaks({ sameShape: true });
-const flat1 = maskOf(buildSceneBuilding('p1', 'tavern', 1));
-const flat2 = maskOf(buildSceneBuilding('p1', 'market', 1));
-const flatIoU = iouOf(flat1, flat2);
-record('N0', 'sameShape 负向对照：建筑必须塌成同一张（IoU >0.95）', flatIoU > 0.95, `IoU ${flatIoU.toFixed(3)}`);
+const flatMasks = TOWN_BUILDING_IDS.map((id) => maskOf(buildSceneBuilding('p1', id, 1)));
+const flatIoU = maxPair(flatMasks, iouOf);
+record('N0', 'sameShape 负向对照：16 座必须全塌成尖顶小屋（两两 IoU >0.95）', flatIoU > 0.95, `IoU ${flatIoU.toFixed(3)}`);
 setSceneArtBreaks({ sameShape: false });
 
 setSceneArtBreaks({ sameBase: true });
-const flatBases = OWNERS.map((o) => edgeMask(buildTownBase(o, 760, 300)));
+const flatBases = OWNERS.map((o) => edgeMask(buildTownBase(o, 760, 300), baseSignature));
 const flatBaseIoU = maxPair(flatBases, iouOf);
 record('N0b', 'sameBase 负向对照：四张底子必须塌成同一张（IoU = 1）',
   flatBaseIoU === 1, `IoU ${flatBaseIoU.toFixed(3)}`);
 setSceneArtBreaks({ sameBase: false });
+
+setSceneArtBreaks({ noStreet: true });
+const noRoadN = roadPixels(buildTownBase('p1', 760, 300));
+record('N0d', 'noStreet 负向对照：抽掉街道后路面色像素 = 0', noRoadN === 0, `${noRoadN} px`);
+setSceneArtBreaks({ noStreet: false });
 
 /* ================================================================ 接线层 */
 const APP_PORT = 39800 + (process.pid % 200);
