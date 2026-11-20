@@ -697,6 +697,10 @@ export function sceneBuildingFrameName(owner: SpriteOwner, id: string, tier = 1)
  */
 export interface TownPlot { id: string; x: number; y: number; scale: number; }
 
+/** 前排 y 停在 0.84 而不是 0.88：地块锚点是 `translate(-50%,-72%)`，
+ *  Lv.3 的 112~140px 大图会往锚点下探 28% ⇒ 0.88 在 844×390 下被详情栏切掉底边。
+ *  `probe:townfull` 的 `imgClip` 量的是 `<img>` 真边界，不是按钮框 —— 这个缺陷旧门量不到。 */
+
 /** p1 人类：规整棋盘，远中近三排 + 中央广场。 */
 const PLOTS_P1: readonly TownPlot[] = [
   { id: 'wall1', x: 0.08, y: 0.44, scale: 0.76 },
@@ -711,9 +715,9 @@ const PLOTS_P1: readonly TownPlot[] = [
   { id: 'dwell4', x: 0.67, y: 0.64, scale: 0.92 },
   { id: 'dwell5', x: 0.80, y: 0.63, scale: 0.94 },
   { id: 'guild1', x: 0.93, y: 0.65, scale: 0.86 },
-  { id: 'tavern', x: 0.20, y: 0.88, scale: 1.12 },
+  { id: 'tavern', x: 0.20, y: 0.84, scale: 1.12 },
   { id: 'market', x: 0.48, y: 0.86, scale: 1.06 },
-  { id: 'workshop', x: 0.76, y: 0.88, scale: 1.12 },
+  { id: 'workshop', x: 0.76, y: 0.84, scale: 1.12 },
   { id: 'banner', x: 0.61, y: 0.73, scale: 0.72 },
 ];
 
@@ -727,13 +731,13 @@ const PLOTS_P2: readonly TownPlot[] = [
   { id: 'dwell1', x: 0.09, y: 0.52, scale: 0.80 },
   { id: 'dwell2', x: 0.07, y: 0.64, scale: 0.82 },
   { id: 'dwell5', x: 0.09, y: 0.76, scale: 0.86 },
-  { id: 'tavern', x: 0.20, y: 0.88, scale: 1.04 },
+  { id: 'tavern', x: 0.20, y: 0.84, scale: 1.04 },
   { id: 'guild2', x: 0.91, y: 0.52, scale: 0.80 },
   { id: 'guild1', x: 0.93, y: 0.64, scale: 0.82 },
   { id: 'dwell4', x: 0.91, y: 0.76, scale: 0.86 },
-  { id: 'workshop', x: 0.80, y: 0.88, scale: 1.04 },
-  { id: 'dwell3', x: 0.38, y: 0.88, scale: 0.96 },
-  { id: 'market', x: 0.62, y: 0.88, scale: 0.96 },
+  { id: 'workshop', x: 0.80, y: 0.84, scale: 1.04 },
+  { id: 'dwell3', x: 0.38, y: 0.84, scale: 0.96 },
+  { id: 'market', x: 0.62, y: 0.84, scale: 0.96 },
   { id: 'banner', x: 0.50, y: 0.70, scale: 0.60 },
 ];
 
@@ -752,9 +756,9 @@ const PLOTS_P3: readonly TownPlot[] = [
   { id: 'dwell3', x: 0.22, y: 0.74, scale: 0.90 },
   { id: 'guild1', x: 0.78, y: 0.74, scale: 0.90 },
   { id: 'banner', x: 0.50, y: 0.72, scale: 0.66 },
-  { id: 'tavern', x: 0.15, y: 0.88, scale: 1.06 },
-  { id: 'market', x: 0.50, y: 0.88, scale: 1.02 },
-  { id: 'workshop', x: 0.85, y: 0.88, scale: 1.06 },
+  { id: 'tavern', x: 0.15, y: 0.84, scale: 1.06 },
+  { id: 'market', x: 0.50, y: 0.84, scale: 1.02 },
+  { id: 'workshop', x: 0.85, y: 0.84, scale: 1.06 },
 ];
 
 /** p4 亡灵：放射甬道。五条纵向列（x≈0.10/0.30/0.50/0.70/0.90），同列从塔基铺到前方。 */
@@ -772,9 +776,9 @@ const PLOTS_P4: readonly TownPlot[] = [
   { id: 'dwell3', x: 0.32, y: 0.74, scale: 0.90 },
   { id: 'guild2', x: 0.50, y: 0.72, scale: 0.80 },
   { id: 'dwell5', x: 0.68, y: 0.74, scale: 0.90 },
-  { id: 'tavern', x: 0.14, y: 0.88, scale: 1.04 },
-  { id: 'market', x: 0.50, y: 0.88, scale: 1.02 },
-  { id: 'workshop', x: 0.86, y: 0.88, scale: 1.04 },
+  { id: 'tavern', x: 0.14, y: 0.84, scale: 1.04 },
+  { id: 'market', x: 0.50, y: 0.84, scale: 1.02 },
+  { id: 'workshop', x: 0.86, y: 0.84, scale: 1.04 },
 ];
 
 export const TOWN_PLOTS_BY_OWNER: Readonly<Partial<Record<SpriteOwner, readonly TownPlot[]>>> = {

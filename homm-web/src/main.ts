@@ -20,6 +20,7 @@ import {
 } from './core/game/interaction.js';
 import { openBattleScreen, isBattleOpen } from './ui/BattleScreen.js';
 import { DWELLING_TIER_IDS, MAX_BUILDING_TIER } from './render/buildingArt.js';
+import { TOWN_BUILDING_IDS } from './render/townSceneArt.js';
 import { battleBgOf, type BattleBg } from './render/battleBg.js';
 import { ExchangeDialog } from './ui/ExchangeDialog.js';
 import { ArtifactDialog } from './ui/ArtifactDialog.js';
@@ -3116,6 +3117,22 @@ if (bootParams.has('devtier')) {
     home.buildings = [...new Set([...home.buildings, ...DWELLING_TIER_IDS])];
     home.levels = { ...(home.levels ?? {}) };
     for (const id of DWELLING_TIER_IDS) home.levels[id] = lv;
+  }
+}
+
+/* 美术评审：`?devtownfull=1` 把首城 16 块地全部建成，兵营线拉到 Lv.3（其余建筑上限 1）。
+   和 `?devtownowner=pX` 配合作四族「满城建制」对照稿；只改这一局的运行时状态，
+   不进存档、不动建造规则。必须排在 `devtown` 之前。 */
+if (bootParams.has('devtownfull')) {
+  const home = Object.values(state.towns).find((t) => t.owner === viewerOf(state));
+  if (home) {
+    home.buildings = [...new Set([...home.buildings, ...TOWN_BUILDING_IDS])];
+    home.levels = { ...(home.levels ?? {}) };
+    for (const id of TOWN_BUILDING_IDS) {
+      home.levels[id] = DWELLING_TIER_IDS.includes(id as (typeof DWELLING_TIER_IDS)[number])
+        ? MAX_BUILDING_TIER : 1;
+    }
+    home.builtDay = -1;
   }
 }
 
