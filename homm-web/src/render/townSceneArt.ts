@@ -15,7 +15,7 @@
  * 项目惯例不变：建筑本体四族**结构逐像素相同、只换材质**；差异由底子与配色承载。
  * 零位图、零随机流：同一 owner/尺寸逐像素确定。
  */
-import { PixBuf, hash2, mix, shade } from './pixel.js';
+import { PixBuf, hash2, mix, rgbOf, shade } from './pixel.js';
 import { ownerPalette, type SpriteOwner } from './atlas.js';
 
 /** 场景建筑的固定画布。80px 在 844×390 横屏下按 1:1 落位，不靠插值。 */
@@ -29,6 +29,16 @@ export const TOWN_BUILDING_IDS = [
 /** 路面颜色导出给闸门：判"真的画了街"要数这个颜色的像素，不能只数边缘。 */
 export const TOWN_ROAD_COLOR = '#9a8a66';
 export const TOWN_PLAZA_COLOR = '#b4a47e';
+/**
+ * 第九版：族别地貌的判据用色。探针只数这些**实现里实际下笔的颜色**，
+ * 不自己抄一份近似色表（否则实现改色而门还绿）。
+ */
+export const TOWN_WORLD_TOKENS = {
+  lava: '#ff7a2a', ash: '#24100e', basalt: '#2a1612', cave: '#150e0b',
+  canopy: '#3f8038', leafLite: '#5fa148', bark: '#6b4a2c',
+  grave: '#b9b3a4', graveDark: '#6a6274', deadWood: '#2f2633', mist: '#8e7fa6',
+  bone: '#ded3c0', soul: '#8fe0a0',
+} as const;
 
 /** 负向臂：`sameShape` 全塌成尖顶小屋，`sameBase` 底子同形，`noStreet` 抽掉街道，
  *  `sameTone` 把所有建材塌回"一族一色"（用户批评的旧配色），`flatCastle` 把远景城堡
@@ -39,6 +49,8 @@ let sceneArtBreaks = {
   sameShape: false, sameBase: false, noStreet: false, sameTone: false,
   flatCastle: false, noShadow: false, noAnim: false, fxBeforeOutline: false,
   sameLayout: false,
+  /** 第九版负向臂：抹掉族别建筑皮肤 + 四族背景塌回 p1 山丘（证明"换色 ≠ 换世界"）。 */
+  sameWorld: false,
 };
 export function setSceneArtBreaks(v: Partial<typeof sceneArtBreaks>): void {
   sceneArtBreaks = { ...sceneArtBreaks, ...v };
@@ -647,6 +659,156 @@ function drawBuildFx(pb: PixBuf, phase: number): void {
   }
 }
 
+/* ------------------------------------------------------- 族别建材重染（第九版） */
+/**
+ * 只在建筑**既有像素**上重染，不另画一套房子：这样 16 种功能屋顶/窗/门的结构还在，
+ * 但一整座城的墙面从"米色方盒"变成黑岩 / 树皮 / 墓石。玻璃和族色发光点跳过，
+ * 否则窗会被染死。必须在 factionSkin 之前跑：皮肤用的族别色不能被重染吃掉。
+ */
+function worldTint(pb: PixBuf, owner: SpriteOwner, p: ScenePalette): void {
+  if (owner === 'p1') return;
+  const glass = rgbOf(p.glass), accent = rgbOf(p.accent);
+  const hex = (r: number, g: number, b: number): string =>
+    '#' + ((1 << 24) | (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b)).toString(16).slice(1);
+  for (let y = 0; y < pb.h; y++) for (let x = 0; x < pb.w; x++) {
+    const px = pb.px(x, y);
+    if (px[3] <= 8) continue;
+    if (Math.abs(px[0] - glass[0]) + Math.abs(px[1] - glass[1]) + Math.abs(px[2] - glass[2]) < 18) continue;
+    if (Math.abs(px[0] - accent[0]) + Math.abs(px[1] - accent[1]) + Math.abs(px[2] - accent[2]) < 18) continue;
+    const lum = (px[0] + px[1] + px[2]) / 3;
+    let target = '';
+    let k = 0;
+    const warm = px[0] > px[2] + 22 && px[0] > 85;
+    const gray = Math.abs(px[0] - px[1]) < 32 && Math.abs(px[1] - px[2]) < 32;
+    if (owner === 'p2') {
+      if (warm) { target = lum > 150 ? '#6b5140' : '#3c2a24'; k = 0.62; }
+      else if (gray && lum > 90) { target = '#5a4638'; k = 0.6; }
+    } else if (owner === 'p3') {
+      if (warm) { target = lum > 150 ? '#c3b78a' : '#8d8058'; k = 0.48; }
+      else if (gray && lum > 90) { target = '#7d8b6a'; k = 0.5; }
+    } else {
+      if (warm) { target = lum > 150 ? '#6b6274' : '#463c52'; k = 0.64; }
+      else if (gray && lum > 90) { target = '#4a4058'; k = 0.55; }
+    }
+    if (k > 0) {
+      const [tr, tg, tb] = rgbOf(target);
+      pb.set(x, y, hex(px[0] + (tr - px[0]) * k, px[1] + (tg - px[1]) * k, px[2] + (tb - px[2]) * k));
+    }
+  }
+}
+
+/* ------------------------------------------------------- 族别建筑皮肤（第九版） */
+/**
+ * 旧版四族的 16 座建筑**结构逐像素相同，只偏色 22%**——这正是"看不出种族"的根因。
+ * 现在每族在屋顶轮廓上长自己的东西：精灵是叶冠 + 藤 + 根，妖兽是黑岩尖齿 + 熔缝 +
+ * 铜角，亡灵是骨肋 + 颅饰 + 墓碑。皮肤从**实际画出的轮廓**取位置（`roofEdge`），
+ * 不按建筑 id 写死 y，所以 16 种屋顶和 Lv.1/2/3 都能套用。
+ */
+function roofEdge(pb: PixBuf): number[] {
+  const out: number[] = [];
+  for (let x = 0; x < pb.w; x++) {
+    let found = -1;
+    for (let y = 10; y < 70; y++) {
+      if (pb.alphaAt(x, y) > 8 && pb.alphaAt(x, y + 3) > 8 && pb.alphaAt(x, y + 6) > 8) {
+        found = y; break;
+      }
+    }
+    out.push(found);
+  }
+  return out;
+}
+
+function skinBeast(pb: PixBuf): void {
+  const T = TOWN_WORLD_TOKENS;
+  const edge = roofEdge(pb);
+  for (let x = 8; x < 73; x += 6) {
+    const e = edge[x]!;
+    if (e < 8 || e > 58) continue;
+    const h = Math.min(4 + Math.round(hash2(x, 2, 901) * 5), e - 3);
+    const tip = e - h;
+    pb.poly([[x - 3, e + 2], [x, tip], [x + 3, e + 2]], T.basalt);
+    pb.poly([[x - 3, e + 2], [x, tip], [x, e + 2]], '#3c2a24');
+    if (x % 12 === 2) pb.rect(x - 1, Math.max(1, tip - 1), 2, 2, T.lava);
+  }
+  // 檐下熔缝：只压在已有像素上，否则会在屋顶外飘一条橙线
+  for (let x = 10; x < 71; x += 2) {
+    const e = edge[x]!;
+    if (e >= 8 && e + 7 < 72 && pb.alphaAt(x, e + 7) > 8) pb.set(x, e + 7, T.lava, 0.85);
+  }
+  for (const hx of [14, 66]) {
+    const e = edge[hx]! >= 12 ? edge[hx]! : 30;
+    pb.line(hx, e + 3, hx - 4, Math.max(3, e - 8), '#b98a3e', 3);
+    pb.line(hx - 4, Math.max(3, e - 8), hx - 7, Math.max(2, e - 13), '#e6dcc4', 2);
+  }
+  pb.rect(8, 70, 12, 6, T.basalt);
+  pb.rect(60, 71, 12, 5, T.basalt);
+  pb.hline(9, 18, 73, T.lava, 0.85);
+  pb.hline(62, 71, 74, T.lava, 0.85);
+}
+
+function skinElf(pb: PixBuf): void {
+  const T = TOWN_WORLD_TOKENS;
+  const edge = roofEdge(pb);
+  for (let x = 8; x < 73; x += 6) {
+    const e = edge[x]!;
+    if (e < 6 || e > 58) continue;
+    pb.ellipse(x, e + 1, 7, 5, (x / 6) % 2 ? T.canopy : T.leafLite);
+    pb.ellipse(x - 2, e - 1, 3, 2, '#79b65e', 0.8);
+  }
+  for (const vx of [22, 42, 62]) {
+    const e = edge[vx]!;
+    if (e < 6 || e > 58) continue;
+    pb.vline(vx, e + 4, e + 13, '#2d6330', 1.6);
+    pb.ellipse(vx + 2, e + 10, 2, 3, T.leafLite);
+  }
+  // 根脚：建筑不是放在地上，是从树上长出来
+  pb.line(13, 76, 4, 69, T.bark, 3);
+  pb.line(67, 76, 76, 69, T.bark, 3);
+  pb.hline(9, 71, 75, '#5e4028', 0.7);
+  pb.ellipse(10, 70, 3, 2, '#d8564a');
+  pb.ellipse(70, 71, 3, 2, '#e0c978');
+}
+
+function skinUndead(pb: PixBuf): void {
+  const T = TOWN_WORLD_TOKENS;
+  const edge = roofEdge(pb);
+  let crown = 70;
+  for (let x = 30; x < 51; x++) {
+    const e = edge[x]!;
+    if (e >= 6 && e < crown) crown = e;
+  }
+  for (let x = 8; x < 73; x += 8) {
+    const e = edge[x]!;
+    if (e < 7 || e > 58) continue;
+    pb.vline(x, Math.max(2, e - 6), e + 5, T.bone, 2);
+    pb.hline(x - 3, x + 3, e - 2, T.bone, 0.75);
+    pb.rect(x - 1, Math.max(1, e - 7), 2, 2, T.graveDark);
+  }
+  if (crown < 60) {
+    const sy = Math.max(10, crown - 5);
+    pb.ellipse(40, sy, 5, 4, T.bone);
+    pb.rect(38, sy + 2, 4, 4, T.bone);
+    pb.rect(38, sy, 2, 2, '#251d30');
+    pb.rect(41, sy, 2, 2, '#251d30');
+  }
+  // 两座歪墓碑 + 土坟：亡灵的地皮不是草坪
+  for (const [gx, tilt] of [[12, -1], [68, 1]] as [number, number][]) {
+    pb.ellipse(gx, 76, 10, 3, T.graveDark, 0.9);
+    pb.rect(gx - 5 + tilt, 64, 10, 12, T.grave);
+    pb.ellipse(gx + tilt, 64, 5, 4, T.grave);
+    pb.vline(gx + tilt, 67, 73, '#6a6274');
+    pb.hline(gx - 2 + tilt, gx + 2 + tilt, 69, '#6a6274');
+  }
+  pb.ellipse(24, 55, 4, 3, T.soul, 0.35);
+  pb.ellipse(56, 55, 4, 3, T.soul, 0.35);
+}
+
+function factionSkin(pb: PixBuf, owner: SpriteOwner): void {
+  if (owner === 'p2') skinBeast(pb);
+  else if (owner === 'p3') skinElf(pb);
+  else if (owner === 'p4') skinUndead(pb);
+}
+
 /**
  * 80×80 的场景建筑；tier 只影响附加装饰，不改骨架。
  * `phase` 是动画相位（0..SCENE_ANIM_FRAMES-1）：同一座建筑每帧都是从头重画，
@@ -661,6 +823,7 @@ export function buildSceneBuilding(owner: SpriteOwner, id: string, tier = 1, pha
   buildFx = [];
   footprint = { x: 8, w: 64 };
   recipe(pb, p, t);
+  if (!sceneArtBreaks.sameWorld) { worldTint(pb, owner, p); factionSkin(pb, owner); }
   /* 升级档必须改变**剪影**：L2 台基到 x=2..77，L3 到 x=0..79（四族共用同一段几何）。
      画成带竖缝的砌石，不是一条纯色板——否则读成"垫在下面的板"。 */
   if (t >= 2) {
@@ -879,9 +1042,10 @@ export function buildTownScene(owner: SpriteOwner, w: number, h: number): { base
   const W = pb.w, H = pb.h;
   const p = paletteOf(owner);
   // sameBase 负向臂也要统一材质，否则塔顶/路灯仍带族色，IoU 到不了 1
-  const bp = sceneArtBreaks.sameBase ? paletteOf('p1') : p;
+  const collapsed = sceneArtBreaks.sameBase || sceneArtBreaks.sameWorld;
+  const bp = collapsed ? paletteOf('p1') : p;
   // 负向臂必须连**城的骨架**一起塌回 p1，否则四族城门/底子仍是四张
-  const eo: SpriteOwner = sceneArtBreaks.sameBase ? 'p1' : owner;
+  const eo: SpriteOwner = collapsed ? 'p1' : owner;
   baseFx = [];
   if (eo === 'p1') baseHill(pb, W, H, bp);
   else if (eo === 'p2') baseCamp(pb, W, H, p);
@@ -1209,23 +1373,23 @@ function castleGrove(pb: PixBuf, W: number, H: number, p: ScenePalette): void {
   const leafD = '#28522c', leaf = '#3d7d3c', leafL = '#5b9a4a';
   const plank = '#a07a4a', plankD = '#77552f';
 
-  /* 林下暗部：先铺一层，树干才有"长在林子前面"的层次 */
-  pb.rect(x0 - 10, wallY + 2, x1 - x0 + 20, wallB - wallY + 14, '#223d1e');
-  for (let i = 0; i < 26; i++) {
-    const x = x0 + Math.round(hash2(i, 1, 511) * (x1 - x0));
-    pb.vline(x, wallY + 4, wallB + 10, '#1b3117', 0.5);
+  /* 一根横贯画面的巨枝当"城墙"：树城不砌墙，防线就是这棵树自己的枝干。
+     旧版这里排了 30 根小树干，读成"树林里有个村子"而不是"一棵树就是一座城"。 */
+  const limbTop = wallY - Math.round(H * 0.03);
+  pb.poly([[x0 - 16, wallB + 10], [x0 - 7, limbTop + 7], [Math.round(W * 0.5), limbTop - 7],
+    [x1 + 7, limbTop + 7], [x1 + 16, wallB + 10]], '#5e4028');
+  pb.hline(x0 - 8, x1 + 8, limbTop + 3, '#8a6238', 0.9);
+  pb.hline(x0 - 8, x1 + 8, wallB + 8, '#452e1a', 0.85);
+  for (let x = x0 + 8; x < x1 - 4; x += 29) {
+    pb.ellipse(x, limbTop + 9 + Math.round(hash2(x, 7, 505) * 4), 7, 4, '#8a6238', 0.65);
+    pb.vline(x + 4, limbTop + 12, wallB + 5, '#452e1a', 0.8);
   }
-
-  /* 根墙：一排粗细不一的树干，顶上接树冠 */
-  for (let x = x0; x < x1; x += 23) {
-    const hh = 10 + Math.round(hash2(x, 5, 501) * 9);
-    const tw = 15 + (Math.round(hash2(x, 6, 501) * 3) | 0);
-    const top = wallY - hh;
-    pb.rect(x, top, tw, wallB + 8 - top, bark);
-    pb.rect(x + 1, top, 3, wallB + 8 - top, barkL);
-    pb.rect(x + tw - 3, top, 3, wallB + 8 - top, barkD);
-    pb.poly([[x - 8, top + 6], [x + tw / 2, top - 9], [x + tw + 8, top + 6], [x + tw / 2, top + 11]], hash2(x, 8, 503) > 0.5 ? leaf : leafD);
-    pb.ellipse(x + tw / 2, top - 2, tw * 0.8, 6, hash2(x, 9, 503) > 0.5 ? leafL : leaf, 0.85);
+  // 枝上叶簇：起伏的绿线代替方城垛
+  for (let i = 0; i < 26; i++) {
+    const x = Math.round(x0 + hash2(i, 9, 507) * (x1 - x0));
+    const y = limbTop - 1 + Math.round((hash2(i, 10, 507) - 0.5) * 10);
+    pb.ellipse(x, y, 13, 6, hash2(i, 11, 507) > 0.5 ? leaf : leafD, 0.95);
+    if (i % 3 === 0) pb.ellipse(x - 3, y - 2, 5, 3, leafL, 0.8);
   }
 
   /* 两座树堡：树干 + 平台 + 木梯 + 尖木顶 */
@@ -1521,7 +1685,7 @@ function townInfrastructure(pb: PixBuf, W: number, H: number, p: ScenePalette, o
     pb.ellipse(x, y - 19, 3, 4, p.accent, 0.95);
     pushBaseFx({ k: 'lamp', x, y: y - 19, off: (i * 3) % SCENE_ANIM_FRAMES });
   });
-  streetGates(pb, W, H, p, owner);
+  streetGates(pb, W, H, p, eo);
 }
 
 /**
@@ -1616,90 +1780,225 @@ function baseHill(pb: PixBuf, W: number, H: number, p: ScenePalette): void {
   }
 }
 
-/** p2：火山营地 —— 黑岩、熔岩缝、兽骨图腾、火堆。 */
+/** p2：火山口 —— 不是给丘陵换个红颜色，是真的把城放进活火山。 */
 function baseCamp(pb: PixBuf, W: number, H: number, p: ScenePalette): void {
-  skyBands(pb, W, H, '#3a1d18', '#9d4b2a');
-  for (let i = 0; i < 5; i++) {
-    const x = Math.round(hash2(i, 3, 61) * W);
-    const hh = Math.round(H * (0.12 + hash2(i, 5, 61) * 0.16));
-    pb.poly([[x - hh, H * 0.5], [x, H * 0.5 - hh], [x + hh, H * 0.5]], '#4a2a20');
+  const T = TOWN_WORLD_TOKENS;
+  skyBands(pb, W, H, T.ash, '#8b3a20');
+  // 火山灰云：横向层理 + 飘落的火星，天上看得出这是火山不是黄昏
+  for (let i = 0; i < 9; i++) {
+    const y = Math.round(H * (0.04 + i * 0.035));
+    pb.hline(Math.round(W * (0.08 + hash2(i, 1, 631) * 0.42)), Math.round(W * (0.46 + hash2(i, 2, 631) * 0.5)), y, '#3a1d18', 0.75);
   }
-  pb.poly([[0, H * 0.5], [W * 0.2, H * 0.44], [W * 0.8, H * 0.46], [W, H * 0.5], [W, H], [0, H]], '#4a3226');
-  pb.poly([[0, H * 0.76], [W, H * 0.72], [W, H], [0, H]], '#35231a');
-  let lx = Math.round(W * 0.08);
-  const fissure = Math.max(6, H >> 5);
-  for (let y = Math.round(H * 0.56); y < H; y += fissure) {
-    const nx = lx + Math.round((hash2(y, 2, 91) - 0.5) * W * 0.08);
-    // 岩唇 → 熔岩 → 高光三层，单根细线在这个尺寸下只会读成一道涂鸦
-    for (let k = -2; k <= 2; k++) pb.line(lx, y + k, nx, y + fissure + k, '#2a120a', 1);
-    for (let k = -1; k <= 1; k++) pb.line(lx, y + k, nx, y + fissure + k, '#c4471e', 1);
-    pb.line(lx, y, nx, y + fissure, '#ffb347', 0.95);
-    lx = nx;
+  for (let i = 0; i < 46; i++) {
+    pb.rect(Math.round(hash2(i, 7, 631) * W), Math.round(hash2(i, 8, 631) * H * 0.5), 1, 1, '#ffb347', 0.55);
   }
-  for (let i = 0; i < 7; i++) {
-    const x = Math.round(hash2(i, 8, 31) * W), y = Math.round(H * (0.6 + hash2(i, 9, 31) * 0.3));
+  const volcano = (cx: number, peakY: number, half: number, cascade: boolean): void => {
+    const baseY = Math.round(H * 0.56);
+    pb.poly([[cx - half, baseY], [cx - Math.round(half * 0.45), baseY - Math.round(H * 0.12)],
+      [cx, peakY], [cx + Math.round(half * 0.5), baseY - Math.round(H * 0.14)], [cx + half, baseY]], T.basalt);
+    pb.poly([[cx, peakY], [cx + Math.round(half * 0.5), baseY - Math.round(H * 0.14)],
+      [cx + half, baseY], [cx + Math.round(half * 0.2), baseY - Math.round(H * 0.1)]], '#3c2a24');
+    // 火山口：亮熔岩镶在暗岩唇里，上方一柱灰烟
+    pb.ellipse(cx, peakY + 2, Math.max(8, Math.round(half * 0.16)), 4, '#c4471e');
+    pb.ellipse(cx, peakY + 2, Math.max(5, Math.round(half * 0.11)), 2, T.lava);
+    for (let i = 0; i < 7; i++) {
+      pb.ellipse(cx - Math.round(i * half * 0.05), peakY - 8 - i * 7,
+        Math.round(half * (0.10 + i * 0.02)), 5 + i, '#3a1d18', 0.55);
+    }
+    if (cascade) {
+      // 熔岩瀑布：从火山口一路淌到城内熔池（中央池由 townInfrastructure 画）
+      for (let i = 0; i < 16; i++) {
+        const t = i / 15;
+        const x = Math.round(cx + half * 0.28 * t);
+        const y = Math.round(peakY + 4 + (baseY - peakY - 4) * t);
+        pb.ellipse(x, y, 4, 2, '#c4471e');
+        pb.ellipse(x, y, 2, 1, T.lava);
+      }
+    }
+  };
+  volcano(Math.round(W * 0.20), Math.round(H * 0.06), Math.round(W * 0.27), true);
+  volcano(Math.round(W * 0.86), Math.round(H * 0.18), Math.round(W * 0.18), false);
+
+  // 地面：玄武岩台地，不是绿草坡
+  pb.poly([[0, H * 0.50], [W * 0.20, H * 0.46], [W * 0.80, H * 0.48], [W, H * 0.52], [W, H], [0, H]], '#2a1d16');
+  pb.poly([[0, H * 0.78], [W, H * 0.74], [W, H], [0, H]], '#17100c');
+  let rx = Math.round(W * 0.18);
+  for (let y = Math.round(H * 0.52); y < Math.round(H * 0.72); y += 5) {
+    const nx = rx + Math.round((hash2(y, 3, 91) - 0.5) * W * 0.05 + W * 0.02);
+    pb.line(rx, y, nx, y + 5, '#c4471e', 7);
+    pb.line(rx, y, nx, y + 5, T.lava, 3);
+    pb.line(rx, y, nx, y + 5, '#ffd072', 1);
+    rx = nx;
+  }
+  // 玄武岩柱阵：六棱短柱的亮边朝上，读成火山岩而非石块
+  for (let i = 0; i < 18; i++) {
+    const x = Math.round((0.03 + hash2(i, 5, 91) * 0.94) * W);
+    const y = Math.round((0.57 + hash2(i, 6, 91) * 0.30) * H);
+    const hh = 8 + Math.round(hash2(i, 7, 91) * 10);
+    pb.poly([[x - 5, y], [x - 3, y - hh], [x + 3, y - hh], [x + 6, y], [x + 3, y + 3], [x - 4, y + 3]], '#3c2a24');
+    pb.vline(x - 3, y - hh + 1, y + 2, '#5c3c2c', 2);
+    pb.hline(x - 3, x + 3, y - hh, '#5c3c2c');
+  }
+  // 地穴口：三张黑拱门，里头透岩浆——妖兽住火山，也住洞穴
+  for (const [fx, fy] of [[0.055, 0.66], [0.945, 0.64], [0.34, 0.57]] as [number, number][]) {
+    const cx = Math.round(W * fx), y = Math.round(H * fy);
+    pb.ellipse(cx, y, 14, 9, T.cave);
+    pb.rect(cx - 14, y, 28, 9, T.cave);
+    pb.ellipse(cx, y + 5, 9, 3, '#5b2410');
+    pb.ellipse(cx, y + 6, 5, 2, T.lava, 0.85);
+    pb.poly([[cx - 19, y], [cx - 14, y - 7], [cx + 14, y - 7], [cx + 19, y]], T.basalt);
+  }
+  for (let i = 0; i < 9; i++) {
+    const x = Math.round(hash2(i, 8, 31) * W), y = Math.round(H * (0.62 + hash2(i, 9, 31) * 0.28));
     pb.vline(x, y - 14, y, '#d8cbb0'); pb.vline(x - 5, y - 12, y - 8, '#d8cbb0'); pb.vline(x + 5, y - 12, y - 8, '#d8cbb0');
   }
   for (const fx of [0.16, 0.84]) {
     const x = Math.round(W * fx), y = Math.round(H * 0.82);
-    pb.ellipse(x, y, 12, 6, '#241610'); pb.poly([[x, y - 22], [x - 8, y - 4], [x + 8, y - 4]], '#ff8b2a');
+    pb.ellipse(x, y, 12, 6, '#241610'); pb.poly([[x, y - 22], [x - 8, y - 4], [x + 8, y - 4]], T.lava);
     pb.poly([[x, y - 14], [x - 4, y - 4], [x + 4, y - 4]], p.accent);
-    // 火焰本体是构件，跳动由特效层的两片外焰承担（同一条流水线的火把规则）
     pushBaseFx({ k: 'fire', x, y: y - 13, off: fx < 0.5 ? 0 : 5 });
   }
 }
 
-/** p3：巨树 —— 一整棵树冠当背景，树根与蘑菇落在台地上。 */
+/** p3：一座大树就是整座城——不是绿坡上摆几间尖顶房。 */
 function baseTree(pb: PixBuf, W: number, H: number, _p: ScenePalette): void {
-  skyBands(pb, W, H, '#1f3a2e', '#b9d49a');
-  pb.poly([[0, H * 0.5], [W * 0.3, H * 0.4], [W * 0.7, H * 0.42], [W, H * 0.52], [W, H], [0, H]], '#4c7038');
-  pb.poly([[0, H * 0.78], [W, H * 0.74], [W, H], [0, H]], '#38582a');
-  const cx = Math.round(W * 0.5);
-  pb.rect(cx - Math.round(W * 0.045), Math.round(H * 0.2), Math.round(W * 0.09), Math.round(H * 0.8), '#6b4a2c');
-  pb.vline(cx - Math.round(W * 0.03), Math.round(H * 0.22), H, '#8a6238');
-  for (let i = 0; i < 7; i++) {
-    const ox = Math.round((hash2(i, 4, 23) - 0.5) * W * 0.56);
-    const oy = Math.round(H * (0.1 + hash2(i, 6, 23) * 0.22));
-    pb.ellipse(cx + ox, oy, Math.round(W * (0.09 + hash2(i, 8, 23) * 0.05)), Math.round(H * 0.1), i % 2 ? '#2f6b34' : '#3d7d3c');
+  const T = TOWN_WORLD_TOKENS;
+  skyBands(pb, W, H, '#142b28', '#a8cf91');
+  // 林间雾：横向淡带，让树冠有纵深
+  for (let i = 0; i < 4; i++) pb.ellipse(Math.round(W * (0.2 + i * 0.2)), Math.round(H * (0.20 + i * 0.03)), Math.round(W * 0.24), Math.round(H * 0.025), '#cfe6b8', 0.10);
+
+  // 树冠：34 团叶簇铺满上半张，四个族里只有这一张的天空被树叶吃掉
+  for (let i = 0; i < 34; i++) {
+    const x = Math.round((0.02 + hash2(i, 1, 777) * 0.96) * W);
+    const y = Math.round(H * (0.02 + hash2(i, 2, 777) * 0.31));
+    pb.ellipse(x, y, Math.round(W * (0.06 + hash2(i, 3, 777) * 0.07)), Math.round(H * 0.075),
+      i % 3 === 0 ? T.leafLite : T.canopy, 0.95);
   }
-  /* 树屋平台：PLOTS_P3 的四档高度，各画一条从主树伸出的粗枝 + 木栈板。
-     必须画在树冠之后（否则被椭圆盖掉）。上层建筑落在枝上而不是浮在树叶里。 */
+  pb.ellipse(Math.round(W * 0.5), Math.round(H * 0.35), Math.round(W * 0.46), Math.round(H * 0.07), '#1d4024', 0.62);
+
+  // 林下土：树城的地面是厚厚的落叶和根土，不是一片平草皮
+  pb.poly([[0, H * 0.65], [W * 0.20, H * 0.61], [W * 0.80, H * 0.62], [W, H * 0.66], [W, H], [0, H]], '#5a6a3a');
+  pb.poly([[0, H * 0.84], [W, H * 0.80], [W, H], [0, H]], '#3e4f2a');
+  // 主干：上窄下宽，贯穿整张画面；树皮竖纹和树瘤让它是一棵树而不是一根柱子
+  const cx = Math.round(W * 0.5);
+  for (let y = Math.round(H * 0.16); y < H; y++) {
+    const half = Math.round(W * (0.035 + ((y / H) - 0.16) * 0.19));
+    pb.hline(cx - half, cx + half, y, T.bark);
+    pb.hline(cx - half, cx - half + 3, y, '#8a6238', 0.7);
+    pb.hline(cx + half - 3, cx + half, y, '#452e1a', 0.8);
+  }
+  for (let i = 0; i < 22; i++) {
+    const y = Math.round(H * (0.2 + hash2(i, 4, 777) * 0.72));
+    const half = Math.round(W * (0.035 + ((y / H) - 0.16) * 0.19));
+    const x = cx + Math.round((hash2(i, 5, 777) - 0.5) * half * 1.5);
+    pb.vline(x, y, y + 5 + Math.round(hash2(i, 6, 777) * 8), '#452e1a', 0.7);
+  }
+  for (const [fx, fy] of [[0.43, 0.56], [0.55, 0.68], [0.47, 0.78]] as [number, number][]) {
+    pb.ellipse(Math.round(W * fx), Math.round(H * fy), 7, 5, '#8a6238', 0.85);
+    pb.ellipse(Math.round(W * fx), Math.round(H * fy), 3, 2, '#452e1a');
+  }
+  // 根系：从主干脚下扇形铺开，建筑落脚的地面是树根不是草皮
+  for (const s of [-1, 1]) for (let k = 0; k < 5; k++) {
+    pb.line(cx + s * Math.round(W * 0.03), Math.round(H * 0.78),
+      cx + s * Math.round(W * (0.10 + k * 0.085)), Math.round(H * (0.86 + k * 0.025)), '#5e4028', 6 - k);
+    pb.line(cx + s * Math.round(W * (0.10 + k * 0.085)), Math.round(H * (0.86 + k * 0.025)),
+      cx + s * Math.round(W * (0.13 + k * 0.085)), H, '#452e1a', 2);
+  }
+  // 树屋平台：PLOTS_P3 的四档高度，粗枝从主干伸出，木栈板压在枝上
   for (const [fy, half] of [[0.29, 0.24], [0.43, 0.36], [0.58, 0.44], [0.74, 0.46]] as [number, number][]) {
     const y = Math.round(H * fy), hx = Math.round(W * half);
-    // 粗枝：从树干向两侧收细，落点压在建筑底缘（slot translateY -72%，底缘≈top+28%）
     for (const s of [-1, 1]) {
-      pb.poly([[cx, y + 2], [cx + s * Math.round(hx * 0.35), y - 3], [cx + s * hx, y + 8], [cx + s * hx, y + 15], [cx + s * Math.round(hx * 0.3), y + 7]], '#5e4028');
-      pb.line(cx + s * 12, y + 2, cx + s * hx, y + 11, '#8a6238', 2);
+      pb.poly([[cx, y + 2], [cx + s * Math.round(hx * 0.35), y - 4], [cx + s * hx, y + 8], [cx + s * hx, y + 17], [cx + s * Math.round(hx * 0.3), y + 8]], '#5e4028');
+      pb.line(cx + s * 12, y + 2, cx + s * hx, y + 11, '#8a6238', 3);
+      pb.vline(cx + s * Math.round(hx * 0.86), y + 13, y + 24, '#452e1a', 2);
     }
-    // 木栈板：四条短横板压在枝上，给建筑一个明确的落地面
     for (let x = cx - hx + 14; x < cx + hx - 10; x += 26) {
       pb.hline(x, x + 20, y + 12, '#a07a4a', 0.85);
       pb.hline(x, x + 20, y + 14, '#6b4a2c', 0.7);
     }
   }
+  // 落叶层 + 蘑菇：地面不再铺一层草粒
+  for (let i = 0; i < 26; i++) {
+    const x = Math.round(hash2(i, 2, 77) * W), y = Math.round(H * (0.70 + hash2(i, 3, 77) * 0.27));
+    pb.hline(x, x + 4, y, i % 2 ? '#7a9a4a' : '#a1854a', 0.8);
+  }
   for (let i = 0; i < 10; i++) {
-    const x = Math.round(hash2(i, 2, 77) * W), y = Math.round(H * (0.7 + hash2(i, 3, 77) * 0.25));
+    const x = Math.round(hash2(i, 12, 77) * W), y = Math.round(H * (0.72 + hash2(i, 13, 77) * 0.24));
     pb.rect(x, y - 3, 2, 4, '#e8dcc0'); pb.ellipse(x + 1, y - 3, 4, 2, i % 2 ? '#d8564a' : '#e0c978');
   }
-  grassGrain(pb, W, H, Math.round(H * 0.55), 913);
 }
 
-/** p4：神殿 —— 紫色晶柱、断柱、祭坛台阶，暗色石台。 */
+/** p4：墓园 —— 紫晶塔立在一整片墓碑、陵墓和枯树中间。 */
 function baseTemple(pb: PixBuf, W: number, H: number, p: ScenePalette): void {
-  skyBands(pb, W, H, '#241a33', '#6d4a74');
-  pb.ellipse(Math.round(W * 0.22), Math.round(H * 0.16), Math.round(W * 0.025), Math.round(W * 0.025), '#e2c8f4', 0.8);
-  pb.poly([[0, H * 0.46], [W * 0.25, H * 0.4], [W * 0.75, H * 0.42], [W, H * 0.48], [W, H], [0, H]], '#4a4050');
-  pb.poly([[0, H * 0.74], [W, H * 0.7], [W, H], [0, H]], '#332b3b');
-  for (let i = 0; i < 9; i++) {
-    const x = Math.round((0.06 + i * 0.108) * W);
-    const hh = Math.round(H * (0.1 + hash2(i, 2, 57) * 0.12));
-    pb.rect(x, Math.round(H * 0.58 - hh), 7, hh, '#8a7f96');
-    pb.hline(x - 2, x + 8, Math.round(H * 0.58 - hh), '#b3a7bd');
-    pb.hline(x - 2, x + 8, Math.round(H * 0.58 - hh + 3), '#b3a7bd');
+  const T = TOWN_WORLD_TOKENS;
+  skyBands(pb, W, H, '#1b1526', '#5b4668');
+  pb.ellipse(Math.round(W * 0.22), Math.round(H * 0.14), Math.round(W * 0.025), Math.round(W * 0.025), '#e2c8f4', 0.85);
+  for (let i = 0; i < 5; i++) {
+    pb.ellipse(Math.round(W * (0.12 + i * 0.19)), Math.round(H * (0.28 + i * 0.018)), Math.round(W * 0.14), Math.round(H * 0.018), T.mist, 0.13);
   }
-  for (let i = 0; i < 6; i++) {
-    const y = Math.round(H * (0.5 + i * 0.025));
-    pb.hline(Math.round(W * (0.42 - i * 0.02)), Math.round(W * (0.58 + i * 0.02)), y, '#6f647a');
+  // 枯树：没有叶子，只有分叉的秃枝，这是亡灵地貌最强的剪影
+  for (const fx of [0.06, 0.16, 0.84, 0.95]) {
+    const x = Math.round(W * fx), base = Math.round(H * 0.47), top = Math.round(H * (0.24 + hash2(x, 1, 881) * 0.07));
+    pb.line(x, base, x + 3, top, T.deadWood, 4);
+    for (let k = 0; k < 4; k++) {
+      const y = top + k * 9 + 4;
+      const s = k % 2 ? 1 : -1;
+      pb.line(x + 2, y, x + 2 + s * (10 + k * 2), y - 9, T.deadWood, 2);
+      pb.line(x + 2 + s * (10 + k * 2), y - 9, x + 2 + s * (14 + k * 2), y - 15, T.deadWood, 1.5);
+    }
+  }
+  // 墓碑林：三排，越远越小；尖顶碑和圆顶碑交替，全部歪一点
+  for (let row = 0; row < 3; row++) {
+    const y0 = Math.round(H * (0.33 + row * 0.065));
+    const step = 34 + row * 9;
+    for (let x = 12 + row * 13; x < W - 10; x += step) {
+      const gx = x + Math.round((hash2(x, row, 883) - 0.5) * 14);
+      const hh = 11 + row * 3 + Math.round(hash2(gx, row, 885) * 7);
+      const tilt = hash2(gx, row, 887) > 0.5 ? 1 : -1;
+      pb.rect(gx - 4 + tilt, y0 - hh, 8, hh, row === 2 ? T.grave : T.graveDark);
+      if (hash2(gx, row, 889) > 0.5) {
+        pb.poly([[gx - 5 + tilt, y0 - hh], [gx + tilt, y0 - hh - 6], [gx + 5 + tilt, y0 - hh]], row === 2 ? T.grave : T.graveDark);
+      } else pb.ellipse(gx + tilt, y0 - hh, 4, 4, row === 2 ? T.grave : T.graveDark);
+      if (row === 2) {
+        pb.vline(gx + tilt, y0 - hh + 3, y0 - 3, T.graveDark);
+        pb.hline(gx - 2 + tilt, gx + 2 + tilt, y0 - hh + 7, T.graveDark);
+      }
+    }
+  }
+  // 两座陵墓：尖顶小屋 + 骨十字，夹在城心两侧
+  for (const fx of [0.32, 0.68]) {
+    const x = Math.round(W * fx), y = Math.round(H * 0.45);
+    pb.rect(x - 17, y - 20, 34, 20, '#4a4050');
+    pb.poly([[x - 20, y - 20], [x, y - 32], [x + 20, y - 20]], '#3b3248');
+    pb.rect(x - 5, y - 14, 10, 14, '#191423');
+    pb.vline(x, y - 36, y - 27, T.bone, 2);
+    pb.hline(x - 4, x + 4, y - 33, T.bone, 2);
+  }
+  // 地面：墓园土 + 一排排坟包 + 贴地雾，不是紫色草坪
+  pb.poly([[0, H * 0.48], [W * 0.25, H * 0.44], [W * 0.75, H * 0.46], [W, H * 0.50], [W, H], [0, H]], '#3a3142');
+  pb.poly([[0, H * 0.76], [W, H * 0.72], [W, H], [0, H]], '#2a2234');
+  for (let i = 0; i < 18; i++) {
+    const x = Math.round((0.03 + hash2(i, 4, 891) * 0.94) * W);
+    const y = Math.round(H * (0.58 + hash2(i, 5, 891) * 0.34));
+    pb.ellipse(x, y, 12, 4, '#4b4156');
+    pb.ellipse(x, y - 1, 8, 2, '#574c63', 0.8);
+  }
+  for (let i = 0; i < 12; i++) {
+    const x = Math.round(hash2(i, 6, 891) * W), y = Math.round(H * (0.62 + hash2(i, 7, 891) * 0.32));
+    pb.line(x, y, x + 7, y - 3, T.bone, 2);
+    pb.vline(x + 4, y - 6, y - 2, T.bone, 2);
+  }
+  // 前景墓碑：放在最左最右，建筑铺满时仍能看见墓园
+  for (const fx of [0.025, 0.965]) {
+    const x = Math.round(W * fx), y = Math.round(H * 0.62);
+    pb.ellipse(x, y + 8, 15, 5, '#4b4156');
+    pb.rect(x - 8, y - 20, 16, 28, T.grave);
+    pb.poly([[x - 9, y - 20], [x, y - 29], [x + 9, y - 20]], T.grave);
+    pb.vline(x, y - 17, y - 3, T.graveDark, 2);
+    pb.hline(x - 5, x + 5, y - 12, T.graveDark, 2);
+  }
+  for (let i = 0; i < 4; i++) {
+    pb.ellipse(Math.round(W * (0.18 + i * 0.22)), Math.round(H * (0.66 + (i % 2) * 0.08)), Math.round(W * 0.07), Math.round(H * 0.012), T.mist, 0.16);
   }
   for (const fx of [0.1, 0.88]) {
     const x = Math.round(W * fx), y = Math.round(H * 0.62);

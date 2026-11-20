@@ -3,7 +3,7 @@
  *
  * 两层判据：
  *   ① **美术层**（纯 Node）：16 座 80×80 场景建筑按建筑原型重画（弧顶长屋 / 锯齿厂棚 /
- *      柱廊宅 / 圆塔 / 穹顶 / 平顶钟楼 / 水晶尖塔…），四族"结构同材质不同"、升级档改变剪影、
+ *      柱廊宅 / 圆塔 / 穹顶 / 平顶钟楼 / 水晶尖塔…），四族共用功能骨架但各有族别皮肤、升级档改变剪影、
  *      **16 座两两 IoU <0.88**（上一版"12 座同款尖顶"必须转红）；底子新增城堡远景、主干道、
  *      广场与喷泉，四族底子在特征区域结构上不同；**16 座各有建材**（红瓦/茅草/石板/
  *      砖窑/铜绿/水晶…），阵营色退成旗、饰带与轻微偏色；**远景主堡要有结构**（收分/砌石/
@@ -135,11 +135,14 @@ record('S0', `16 座 × 4 族 = 64 张 ${SCENE_BUILDING_SIZE}px 场景建筑，�
     pb.w === SCENE_BUILDING_SIZE && pb.h === SCENE_BUILDING_SIZE && areaOf(maskOf(pb)) > 400),
   `${big.size} 帧 · ${SCENE_BUILDING_SIZE}px`);
 
-let maskSame = 0, colorSplit = 0;
+let maskSame = 0, colorSplit = 0, skinned = 0;
 const colorClose = [];
 for (const id of TOWN_BUILDING_IDS) {
   const masks = OWNERS.map((o) => maskOf(big.get(`${o}/${id}`)));
   if (masks.slice(1).every((m) => iouOf(masks[0], m) === 1)) maskSame++;
+  // 第九版：建筑不再"四族结构逐像素相同"。功能骨架仍共用，但叶冠 / 黑岩尖齿 /
+  // 骨肋墓碑三层皮肤必须真的改剪影；sameWorld 负向臂在 townworld.mjs 里证明能塌回去。
+  if (masks.slice(1).filter((m) => iouOf(masks[0], m) < 0.95).length >= 2) skinned++;
   const cs = OWNERS.map((o) => meanColor(big.get(`${o}/${id}`)));
   let min = Infinity;
   for (let i = 0; i < cs.length; i++) for (let j = i + 1; j < cs.length; j++) {
@@ -148,7 +151,8 @@ for (const id of TOWN_BUILDING_IDS) {
   if (min >= 6) colorSplit++;
   else colorClose.push(`${id}:${min.toFixed(1)}`);
 }
-record('S1', '四族建筑结构逐像素相同（只换材质）', maskSame === 16, `${maskSame}/16`);
+record('S1', '四族建筑共用功能骨架但长出族别剪影（≥14/16 座有三族中两族变形）',
+  skinned >= 14, `变形 ${skinned}/16 · 仍全同 ${maskSame}/16`);
 record('S2', '四族材质确实分开（最近两族色距 ≥6）', colorSplit === 16,
   `${colorSplit}/16${colorClose.length ? ` · 太近 ${colorClose.join(' ')}` : ''}`);
 
@@ -329,10 +333,16 @@ const flatWallUniq = new Set(flatMats.map((m) => m.wall)).size;
 setSceneArtBreaks({ sameTone: false }); // 负向臂只留 flatCastle 一个变量
 setSceneArtBreaks({ flatCastle: true });
 const flatSkyBases = OWNERS.map((o) => buildTownBase(o, 760, 300));
-const flatSky = flatSkyBases.map((b) => edgeMask(b, skylineRegion));
+// 第九版地貌把天空也画满了（火山 / 树冠 / 墓碑），所以 N0h 必须同时冻结地貌，
+// 否则量到的是"火山还在冒烟"而不是"城心塌了"。N0i 仍只开 flatCastle，
+// 保证它量的是城心材质本身，不被 sameWorld 顺手清零。
+setSceneArtBreaks({ sameWorld: true });
+const flatWorldBases = OWNERS.map((o) => buildTownBase(o, 760, 300));
+const flatSky = flatWorldBases.map((b) => edgeMask(b, skylineRegion));
 const flatSkyIoU = maxPair(flatSky, iouOf);
-record('N0h', 'flatCastle 负向对照：城心塌回同一面灰墙后，天际线 IoU 必须涨到 ≥0.60',
+record('N0h', 'flatCastle + sameWorld 负向对照：城心塌回同一面灰墙后，天际线 IoU 必须涨到 ≥0.60',
   flatSkyIoU >= 0.60, `最大 IoU ${flatSkyIoU.toFixed(3)}（正常 ${skylineIoU.toFixed(3)}）`);
+setSceneArtBreaks({ sameWorld: false });
 const flatTok = [1, 3].map((i) => Object.fromEntries(['lava', 'brass', 'amethyst', 'bone'].map((k) => [k, tokenCount(flatSkyBases[i], k)])));
 record('N0i', 'flatCastle 负向对照：城心塌成灰墙后 p2 熔岩/p4 紫晶标记必须归零',
   flatTok.every((t) => t.lava === 0 && t.brass === 0 && t.amethyst === 0 && t.bone === 0),
