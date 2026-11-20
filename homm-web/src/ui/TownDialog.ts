@@ -121,7 +121,7 @@ import {
   SCENE_BUILDING_SIZE,
   TOWN_BUILDING_IDS,
   TOWN_FX_SPRITES,
-  TOWN_PLOTS,
+  townPlots,
   buildSceneBuilding,
   buildTownScene,
   buildTownFxSprite,
@@ -194,7 +194,15 @@ function warmFrameUrl(url: string): void {
 function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
   const town = opts.state.towns[opts.townId];
   if (!town) return;
-  const owner = town.owner as SpriteOwner;
+  const townOwner = town.owner as SpriteOwner;
+  /**
+   * 美术评审开关：`?devtownowner=p3` 让这座城按指定族的骨架渲染。
+   * 只影响**这一张城景**的呈现，不改存档、不改建造规则——没有它的话，
+   * 要目检 p2/p3/p4 的城心就得先通一遍对应阵营的关卡。
+   */
+  const forced = new URLSearchParams(location.search).get('devtownowner');
+  const owner: SpriteOwner = forced === 'p1' || forced === 'p2' || forced === 'p3' || forced === 'p4'
+    ? forced : townOwner;
   const overlay = document.createElement('div');
   overlay.className = 'townview';
   overlay.setAttribute('role', 'dialog');
@@ -325,7 +333,7 @@ function openTownView(parent: HTMLElement, opts: TownDialogOptions): void {
     world.appendChild(hot);
 
     // 只有已建的地块放建筑；未建放浅地基（仍可点 → 详情里给建造按钮）
-    for (const plot of TOWN_PLOTS) {
+    for (const plot of townPlots(owner)) {
       const def = BUILDINGS[plot.id];
       if (!def) continue;
       const st = buildStatus(opts.state, town, plot.id);

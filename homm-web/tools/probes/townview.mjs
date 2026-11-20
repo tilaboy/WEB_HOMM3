@@ -8,9 +8,11 @@
  *      广场与喷泉，四族底子在特征区域结构上不同；**16 座各有建材**（红瓦/茅草/石板/
  *      砖窑/铜绿/水晶…），阵营色退成旗、饰带与轻微偏色；**远景主堡要有结构**（收分/砌石/
  *      城垛/门楼，实测 692 边缘像素），**16 座底部都要有接地投影**（半透明暗部）。
- *      负向臂 `sameShape` / `sameBase` / `noStreet` / `sameTone` / `flatCastle` / `noShadow`
- *      分别让建筑塌成同一张、底子塌成同一张、街道消失、建材塌回"一族一色"、
- *      城堡塌成一块灰墙、投影归零，证明判据测的是设计而不是"帧里有东西"。
+ *      **S10** 四族城心天际线两两 IoU ≤0.55；**S11** 城心材质呼应兵种（p2 熔岩+铜人、
+ *      p4 紫晶+骨，p1/p3 不得串味）——S10 只证明"四座城不一样"，S11 才证明"p2 是火山、
+ *      p4 是亡灵"。负向臂 `sameShape` / `sameBase` / `noStreet` / `sameTone` / `flatCastle` /
+ *      `noShadow` 分别让建筑塌成同一张、底子塌成同一张、街道消失、建材塌回"一族一色"、
+ *      城堡塌成一块灰墙、投影归零；`N0i` 用 flatCastle 验证 S11 的材质标记确实长在城心上。
  *   ② **接线/交互层**（真 Chrome）：844×390 横屏下从城镇面板打开城景，16 块地
  *      按 y 与远/中/近三档缩放落位；**只有已建的地块画建筑**，未建画浅地基，点两种地块都能出详情；
  *      城堡由底子直接画，DOM 里只有一个透明热区（点它出「城墙」详情，不再叠第二张城堡图）。
@@ -53,6 +55,7 @@ const {
   TOWN_BUILDING_IDS,
   buildSceneBuilding,
   buildTownBase,
+  townPlots,
   setSceneArtBreaks,
   scenePaletteOf,
   TOWN_ROAD_COLOR,
@@ -218,6 +221,89 @@ const shadows = TOWN_BUILDING_IDS.map((id) => shadowPixels(big.get(`p1/${id}`)))
 record('S9', '16 座底部都有接地投影（半透明暗部 ≥40px），不再靠一条石板承重',
   shadows.every((n) => n >= 40), `最少 ${Math.min(...shadows)}px / 合计 ${shadows.reduce((a, b) => a + b, 0)}px`);
 
+/* 用户要求"其他种族也得是别的城"，不是同一座石堡换色。
+   量的是**城心那一条天际线**（0.10–0.90 宽、0.13–0.45 高）：p1 方石堡 / p2 熔岩要塞 /
+   p3 树冠木厅 / p4 紫晶尖塔。负向臂把三族城心塌回 p1 那面灰墙，IoU 必须明显抬起来。 */
+const skylineRegion = (x, y, W, H) => x >= W * 0.10 && x <= W * 0.90 && y >= H * 0.13 && y <= H * 0.45;
+const skylineEdges = bases.map((b) => edgeMask(b, skylineRegion));
+const skylineN = skylineEdges.map(areaOf);
+const skylineIoU = maxPair(skylineEdges, iouOf);
+record('S10', '四族城心是四种剪影（天际线边缘两两 IoU ≤0.55，每张 ≥600 边缘像素·4px 采样）',
+  skylineN.every((n) => n >= 600) && skylineIoU <= 0.55,
+  `边缘 ${skylineN.join('/')} · 最大 IoU ${skylineIoU.toFixed(3)}`);
+
+/* 用户要求"城堡/背景/建筑风格要和种族、兵种相呼应"。S10 只证明"四座城不一样"，
+   不证明"p2 是熔岩、p4 是亡灵"。这里量城心（x 0.38–0.62、y 0.02–0.42）里的
+   **材质标记像素**（本探针 760×300、±8 容差实测）：p2 熔岩 **278** + 黄铜 **331** /
+   p4 紫晶 **389** + 骨 **487**。容差是因为描边混合会挪动几个通道；p1 石灰岩会误命中
+   32 个骨色像素，所以"专属"用数量级差判，不用绝对零。 */
+const TOKENS = {
+  lava: ['#ff7a2a', '#c23a12', '#ffd072'],
+  brass: ['#b98a3e', '#e0b45c', '#e6dcc4'],
+  amethyst: ['#a05cd8', '#d6a4ff', '#6b3a94'],
+  bone: ['#ded3c0', '#a99c86'],
+};
+const tokenRgb = Object.fromEntries(Object.entries(TOKENS).map(([k, v]) =>
+  [k, v.map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)))]));
+const tokenCount = (pb, key) => {
+  const region = (x, y) => x >= pb.w * 0.38 && x <= pb.w * 0.62 && y >= pb.h * 0.02 && y <= pb.h * 0.42;
+  const list = tokenRgb[key];
+  let n = 0;
+  for (let y = pb.h * 0.02 | 0; y < pb.h * 0.42; y++) for (let x = pb.w * 0.38 | 0; x < pb.w * 0.62; x++) {
+    if (!region(x, y)) continue;
+    const c = pb.px(x, y);
+    if (list.some((t) => [0, 1, 2].every((i) => Math.abs(c[i] - t[i]) <= 8))) n++;
+  }
+  return n;
+};
+const tok = OWNERS.map((o) => Object.fromEntries(['lava', 'brass', 'amethyst', 'bone'].map((k) => [k, tokenCount(bases[OWNERS.indexOf(o)], k)])));
+record('S11', '城心材质呼应兵种（p2 熔岩+铜人、p4 紫晶+骨；p1/p3 不得串味）',
+  tok[1].lava >= 200 && tok[1].brass >= 200 && tok[3].amethyst >= 200 && tok[3].bone >= 300 &&
+  // p1 石灰岩在 ±8 容差下会误命中少量骨/铜色；判"专属"用数量级差而非绝对零
+  tok[0].bone * 3 < tok[3].bone && tok[0].brass * 3 < tok[1].brass &&
+  tok[0].amethyst === 0 && tok[2].lava === 0 && tok[2].amethyst === 0,
+  `p2 ${JSON.stringify(tok[1])} · p4 ${JSON.stringify(tok[3])} · p1/p3 ${JSON.stringify(tok[0])}/${JSON.stringify(tok[2])}`);
+
+/* S10 量城心剪影、S11 量城心材质，都不管 16 块地摆在哪。用户要的"一看就知道哪个种族"
+   还要靠**布局本身**：p1 棋盘横排 / p2 环形围炉 / p3 垂直分层挂树 / p4 放射甬道。
+   量按地块 id 逐块对齐后的像素位移（844×390 舞台）+ 方向特征；sameLayout 负向臂全塌回 p1。 */
+const plots = OWNERS.map((o) => townPlots(o));
+const SCREEN = { w: 844, h: 390 };
+const plotDisp = (a, b) => a.reduce((sum, pa, i) => sum + Math.hypot(
+  (pa.x - b[i].x) * SCREEN.w, (pa.y - b[i].y) * SCREEN.h), 0) / a.length;
+let minDisp = Infinity, minPair = '';
+for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) {
+  const d = plotDisp(plots[i], plots[j]);
+  if (d < minDisp) { minDisp = d; minPair = `${OWNERS[i]}-${OWNERS[j]}`; }
+}
+const feat = plots.map((ps) => {
+  const ys = ps.map((p) => p.y), xs = ps.map((p) => p.x);
+  let rows = 0, cols = 0;
+  for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
+    if (Math.abs(ys[i] - ys[j]) < 0.015) rows++;
+    if (Math.abs(xs[i] - xs[j]) < 0.015) cols++;
+  }
+  return {
+    high: ys.filter((y) => y < 0.35).length,
+    spread: Math.max(...ys) - Math.min(...ys), rows, cols,
+  };
+});
+// 844×390 落位安全：每块地按 translate(-50%,-72%) 不能有越界，且 slot ≥76px
+let outside = 0, minSlot = Infinity;
+for (const ps of plots) for (const pl of ps) {
+  const w = Math.max(44, SCREEN.w * 0.15 * pl.scale);
+  const left = pl.x * SCREEN.w - w / 2, right = pl.x * SCREEN.w + w / 2;
+  const top = pl.y * SCREEN.h - w * 0.72, bot = top + w;
+  if (left < -1 || right > SCREEN.w + 1 || top < -1 || bot > SCREEN.h + 1) outside++;
+  minSlot = Math.min(minSlot, w);
+}
+record('S12', '四族地块布局互不相同（逐块位移 ≥100px）、方向对、844×390 不越界',
+  minDisp >= 100 && outside === 0 && minSlot >= 44 &&
+  feat[2].high >= 2 && feat[2].spread >= 0.55 &&
+  feat[0].rows > feat[0].cols * 2 && feat[3].cols >= feat[3].rows,
+  `最小位移 ${minDisp.toFixed(0)}px(${minPair}) · 越界${outside}/最小格${minSlot.toFixed(0)}px · ` +
+  `p3 高层${feat[2].high}/跨度${feat[2].spread.toFixed(2)} · p1 行${feat[0].rows}/列${feat[0].cols} · p4 行${feat[3].rows}/列${feat[3].cols}`);
+
 setSceneArtBreaks({ sameShape: true });
 const flatMasks = TOWN_BUILDING_IDS.map((id) => maskOf(buildSceneBuilding('p1', id, 1)));
 const flatIoU = maxPair(flatMasks, iouOf);
@@ -240,6 +326,27 @@ setSceneArtBreaks({ sameTone: true });
 const flatMats = TOWN_BUILDING_IDS.map((id) => scenePaletteOf('p1', id));
 const flatRoofUniq = new Set(flatMats.map((m) => m.roof)).size;
 const flatWallUniq = new Set(flatMats.map((m) => m.wall)).size;
+setSceneArtBreaks({ sameTone: false }); // 负向臂只留 flatCastle 一个变量
+setSceneArtBreaks({ flatCastle: true });
+const flatSkyBases = OWNERS.map((o) => buildTownBase(o, 760, 300));
+const flatSky = flatSkyBases.map((b) => edgeMask(b, skylineRegion));
+const flatSkyIoU = maxPair(flatSky, iouOf);
+record('N0h', 'flatCastle 负向对照：城心塌回同一面灰墙后，天际线 IoU 必须涨到 ≥0.60',
+  flatSkyIoU >= 0.60, `最大 IoU ${flatSkyIoU.toFixed(3)}（正常 ${skylineIoU.toFixed(3)}）`);
+const flatTok = [1, 3].map((i) => Object.fromEntries(['lava', 'brass', 'amethyst', 'bone'].map((k) => [k, tokenCount(flatSkyBases[i], k)])));
+record('N0i', 'flatCastle 负向对照：城心塌成灰墙后 p2 熔岩/p4 紫晶标记必须归零',
+  flatTok.every((t) => t.lava === 0 && t.brass === 0 && t.amethyst === 0 && t.bone === 0),
+  `flat-p2 ${JSON.stringify(flatTok[0])} · flat-p4 ${JSON.stringify(flatTok[1])}`);
+setSceneArtBreaks({ flatCastle: false });
+
+setSceneArtBreaks({ sameLayout: true });
+const flatPlots = OWNERS.map((o) => townPlots(o));
+let flatMaxDisp = 0;
+for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) flatMaxDisp = Math.max(flatMaxDisp, plotDisp(flatPlots[i], flatPlots[j]));
+record('N0j', 'sameLayout 负向对照：四族地块塌回同一套棋盘后逐块位移必须归零',
+  flatMaxDisp === 0, `最大位移 ${flatMaxDisp.toFixed(1)}px（正常最小 ${minDisp.toFixed(0)}px）`);
+setSceneArtBreaks({ sameLayout: false });
+
 record('N0e', 'sameTone 负向对照：建材必须塌回"一族一色"（蓝顶白墙）',
   flatRoofUniq === 1 && flatWallUniq === 1, `屋顶 ${flatRoofUniq} 色 · 墙 ${flatWallUniq} 色`);
 setSceneArtBreaks({ sameTone: false });

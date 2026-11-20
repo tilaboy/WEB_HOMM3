@@ -38,6 +38,7 @@ export const TOWN_PLAZA_COLOR = '#b4a47e';
 let sceneArtBreaks = {
   sameShape: false, sameBase: false, noStreet: false, sameTone: false,
   flatCastle: false, noShadow: false, noAnim: false, fxBeforeOutline: false,
+  sameLayout: false,
 };
 export function setSceneArtBreaks(v: Partial<typeof sceneArtBreaks>): void {
   sceneArtBreaks = { ...sceneArtBreaks, ...v };
@@ -256,6 +257,11 @@ function chimney(pb: PixBuf, x: number, y: number, w: number, h: number, p: Scen
 /** 旗杆是构件（每帧不动），旗面是布（逐帧摆）—— 拆开才能只让布动。 */
 function flagPole(pb: PixBuf, x: number, y: number, p: ScenePalette): void {
   pb.vline(x, y, y + 16, p.woodDark);
+}
+/** 城景远景里的旗杆：3px 宽。1px 的 vline 在 832px 宽的底子上会读成一根电线。 */
+function scenePole(pb: PixBuf, x: number, y: number, p: ScenePalette, h = 18): void {
+  pb.rect(x - 1, y, 3, h, p.woodDark);
+  pb.vline(x + 1, y, y + h - 1, shade(p.woodDark, 0.34));
 }
 /** 旗面；`x` 是旗杆列，`sway` 是飘端上下偏移（-2..+2）。城内底子的特效层复用同一段。 */
 function flagClothInto(pb: PixBuf, x: number, y: number, len: number, sway: number, accent: string, cloth: string): void {
@@ -680,30 +686,106 @@ export function sceneBuildingFrameName(owner: SpriteOwner, id: string, tier = 1)
 }
 
 /* ------------------------------------------------------------------ 地块 */
-/** 地块坐标用舞台百分比；`y` 越大越靠前，`scale` 给出远/中/近三档体量。 */
+/**
+ * 地块坐标用舞台百分比；`y` 越大越靠前，`scale` 给出远/中/近三档体量。
+ *
+ * **四族各一套布局**（不是换配色）：Layout 本身就是种族标识——
+ * p1 人类**棋盘横排**（规整行列）· p2 妖兽**环形围炉**（中央熔池，房子围一圈）·
+ * p3 精灵**垂直分层**（房子挂在不同高度的树枝上，中央留给树干）·
+ * p4 亡灵**放射甬道**（同一 x 列从塔基向外铺开，像墓碑林）。
+ * 只用 S10（城心剪影）和 S11（材质）不够：那两道门全绿时，树上的种族仍住在平地上。
+ */
 export interface TownPlot { id: string; x: number; y: number; scale: number; }
-export const TOWN_PLOTS: readonly TownPlot[] = [
-  // 远景：城墙线（小、高、互相搭接，读成一条防线）
+
+/** p1 人类：规整棋盘，远中近三排 + 中央广场。 */
+const PLOTS_P1: readonly TownPlot[] = [
   { id: 'wall1', x: 0.08, y: 0.44, scale: 0.76 },
   { id: 'wall2', x: 0.24, y: 0.43, scale: 0.76 },
   { id: 'wall3', x: 0.40, y: 0.42, scale: 0.78 },
   { id: 'townhall', x: 0.61, y: 0.43, scale: 0.84 },
   { id: 'guild3', x: 0.77, y: 0.44, scale: 0.80 },
   { id: 'guild2', x: 0.92, y: 0.46, scale: 0.74 },
-  // 中景：沿主干道两侧排开，广场在中间留空
   { id: 'dwell1', x: 0.07, y: 0.62, scale: 0.92 },
   { id: 'dwell2', x: 0.20, y: 0.63, scale: 0.92 },
   { id: 'dwell3', x: 0.33, y: 0.64, scale: 0.90 },
   { id: 'dwell4', x: 0.67, y: 0.64, scale: 0.92 },
   { id: 'dwell5', x: 0.80, y: 0.63, scale: 0.94 },
   { id: 'guild1', x: 0.93, y: 0.65, scale: 0.86 },
-  // 近景：三座大房子压住画面下沿，给纵深
   { id: 'tavern', x: 0.20, y: 0.88, scale: 1.12 },
   { id: 'market', x: 0.48, y: 0.86, scale: 1.06 },
   { id: 'workshop', x: 0.76, y: 0.88, scale: 1.12 },
-  // 旗杆立在广场边，不是另一排房子
   { id: 'banner', x: 0.61, y: 0.73, scale: 0.72 },
 ];
+
+/** p2 妖兽：环形围炉。上弧 5 + 左右两翼各 4 + 下弧 2 + 中央旗，中央 (0.5,0.5~0.8) 留给熔池。 */
+const PLOTS_P2: readonly TownPlot[] = [
+  { id: 'wall1', x: 0.20, y: 0.40, scale: 0.72 },
+  { id: 'wall2', x: 0.35, y: 0.37, scale: 0.72 },
+  { id: 'wall3', x: 0.50, y: 0.36, scale: 0.74 },
+  { id: 'townhall', x: 0.65, y: 0.37, scale: 0.76 },
+  { id: 'guild3', x: 0.80, y: 0.40, scale: 0.72 },
+  { id: 'dwell1', x: 0.09, y: 0.52, scale: 0.80 },
+  { id: 'dwell2', x: 0.07, y: 0.64, scale: 0.82 },
+  { id: 'dwell5', x: 0.09, y: 0.76, scale: 0.86 },
+  { id: 'tavern', x: 0.20, y: 0.88, scale: 1.04 },
+  { id: 'guild2', x: 0.91, y: 0.52, scale: 0.80 },
+  { id: 'guild1', x: 0.93, y: 0.64, scale: 0.82 },
+  { id: 'dwell4', x: 0.91, y: 0.76, scale: 0.86 },
+  { id: 'workshop', x: 0.80, y: 0.88, scale: 1.04 },
+  { id: 'dwell3', x: 0.38, y: 0.88, scale: 0.96 },
+  { id: 'market', x: 0.62, y: 0.88, scale: 0.96 },
+  { id: 'banner', x: 0.50, y: 0.70, scale: 0.60 },
+];
+
+/** p3 精灵：垂直分层。四档高度、左右交错，中央 x≈0.5 全程留给树干；越高房子越小。 */
+const PLOTS_P3: readonly TownPlot[] = [
+  { id: 'wall3', x: 0.26, y: 0.29, scale: 0.62 },
+  { id: 'townhall', x: 0.72, y: 0.30, scale: 0.64 },
+  { id: 'wall1', x: 0.16, y: 0.43, scale: 0.70 },
+  { id: 'wall2', x: 0.34, y: 0.41, scale: 0.68 },
+  { id: 'guild3', x: 0.64, y: 0.41, scale: 0.68 },
+  { id: 'guild2', x: 0.84, y: 0.43, scale: 0.70 },
+  { id: 'dwell1', x: 0.13, y: 0.58, scale: 0.82 },
+  { id: 'dwell2', x: 0.30, y: 0.56, scale: 0.80 },
+  { id: 'dwell4', x: 0.70, y: 0.56, scale: 0.80 },
+  { id: 'dwell5', x: 0.87, y: 0.58, scale: 0.82 },
+  { id: 'dwell3', x: 0.22, y: 0.74, scale: 0.90 },
+  { id: 'guild1', x: 0.78, y: 0.74, scale: 0.90 },
+  { id: 'banner', x: 0.50, y: 0.72, scale: 0.66 },
+  { id: 'tavern', x: 0.15, y: 0.88, scale: 1.06 },
+  { id: 'market', x: 0.50, y: 0.88, scale: 1.02 },
+  { id: 'workshop', x: 0.85, y: 0.88, scale: 1.06 },
+];
+
+/** p4 亡灵：放射甬道。五条纵向列（x≈0.10/0.30/0.50/0.70/0.90），同列从塔基铺到前方。 */
+const PLOTS_P4: readonly TownPlot[] = [
+  { id: 'wall1', x: 0.14, y: 0.44, scale: 0.74 },
+  { id: 'wall2', x: 0.30, y: 0.42, scale: 0.74 },
+  { id: 'wall3', x: 0.50, y: 0.40, scale: 0.72 },
+  { id: 'townhall', x: 0.70, y: 0.42, scale: 0.76 },
+  { id: 'guild3', x: 0.86, y: 0.44, scale: 0.74 },
+  { id: 'dwell1', x: 0.10, y: 0.62, scale: 0.84 },
+  { id: 'dwell2', x: 0.28, y: 0.58, scale: 0.84 },
+  { id: 'banner', x: 0.50, y: 0.60, scale: 0.60 },
+  { id: 'dwell4', x: 0.72, y: 0.58, scale: 0.84 },
+  { id: 'guild1', x: 0.90, y: 0.62, scale: 0.84 },
+  { id: 'dwell3', x: 0.32, y: 0.74, scale: 0.90 },
+  { id: 'guild2', x: 0.50, y: 0.72, scale: 0.80 },
+  { id: 'dwell5', x: 0.68, y: 0.74, scale: 0.90 },
+  { id: 'tavern', x: 0.14, y: 0.88, scale: 1.04 },
+  { id: 'market', x: 0.50, y: 0.88, scale: 1.02 },
+  { id: 'workshop', x: 0.86, y: 0.88, scale: 1.04 },
+];
+
+export const TOWN_PLOTS_BY_OWNER: Readonly<Partial<Record<SpriteOwner, readonly TownPlot[]>>> = {
+  p1: PLOTS_P1, p2: PLOTS_P2, p3: PLOTS_P3, p4: PLOTS_P4,
+};
+/** 兼容旧调用方（默认人类）。要用当前种族的布局请调 `townPlots(owner)`。 */
+export const TOWN_PLOTS = PLOTS_P1;
+export function townPlots(owner: SpriteOwner): readonly TownPlot[] {
+  // sameLayout 负向臂：四族地块塌回同一套棋盘，证明 S12 量的是布局而非地块数量
+  return sceneArtBreaks.sameLayout ? PLOTS_P1 : (TOWN_PLOTS_BY_OWNER[owner] ?? PLOTS_P1);
+}
 export const CASTLE_PLOT: TownPlot = { id: '__castle', x: 0.50, y: 0.46, scale: 0.60 };
 
 /* ------------------------------------------------------------------ 底子 */
@@ -786,7 +868,7 @@ export function buildTownFxSprite(owner: SpriteOwner, kind: TownFxKind, phase: n
   return pb;
 }
 
-/** 四族**结构不同**的空城底子（不是换配色）：石堡山丘 / 火山营地 / 巨树 / 神殿。
+/** 四族**结构与材质都不同**的空城底子（不是换配色）：石堡 / 熔岩要塞 / 树城 / 亡灵尖塔。
  *  返回静态底图 + 需要逐帧叠加的特效锚点。 */
 export function buildTownScene(owner: SpriteOwner, w: number, h: number): { base: PixBuf; fx: TownFxSpot[] } {
   const pb = new PixBuf(Math.max(320, w | 0), Math.max(180, h | 0));
@@ -794,13 +876,15 @@ export function buildTownScene(owner: SpriteOwner, w: number, h: number): { base
   const p = paletteOf(owner);
   // sameBase 负向臂也要统一材质，否则塔顶/路灯仍带族色，IoU 到不了 1
   const bp = sceneArtBreaks.sameBase ? paletteOf('p1') : p;
+  // 负向臂必须连**城的骨架**一起塌回 p1，否则四族城门/底子仍是四张
+  const eo: SpriteOwner = sceneArtBreaks.sameBase ? 'p1' : owner;
   baseFx = [];
-  if (owner === 'p1' || sceneArtBreaks.sameBase) baseHill(pb, W, H, bp);
-  else if (owner === 'p2') baseCamp(pb, W, H, p);
-  else if (owner === 'p3') baseTree(pb, W, H, p);
+  if (eo === 'p1') baseHill(pb, W, H, bp);
+  else if (eo === 'p2') baseCamp(pb, W, H, p);
+  else if (eo === 'p3') baseTree(pb, W, H, p);
   else baseTemple(pb, W, H, p);
-  castleBackdrop(pb, W, H, bp);
-  if (!sceneArtBreaks.noStreet) townInfrastructure(pb, W, H, bp, owner);
+  castleBackdrop(pb, W, H, bp, eo);
+  if (!sceneArtBreaks.noStreet) townInfrastructure(pb, W, H, bp, eo);
   return { base: pb, fx: baseFx.slice() };
 }
 
@@ -824,23 +908,38 @@ function grassGrain(pb: PixBuf, W: number, H: number, y0: number, seed: number):
 }
 
 /**
- * 远景城堡：幕墙 + 角塔 + **三层收分主堡** + 门楼。
+ * 四族的城心剪影。**同一个坐标预算、四种结构**：
+ * p1 方石幕墙 + 三层收分主堡（直、方、尖顶）· p2 黑曜岩熔岩要塞（热、碎、尖角）
+ * p3 活树 + 树冠平台木厅（有机、起伏）· p4 黑石尖拱 + 紫晶亡灵塔（冷、竖、骨）。
+ * 只有 p1 走 `castleKeep`；`sameBase` 负向臂强制回到 p1，四张底子才会塌成同一张。
+ */
+function castleBackdrop(pb: PixBuf, W: number, H: number, p: ScenePalette, owner: SpriteOwner): void {
+  if (sceneArtBreaks.flatCastle) {
+    // 负向臂：旧版"一块灰墙 + 一个洞"，用来证明判据量的是结构
+    const wallY = Math.round(H * 0.40);
+    const wallH = Math.round(H * 0.12);
+    const x0 = Math.round(W * 0.10), x1 = Math.round(W * 0.90);
+    pb.rect(x0, wallY, x1 - x0, wallH, '#6f6858');
+    pb.rect(Math.round(W * 0.5) - 11, wallY + wallH - 26, 22, 26, '#2b2419');
+    return;
+  }
+  if (owner === 'p2') castleCamp(pb, W, H, p);
+  else if (owner === 'p3') castleGrove(pb, W, H, p);
+  else if (owner === 'p4') castleTemple(pb, W, H, p);
+  else castleKeep(pb, W, H, p);
+}
+
+/**
+ * p1 石堡：幕墙 + 角塔 + **三层收分主堡** + 门楼。
  * 旧版是一整块灰矩形开个黑洞，占画面最大面积却最没有设计——这里把纵向做碎：
  * 每层各自有城垛、箭孔和受光边，顶上再收两座小角楼，剪影才有 HOMM3 的层次。
  */
-function castleBackdrop(pb: PixBuf, W: number, H: number, p: ScenePalette): void {
+function castleKeep(pb: PixBuf, W: number, H: number, p: ScenePalette): void {
   const wallY = Math.round(H * 0.40);
   const wallH = Math.round(H * 0.12);
   const wallB = wallY + wallH;
   const x0 = Math.round(W * 0.10), x1 = Math.round(W * 0.90);
   const stone = '#6f6858', lite = '#938b77', dark = '#4a4538';
-
-  if (sceneArtBreaks.flatCastle) {
-    // 负向臂：旧版"一块灰墙 + 一个洞"，用来证明判据量的是结构
-    pb.rect(x0, wallY, x1 - x0, wallH, stone);
-    pb.rect(Math.round(W * 0.5) - 11, wallB - 26, 22, 26, '#2b2419');
-    return;
-  }
 
   /* ---- 幕墙 ---- */
   pb.rect(x0, wallY, x1 - x0, wallH, stone);
@@ -950,7 +1049,360 @@ function castleBackdrop(pb: PixBuf, W: number, H: number, p: ScenePalette): void
   }
 }
 
-/** 城市骨架：主干道 + 中央广场 + 喷泉 + 支路 + 路灯。负向臂 noStreet 整段抽掉。 */
+/**
+ * p2 焚风堡：**黑曜石熔岩要塞**。
+ * 阵容是火柴人 / 铜人 / 三头狼 / 熔岩巨人 / 恶魔，领袖是赤焰领主——这一族住在火山里。
+ * 早一版画成木栅茅草营地，那是"蛮族"不是"妖兽"：木头顶不出熔岩巨人和恶魔的轮廓。
+ * 和 p1 的对比：p1 灰石方堡 + 锥顶（冷、直、方），这里黑岩 + 熔岩缝 + 恶魔双角（热、碎、尖）。
+ * 火盆是静态构件；会跳的两团外焰锚点仍在 baseCamp（门 A7 钉死 p2.fire === 2）。
+ */
+function castleCamp(pb: PixBuf, W: number, H: number, p: ScenePalette): void {
+  const wallY = Math.round(H * 0.40);
+  const wallB = Math.round(H * 0.52);
+  const x0 = Math.round(W * 0.10), x1 = Math.round(W * 0.90);
+  const obs = '#241a17', rock = '#3c2a24', edge = '#5c3c2c';
+  const hot = '#ff7a2a', molten = '#c23a12', ember = '#ffd072';
+  const bronze = '#b98a3e', bronzeL = '#e0b45c', fang = '#e6dcc4';
+
+  /* 岩台：城墙坐在黑色玄武岩上，齿缝透出的是岩浆不是天空 */
+  pb.rect(x0 - 8, wallY - 4, x1 - x0 + 16, wallB - wallY + 16, obs);
+  pb.hline(x0 - 8, x1 + 8, wallY - 4, rock);
+  pb.hline(x0 - 8, x1 + 8, wallB + 11, '#150e0b');
+
+  /* 岩齿墙：每根 12px 粗、高低不一，齿间夹一道发光熔缝 */
+  for (let x = x0; x < x1; x += 13) {
+    const top = wallY - 6 - Math.round(hash2(x, 3, 401) * 12);
+    pb.poly([[x, wallB + 7], [x, top + 4], [x + 3, top - 6], [x + 9, top - 6], [x + 12, top + 4], [x + 12, wallB + 7]], rock);
+    pb.poly([[x, wallB + 7], [x, top + 4], [x + 3, top - 6], [x + 5, top - 6], [x + 5, wallB + 7]], edge);
+    pb.vline(x + 10, top - 2, wallB + 6, obs);
+  }
+  for (const yy of [wallY + 14, wallB - 8]) {
+    for (let x = x0 + 2; x < x1 - 8; x += 13) {
+      const gap = 6 + Math.round(hash2(x, 6, 409) * 4);
+      pb.hline(x, x + gap, yy, molten);
+      pb.hline(x + 1, x + gap - 1, yy + 1, hot, 0.7);
+    }
+  }
+  pb.rect(x0 + 6, wallY + 3, x1 - x0 - 12, 5, '#150e0b');
+
+  /* 两座恶魔角塔：黑岩锥台 + 熔岩箭孔 + 向外弯的双角 + 顶上火盆 */
+  const towerH = Math.round(H * 0.24);
+  for (const fx of [0.17, 0.83]) {
+    const cx = Math.round(W * fx);
+    const ty = wallB - towerH;
+    pb.poly([[cx - 16, wallB + 4], [cx - 12, ty + 10], [cx + 12, ty + 10], [cx + 16, wallB + 4]], rock);
+    pb.poly([[cx - 16, wallB + 4], [cx - 12, ty + 10], [cx - 5, ty + 10], [cx - 6, wallB + 4]], edge);
+    pb.poly([[cx + 6, wallB + 4], [cx + 6, ty + 10], [cx + 12, ty + 10], [cx + 16, wallB + 4]], obs);
+    for (const yy of [ty + 20, ty + 34, ty + 48]) {
+      pb.rect(cx - 2, yy, 5, 7, molten);
+      pb.rect(cx - 1, yy + 1, 3, 5, hot);
+    }
+    for (const s of [-1, 1]) {
+      pb.line(cx + s * 8, ty + 10, cx + s * 14, ty - 6, bronze, 4);
+      pb.line(cx + s * 14, ty - 6, cx + s * 20, ty - 15, bronzeL, 3);
+      pb.ellipse(cx + s * 20, ty - 15, 2, 2, fang);
+    }
+    pb.rect(cx - 15, ty + 6, 30, 6, obs);
+    pb.ellipse(cx, ty + 4, 9, 4, '#150e0b');
+    pb.ellipse(cx, ty + 3, 7, 4, molten);
+    pb.poly([[cx, ty - 8], [cx - 6, ty + 2], [cx + 6, ty + 2]], hot);
+    pb.poly([[cx, ty - 4], [cx - 3, ty + 2], [cx + 3, ty + 2]], ember);
+    scenePole(pb, cx, ty - 26, p, 20);
+    pushBaseFx({ k: 'flagCloth', x: cx, y: ty - 26, len: 11, off: cx % SCENE_ANIM_FRAMES });
+  }
+
+  /* 主堡：三层黑岩熔炉，层间压发光熔缝（妖兽的城是熔炉不是村舍） */
+  const kx = Math.round(W * 0.5);
+  const kw = Math.round(W * 0.24);
+  const terY = wallB - 14;
+  const terPts: [number, number][] = [[kx - Math.round(kw * 0.5) - 20, wallB + 2]];
+  for (let x = kx - Math.round(kw * 0.5) - 20; x <= kx + Math.round(kw * 0.5) + 20; x += 9) {
+    terPts.push([x, terY - Math.round(hash2(x, 4, 407) * 7)]);
+  }
+  terPts.push([kx + Math.round(kw * 0.5) + 20, wallB + 2]);
+  pb.poly(terPts, obs);
+  const tiers = [
+    { half: Math.round(kw / 2), top: terY - 22 },
+    { half: Math.round(kw / 2) - 13, top: terY - 36 },
+    { half: Math.round(kw / 2) - 26, top: terY - 50 },
+  ];
+  let prevBot = terY;
+  for (let t = 0; t < tiers.length; t++) {
+    const tr = tiers[t]!;
+    pb.rect(kx - tr.half, tr.top, tr.half * 2, prevBot - tr.top, t % 2 ? rock : obs);
+    pb.hline(kx - tr.half, kx + tr.half, tr.top, edge);
+    pb.hline(kx - tr.half, kx + tr.half, tr.top + 2, molten, 0.85);
+    pb.hline(kx - tr.half, kx + tr.half, tr.top + 3, hot, 0.45);
+    prevBot = tr.top;
+  }
+  const gateTop = tiers[0]!.top;
+  // 熔岩之门：一张发光的嘴，五颗牙；恶魔与熔岩巨人的徽记长在门上
+  pb.rect(kx - 21, gateTop + 3, 42, terY - gateTop - 3, '#150e0b');
+  pb.ellipse(kx, gateTop + 10, 18, 8, molten);
+  pb.ellipse(kx, gateTop + 12, 12, 5, hot);
+  for (let i = -2; i <= 2; i++) {
+    pb.poly([[kx + i * 8 - 4, terY - 3], [kx + i * 8 - 2, gateTop + 14], [kx + i * 8 + 2, gateTop + 14], [kx + i * 8 + 4, terY - 3]], fang, 0.92);
+  }
+  // 三头狼徽记：门楣上三颗朝外的狼头（T3）
+  for (let i = -1; i <= 1; i++) {
+    const wx = kx + i * 16;
+    pb.poly([[wx - 7, gateTop + 2], [wx - 4, gateTop - 6], [wx, gateTop - 1], [wx + 4, gateTop - 6], [wx + 7, gateTop + 2]], edge);
+    pb.ellipse(wx - 3, gateTop - 2, 1, 1, ember);
+    pb.ellipse(wx + 3, gateTop - 2, 1, 1, ember);
+  }
+  // 两尊铜人守卫（T2）：黄铜像站在门两侧，和 p1 的石兽/旗杆彻底分开
+  for (const s of [-1, 1]) {
+    const gx = kx + s * 31;
+    pb.rect(gx - 5, gateTop + 1, 10, 20, bronze);
+    pb.ellipse(gx, gateTop - 1, 5, 5, bronzeL);
+    pb.rect(gx - 7, gateTop + 11, 14, 3, obs);
+    pb.rect(gx + s * 5, gateTop + 3, 3, 13, bronzeL);
+  }
+  // 炉顶火盆 + 旗
+  const crownY = tiers[2]!.top;
+  pb.rect(kx - 14, crownY - 6, 28, 8, obs);
+  pb.ellipse(kx, crownY - 7, 8, 4, molten);
+  pb.poly([[kx, crownY - 17], [kx - 6, crownY - 7], [kx + 6, crownY - 7]], hot);
+  scenePole(pb, kx, crownY - 32, p, 20);
+  pushBaseFx({ k: 'flagCloth', x: kx, y: crownY - 32, len: 15, off: 5 });
+
+  /* 两座熔岩营房：黑石矮屋，窗里透炭火（不再是兽皮斜顶） */
+  for (const s of [-1, 1]) {
+    const hx = kx + s * Math.round(kw * 0.76);
+    const hb = wallB - 14;
+    pb.rect(hx - 23, hb - 21, 46, 21, rock);
+    pb.poly([[hx - 27, hb - 21], [hx - 8, hb - 35], [hx + 19, hb - 29], [hx + 27, hb - 17], [hx - 27, hb - 17]], obs);
+    pb.line(hx - 8, hb - 35, hx + 19, hb - 29, edge, 2);
+    for (let k = -20; k < 24; k += 8) pb.vline(hx + k, hb - 20, hb - 18, molten, 0.8);
+    pb.rect(hx - 5, hb - 14, 10, 14, '#150e0b');
+    pb.rect(hx - 3, hb - 12, 6, 10, hot, 0.75);
+    scenePole(pb, hx + 18, hb - 39, p, 18);
+    pushBaseFx({ k: 'flagCloth', x: hx + 18, y: hb - 39, len: 9, off: (hx + 40) % SCENE_ANIM_FRAMES });
+  }
+
+  /* 两根黑曜石兽牙柱：骨白獠牙 + 熔岩环，代替旧版图腾 */
+  for (const s of [-1, 1]) {
+    const tx = kx + s * 76;
+    pb.rect(tx - 5, wallB - 12, 10, 12, obs);
+    pb.poly([[tx - 4, wallB - 58], [tx + 4, wallB - 58], [tx + 3, wallB - 12], [tx - 3, wallB - 12]], rock);
+    pb.poly([[tx - 4, wallB - 58], [tx, wallB - 72], [tx + 4, wallB - 58]], fang);
+    pb.rect(tx - 6, wallB - 46, 12, 3, molten);
+    pb.hline(tx - 5, tx + 5, wallB - 45, hot, 0.8);
+    pb.ellipse(tx, wallB - 62, 2, 2, obs);
+  }
+}
+
+/**
+ * p3 树城：**活树当墙，树冠当城垛**。
+ * p1 的墙是"人砌的直线"，这里整条防线是树干 + 林冠的起伏线；主堡不是塔，
+ * 是架在分叉巨树上的木厅，靠绳桥连到两侧树堡。城门是盘根拱。
+ */
+function castleGrove(pb: PixBuf, W: number, H: number, p: ScenePalette): void {
+  const wallY = Math.round(H * 0.40);
+  const wallB = Math.round(H * 0.52);
+  const x0 = Math.round(W * 0.10), x1 = Math.round(W * 0.90);
+  const bark = '#6b4a2c', barkL = '#8a6238', barkD = '#452e1a';
+  const leafD = '#28522c', leaf = '#3d7d3c', leafL = '#5b9a4a';
+  const plank = '#a07a4a', plankD = '#77552f';
+
+  /* 林下暗部：先铺一层，树干才有"长在林子前面"的层次 */
+  pb.rect(x0 - 10, wallY + 2, x1 - x0 + 20, wallB - wallY + 14, '#223d1e');
+  for (let i = 0; i < 26; i++) {
+    const x = x0 + Math.round(hash2(i, 1, 511) * (x1 - x0));
+    pb.vline(x, wallY + 4, wallB + 10, '#1b3117', 0.5);
+  }
+
+  /* 根墙：一排粗细不一的树干，顶上接树冠 */
+  for (let x = x0; x < x1; x += 23) {
+    const hh = 10 + Math.round(hash2(x, 5, 501) * 9);
+    const tw = 15 + (Math.round(hash2(x, 6, 501) * 3) | 0);
+    const top = wallY - hh;
+    pb.rect(x, top, tw, wallB + 8 - top, bark);
+    pb.rect(x + 1, top, 3, wallB + 8 - top, barkL);
+    pb.rect(x + tw - 3, top, 3, wallB + 8 - top, barkD);
+    pb.poly([[x - 8, top + 6], [x + tw / 2, top - 9], [x + tw + 8, top + 6], [x + tw / 2, top + 11]], hash2(x, 8, 503) > 0.5 ? leaf : leafD);
+    pb.ellipse(x + tw / 2, top - 2, tw * 0.8, 6, hash2(x, 9, 503) > 0.5 ? leafL : leaf, 0.85);
+  }
+
+  /* 两座树堡：树干 + 平台 + 木梯 + 尖木顶 */
+  const th = Math.round(H * 0.22);
+  for (const fx of [0.15, 0.85]) {
+    const cx = Math.round(W * fx);
+    const platY = wallB - th;
+    pb.poly([[cx - 13, wallB + 10], [cx - 7, platY], [cx + 7, platY], [cx + 13, wallB + 10]], bark);
+    pb.rect(cx - 4, platY, 3, wallB + 8 - platY, barkL);
+    pb.rect(cx + 5, platY, 3, wallB + 8 - platY, barkD);
+    // 根脚：往外撇的两条根，树才不是插在地里的柱子
+    for (const s of [-1, 1]) pb.line(cx + s * 8, wallB - 2, cx + s * 17, wallB + 8, barkD, 3);
+    pb.rect(cx - 19, platY - 4, 38, 5, plank);
+    pb.hline(cx - 19, cx + 19, platY - 5, '#c39a60');
+    for (let i = -16; i <= 16; i += 8) pb.rect(cx + i, platY - 12, 2, 8, plankD);
+    pb.hline(cx - 18, cx + 18, platY - 12, plank);
+    // 尖木顶 + 桁架
+    pb.poly([[cx - 20, platY - 12], [cx, platY - 42], [cx + 20, platY - 12]], '#5f8a46');
+    pb.poly([[cx - 20, platY - 12], [cx, platY - 42], [cx, platY - 12]], '#7aa85a', 0.55);
+    pb.vline(cx, platY - 40, platY - 14, '#3f6330');
+    pb.line(cx - 14, platY - 14, cx, platY - 34, plankD);
+    pb.line(cx + 14, platY - 14, cx, platY - 34, plankD);
+    // 灯笼（静态构件；p3 不新增 lamp 锚点，路灯仍由 townInfrastructure 给）
+    pb.vline(cx + 14, platY - 10, platY + 4, plankD);
+    pb.rect(cx + 12, platY + 4, 5, 6, '#e0c978');
+    pb.ellipse(cx + 14, platY + 7, 5, 5, p.accent, 0.16);
+    scenePole(pb, cx - 15, platY - 30, p, 20);
+    pushBaseFx({ k: 'flagCloth', x: cx - 15, y: platY - 30, len: 10, off: cx % SCENE_ANIM_FRAMES });
+  }
+
+  /* 中央：分叉巨树 + 架在枝间的木厅 */
+  const kx = Math.round(W * 0.5);
+  const forkY = Math.round(H * 0.315);
+  // 树干做成**两条岔开的腿**：单根树干会被主干道整个盖掉（实测只剩 2px 边），
+  // 腿岔到 ±62 才露得出来，城门正好夹在两腿之间。
+  for (const s of [-1, 1]) {
+    pb.poly([[kx + s * 6, forkY], [kx + s * 30, forkY], [kx + s * 62, wallB + 12], [kx + s * 38, wallB + 12]], bark);
+    pb.poly([[kx + s * 11, forkY + 4], [kx + s * 22, forkY + 4], [kx + s * 52, wallB + 10], [kx + s * 42, wallB + 10]], barkL, 0.35);
+    pb.vline(kx + s * 58, forkY + 24, wallB + 10, barkD);
+    pb.line(kx + s * 48, wallB + 6, kx + s * 68, wallB + 14, barkD, 4); // 根脚
+    // 树枝不画：树冠在它之后铺开，露出树冠的多半只剩一截细梢，1x 下读成"挂着的棍子"
+    // 城心的"树"由两条腿 + 树冠 + 木厅讲清楚，多画一根枝只会多一个悬空件
+    for (let i = 0; i < 4; i++) {
+      const ty = forkY + 8 + i * 11;
+      pb.hline(kx + s * 14, kx + s * 34, ty, barkD, 0.45);
+      pb.hline(kx + s * 16, kx + s * 30, ty - 2, barkL, 0.3);
+    }
+  }
+  // 岔口：两条腿在平台上交汇，缝里压一块暗色
+  pb.poly([[kx - 16, forkY], [kx, forkY - 10], [kx + 16, forkY], [kx + 10, forkY + 12], [kx - 10, forkY + 12]], barkD);
+  // 平台 + 木厅
+  const deckY = Math.round(H * 0.365);
+  pb.rect(kx - Math.round(W * 0.10), deckY, Math.round(W * 0.20), 5, plank);
+  pb.hline(kx - Math.round(W * 0.10), kx + Math.round(W * 0.10), deckY + 5, plankD);
+  for (let i = -4; i <= 4; i++) pb.vline(kx + i * 16, deckY + 6, deckY + 14, plankD);
+  pb.rect(kx - Math.round(W * 0.075), deckY - 26, Math.round(W * 0.15), 26, '#8a6a44');
+  for (let my = deckY - 22; my < deckY - 2; my += 6) pb.hline(kx - Math.round(W * 0.075) + 2, kx + Math.round(W * 0.075) - 2, my, '#6f5234', 0.5);
+  pb.poly([[kx - Math.round(W * 0.09), deckY - 26], [kx, deckY - 52], [kx + Math.round(W * 0.09), deckY - 26]], '#4d7a3c');
+  pb.poly([[kx - Math.round(W * 0.09), deckY - 26], [kx, deckY - 52], [kx, deckY - 26]], '#65994c');
+  pb.vline(kx, deckY - 50, deckY - 28, '#365a2a');
+  // 门洞 + 两侧亮窗
+  pb.rect(kx - 8, deckY - 18, 16, 18, '#2a1d10');
+  pb.ellipse(kx, deckY - 18, 8, 5, '#2a1d10');
+  pb.ellipse(kx, deckY - 6, 6, 4, '#e0b060', 0.28);
+  for (const s of [-1, 1]) {
+    pb.rect(kx + s * 32 - 3, deckY - 18, 6, 7, p.glass);
+    pb.ellipse(kx + s * 32, deckY - 15, 7, 6, p.glass, 0.14);
+  }
+  scenePole(pb, kx, deckY - 58, p, 20);
+  pushBaseFx({ k: 'flagCloth', x: kx, y: deckY - 58, len: 16, off: 2 });
+
+  /* 绳桥：从木厅平台接到右侧树堡，把两座结构连成一体 */
+  const bx0 = kx + Math.round(W * 0.095), bx1 = Math.round(W * 0.85) - 16;
+  const by0 = deckY + 2, by1 = wallB - th - 4;
+  for (let x = bx0; x <= bx1; x++) {
+    const t = (x - bx0) / Math.max(1, bx1 - bx0);
+    const y = Math.round(by0 + (by1 - by0) * t + Math.sin(t * Math.PI) * 6);
+    pb.rect(x, y, 1, 2, plank);
+    if ((x - bx0) % 7 === 0) pb.vline(x, y - 4, y, '#c9a86a');
+    if ((x - bx0) % 7 === 0) pb.hline(x, x + 7, y - 4, '#c9a86a', 0.7);
+  }
+
+  /* 木厅的支撑：斜撑接到城门柱上，厅才不是浮在空中的平台 */
+  for (const s of [-1, 1]) {
+    const rx = kx + s * 41;
+    pb.line(rx, wallB - 34, kx + s * Math.round(W * 0.09), Math.round(H * 0.365) + 4, plankD, 3);
+  }
+}
+
+/**
+ * p4 紫晶塔：**亡灵巫师的黑石尖塔城**。
+ * 阵容是骷髅 / 僵尸 / 吸血鬼 / 牛头怪 / 摄魂怪，领袖是紫晶秘法师——这一族住在墓园与塔里。
+ * 早一版画成白色大理石神殿 + 金穹顶，那是"天使圣殿"不是亡灵：金和纯白跟阵容完全相反。
+ * 和 p1 的对比：p1 灰石方堡 + 城垛（横向、方），这里黑石尖拱 + 骨肋 + 紫晶簇（纵向、尖）。
+ */
+function castleTemple(pb: PixBuf, W: number, H: number, _p: ScenePalette): void {
+  const wallY = Math.round(H * 0.40);
+  const wallB = Math.round(H * 0.52);
+  const x0 = Math.round(W * 0.10), x1 = Math.round(W * 0.90);
+  const crypt = '#3b3248', cryptL = '#564966', cryptD = '#251d30';
+  const bone = '#ded3c0', boneD = '#a99c86';
+  const am = '#a05cd8', amL = '#d6a4ff', soul = '#8fe0a0';
+
+  /* 幕墙：黑石 + 尖拱壁龛。尖拱（不是半圆拱廊）是亡灵城的识别符 */
+  pb.rect(x0, wallY, x1 - x0, wallB - wallY + 6, crypt);
+  pb.hline(x0, x1, wallY, cryptL);
+  pb.hline(x0, x1, wallB + 5, cryptD);
+  for (let x = x0; x < x1; x += 16) {
+    pb.rect(x, wallY - 8, 7, 9, boneD);
+    pb.rect(x + 1, wallY - 9, 5, 3, bone);
+  }
+  for (let x = x0 + 16; x < x1 - 12; x += 30) {
+    if (Math.abs(x - W * 0.5) < 46) continue;
+    pb.poly([[x - 9, wallY + 24], [x, wallY + 10], [x + 9, wallY + 24], [x + 9, wallB - 5], [x - 9, wallB - 5]], cryptD);
+    pb.poly([[x, wallY + 13], [x + 6, wallY + 24], [x + 6, wallB - 6], [x - 6, wallB - 6], [x - 6, wallY + 24]], '#191423');
+    pb.line(x - 9, wallY + 24, x, wallY + 10, boneD, 2);
+    pb.line(x, wallY + 10, x + 9, wallY + 24, bone, 2);
+    pb.ellipse(x, wallB - 12, 3, 5, soul, 0.5);
+  }
+
+  /* 四座尖塔：黑岩锥顶 + 塔尖紫晶簇（不是洋葱穹顶 + 金顶针） */
+  for (const [fx, tall] of [[0.135, 1], [0.275, 0], [0.725, 0], [0.865, 1]] as [number, number][]) {
+    const cx = Math.round(W * fx);
+    const drumH = Math.round(H * (tall ? 0.20 : 0.16));
+    const topY = wallB - drumH;
+    pb.rect(cx - 13, topY + 12, 26, drumH, crypt);
+    pb.rect(cx - 13, topY + 12, 5, drumH, cryptL);
+    pb.rect(cx + 9, topY + 12, 4, drumH, cryptD);
+    pb.poly([[cx - 16, topY + 13], [cx, topY - 16], [cx + 16, topY + 13]], cryptD);
+    pb.poly([[cx - 16, topY + 13], [cx, topY - 16], [cx, topY + 13]], cryptL);
+    pb.line(cx, topY - 16, cx + 16, topY + 13, boneD, 2);
+    pb.poly([[cx, topY - 34], [cx + 6, topY - 18], [cx, topY - 12], [cx - 6, topY - 18]], am);
+    pb.poly([[cx, topY - 34], [cx, topY - 12], [cx - 6, topY - 18]], amL, 0.75);
+    pb.ellipse(cx, topY - 20, 8, 8, amL, 0.12);
+    for (const s of [-1, 1]) pb.poly([[cx + s * 9, topY - 24], [cx + s * 13, topY - 16], [cx + s * 9, topY - 13]], am, 0.8);
+  }
+
+  /* 主塔 = 紫晶塔：中央最高，塔冠一整块巨型紫晶（城名与领袖称号都写在轮廓上） */
+  const kx = Math.round(W * 0.5);
+  const bw = Math.round(W * 0.20);
+  const bodyTop = Math.round(H * 0.30);
+  pb.rect(kx - bw / 2 - 6, bodyTop, bw + 12, wallB - bodyTop + 4, cryptD);
+  pb.rect(kx - bw / 2, bodyTop + 4, bw, wallB - bodyTop, crypt);
+  for (let x = kx - bw / 2 + 8; x < kx + bw / 2 - 6; x += 14) pb.vline(x, bodyTop + 8, wallB - 6, cryptL);
+  // 尖拱门 + 魂火
+  pb.poly([[kx - 15, wallB - 2], [kx - 15, bodyTop + 30], [kx, bodyTop + 14], [kx + 15, bodyTop + 30], [kx + 15, wallB - 2]], '#191423');
+  pb.line(kx - 15, bodyTop + 30, kx, bodyTop + 14, boneD, 2);
+  pb.line(kx, bodyTop + 14, kx + 15, bodyTop + 30, bone, 2);
+  pb.ellipse(kx, wallB - 14, 10, 7, soul, 0.28);
+  // 骨肋：两排竖直肋骨，骷髅与吸血鬼的徽记
+  for (const s of [-1, 1]) {
+    const rx = kx + s * Math.round(bw * 0.34);
+    pb.vline(rx, bodyTop + 6, wallB - 10, boneD, 3);
+    for (let y = bodyTop + 12; y < wallB - 14; y += 11) pb.hline(rx - 4, rx + 4, y, bone, 0.8);
+  }
+  // 塔冠：收分石座 + 巨型紫晶（三面切割 + 高光 + 一圈幽光）
+  // 三级退台：每级收 22px，顶台刚好托住 36px 宽的晶体（一条长横线会读成挂晶体的电线）
+  let stepBot = bodyTop + 2, stepHalf = Math.round(bw / 2) + 6;
+  for (let t = 0; t < 3; t++) {
+    const stepTop = stepBot - 9;
+    const nextHalf = stepHalf - 22;
+    pb.rect(kx - stepHalf, stepTop, stepHalf * 2, stepBot - stepTop, t % 2 ? cryptD : crypt);
+    pb.hline(kx - stepHalf, kx + stepHalf, stepTop, boneD);
+    pb.hline(kx - stepHalf, kx + stepHalf, stepTop + 1, cryptL, 0.7);
+    stepBot = stepTop;
+    stepHalf = nextHalf;
+  }
+  const gy = stepBot;
+  pb.poly([[kx, gy - 46], [kx + 18, gy - 16], [kx + 12, gy + 2], [kx - 12, gy + 2], [kx - 18, gy - 16]], am);
+  pb.poly([[kx, gy - 46], [kx, gy + 2], [kx - 18, gy - 16]], amL, 0.75);
+  pb.poly([[kx, gy - 46], [kx + 18, gy - 16], [kx + 6, gy - 12]], amL, 0.35);
+  pb.hline(kx - 12, kx + 12, gy + 2, '#6b3a94');
+  pb.ellipse(kx, gy - 16, 22, 22, amL, 0.10);
+}
+
+/**
+ * 城市骨架：**路网按布局走**——p1 十字大街 / p2 环形熔池路 / p3 树干主道 + 横向枝栈 /
+ * p4 五条放射甬道。四族共用同一套"广场 + 喷泉 + 4 路灯 + 城门"构件，所以动效锚点
+ * （A7 钉死）不变；变的是**路怎么把建筑连起来**，这才是 Layout 的识别性。
+ * 负向臂 noStreet 整段抽掉。
+ */
 function townInfrastructure(pb: PixBuf, W: number, H: number, p: ScenePalette, owner: SpriteOwner): void {
   // 路面跟着地形走：同一块米色铺在火山黑土或紫色神殿地上，会像贴上去的一块沙盘。
   // 负向臂 sameBase 连路面一起塌回 p1，否则"底子同形"还剩一层族色差。
@@ -964,21 +1416,61 @@ function townInfrastructure(pb: PixBuf, W: number, H: number, p: ScenePalette, o
   const stoneLite = shade(road, 0.16), stoneDeep = shade(road, -0.18);
   const topY = Math.round(H * 0.44);
   const roadTop = Math.round(W * 0.035), roadBot = Math.round(W * 0.10);
-  // 主干道：从城门向屏幕下方张开
-  pb.poly([
-    [Math.round(W * 0.5 - roadTop), topY], [Math.round(W * 0.5 + roadTop), topY],
-    [Math.round(W * 0.5 + roadBot), H], [Math.round(W * 0.5 - roadBot), H],
-  ], road);
-  pb.line(W * 0.5 - roadTop, topY, W * 0.5 - roadBot, H, roadDark, 1.5);
-  pb.line(W * 0.5 + roadTop, topY, W * 0.5 + roadBot, H, roadDark, 1.5);
-  // 支路：广场向左右延伸，暗示"城里还有别的街"
   const py = Math.round(H * 0.70);
-  pb.rect(0, py - 5, Math.round(W * 0.5), 10, road);
-  pb.rect(Math.round(W * 0.5), py - 5, Math.round(W * 0.5), 10, road);
-  pb.hline(0, W, py - 5, roadDark, 0.5);
-  pb.hline(0, W, py + 5, roadDark, 0.5);
-  // 铺石纹理：按位置哈希，不引入随机流。只用比底子略深/略浅两色，
-  // 大面积纯色会读成一块沙地（2x 目检时最明显的问题）。
+  const eo: SpriteOwner = sceneArtBreaks.sameBase ? 'p1' : owner;
+
+  if (eo === 'p1') {
+    /* 棋盘：一条从城门张开的十字大街（人类城市的规整轴） */
+    pb.poly([
+      [Math.round(W * 0.5 - roadTop), topY], [Math.round(W * 0.5 + roadTop), topY],
+      [Math.round(W * 0.5 + roadBot), H], [Math.round(W * 0.5 - roadBot), H],
+    ], road);
+    pb.line(W * 0.5 - roadTop, topY, W * 0.5 - roadBot, H, roadDark, 1.5);
+    pb.line(W * 0.5 + roadTop, topY, W * 0.5 + roadBot, H, roadDark, 1.5);
+    pb.rect(0, py - 5, Math.round(W * 0.5), 10, road);
+    pb.rect(Math.round(W * 0.5), py - 5, Math.round(W * 0.5), 10, road);
+    pb.hline(0, W, py - 5, roadDark, 0.5);
+    pb.hline(0, W, py + 5, roadDark, 0.5);
+  } else if (eo === 'p2') {
+    /* 环形：绕中央熔池一圈火山岩路，再从门接一条短匝道；没有横贯大街 */
+    const cx = W * 0.5, cy = H * 0.70;
+    for (let i = 0; i <= 120; i++) {
+      const a = (i / 120) * Math.PI * 2;
+      const x = Math.round(cx + Math.cos(a) * W * 0.33);
+      const y = Math.round(cy + Math.sin(a) * H * 0.22);
+      pb.ellipse(x, y, 9, 5, i % 7 === 0 ? stoneLite : road);
+    }
+    // 门下匝道：从城墙接到环路上沿（上沿压到 0.48H，不盖住城心的熔炉门与铜人）
+    pb.poly([[cx - 16, topY], [cx + 16, topY], [cx + roadBot * 0.5, cy - H * 0.22], [cx - roadBot * 0.5, cy - H * 0.22]], road);
+    pb.line(cx - 16, topY, cx - roadBot * 0.5, cy - H * 0.22, roadDark, 1.5);
+    pb.line(cx + 16, topY, cx + roadBot * 0.5, cy - H * 0.22, roadDark, 1.5);
+  } else if (eo === 'p3') {
+    /* 树城：一条贴树干的竖直主道 + 四层横向枝栈，栈道随高度收窄（没有十字大街） */
+    pb.poly([
+      [Math.round(W * 0.5 - W * 0.045), topY], [Math.round(W * 0.5 + W * 0.045), topY],
+      [Math.round(W * 0.5 + W * 0.075), H], [Math.round(W * 0.5 - W * 0.075), H],
+    ], road);
+    for (const [fy, half] of [[0.31, 0.20], [0.45, 0.32], [0.59, 0.40], [0.74, 0.44]] as [number, number][]) {
+      const y = Math.round(H * fy), hx = Math.round(W * half);
+      pb.line(W * 0.5 - hx, y, W * 0.5 + hx, y, road, 7);
+      pb.hline(W * 0.5 - hx, W * 0.5 + hx, y + 4, roadDark, 0.6);
+      // 栈道支柱：每 1/8 宽一根短桩，读成"架在树枝上的木栈"而不是贴纸
+      for (let x = W * 0.5 - hx + 20; x < W * 0.5 + hx; x += Math.round(W * 0.1)) {
+        pb.vline(Math.round(x), y + 3, y + 11, roadDark, 2);
+      }
+    }
+  } else {
+    /* 亡灵：五条从塔基放射的甬道（对应 p4 的五列地块），扇形铺开 */
+    const cx = W * 0.5, cy = topY;
+    for (const fx of [0.10, 0.30, 0.50, 0.70, 0.90]) {
+      const ex = Math.round(W * fx);
+      pb.line(cx, cy + 6, ex, H, road, 9);
+      pb.line(cx - 4, cy + 6, ex - 7, H, roadDark, 1.2);
+      pb.line(cx + 4, cy + 6, ex + 7, H, roadDark, 1.2);
+    }
+  }
+
+  // 铺石纹理：按位置哈希，不引入随机流。放射/环形路也吃同一层纹理，四族才有共同质感。
   for (let i = 0; i < 420; i++) {
     const t = hash2(i, 3, 2026);
     const y = Math.round(topY + t * (H - topY));
@@ -988,23 +1480,111 @@ function townInfrastructure(pb: PixBuf, W: number, H: number, p: ScenePalette, o
     pb.hline(x, x + 4, y, tone, 0.8);
     if (i % 3 === 0) pb.vline(x, y, y + 2, roadDark, 0.5);
   }
-  // 中央广场
+  // 中央广场：四族同轴、同大小，保证喷泉锚点稳定；形状按族略变（圆/熔池/树心/法阵）
   const plazaRx = Math.round(W * 0.15), plazaRy = Math.round(H * 0.085);
   pb.ellipse(W * 0.5, py, plazaRx, plazaRy, roadDark);
   pb.ellipse(W * 0.5, py, plazaRx - 4, plazaRy - 3, plaza);
-  // 喷泉：池体与出水柱是构件，水花交给特效层（逐帧散开落回池面）
-  pb.ellipse(W * 0.5, py + 4, 18, 7, '#5b5346');
-  pb.ellipse(W * 0.5, py + 2, 15, 5, '#5a8fa0');
-  pb.rect(Math.round(W * 0.5 - 2), py - 14, 4, 15, '#8b8472');
-  pb.ellipse(W * 0.5, py - 15, 4, 3, '#8b8472');
+  if (eo === 'p2') {
+    // 熔池代替水面：同一只池子，颜色换成岩浆（喷泉锚点仍是出水口）
+    pb.ellipse(W * 0.5, py + 4, 18, 7, '#5b2410');
+    pb.ellipse(W * 0.5, py + 2, 15, 5, '#ff7a2a', 0.85);
+    pb.ellipse(W * 0.5, py + 2, 8, 3, '#ffd072', 0.7);
+  } else if (eo === 'p3') {
+    // 树心：树皮环 + 一圈浅色年轮
+    pb.ellipse(W * 0.5, py + 4, 18, 7, '#4a3420');
+    pb.ellipse(W * 0.5, py + 2, 15, 5, '#7a5734');
+    pb.ellipse(W * 0.5, py + 2, 8, 3, '#b08a4a', 0.7);
+  } else if (eo === 'p4') {
+    // 法阵：暗底盘 + 一圈符文点
+    pb.ellipse(W * 0.5, py + 4, 18, 7, '#3b3248');
+    pb.ellipse(W * 0.5, py + 2, 15, 5, '#564966');
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      pb.rect(Math.round(W * 0.5 + Math.cos(a) * 13), Math.round(py + Math.sin(a) * 5), 2, 2, '#8fe0a0', 0.7);
+    }
+  } else {
+    pb.ellipse(W * 0.5, py + 4, 18, 7, '#5b5346');
+    pb.ellipse(W * 0.5, py + 2, 15, 5, '#5a8fa0');
+  }
+  // 喷泉出水柱：四族同一构件，水花交给特效层（逐帧散开落回池面）
+  pb.rect(Math.round(W * 0.5 - 2), py - 14, 4, 15, eo === 'p3' ? '#8a6238' : '#8b8472');
+  pb.ellipse(W * 0.5, py - 15, 4, 3, eo === 'p4' ? '#8fe0a0' : '#8b8472');
   pushBaseFx({ k: 'fountain', x: W * 0.5, y: py - 15 });
-  // 路灯：杆 + 暖光，沿街不挡建筑
+  // 路灯：四盏，p3 换成挂枝灯笼但锚点类型仍是 lamp（A7 钉死数量）
   [0.26, 0.38, 0.62, 0.74].forEach((fx, i) => {
-    const x = Math.round(W * fx), y = Math.round(H * (fx < 0.5 ? 0.78 : 0.78));
-    pb.vline(x, y - 18, y, '#3a2f22');
+    const x = Math.round(W * fx), y = Math.round(H * 0.78);
+    pb.vline(x, y - 18, y, eo === 'p3' ? '#4a3420' : '#3a2f22');
     pb.ellipse(x, y - 19, 3, 4, p.accent, 0.95);
     pushBaseFx({ k: 'lamp', x, y: y - 19, off: (i * 3) % SCENE_ANIM_FRAMES });
   });
+  streetGates(pb, W, H, p, owner);
+}
+
+/**
+ * 压在主干道上的城门：**必须画在街道之后**。
+ * 城景层在路面之前，门开在墙上就会被路面整个盖掉（p3 第一版就是这样，
+ * 远看只有一个黑洞）。所以门楼/台阶归街道层，`noStreet` 会一起抽掉。
+ */
+function streetGates(pb: PixBuf, W: number, H: number, _p: ScenePalette, owner: SpriteOwner): void {
+  if (owner !== 'p3' && owner !== 'p4') return;
+  const wallB = Math.round(H * 0.52);
+  const kx = Math.round(W * 0.5);
+  if (owner === 'p3') {
+    const bark = '#6b4a2c', barkL = '#8a6238', barkD = '#452e1a', plank = '#a07a4a', plankD = '#77552f';
+    /* 两根粗根当门柱：立在路两侧（路顶半宽 0.035W），往外撇出根脚 */
+    for (const s of [-1, 1]) {
+      const rx = kx + s * 30;
+      pb.poly([[rx - 7, wallB - 44], [rx + 7, wallB - 44], [rx + 9, wallB + 6], [rx + 16, wallB + 12], [rx - 12, wallB + 12], [rx - 8, wallB + 4]], bark);
+      pb.rect(rx - 5, wallB - 44, 4, 50, barkL);
+      pb.vline(rx + 5, wallB - 42, wallB + 2, barkD);
+      pb.ellipse(rx - 2, wallB - 24, 4, 3, barkD, 0.7); // 树瘤
+    }
+    /* 门楣：沿半圆摆一圈根节，中间高两头低 */
+    for (let i = 0; i <= 16; i++) {
+      const a = (Math.PI * i) / 16;
+      const x = Math.round(kx - 30 * Math.cos(a));
+      const y = wallB - 44 - Math.round(Math.sin(a) * 13);
+      pb.rect(x - 4, y - 4, 8, 8, i % 2 ? bark : barkD);
+      if (i % 4 === 0) pb.ellipse(x, y - 3, 3, 3, barkL, 0.85);
+    }
+    /* 木门：两扇，比门柱亮三档；门缝留一条暗线，跟黑色门洞区分开 */
+    for (const s of [-1, 1]) {
+      const dx = s > 0 ? 1 : -15;
+      pb.rect(kx + dx, wallB - 26, 14, 28, '#8a6a44');
+      pb.rect(kx + dx + 1, wallB - 25, 12, 26, plank);
+      for (let py = wallB - 22; py < wallB - 2; py += 6) pb.hline(kx + dx + 1, kx + dx + 12, py, plankD, 0.8);
+      pb.rect(kx + dx + 5, wallB - 20, 3, 3, '#c9a86a');
+    }
+    pb.vline(kx, wallB - 26, wallB, '#33230f');
+    /* 门楣上垂下的藤：把门和树城连起来 */
+    for (let i = 0; i < 6; i++) {
+      const vx = kx - 22 + i * 9;
+      const vy = wallB - 52 - Math.round(hash2(i, 5, 547) * 5);
+      pb.line(vx, vy, vx + (i % 2 ? 2 : -2), wallB - 40, '#4f8a44');
+      if (i % 2 === 0) pb.ellipse(vx, vy, 2, 2, '#5b9a4a');
+    }
+  } else {
+  /* 亡灵：六级黑石台阶 + 骨边 + 魂火（不是白色大理石，那是天使圣殿） */
+  const st = '#3b3248', stL = '#564966', stD = '#251d30', bone = '#a99c86', soul = '#8fe0a0';
+  for (let i = 0; i < 6; i++) {
+    const hw = 42 + i * 9;
+    const y = wallB + i * 3;
+    pb.hline(kx - hw, kx + hw, y, i % 2 ? stL : st);
+    pb.hline(kx - hw, kx + hw, y + 1, stD);
+    pb.hline(kx - hw, kx + hw, y + 2, bone, 0.5);
+    pb.vline(kx - hw, y, y + 2, stD);
+    pb.vline(kx + hw, y, y + 2, stD);
+  }
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < 6; i++) {
+      const hw = 42 + i * 9;
+      pb.vline(kx + s * hw, wallB + i * 3, wallB + 18, stD, 0.7);
+    }
+  }
+  pb.rect(kx - 34, wallB - 3, 68, 4, stL);
+  pb.hline(kx - 34, kx + 34, wallB + 1, stD);
+  pb.ellipse(kx, wallB + 6, 12, 5, soul, 0.22); // 门口魂火落在台阶上
+  }
 }
 
 /** p1：石堡山丘 —— 三层岩台 + 松林 + 石阶，最"骑士"的一张。 */
@@ -1077,6 +1657,21 @@ function baseTree(pb: PixBuf, W: number, H: number, _p: ScenePalette): void {
     const ox = Math.round((hash2(i, 4, 23) - 0.5) * W * 0.56);
     const oy = Math.round(H * (0.1 + hash2(i, 6, 23) * 0.22));
     pb.ellipse(cx + ox, oy, Math.round(W * (0.09 + hash2(i, 8, 23) * 0.05)), Math.round(H * 0.1), i % 2 ? '#2f6b34' : '#3d7d3c');
+  }
+  /* 树屋平台：PLOTS_P3 的四档高度，各画一条从主树伸出的粗枝 + 木栈板。
+     必须画在树冠之后（否则被椭圆盖掉）。上层建筑落在枝上而不是浮在树叶里。 */
+  for (const [fy, half] of [[0.29, 0.24], [0.43, 0.36], [0.58, 0.44], [0.74, 0.46]] as [number, number][]) {
+    const y = Math.round(H * fy), hx = Math.round(W * half);
+    // 粗枝：从树干向两侧收细，落点压在建筑底缘（slot translateY -72%，底缘≈top+28%）
+    for (const s of [-1, 1]) {
+      pb.poly([[cx, y + 2], [cx + s * Math.round(hx * 0.35), y - 3], [cx + s * hx, y + 8], [cx + s * hx, y + 15], [cx + s * Math.round(hx * 0.3), y + 7]], '#5e4028');
+      pb.line(cx + s * 12, y + 2, cx + s * hx, y + 11, '#8a6238', 2);
+    }
+    // 木栈板：四条短横板压在枝上，给建筑一个明确的落地面
+    for (let x = cx - hx + 14; x < cx + hx - 10; x += 26) {
+      pb.hline(x, x + 20, y + 12, '#a07a4a', 0.85);
+      pb.hline(x, x + 20, y + 14, '#6b4a2c', 0.7);
+    }
   }
   for (let i = 0; i < 10; i++) {
     const x = Math.round(hash2(i, 2, 77) * W), y = Math.round(H * (0.7 + hash2(i, 3, 77) * 0.25));
