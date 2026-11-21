@@ -51,6 +51,8 @@ let sceneArtBreaks = {
   sameLayout: false,
   /** 第九版负向臂：抹掉族别建筑皮肤 + 四族背景塌回 p1 山丘（证明"换色 ≠ 换世界"）。 */
   sameWorld: false,
+  /** 第十版负向臂：只退回"人类骨架 + 族别皮肤"，证明骨架门量的不是屋顶贴件。 */
+  skeletonSkinOnly: false,
 };
 export function setSceneArtBreaks(v: Partial<typeof sceneArtBreaks>): void {
   sceneArtBreaks = { ...sceneArtBreaks, ...v };
@@ -814,6 +816,364 @@ function factionSkin(pb: PixBuf, owner: SpriteOwner): void {
  * `phase` 是动画相位（0..SCENE_ANIM_FRAMES-1）：同一座建筑每帧都是从头重画，
  * 所以不存在"上一帧的辐条留在原地"这种残影。
  */
+/* ------------------------------------------------------- 骨架级重画（第十版） */
+/**
+ * 第九版仍共用 16 张人类房子的骨架，只在屋顶贴族别件——满城实拍一眼就能看出
+ * "同一排方盒子换了皮"。第十版把**建筑本体**按族重画：
+ *   p2 妖兽 = 熔岩洞穴（黑岩体块 + 发光洞口 + 角/尖齿，没有一面直墙）
+ *   p3 精灵 = 活木树洞（锥形树干 + 拱形树腔 + 树冠 + 根须，没有一片瓦）
+ *   p4 亡灵 = 陵墓骨窟（斜石椁 + 尖拱门 + 肋骨 + 颅饰，没有一扇方窗）
+ * p1 保留原 16 张功能建筑作为基准。16 种功能身份、Lv.1/2/3 与全部动效锚点不变。
+ *
+ * 判据必须量"身体"而不是"屋顶贴件"：`skeletonSkinOnly` 负向臂把四族都退回
+ * "人类骨架 + 第九版皮肤"，若新门还绿，说明它量的仍是皮。
+ */
+/** 负向臂：只留第九版的皮肤，把骨架退回人类方盒（证明新门量的是骨架而非皮）。 */
+/** 族别骨架真正下笔的色，判据只数这些实现导出的 token，不自带色表。 */
+/** 各族"身体空腔"的精确色：实现与判据共用这一份，不许探针自带近似色表。 */
+export const TOWN_SKELETON_CAVITY: Readonly<Record<string, string>> = {
+  p2: TOWN_WORLD_TOKENS.cave, p3: '#1a2a12', p4: '#120e18',
+};
+/** 骨架专属建材（皮肤层不用的色），判据据此量"身体"而非屋顶贴件。 */
+export const TOWN_SKELETON_MATERIAL: Readonly<Record<string, readonly string[]>> = {
+  p2: [TOWN_WORLD_TOKENS.basalt],
+  p3: [TOWN_WORLD_TOKENS.bark],
+  p4: [TOWN_WORLD_TOKENS.graveDark, TOWN_WORLD_TOKENS.grave],
+};
+
+type CavePlan = { m: readonly (readonly [number, number, number])[]; t?: readonly (readonly [number, number, number])[]; e?: string };
+const CAVE_PLAN: Readonly<Record<string, CavePlan>> = {
+  tavern:   { m: [[38, 40, 30]], e: 'chimney' },
+  market:   { m: [[20, 26, 18], [40, 30, 20], [60, 26, 18]], e: 'stall' },
+  townhall: { m: [[40, 46, 34]], t: [[18, 20, 12], [62, 20, 12]], e: 'horn' },
+  workshop: { m: [[34, 38, 30]], e: 'wheel' },
+  wall1:    { m: [[22, 24, 20], [40, 28, 20], [58, 24, 20]], e: 'fang' },
+  wall2:    { m: [[40, 34, 26]], t: [[16, 18, 12], [64, 18, 12]], e: 'horn' },
+  wall3:    { m: [[40, 48, 36]], t: [[18, 22, 12], [62, 22, 12]], e: 'flag' },
+  banner:   { m: [[40, 22, 18]], e: 'banner' },
+  dwell1:   { m: [[40, 34, 28]], e: 'step' },
+  dwell2:   { m: [[26, 32, 22], [56, 26, 20]] },
+  dwell3:   { m: [[24, 26, 18], [40, 36, 18], [56, 26, 18]] },
+  dwell4:   { m: [[40, 32, 34]], e: 'bridge' },
+  dwell5:   { m: [[40, 52, 26]], e: 'horn' },
+  guild1:   { m: [[40, 30, 24]], e: 'crystal' },
+  guild2:   { m: [[26, 28, 20], [54, 28, 20]], e: 'crystal' },
+  guild3:   { m: [[40, 56, 22]], e: 'spire' },
+};
+type TrunkPlan = { tr: readonly (readonly [number, number, number])[]; e?: string };
+const TRUNK_PLAN: Readonly<Record<string, TrunkPlan>> = {
+  tavern:   { tr: [[40, 30, 30]], e: 'sign' },
+  market:   { tr: [[20, 44, 18], [40, 40, 20], [60, 44, 18]] },
+  townhall: { tr: [[40, 24, 34]], e: 'deck' },
+  workshop: { tr: [[34, 38, 28]], e: 'wheel' },
+  wall1:    { tr: [[20, 46, 16], [40, 42, 18], [60, 46, 16]], e: 'hedge' },
+  wall2:    { tr: [[20, 28, 18], [60, 28, 18]], e: 'gate' },
+  wall3:    { tr: [[22, 26, 16], [40, 18, 20], [58, 26, 16]], e: 'deck' },
+  banner:   { tr: [[40, 22, 16]], e: 'flag' },
+  dwell1:   { tr: [[40, 40, 28]] },
+  dwell2:   { tr: [[26, 38, 22], [56, 28, 20]] },
+  dwell3:   { tr: [[24, 28, 18], [40, 44, 18], [56, 28, 18]] },
+  dwell4:   { tr: [[22, 36, 20], [56, 36, 20]], e: 'bridge' },
+  dwell5:   { tr: [[40, 18, 24]], e: 'lantern' },
+  guild1:   { tr: [[40, 30, 22]], e: 'orb' },
+  guild2:   { tr: [[26, 30, 18], [54, 30, 18]], e: 'orb' },
+  guild3:   { tr: [[40, 20, 20]], e: 'spire' },
+};
+type CryptPlan = { c: readonly (readonly [number, number, number])[]; t?: boolean; e?: string };
+const CRYPT_PLAN: Readonly<Record<string, CryptPlan>> = {
+  tavern:   { c: [[40, 38, 32]], e: 'bone' },
+  market:   { c: [[20, 26, 18], [40, 30, 20], [60, 26, 18]] },
+  townhall: { c: [[40, 44, 34]], t: true, e: 'bone' },
+  workshop: { c: [[34, 36, 30]], e: 'fire' },
+  wall1:    { c: [[22, 26, 18], [40, 30, 20], [58, 26, 18]], e: 'fence' },
+  wall2:    { c: [[40, 34, 28]], t: true },
+  wall3:    { c: [[22, 26, 18], [40, 48, 26], [58, 26, 18]], t: true, e: 'bone' },
+  banner:   { c: [[40, 24, 18]], e: 'flag' },
+  dwell1:   { c: [[40, 32, 28]] },
+  dwell2:   { c: [[26, 30, 22], [56, 24, 20]] },
+  dwell3:   { c: [[24, 24, 18], [40, 34, 18], [56, 24, 18]] },
+  dwell4:   { c: [[22, 30, 20], [56, 30, 20]], e: 'bridge' },
+  dwell5:   { c: [[40, 52, 24]], t: true, e: 'bone' },
+  guild1:   { c: [[40, 30, 22]], e: 'orb' },
+  guild2:   { c: [[26, 28, 18], [54, 28, 18]], e: 'orb' },
+  guild3:   { c: [[40, 54, 22]], t: true, e: 'orb' },
+};
+
+/** 骨架各自的落地：从此不再有共用的草簇 base()。 */
+function skGround(pb: PixBuf, owner: SpriteOwner, x: number, w: number): void {
+  footprint = { x, w };
+  if (owner === 'p2') {
+    pb.poly([[x - 3, B], [x, B - 5], [x + w, B - 5], [x + w + 3, B]], TOWN_WORLD_TOKENS.basalt);
+    pb.hline(x, x + w, B - 5, '#3c2a24');
+    for (let i = x + 4; i < x + w - 3; i += 11) pb.line(i, B - 5, i + 4, B - 10, TOWN_WORLD_TOKENS.lava, 2);
+  } else if (owner === 'p3') {
+    pb.ellipse(x + w / 2, B + 1, w / 2 + 5, 5, '#3e5a28');
+    for (let i = x + 3; i < x + w; i += 9) pb.line(i, B, i - 4, B - 6, TOWN_WORLD_TOKENS.bark, 2);
+  } else {
+    pb.poly([[x - 3, B], [x + 1, B - 4], [x + w - 1, B - 4], [x + w + 3, B]], TOWN_WORLD_TOKENS.graveDark);
+    for (let i = x + 5; i < x + w; i += 13) pb.vline(i, B - 9, B - 4, TOWN_WORLD_TOKENS.bone, 2);
+  }
+}
+
+/** p2 单体：黑岩洞体 + 熔岩洞口 + 獠牙。返回顶部 y，供叠放装饰。 */
+function skCave(pb: PixBuf, cx: number, h: number, w: number, lit: boolean): number {
+  const bot = B - 4, top = bot - h;
+  pb.poly([[cx - w / 2 - 3, bot], [cx - w / 2 - 1, top + 7], [cx - w / 2 + 6, top],
+    [cx + w / 2 - 5, top - 2], [cx + w / 2 + 2, top + 6], [cx + w / 2 + 3, bot]], TOWN_WORLD_TOKENS.basalt);
+  pb.poly([[cx - w / 2 - 1, top + 7], [cx - w / 2 + 6, top], [cx - 4, top + 4], [cx - 5, bot]], '#3c2a24');
+  pb.ellipse(cx, bot - 4, w / 2 - 3, Math.max(4, h / 2 - 2), TOWN_WORLD_TOKENS.cave);
+  pb.rect(cx - w / 2 + 3, bot - h / 2, w - 6, h / 2 + 4, TOWN_WORLD_TOKENS.cave);
+  if (lit) {
+    pb.ellipse(cx, bot - 6, Math.max(3, w / 4), 3, '#c4471e');
+    pb.ellipse(cx, bot - 6, Math.max(2, w / 6), 2, TOWN_WORLD_TOKENS.lava);
+    buildFx.push({ k: 'flick', x: cx, y: bot - 6, r: Math.max(5, w / 3), color: TOWN_WORLD_TOKENS.lava });
+  }
+  // 獠牙按位置分三型：同一张城景里 16 个洞口都长一样的牙会变成"牙齿壁纸"。
+  const fangKind = Math.floor(hash2(cx, h, 913) * 3);
+  if (fangKind === 0) {
+    pb.poly([[cx - w / 2 + 2, top + 6], [cx - w / 2 + 7, top + 14], [cx - w / 2 + 10, top + 6]], TOWN_WORLD_TOKENS.bone);
+    pb.poly([[cx + w / 2 - 10, top + 5], [cx + w / 2 - 7, top + 13], [cx + w / 2 - 2, top + 5]], TOWN_WORLD_TOKENS.bone);
+  } else if (fangKind === 1) {
+    pb.poly([[cx - 4, top + 5], [cx, top + 15], [cx + 4, top + 5]], TOWN_WORLD_TOKENS.bone);
+    pb.line(cx - w / 2 + 3, top + 7, cx - w / 2 + 1, top - 2, '#b98a3e', 2);
+  } else {
+    pb.poly([[cx - w / 2 + 3, top + 6], [cx - w / 2 + 5, top + 11], [cx - w / 2 + 8, top + 6]], TOWN_WORLD_TOKENS.bone);
+    pb.line(cx + w / 2 - 3, top + 6, cx + w / 2 + 1, top - 3, '#b98a3e', 3);
+    pb.line(cx + w / 2 + 1, top - 3, cx + w / 2 + 5, top - 7, TOWN_WORLD_TOKENS.bone, 2);
+  }
+  return top;
+}
+function skColumn(pb: PixBuf, cx: number, top: number, w: number): void {
+  pb.poly([[cx - w / 2, B - 4], [cx - w / 2 + 1, top + 4], [cx, top - 4],
+    [cx + w / 2 - 1, top + 4], [cx + w / 2, B - 4]], TOWN_WORLD_TOKENS.basalt);
+  pb.vline(cx - Math.round(w / 4), top + 6, B - 8, '#3c2a24', 2);
+  pb.line(cx - w / 2, top + 10, cx + w / 2, top + 10, TOWN_WORLD_TOKENS.lava, 2);
+  pb.poly([[cx - w / 2, top + 4], [cx - w / 2 - 4, top - 6], [cx - w / 2 + 2, top - 2]], TOWN_WORLD_TOKENS.bone);
+  pb.poly([[cx + w / 2, top + 4], [cx + w / 2 + 4, top - 6], [cx + w / 2 - 2, top - 2]], TOWN_WORLD_TOKENS.bone);
+}
+function buildCaveSkeleton(pb: PixBuf, p: ScenePalette, id: string, tier: number): void {
+  const plan = CAVE_PLAN[id] ?? CAVE_PLAN.tavern!;
+  skGround(pb, 'p2', 8, 64);
+  let crown = 70;
+  for (const [cx, h, w] of plan.m) crown = Math.min(crown, skCave(pb, cx, h, w, true));
+  for (const [cx, top, w] of plan.t ?? []) { crown = Math.min(crown, top - 4); skColumn(pb, cx, top, w); }
+  switch (plan.e) {
+    case 'chimney':
+      // 烟囱顶与烟锚点必须留 ≥18px 头部空间：烟上升 6~16px 且末端半径 4px，
+      // 顶在 y=8 会被动画门 A0 的帧差包围盒贴边抓到（实测 bbox y0=0）。
+      pb.rect(54, 18, 9, 14, TOWN_WORLD_TOKENS.basalt); pb.hline(53, 63, 18, '#3c2a24');
+      pb.hline(56, 61, 28, TOWN_WORLD_TOKENS.lava, 2);
+      buildFx.push({ k: 'smoke', x: 58, y: 18 }); break;
+    case 'stall':
+      for (const cx of [20, 40, 60]) { pb.poly([[cx - 12, 48], [cx - 8, 40], [cx + 9, 40], [cx + 13, 48]], '#3c2a24'); }
+      break;
+    case 'horn':
+      for (const s of [-1, 1]) {
+        pb.line(40 + s * 10, crown + 8, 40 + s * 18, Math.max(3, crown - 12), TOWN_WORLD_TOKENS.bone, 4);
+        pb.line(40 + s * 18, Math.max(3, crown - 12), 40 + s * 24, Math.max(2, crown - 20), TOWN_WORLD_TOKENS.bone, 2);
+      }
+      break;
+    case 'wheel': {
+      const rot = (phasedBy(0) / SCENE_ANIM_FRAMES) * (Math.PI / 4);
+      pb.ellipse(64, 58, 10, 10, TOWN_WORLD_TOKENS.basalt);
+      pb.ellipse(64, 58, 6, 6, '#3c2a24');
+      for (let a = 0; a < 8; a++) {
+        const th = (a * Math.PI) / 4 + rot;
+        pb.line(64, 58, 64 + Math.round(Math.cos(th) * 9), 58 + Math.round(Math.sin(th) * 9), TOWN_WORLD_TOKENS.lava, 2);
+      }
+      break;
+    }
+    case 'fang':
+      for (let x = 14; x <= 66; x += 8) pb.poly([[x - 3, 40], [x, 28], [x + 3, 40]], TOWN_WORLD_TOKENS.basalt);
+      break;
+    case 'flag': case 'banner': {
+      const sy = FLAG_SWAY[phasedBy(11)]!;
+      const topY = Math.max(4, crown - 2);
+      pb.vline(40, topY, Math.max(topY + 10, 40), TOWN_WORLD_TOKENS.bone, 3);
+      pb.poly([[42, topY + 2], [66, topY + 7 + sy], [58, topY + 13 + sy], [66, topY + 19 + sy], [42, topY + 17]], p.accent);
+      break;
+    }
+    case 'step':
+      pb.rect(24, B - 12, 32, 4, TOWN_WORLD_TOKENS.basalt); pb.rect(20, B - 6, 40, 3, '#3c2a24'); break;
+    case 'bridge':
+      pb.poly([[8, 44], [72, 44], [72, 50], [8, 50]], TOWN_WORLD_TOKENS.basalt);
+      pb.hline(9, 71, 44, TOWN_WORLD_TOKENS.lava, 2); break;
+    case 'crystal':
+      pb.poly([[40, Math.max(3, crown - 16)], [47, crown + 6], [40, crown + 14], [33, crown + 6]], p.glass);
+      pb.poly([[40, Math.max(3, crown - 16)], [40, crown + 14], [33, crown + 6]], p.accent);
+      buildFx.push({ k: 'motes', x: 40, y: crown + 2, rx: 14, ry: 12, color: p.accent }); break;
+    case 'spire':
+      pb.poly([[34, B - 4], [38, 14], [42, 14], [46, B - 4]], TOWN_WORLD_TOKENS.basalt);
+      for (let y = 20; y < B - 8; y += 12) pb.hline(35, 45, y, TOWN_WORLD_TOKENS.lava, 2);
+      buildFx.push({ k: 'motes', x: 40, y: 24, rx: 12, ry: 10, color: TOWN_WORLD_TOKENS.lava }); break;
+  }
+  if (tier >= 2) { pb.rect(6, B - 2, 68, 2, TOWN_WORLD_TOKENS.basalt); pb.hline(8, 72, B - 2, TOWN_WORLD_TOKENS.lava, 0.7); }
+  if (tier >= 3) { pb.rect(2, B, 76, 2, TOWN_WORLD_TOKENS.basalt); for (let x = 6; x < 78; x += 10) pb.poly([[x-2, B], [x, B-5], [x+2, B]], TOWN_WORLD_TOKENS.bone); }
+}
+
+/** p3 单体：锥形活木树干 + 拱形树腔 + 叶冠。返回冠顶 y。 */
+function skTrunk(pb: PixBuf, cx: number, top: number, w: number): number {
+  const bot = B - 4;
+  pb.poly([[cx - w / 2 - 3, bot], [cx - w * 0.3, top + 8], [cx - w * 0.22, top],
+    [cx + w * 0.22, top], [cx + w * 0.3, top + 8], [cx + w / 2 + 3, bot]], TOWN_WORLD_TOKENS.bark);
+  for (let i = 1; i <= 3; i++) {
+    const fx = cx - w / 2 + (i * w) / 4;
+    pb.line(fx, top + 10, fx + (i - 2) * 3, bot - 3, '#452e1a', 1.6);
+  }
+  // 树腔：不是门，是树自己长出的洞
+  const hw = Math.max(6, Math.round(w * 0.26));
+  pb.ellipse(cx, bot - 10, hw, 11, TOWN_SKELETON_CAVITY.p3!);
+  pb.rect(cx - hw, bot - 10, hw * 2, 10, TOWN_SKELETON_CAVITY.p3!);
+  pb.ellipse(cx, bot - 4, Math.max(2, hw - 3), 2, '#b8d86a', 0.7);
+  pb.ellipse(cx - 3, bot + 1, 4, 2, TOWN_WORLD_TOKENS.leafLite, 0.8);
+  // 树冠
+  for (let i = 0; i < 4; i++) {
+    const ox = Math.round((i - 1.5) * w * 0.3);
+    pb.ellipse(cx + ox, top + 2 + (i % 2) * 3, Math.round(w * 0.43), 9, i % 2 ? TOWN_WORLD_TOKENS.canopy : TOWN_WORLD_TOKENS.leafLite);
+  }
+  pb.ellipse(cx, top - 4, Math.round(w * 0.4), 8, TOWN_WORLD_TOKENS.canopy);
+  // 根须落地
+  for (const s of [-1, 1]) pb.line(cx + s * 2, bot - 8, cx + s * (w / 2 + 7), bot + 3, TOWN_WORLD_TOKENS.bark, 3);
+  return top - 10;
+}
+function buildTreeSkeleton(pb: PixBuf, _p: ScenePalette, id: string, tier: number): void {
+  const plan = TRUNK_PLAN[id] ?? TRUNK_PLAN.tavern!;
+  skGround(pb, 'p3', 8, 64);
+  let crown = 70;
+  for (const [cx, top, w] of plan.tr) crown = Math.min(crown, skTrunk(pb, cx, top, w));
+  switch (plan.e) {
+    case 'sign':
+      pb.line(56, 40, 70, 40, TOWN_WORLD_TOKENS.bark, 3);
+      pb.rect(60, 40, 12, 11, '#5e4028'); pb.hline(62, 70, 45, TOWN_WORLD_TOKENS.leafLite, 2);
+      break;
+    case 'deck':
+      pb.poly([[12, 40], [68, 40], [68, 45], [12, 45]], TOWN_WORLD_TOKENS.bark);
+      for (let x = 16; x < 66; x += 7) pb.ellipse(x, 38, 5, 4, TOWN_WORLD_TOKENS.canopy, 0.9);
+      break;
+    case 'wheel': {
+      const rot = (phasedBy(0) / SCENE_ANIM_FRAMES) * (Math.PI / 4);
+      pb.ellipse(64, 58, 10, 10, TOWN_WORLD_TOKENS.bark); pb.ellipse(64, 58, 6, 6, '#8a6238');
+      for (let a = 0; a < 8; a++) {
+        const th = (a * Math.PI) / 4 + rot;
+        pb.line(64, 58, 64 + Math.round(Math.cos(th) * 9), 58 + Math.round(Math.sin(th) * 9), TOWN_WORLD_TOKENS.bark, 2);
+      }
+      break;
+    }
+    case 'hedge':
+      for (let x = 12; x <= 68; x += 6) pb.ellipse(x, 36, 6, 5, x % 2 ? TOWN_WORLD_TOKENS.canopy : TOWN_WORLD_TOKENS.leafLite);
+      break;
+    case 'gate':
+      pb.poly([[24, 44], [40, 26], [56, 44]], TOWN_WORLD_TOKENS.bark);
+      pb.poly([[30, 44], [40, 32], [50, 44]], TOWN_SKELETON_CAVITY.p3!);
+      break;
+    case 'flag': case 'banner': {
+      const sy = FLAG_SWAY[phasedBy(11)]!;
+      pb.vline(40, Math.max(3, crown - 2), 40, TOWN_WORLD_TOKENS.bark, 3);
+      pb.poly([[42, Math.max(4, crown)], [66, crown + 5 + sy], [58, crown + 11 + sy], [66, crown + 17 + sy], [42, crown + 15]], TOWN_WORLD_TOKENS.leafLite);
+      break;
+    }
+    case 'bridge':
+      pb.poly([[8, 44], [72, 44], [72, 49], [8, 49]], TOWN_WORLD_TOKENS.bark);
+      for (let x = 14; x < 70; x += 9) pb.ellipse(x, 42, 5, 4, TOWN_WORLD_TOKENS.canopy, 0.9);
+      break;
+    case 'lantern':
+      for (const x of [28, 52]) { pb.ellipse(x, 46, 4, 5, '#e0c978'); pb.ellipse(x, 44, 2, 2, '#ffe9a0'); }
+      break;
+    case 'orb':
+      pb.ellipse(40, Math.max(10, crown + 4), 6, 6, '#a8e0d0'); pb.ellipse(40, Math.max(10, crown + 4), 3, 3, '#e6fff0');
+      buildFx.push({ k: 'motes', x: 40, y: Math.max(12, crown + 4), rx: 13, ry: 10, color: '#a8e0d0' }); break;
+    case 'spire':
+      for (const [dx, dy] of [[-14, 16], [14, 22], [-9, 30], [10, 36]]) {
+        pb.line(40, crown + 10, 40 + dx, crown + dy, TOWN_WORLD_TOKENS.bark, 4);
+        pb.ellipse(40 + dx, crown + dy, 6, 5, TOWN_WORLD_TOKENS.canopy);
+      }
+      buildFx.push({ k: 'motes', x: 40, y: 30, rx: 14, ry: 12, color: '#d8f0a0' }); break;
+  }
+  if (tier >= 2) { for (let x = 12; x <= 68; x += 7) pb.ellipse(x, B - 1, 4, 3, TOWN_WORLD_TOKENS.canopy, 0.9); }
+  if (tier >= 3) { for (const x of [8, 72]) { pb.line(x, B, x, B - 12, TOWN_WORLD_TOKENS.bark, 3); pb.ellipse(x, B - 13, 6, 5, TOWN_WORLD_TOKENS.leafLite); } }
+}
+
+/** p4 单体：斜石椁 + 尖拱门 + 肋骨。返回顶 y。 */
+function skCrypt(pb: PixBuf, cx: number, h: number, w: number): number {
+  const bot = B - 4, top = bot - h;
+  pb.poly([[cx - w / 2 - 4, bot], [cx - w / 2 + 2, top + 10], [cx, top],
+    [cx + w / 2 - 2, top + 10], [cx + w / 2 + 4, bot]], TOWN_WORLD_TOKENS.graveDark);
+  pb.poly([[cx - w / 2 + 2, top + 10], [cx, top], [cx - 3, bot], [cx - w / 2 - 4, bot]], TOWN_WORLD_TOKENS.grave);
+  // 墓门由 skCryptDoor() 在最后统一补画：尖塔/骨饰若压在椁体上，
+  // 先画的门会被整块盖住（实测 dwell5/guild3 的门完全消失，只剩一座无入口的高塔）。
+  // 肋骨：从楣到肩，三段弧
+  for (let i = 0; i < 3; i++) {
+    const rx = cx - w / 2 + 6 + i * (w - 12) / 2;
+    pb.line(rx, top + 12, rx + 4, top + 3, TOWN_WORLD_TOKENS.bone, 2);
+    pb.line(rx + 4, top + 3, rx + 8, top + 12, TOWN_WORLD_TOKENS.bone, 2);
+  }
+  pb.ellipse(cx, top + 1, 4, 3, TOWN_WORLD_TOKENS.bone);
+  pb.rect(cx - 2, top + 2, 4, 2, TOWN_WORLD_TOKENS.bone);
+  pb.rect(cx - 1, top + 1, 1, 1, '#251d30'); pb.rect(cx + 1, top + 1, 1, 1, '#251d30');
+  return top;
+}
+/** 墓门必须最后画：高塔与骨肋会盖住先画的门，实测 dwell5 / guild3 整个入口消失。 */
+function skCryptDoor(pb: PixBuf, cx: number, h: number, w: number): void {
+  const bot = B - 4;
+  const hw = Math.max(5, Math.round(w * 0.22));
+  const doorTop = bot - Math.min(24, Math.round(h * 0.55));
+  pb.poly([[cx - hw, bot], [cx - hw, doorTop + 7], [cx, doorTop], [cx + hw, doorTop + 7], [cx + hw, bot]], TOWN_SKELETON_CAVITY.p4!);
+  pb.ellipse(cx, bot - 6, Math.max(2, hw - 3), 3, TOWN_WORLD_TOKENS.soul, 0.8);
+  buildFx.push({ k: 'flick', x: cx, y: bot - 6, r: Math.max(4, w / 4), color: TOWN_WORLD_TOKENS.soul });
+}
+function buildCryptSkeleton(pb: PixBuf, p: ScenePalette, id: string, tier: number): void {
+  const plan = CRYPT_PLAN[id] ?? CRYPT_PLAN.tavern!;
+  skGround(pb, 'p4', 8, 64);
+  let crown = 70;
+  for (const [cx, h, w] of plan.c) crown = Math.min(crown, skCrypt(pb, cx, h, w));
+  if (plan.t) {
+    pb.poly([[34, B - 4], [38, Math.max(6, crown - 18)], [42, Math.max(6, crown - 18)], [46, B - 4]], TOWN_WORLD_TOKENS.graveDark);
+    pb.poly([[40, Math.max(3, crown - 26)], [45, Math.max(8, crown - 16)], [40, Math.max(10, crown - 8)], [35, Math.max(8, crown - 16)]], p.accent);
+    pb.poly([[40, Math.max(3, crown - 26)], [40, Math.max(10, crown - 8)], [35, Math.max(8, crown - 16)]], p.glass);
+  }
+  switch (plan.e) {
+    case 'bone':
+      for (const x of [16, 64]) {
+        pb.vline(x, 30, B - 6, TOWN_WORLD_TOKENS.bone, 3);
+        for (let y = 34; y < B - 8; y += 8) pb.hline(x - 4, x + 4, y, TOWN_WORLD_TOKENS.bone, 2);
+      }
+      break;
+    case 'fire':
+      for (const x of [16, 62]) {
+        pb.poly([[x, 52], [x + 6, 38], [x + 12, 52]], TOWN_WORLD_TOKENS.grave);
+        pb.ellipse(x + 6, 50, 3, 4, TOWN_WORLD_TOKENS.soul, 0.8);
+        buildFx.push({ k: 'flick', x: x + 6, y: 50, r: 7, color: TOWN_WORLD_TOKENS.soul });
+      }
+      break;
+    case 'fence':
+      for (let x = 14; x <= 66; x += 8) { pb.vline(x, 34, B - 6, TOWN_WORLD_TOKENS.bone, 2); pb.ellipse(x, 32, 3, 3, TOWN_WORLD_TOKENS.bone); }
+      break;
+    case 'flag': {
+      const sy = FLAG_SWAY[phasedBy(11)]!;
+      pb.vline(40, Math.max(3, crown - 2), 40, TOWN_WORLD_TOKENS.bone, 2);
+      pb.poly([[42, Math.max(4, crown)], [64, crown + 6 + sy], [56, crown + 12 + sy], [64, crown + 18 + sy], [42, crown + 16]], p.clothDark);
+      break;
+    }
+    case 'bridge':
+      pb.poly([[8, 46], [72, 46], [72, 51], [8, 51]], TOWN_WORLD_TOKENS.grave);
+      for (let x = 14; x < 68; x += 9) pb.ellipse(x, 44, 3, 3, TOWN_WORLD_TOKENS.bone);
+      break;
+    case 'orb':
+      pb.ellipse(40, Math.max(12, crown + 3), 6, 6, p.glass);
+      buildFx.push({ k: 'motes', x: 40, y: Math.max(14, crown + 3), rx: 13, ry: 11, color: TOWN_WORLD_TOKENS.soul }); break;
+  }
+  // 最后补门：无论尖塔/骨栏怎么压椁体，每座陵墓都必须留一个可读的绿火入口
+  for (const [cx, h, w] of plan.c) skCryptDoor(pb, cx, h, w);
+  if (tier >= 2) { pb.rect(6, B - 2, 68, 2, TOWN_WORLD_TOKENS.grave); pb.hline(8, 72, B - 2, TOWN_WORLD_TOKENS.bone, 0.7); }
+  if (tier >= 3) { pb.rect(2, B, 76, 2, TOWN_WORLD_TOKENS.graveDark); for (let x = 8; x < 78; x += 11) pb.ellipse(x, B - 4, 3, 3, TOWN_WORLD_TOKENS.bone); }
+}
+
+function buildSkeleton(pb: PixBuf, p: ScenePalette, owner: SpriteOwner, id: string, tier: number): void {
+  if (owner === 'p2') buildCaveSkeleton(pb, p, id, tier);
+  else if (owner === 'p3') buildTreeSkeleton(pb, p, id, tier);
+  else buildCryptSkeleton(pb, p, id, tier);
+}
+
 export function buildSceneBuilding(owner: SpriteOwner, id: string, tier = 1, phase = 0): PixBuf {
   const pb = new PixBuf(SCENE_BUILDING_SIZE, SCENE_BUILDING_SIZE);
   const p = paletteOf(owner, id);
@@ -822,8 +1182,13 @@ export function buildSceneBuilding(owner: SpriteOwner, id: string, tier = 1, pha
   buildPhase = ((phase | 0) % SCENE_ANIM_FRAMES + SCENE_ANIM_FRAMES) % SCENE_ANIM_FRAMES;
   buildFx = [];
   footprint = { x: 8, w: 64 };
-  recipe(pb, p, t);
-  if (!sceneArtBreaks.sameWorld) { worldTint(pb, owner, p); factionSkin(pb, owner); }
+  /* 骨架分家：p2/p3/p4 用各自的结构系统重画整座建筑；p1 保留人类功能建筑作基准。
+     负向臂同 three 条：sameShape 全塌尖顶、sameWorld 全塌回人类骨架、
+     skeletonSkinOnly 只塌骨架但保留第九版屋顶皮肤（用来证明新门量的是身体）。 */
+  const collapse = sceneArtBreaks.sameShape || sceneArtBreaks.sameWorld || sceneArtBreaks.skeletonSkinOnly;
+  if (!collapse && owner !== 'p1') buildSkeleton(pb, p, owner, id, t);
+  else recipe(pb, p, t);
+  if (!sceneArtBreaks.sameWorld && collapse) { worldTint(pb, owner, p); factionSkin(pb, owner); }
   /* 升级档必须改变**剪影**：L2 台基到 x=2..77，L3 到 x=0..79（四族共用同一段几何）。
      画成带竖缝的砌石，不是一条纯色板——否则读成"垫在下面的板"。 */
   if (t >= 2) {

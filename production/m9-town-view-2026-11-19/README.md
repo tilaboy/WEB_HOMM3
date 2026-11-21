@@ -218,7 +218,7 @@ S10 天际线 IoU 0.249、S11 材质呼应全过；`probe:townanim` A7/U3 全过
 
 ## 回归
 
-`probe:townview`（含 S10/S11/S12 + N0h/N0i/N0j，S1 已改判族别剪影）/ `probe:townanim` / `probe:townfull` / `probe:townworld` 全绿；`tools/GATES.md` 表内 **57 行门全部 rc=0**（53 条有 npm 脚本，逐条跑 **256 s**；另 4 条是"无 npm script、直接 `node tools/*.mjs`"：`grimscontact` / `showcasegate` / `verify-static-map` / `iaaccept`，`iaaccept` 须先起 5173 且带 `NO_PROXY='*'`）。未改动经济、战斗、存档与任务流程，只改城景呈现、建材与族别皮肤、四族地貌（火山/巨树/墓园）、城堡与落地、动画、以及对应闸门。
+`probe:townview`（含 S10/S11/S12 + N0h/N0i/N0j，S1 已改判族别剪影）/ `probe:townanim` / `probe:townfull` / `probe:townworld` / `probe:townskeleton` 全绿；`tools/GATES.md` 表内 **58 行门全部 rc=0**（54 条有 npm 脚本，逐条跑 **234 s**；另 4 条是"无 npm script、直接 `node tools/*.mjs`"：`grimscontact` / `showcasegate` / `verify-static-map` / `iaaccept`，`iaaccept` 须先起 5173 且带 `NO_PROXY='*'`）。未改动经济、战斗、存档与任务流程，只改城景呈现、族别建筑骨架（熔岩洞/活木树洞/石椁墓窟）、四族地貌、城堡与落地、动画、以及对应闸门。
 
 ## 边界
 
